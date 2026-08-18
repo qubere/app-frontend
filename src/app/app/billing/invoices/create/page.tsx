@@ -54,7 +54,9 @@ export default async function CreateInvoicePage({
     : [];
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
-  const defaultDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const defaultDueDate = new Date();
+  defaultDueDate.setUTCDate(defaultDueDate.getUTCDate() + 30);
+  const defaultDueDateValue = defaultDueDate.toISOString().slice(0, 10);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -107,7 +109,7 @@ export default async function CreateInvoicePage({
             <input
               type="date"
               name="dueDate"
-              defaultValue={defaultDueDate}
+              defaultValue={defaultDueDateValue}
               required
               className="px-3 py-2 rounded-lg bg-white border border-[#E5E5EA] text-xs text-ink"
             />
