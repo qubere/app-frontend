@@ -24,9 +24,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
       shipment: {
         include: {
           documents: true,
-          // Ordered because the reads below treat lineItems[0] as the filing's
-          // primary line: unordered rows made the declared primary HTS and
-          // country of origin whichever line Postgres happened to return first.
           lineItems: { orderBy: { lineNumber: "asc" } },
           agentDecisions: { omit: { triageState: true, blockedReason: true, autoApprovalPolicy: true } },
         },
@@ -41,7 +38,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     return NextResponse.json({ error: "Filing not found" }, { status: 404 });
   }
 
-  // Retrieve related filings (same importer, HTS, or port)
   const relatedFilings = await db.customsFiling.findMany({
     where: {
       accountId: ctx.accountId,
@@ -73,7 +69,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     },
   });
 
-  // Fetch audit logs for this filing
   const auditTrail = await db.auditLog.findMany({
     where: {
       accountId: ctx.accountId,
@@ -83,20 +78,14 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     take: 10,
   });
 
-  // Prefer the immutable filing snapshot (frozen at submission time) over
-  // live shipment data when one exists, so this endpoint reflects what was
-  // actually filed even if the underlying shipment record changes later.
   const snapshot = filing.snapshot
     ? (filing.snapshot.snapshotData as unknown as FilingSnapshotData)
     : null;
   const lineItems = snapshot ? (snapshot.lineItems ?? []) : (filing.shipment?.lineItems ?? []);
-  // Country of origin is a line-item attribute, not a shipment one: there is no
-  // Shipment.countryOfOrigin column and the snapshot never carried one.
   const primaryCOO =
     lineItems[0]?.countryOfOrigin ?? (snapshot ? null : filing.shipment?.countryOfExport) ?? null;
   const primaryHTS = lineItems[0]?.htsCode ?? null;
 
-  // Standardized Duty Breakdown computed via Tariff Engine
   const tariffResult = computeFilingTariff(lineItems, await loadHtsCodesMap(lineItems));
   const dutyBreakdown = filing.dutyBreakdown ?? tariffResult.dutyBreakdown;
 
@@ -119,8 +108,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
         : "Needs Review",
   }));
 
-  // Classification confidence is not part of the snapshot, so it cannot be
-  // reported for a filing served from one.
   const primaryConfidence = snapshot ? null : (filing.shipment?.lineItems[0]?.htsConfidence ?? null);
   const aiInsights = [
     primaryHTS === null
@@ -137,7 +124,7 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
       : {
           code: primaryHTS,
           confidence: primaryConfidence,
-          dutyRate: tariffResult.dutyBreakdown[0]?.dutyRate ?? null,
+          dutyRate: tariffResult.dutyBreakdown[0]?.rate ?? null,
           source: "HTS Master Release 2026",
         };
 
@@ -158,8 +145,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     filingStatus: filing.filingStatus,
     paymentStatus: filing.paymentStatus,
     authority: filing.authority,
-
-    // Summary
     importerOfRecord: snapshot ? snapshot.shipment.importerName : (filing.shipment?.importerName ?? "Unknown Importer"),
     portOfEntry: snapshot ? (snapshot.shipment.portOfEntry ?? null) : (filing.shipment?.portOfEntry ?? null),
     modeOfTransport: null,
@@ -168,8 +153,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     countryOfOrigin: primaryCOO,
     supplier: null,
     shipmentReference: snapshot ? snapshot.shipment.shipmentNumber : (filing.shipment?.shipmentNumber ?? "N/A"),
-
-    // Financial Breakdown
     totalCustomsValue: snapshot
       ? Number(snapshot.filingHeader.totalValue)
       : filing.totalValue === null
@@ -177,7 +160,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
       : Number(filing.totalValue),
     currency: "USD",
     totalDuty: snapshot ? Number(snapshot.filingHeader.totalDuties) : filing.totalDuties,
-    // > 0 means some lines carry no published rate, so totalDuty is a floor.
     unratedLineCount: tariffResult.unratedLineCount,
     totalTaxes: snapshot ? Number(snapshot.filingHeader.totalTaxes) : filing.totalTaxes,
     totalFees: null,
@@ -187,8 +169,6 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
       ? null
       : Number(filing.totalAmount),
     dutyBreakdown,
-
-    // Associated Entities
     shipment: filing.shipment,
     products: lineItems,
     documents,
@@ -198,11 +178,8 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     htsRecommendation,
     relatedFilings,
     auditTrail,
-
-    // Risk & Confidence
     aiRiskScore: filing.shipment?.riskScore ?? null,
     readinessScore: filing.shipment?.readinessScore ?? null,
-
     submittedAt: filing.submittedAt,
     releasedAt: filing.releasedAt,
     createdAt: filing.createdAt,
@@ -222,7 +199,7 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
 
   const existingFiling = await db.customsFiling.findFirst({
     where: { id, accountId: ctx.accountId },
-});
+  });
 
   if (!existingFiling) {
     return NextResponse.json({ error: "Filing not found" });
@@ -270,5 +247,4 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
   });
 
   return NextResponse.json({ filing: updatedFiling });
-
 }, { permission: "filings.create", write: true });
