@@ -19,6 +19,11 @@
       }
     ],
     "paths": {
+      "@/types/ui-config.types": ["./src/compat/ui-config.types.ts"],
+      "@/lib/ui-config/config-builder": ["./src/compat/config-builder.ts"],
+      "@/components/ui/Modal": ["./src/compat/Modal.tsx"],
+      "@/components/ui/Button": ["./src/compat/Button.tsx"],
+      "@/components/ui/Badge": ["./src/compat/Badge.tsx"],
       "@/*": ["./src/*"],
       "@qubere/types": ["./packages/types/src/index.ts"],
       "@qubere/ai": ["./packages/ai/src/index.ts"]
