@@ -3,30 +3,42 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, ArrowUpRight, Anchor, Plane, Truck, Package,
+  ArrowLeft, Anchor, Truck, Package,
   FileText, ShieldCheck, TriangleAlert, Sparkles, CheckCircle2, Clock,
-  Upload, X, Layers, Activity, Bot, Cpu, ChevronRight, CheckCircle, AlertCircle, Filter, User as UserIcon, Edit3, Send, Shield
+  Upload, Layers, Activity, Bot, Cpu, User as UserIcon, Shield
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
 import { Card, Badge, Button } from "@/components/ui";
 import { DocumentWorkspacePanel } from "@/components/DocumentWorkspacePanel";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
+import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
 
 const TMS_PIPELINE_STAGES = [
-  { id: "intake", name: "1. Intake", surface: "freight-intake", icon: FileText, agentName: "Inbound Freight Intake Agent" },
-  { id: "planner", name: "2. Planner", surface: "movement-planner", icon: Layers, agentName: "Movement & Stop Planning Agent" },
-  { id: "rating", name: "3. Rating", surface: "carrier-rating", icon: Activity, agentName: "Carrier Rating & Quote Agent" },
-  { id: "tender", name: "4. Tender", surface: "tender-dispatch", icon: Truck, agentName: "Autonomous Tender Dispatch Agent" },
-  { id: "tracking", name: "5. Tracking", surface: "tracking-eta", icon: Plane, agentName: "Tracking & ETA Cascade Agent" },
-  { id: "demurrage", name: "6. Demurrage", surface: "demurrage-risk", icon: Anchor, agentName: "Demurrage & LFD Defense Agent" },
-  { id: "audit", name: "7. Audit", surface: "freight-audit", icon: ShieldCheck, agentName: "3-Way Linehaul & FSC Audit Agent" },
+  { id: "document-intake", name: "1. Intake", surface: "document-intake", icon: FileText, agentName: "Document Intake Agent" },
+  { id: "shipment-enrichment", name: "2. Enrichment", surface: "shipment-enrichment", icon: Layers, agentName: "Shipment Enrichment Agent" },
+  { id: "document-readiness", name: "3. Documents", surface: "document-readiness", icon: ShieldCheck, agentName: "Document Readiness Agent" },
+  { id: "movement-readiness", name: "4. Movement", surface: "movement-readiness", icon: Truck, agentName: "Movement Readiness Agent" },
+  { id: "cost-carrier-readiness", name: "5. Commercial", surface: "cost-carrier-readiness", icon: Activity, agentName: "Cost & Carrier Readiness Agent" },
+  { id: "operational-risk", name: "6. Risk", surface: "operational-risk", icon: TriangleAlert, agentName: "Operational Risk Agent" },
 ];
+
+function formatOperationalDate(value: string | Date | null | undefined): string {
+  if (!value) return "Not provided";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Not provided";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function locationLabel(value: any): string | null {
+  if (!value || typeof value !== "object") return null;
+  return value.unlocode || value.name || value.city || value.country || null;
+}
 
 export function ShipmentWorkspaceClient({
   shipment,
-  journey,
-  crossDomainRisks,
+  journey: _journey,
+  crossDomainRisks: _crossDomainRisks,
   healthSnapshot,
   financials,
 }: {
@@ -40,12 +52,14 @@ export function ShipmentWorkspaceClient({
   const [activityCategoryFilter, setActivityCategoryFilter] = useState<string>("ALL");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [renderedAt] = useState(() => Date.now());
 
+  const latestOrder = shipment.transportationOrders?.[0];
   const route = {
-    origin: shipment.countryOfExport ?? shipment.portOfEntry ?? "Origin",
-    portOfDischarge: shipment.destinationCountry ?? shipment.portOfEntry ?? "Destination Port",
-    finalDestination: shipment.destinationCountry ?? shipment.portOfEntry ?? "Final Destination",
-    modes: shipment.transportMode ?? "OCEAN",
+    origin: shipment.countryOfExport ?? locationLabel(latestOrder?.origin) ?? "Origin not provided",
+    portOfDischarge: shipment.portOfEntry ?? locationLabel(latestOrder?.destination) ?? "Destination port not provided",
+    finalDestination: shipment.destinationCountry ?? locationLabel(latestOrder?.destination) ?? "Final destination not provided",
+    modes: shipment.transportMode ?? latestOrder?.mode ?? "Mode not provided",
   };
 
   const qubere = healthSnapshot?.qubereAi ?? {
@@ -66,6 +80,14 @@ export function ShipmentWorkspaceClient({
   };
 
   const clientName = shipment.client?.name ?? shipment.importerName ?? "Unassigned Client";
+  const latestMovement = shipment.shipmentMovements?.[0]?.movement;
+  const latestTrackingEvent = shipment.trackingEvents?.[0];
+  const trackingAgeHours = latestTrackingEvent?.receivedAt
+    ? Math.max(0, (renderedAt - new Date(latestTrackingEvent.receivedAt).getTime()) / 3_600_000)
+    : null;
+  const primaryReferences = (shipment.trackingIdentifiers ?? []).filter((item: any) => item.isPrimary).slice(0, 3);
+  const equipment = shipment.trackingEquipment ?? [];
+  const latestFiling = shipment.customsFilings?.[0];
 
   const handleApproveRecommendation = () => {
     setActionSuccessMsg("AI Recommendation approved.");
@@ -79,7 +101,7 @@ export function ShipmentWorkspaceClient({
   const stageStatusMap = new Map<string, { status: "COMPLETED" | "ACTIVE" | "PENDING"; count: number }>();
   TMS_PIPELINE_STAGES.forEach((st) => {
     const matching = agentDecisions.filter((ad: any) =>
-      (ad.agentName ?? "").toLowerCase().includes(st.id) || (ad.agentName ?? "").toLowerCase().includes(st.surface.replace("-", ""))
+      (ad.agentName ?? "").toLowerCase() === st.agentName.toLowerCase()
     );
     if (matching.length > 0) {
       stageStatusMap.set(st.id, { status: "COMPLETED", count: matching.length });
@@ -95,10 +117,31 @@ export function ShipmentWorkspaceClient({
     category: string;
     title: string;
     description: string;
-    source: "UI" | "CHAT" | "SYSTEM" | "API";
+    source: "UI" | "CHAT" | "SYSTEM" | "API" | "AGENT" | "EMAIL";
     user: { name: string };
     timestamp: string;
   }> = [];
+
+  (shipment.auditLogs ?? []).forEach((log: any, i: number) => {
+    const metadata = log.metadata && typeof log.metadata === "object" ? log.metadata : {};
+    const action = String(log.action ?? "SYSTEM_EVENT");
+    const category = action.includes("AGENT") || action.includes("PIPELINE")
+      ? "AGENT_EXECUTION"
+      : action.includes("TRACKING") || action.includes("ETA")
+        ? "TRACKING_EVENT"
+        : "SYSTEM_AUDIT";
+    const actorName = [log.user?.firstName, log.user?.lastName].filter(Boolean).join(" ") || log.user?.email || (log.source === "AGENT" ? "Qubere Agent" : "System");
+    auditEntries.push({
+      id: log.id ?? `audit-${i}`,
+      action,
+      category,
+      title: action.replaceAll("_", " ").replaceAll(".", " "),
+      description: metadata.summary ?? metadata.fileName ?? metadata.error ?? `${log.entity ?? "Record"} ${log.entityId ?? ""}`,
+      source: (log.source ?? "SYSTEM") as any,
+      user: { name: actorName },
+      timestamp: log.createdAt ? new Date(log.createdAt).toLocaleString() : "Unknown",
+    });
+  });
 
   agentDecisions.forEach((ad: any, i: number) => {
     auditEntries.push({
@@ -126,18 +169,7 @@ export function ShipmentWorkspaceClient({
     });
   });
 
-  if (auditEntries.length === 0) {
-    auditEntries.push({
-      id: "init-1",
-      action: "SHIPMENT_CREATED",
-      category: "SYSTEM_AUDIT",
-      title: "Shipment Created",
-      description: `Shipment ${shipment.shipmentNumber} initialized in platform context.`,
-      source: "UI",
-      user: { name: "Operations Lead" },
-      timestamp: shipment.createdAt ? new Date(shipment.createdAt).toLocaleString() : "Just now",
-    });
-  }
+  auditEntries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   const filteredAuditEntries = auditEntries.filter((e) => {
     if (activityCategoryFilter === "ALL") return true;
@@ -168,9 +200,15 @@ export function ShipmentWorkspaceClient({
                     <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${
                       healthSnapshot?.overallHealth === "ON_TRACK"
                         ? "bg-emerald-100 text-emerald-900 border-emerald-300"
-                        : "bg-amber-100 text-amber-900 border-amber-300"
+                        : healthSnapshot?.overallHealth === "UNKNOWN"
+                          ? "bg-slate-100 text-slate-700 border-slate-300"
+                          : "bg-amber-100 text-amber-900 border-amber-300"
                     }`}>
-                      {healthSnapshot?.overallHealth === "ON_TRACK" ? "✓ ON TRACK" : "⚠️ ACTION REQUIRED"}
+                      {healthSnapshot?.overallHealth === "ON_TRACK"
+                        ? "✓ ON TRACK"
+                        : healthSnapshot?.overallHealth === "UNKNOWN"
+                          ? "STATUS PENDING"
+                          : "⚠️ ACTION REQUIRED"}
                     </span>
                     <span className="text-xs font-bold text-ink-muted bg-surface-muted px-3 py-1 rounded-full border border-border">
                       {clientName}
@@ -225,6 +263,8 @@ export function ShipmentWorkspaceClient({
               <span>{actionSuccessMsg}</span>
             </div>
           )}
+
+          <TmsPipelineProgressRibbon shipmentId={shipment.id} />
 
           {/* Navigation Tabs */}
           <div className="flex bg-white p-1 rounded-2xl border border-border text-xs w-fit shadow-2xs">
@@ -282,6 +322,81 @@ export function ShipmentWorkspaceClient({
                   </span>
                 </Card>
               )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <Card className="p-5 bg-white border border-border space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                    <Clock className="w-4 h-4 text-brand" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Schedule & Promise</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><span className="block text-[10px] uppercase text-ink-muted font-bold">Current ETA</span><span className="font-bold text-ink">{formatOperationalDate(shipment.estimatedArrival)}</span></div>
+                    <div><span className="block text-[10px] uppercase text-ink-muted font-bold">Customer Promise</span><span className="font-bold text-ink">{formatOperationalDate(shipment.customerPromiseDate)}</span></div>
+                    <div><span className="block text-[10px] uppercase text-ink-muted font-bold">Last Free Day</span><span className="font-bold text-ink">{formatOperationalDate(shipment.lastFreeDay)}</span></div>
+                    <div><span className="block text-[10px] uppercase text-ink-muted font-bold">Promise State</span><span className="font-bold text-ink">{shipment.promiseState?.replaceAll("_", " ") ?? "Not evaluated"}</span></div>
+                  </div>
+                </Card>
+
+                <Card className="p-5 bg-white border border-border space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                    <Truck className="w-4 h-4 text-brand" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Carrier & Movement</h3>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Carrier</span><span className="font-bold text-ink text-right">{shipment.carrierName ?? latestMovement?.carrierParty?.names?.[0]?.rawName ?? "Not assigned"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Movement</span><span className="font-bold text-ink text-right">{latestMovement ? `${latestMovement.mode} · ${latestMovement.status}` : "Not planned"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Booking / Bill</span><span className="font-mono font-bold text-ink text-right">{primaryReferences.map((item: any) => `${item.type}: ${item.value}`).join(" · ") || latestMovement?.bookingNumber || "Not provided"}</span></div>
+                  </div>
+                </Card>
+
+                <Card className="p-5 bg-white border border-border space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                    <Package className="w-4 h-4 text-brand" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Cargo & Equipment</h3>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Commodity</span><span className="font-bold text-ink text-right">{latestOrder?.commodityDescription ?? "Not provided"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Weight / Volume</span><span className="font-bold text-ink text-right">{latestOrder?.totalWeight != null ? `${Number(latestOrder.totalWeight).toLocaleString()} weight units` : "—"} · {latestOrder?.totalVolume != null ? `${Number(latestOrder.totalVolume).toLocaleString()} volume units` : "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Equipment</span><span className="font-bold text-ink text-right">{equipment.map((item: any) => item.containerNumber ? `${item.containerNumber} (${item.type})` : item.type).join(" · ") || (Array.isArray(latestOrder?.equipmentRequirements) ? latestOrder.equipmentRequirements.join(", ") : "Not provided")}</span></div>
+                  </div>
+                </Card>
+
+                <Card className="p-5 bg-white border border-border space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                    <Activity className="w-4 h-4 text-brand" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Tracking Freshness</h3>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Last Signal</span><span className="font-bold text-ink text-right">{latestTrackingEvent?.eventType?.replaceAll("_", " ") ?? "No signal received"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Received</span><span className={`font-bold text-right ${trackingAgeHours != null && trackingAgeHours > 24 ? "text-amber-700" : "text-ink"}`}>{trackingAgeHours == null ? "Not connected" : `${trackingAgeHours.toFixed(1)}h ago`}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Provider</span><span className="font-bold text-ink text-right">{latestTrackingEvent?.provider ?? latestMovement?.trackingProvider ?? "Not connected"}</span></div>
+                  </div>
+                </Card>
+
+                <Card className="p-5 bg-white border border-border space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                    <Shield className="w-4 h-4 text-brand" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Customs & Exceptions</h3>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Customs</span><span className="font-bold text-ink text-right">{latestFiling?.filingStatus ?? "No filing linked"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Open Exceptions</span><span className="font-bold text-ink text-right">{(shipment.exceptionItems ?? []).filter((item: any) => ["Open", "OPEN"].includes(item.status)).length}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Documents</span><span className="font-bold text-ink text-right">{shipment.documents?.length ?? 0} on file</span></div>
+                  </div>
+                </Card>
+
+                <Card className="p-5 bg-white border border-border space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+                    <ShieldCheck className="w-4 h-4 text-brand" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Commercial Health</h3>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Sell</span><span className="font-bold text-ink text-right">{safeFinancials.totalSellAmount ? `${safeFinancials.currency} ${safeFinancials.totalSellAmount.toLocaleString()}` : "Not rated"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Expected Buy</span><span className="font-bold text-ink text-right">{safeFinancials.totalBuyAmount ? `${safeFinancials.currency} ${safeFinancials.totalBuyAmount.toLocaleString()}` : "Not costed"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Gross Margin</span><span className="font-bold text-ink text-right">{safeFinancials.totalSellAmount ? `${safeFinancials.grossMarginPct.toFixed(1)}%` : "Not calculated"}</span></div>
+                  </div>
+                </Card>
+              </div>
             </div>
           )}
 
@@ -297,7 +412,7 @@ export function ShipmentWorkspaceClient({
                     </div>
                     <div>
                       <h3 className="font-bold text-xs uppercase tracking-wider text-ink">TMS Autonomous Agent Execution Waterfall</h3>
-                      <p className="text-[11px] text-ink-muted font-medium">Sequential execution status across 7 freight execution stages.</p>
+                      <p className="text-[11px] text-ink-muted font-medium">Durable execution status across six freight document agents.</p>
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded-full font-mono text-[10px] font-bold bg-brand/10 text-brand border border-brand/20">
@@ -305,10 +420,10 @@ export function ShipmentWorkspaceClient({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                   {TMS_PIPELINE_STAGES.map((stage) => {
                     const info = stageStatusMap.get(stage.id);
-                    const isDone = info?.status === "COMPLETED" || agentDecisions.length > 0;
+                    const isDone = info?.status === "COMPLETED";
                     const IconComp = stage.icon;
                     return (
                       <div

@@ -15,7 +15,7 @@ export interface JourneyMilestone {
 export interface RiskDimension {
   key: string;
   label: string;
-  status: "Healthy" | "At Risk" | "Critical" | "Cleared" | "Complete" | "On Promise";
+  status: "Healthy" | "At Risk" | "Critical" | "Cleared" | "Complete" | "On Promise" | "Unknown" | "Pending";
   value: string;
   cause?: string | null;
   impact?: string | null;
@@ -39,12 +39,12 @@ export interface QubereAiActionState {
 }
 
 export interface ShipmentHealthSnapshot {
-  overallHealth: "ON_TRACK" | "AT_RISK" | "ACTION_REQUIRED" | "DELIVERED" | "CRITICAL";
+  overallHealth: "ON_TRACK" | "AT_RISK" | "ACTION_REQUIRED" | "DELIVERED" | "CRITICAL" | "UNKNOWN";
   healthScore: number;
   eta: string;
   etaConfidence: number;
   customerPromiseDate: string;
-  scheduleBufferHours: number;
+  scheduleBufferHours: number | null;
   nextMilestone: {
     title: string;
     location: string;
@@ -87,7 +87,17 @@ export async function getShipmentWorkspaceDetails(
       transportLegs: { orderBy: { sequence: "asc" } },
       trackingStops: { orderBy: { sequence: "asc" } },
       trackingEvents: { orderBy: { occurredAt: "desc" } },
+      trackingIdentifiers: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
+      trackingEquipment: { orderBy: { createdAt: "asc" } },
       etaObservations: { orderBy: { estimatedAt: "desc" }, take: 1 },
+      transportationOrders: { orderBy: { createdAt: "desc" } },
+      shipmentMovements: {
+        orderBy: { sequence: "asc" },
+        include: { movement: { include: { stops: { orderBy: { sequence: "asc" } }, carrierParty: { include: { names: true } } } } },
+      },
+      transportationEvents: { orderBy: { occurredAt: "desc" }, take: 50 },
+      freightQuotes: { orderBy: { createdAt: "desc" } },
+      tenders: { orderBy: { createdAt: "desc" } },
       shipmentCharges: true,
       shipmentCosts: true,
     },
@@ -96,6 +106,24 @@ export async function getShipmentWorkspaceDetails(
   if (!shipment) {
     return null;
   }
+
+  const pipelineJobs = await (db as any).pipelineJob?.findMany({
+    where: { accountId: ctx.accountId, shipmentId, workflowType: "TMS_DOCUMENT_PROCESSING" },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    include: { stepExecutions: { orderBy: [{ attempt: "desc" }, { stepNumber: "asc" }] } },
+  }) ?? [];
+  const auditEntityIds = [
+    shipment.id,
+    ...(shipment.documents ?? []).map((document: any) => document.id),
+    ...pipelineJobs.map((job: any) => job.id),
+  ];
+  const auditLogs = await (db as any).auditLog?.findMany({
+    where: { accountId: ctx.accountId, entityId: { in: auditEntityIds } },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    include: { user: { select: { firstName: true, lastName: true, email: true } } },
+  }) ?? [];
 
   const journey = computeMultimodalJourney(shipment);
   const crossDomainRisks = evaluateCrossDomainRisks(shipment);
@@ -119,7 +147,7 @@ export async function getShipmentWorkspaceDetails(
   const markupOnCostPct = costAmount > 0 ? (grossProfit / costAmount) * 100 : 0;
 
   return {
-    shipment,
+    shipment: { ...shipment, pipelineJobs, auditLogs },
     journey,
     crossDomainRisks,
     healthSnapshot,
@@ -177,7 +205,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
       ? (promiseDate.getTime() - etaDate.getTime()) / (1000 * 60 * 60)
       : null;
 
-  const promiseState: string = shipment.promiseState ?? "ON_PROMISE";
+  const promiseState: string = shipment.promiseState ?? "UNKNOWN";
   const isDelayDetected =
     promiseState === "AT_RISK" || promiseState === "MISSED" || openExceptions.length > 0;
   const needsAction = isDelayDetected || hasCustomsHold;
@@ -185,12 +213,11 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
   // ---------------------------------------------------------------------------
   // Route text — use real DB fields
   // ---------------------------------------------------------------------------
-  const origin: string = shipment.portOfLoading
-    ? String(shipment.portOfLoading).split(",")[0]
-    : shipment.origin ?? "Origin";
-  const portOfDischarge: string = shipment.portOfUnlading
-    ? String(shipment.portOfUnlading).split(",")[0]
-    : shipment.destination ?? "Destination";
+  const latestOrder = shipment.transportationOrders?.[0];
+  const orderOrigin = latestOrder?.origin && typeof latestOrder.origin === "object" ? latestOrder.origin : {};
+  const orderDestination = latestOrder?.destination && typeof latestOrder.destination === "object" ? latestOrder.destination : {};
+  const origin: string = shipment.countryOfExport ?? orderOrigin.unlocode ?? orderOrigin.name ?? "Origin not provided";
+  const portOfDischarge: string = shipment.portOfEntry ?? orderDestination.unlocode ?? orderDestination.name ?? "Destination port not provided";
   const finalDestination: string =
     shipment.destinationCountry ?? shipment.destination ?? portOfDischarge;
 
@@ -209,7 +236,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
 
   // Carrier info from tracking data
   const latestTrackingEvent = shipment.trackingEvents?.[0];
-  const carrierName = shipment.carrierName ?? latestTrackingEvent?.source ?? "Carrier";
+  const carrierName = shipment.carrierName ?? shipment.transportLegs?.find((leg: any) => leg.carrierName)?.carrierName ?? null;
 
   // ---------------------------------------------------------------------------
   // Risk dimensions — derived from real data
@@ -218,7 +245,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
     {
       key: "schedule",
       label: "Schedule",
-      status: promiseState === "MISSED" ? "Critical" : promiseState === "AT_RISK" || openExceptions.length > 0 ? "At Risk" : "Healthy",
+      status: promiseState === "MISSED" ? "Critical" : promiseState === "AT_RISK" || openExceptions.length > 0 ? "At Risk" : promiseState === "UNKNOWN" ? "Unknown" : "Healthy",
       value:
         bufferHours != null
           ? bufferHours < 0
@@ -231,7 +258,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
           ? "ETA has passed customer promise date — rescheduling required"
           : promiseState === "AT_RISK"
             ? "Schedule buffer is below threshold"
-            : "Shipment on schedule",
+            : promiseState === "UNKNOWN" ? "ETA and customer promise are required before schedule health can be evaluated" : "Shipment on schedule",
     },
     {
       key: "cost",
@@ -241,7 +268,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
           ? "At Risk"
           : grossMarginPct != null && grossMarginPct < 10
             ? "At Risk"
-            : "Healthy",
+            : grossMarginPct == null && costVariancePct == null ? "Unknown" : "Healthy",
       value:
         grossMarginPct != null
           ? `Gross margin ${grossMarginPct.toFixed(1)}%`
@@ -254,14 +281,14 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
     {
       key: "carrier",
       label: "Carrier",
-      status: "Healthy",
-      value: carrierName,
-      explanation: "No active carrier service exceptions",
+      status: carrierName ? "Healthy" : "Unknown",
+      value: carrierName ?? "Carrier not assigned",
+      explanation: carrierName ? "No active carrier service exceptions" : "Carrier service health cannot be evaluated yet",
     },
     {
       key: "customs",
       label: "Customs",
-      status: hasCustomsHold ? "Critical" : isCustomsReleased ? "Cleared" : "Healthy",
+      status: hasCustomsHold ? "Critical" : isCustomsReleased ? "Cleared" : latestFiling ? "Pending" : "Unknown",
       value: isCustomsReleased
         ? "Customs Released"
         : hasCustomsHold
@@ -278,7 +305,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
     {
       key: "documents",
       label: "Documents",
-      status: totalDocs > 0 && verifiedDocs === totalDocs ? "Complete" : "Healthy",
+      status: totalDocs === 0 ? "Unknown" : verifiedDocs === totalDocs ? "Complete" : "Pending",
       value: totalDocs > 0 ? `${verifiedDocs}/${totalDocs} Verified` : "No documents uploaded",
       explanation:
         verifiedDocs < totalDocs
@@ -288,11 +315,11 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
     {
       key: "delivery",
       label: "Delivery",
-      status: isCustomsReleased ? "Healthy" : hasCustomsHold ? "Critical" : "Healthy",
-      value: isCustomsReleased ? "Drayage confirmed" : "Awaiting customs release",
+      status: hasCustomsHold ? "Critical" : shipment.status === "Completed" ? "Complete" : "Pending",
+      value: shipment.status === "Completed" ? "Delivered" : isCustomsReleased ? "Eligible for delivery planning" : "Awaiting delivery prerequisites",
       explanation: isCustomsReleased
-        ? "Drayage dispatch unlocked"
-        : "Drayage held pending customs release",
+        ? "Customs is no longer a delivery blocker; carrier confirmation is still required"
+        : "Delivery execution has not been confirmed",
     },
     {
       key: "customerCommitment",
@@ -302,7 +329,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
           ? "Critical"
           : promiseState === "AT_RISK"
             ? "At Risk"
-            : "On Promise",
+            : promiseState === "UNKNOWN" ? "Unknown" : "On Promise",
       value:
         bufferHours != null
           ? bufferHours < 0
@@ -330,30 +357,20 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
         actionRequiredTitle: pendingDecision.decisionSummary ?? "Agent decision requires your review.",
         reasoning: pendingDecision.purpose ?? pendingDecision.decisionSummary ?? "",
         recommendedAction: pendingDecision.proposedDescription ?? undefined,
-        confidenceScore: pendingDecision.confidence ?? 85,
+        confidenceScore: pendingDecision.confidence ?? 0,
         monitoredItems: pendingDecision.dataSources ?? [],
         nextAutoActions: ["Approve or reject the pending decision to unblock the agent workflow"],
       }
     : {
         needsHumanAction: false,
-        headline: needsAction ? "QUBERE — Monitoring active exceptions." : "QUBERE — Everything is on track.",
+        headline: needsAction ? "QUBERE — Monitoring active exceptions." : latestTrackingEvent ? "QUBERE — Monitoring current shipment signals." : "QUBERE — Waiting for operational signals.",
         reasoning:
           openExceptions.length > 0
             ? `${openExceptions.length} open exception(s) under review. Monitoring for resolution.`
-            : "All operational risk dimensions clear. Monitoring continuously.",
-        confidenceScore: 88,
-        monitoredItems: [
-          "ETA and vessel position",
-          "Customs clearance status",
-          "Last Free Day exposure",
-          "Carrier invoice matching",
-        ],
-        nextAutoActions: [
-          "Update ETA when tracking signal arrives",
-          "Dispatch drayage upon customs release",
-          "Notify customer if ETA changes >2h",
-          "Match carrier invoice when received",
-        ],
+            : latestTrackingEvent ? "No active exception is present in the current recorded signals." : "Tracking and ETA data have not been connected yet.",
+        confidenceScore: etaConfidence,
+        monitoredItems: latestTrackingEvent ? ["Latest tracking event", "Customer promise", "Last Free Day", "Customs status"] : [],
+        nextAutoActions: latestTrackingEvent ? ["Re-evaluate risk when the next tracking event arrives"] : ["Connect a tracking reference or provider"],
       };
 
   const aiSummary = {
@@ -363,7 +380,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
       ? "Reschedule delivery appointment"
       : (qubereAi.recommendedAction ?? "Monitor shipment progress"),
     customerImpact: openExceptions.some((e: any) => e.type === "PORT_DELAY") ? "+1 day" : "On Schedule",
-    confidenceScore: 88,
+    confidenceScore: qubereAi.confidenceScore,
   };
 
   const overallHealth: ShipmentHealthSnapshot["overallHealth"] = (() => {
@@ -372,6 +389,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
     if (promiseState === "MISSED") return "CRITICAL";
     if (shipment.status === "At Risk" || promiseState === "AT_RISK" || openExceptions.length > 0) return "AT_RISK";
     if (needsAction) return "ACTION_REQUIRED";
+    if (!shipment.healthStatus && !etaDate && !latestTrackingEvent) return "UNKNOWN";
     return "ON_TRACK";
   })();
 
@@ -384,21 +402,21 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
           ? 55
           : overallHealth === "AT_RISK"
             ? 78
-            : 95;
+            : overallHealth === "UNKNOWN" ? 0 : shipment.healthStatus === "Healthy" ? 95 : 0;
 
   // Next upcoming milestone from transport legs
-  const nextLeg = shipment.transportLegs?.find((l: any) => !l.actualEnd);
+  const nextLeg = shipment.transportLegs?.find((l: any) => !l.actualArrival);
   const nextMilestone = nextLeg
     ? {
-        title: nextLeg.description ?? "Next Leg",
-        location: nextLeg.portOfUnlading ?? nextLeg.destination ?? "En route",
-        scheduledTime: nextLeg.estimatedEnd
-          ? new Date(nextLeg.estimatedEnd).toLocaleDateString("en-US", {
+        title: `${nextLeg.mode ?? "Transport"} arrival`,
+        location: nextLeg.destinationName ?? nextLeg.destinationUnlocode ?? "Destination not provided",
+        scheduledTime: (nextLeg.estimatedArrival ?? nextLeg.plannedArrival)
+          ? new Date(nextLeg.estimatedArrival ?? nextLeg.plannedArrival).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
             }) +
             " • " +
-            new Date(nextLeg.estimatedEnd).toLocaleTimeString("en-US", {
+            new Date(nextLeg.estimatedArrival ?? nextLeg.plannedArrival).toLocaleTimeString("en-US", {
               hour: "numeric",
               minute: "2-digit",
             })
@@ -414,9 +432,9 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
     overallHealth,
     healthScore,
     eta: etaStr,
-    etaConfidence: 88,
+    etaConfidence,
     customerPromiseDate: promiseDateStr,
-    scheduleBufferHours: bufferHours ?? 0,
+    scheduleBufferHours: bufferHours,
     nextMilestone,
     humanActionRequired: needsAction,
     actionRequiredTitle: pendingDecision?.decisionSummary ?? (needsAction ? "Exception requires your review" : undefined),
@@ -425,7 +443,7 @@ export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnap
       portOfDischarge,
       finalDestination,
       fullRouteText: `${origin} → ${portOfDischarge} → ${finalDestination}`,
-      modes: shipment.transportMode ? String(shipment.transportMode).replace(/_/g, " + ") : "Ocean",
+      modes: shipment.transportMode ? String(shipment.transportMode).replace(/_/g, " + ") : latestOrder?.mode ?? "Mode not provided",
     },
     dimensions,
     qubereAi,
@@ -440,50 +458,51 @@ export function computeMultimodalJourney(shipment: any): any[] {
     latestFiling?.filingStatus === "ACCEPTED" ||
     latestFiling?.filingStatus === "Released";
 
-  return [
-    {
-      id: "m_1",
-      name: "Origin Port",
-      title: "Origin Port",
-      location: shipment.portOfLoading || shipment.countryOfExport || "Shanghai (CNSHA)",
-      status: "COMPLETED",
-    },
-    {
-      id: "m_2",
-      name: "Ocean Transit",
-      title: "Ocean Transit",
-      location: shipment.carrierName || "Ocean Vessel",
-      status: "COMPLETED",
-    },
-    {
-      id: "m_3",
-      name: "Port of Entry / Discharge",
-      title: "Port of Entry / Discharge",
-      location: shipment.portOfEntry || "Oakland (USOAK)",
-      status: "COMPLETED",
-    },
-    {
-      id: "m_4",
+  const legs = (shipment.transportLegs ?? []).map((leg: any) => ({
+    id: leg.id,
+    name: `${leg.mode ?? "Transport"} leg`,
+    title: `${leg.mode ?? "Transport"} · ${leg.originName ?? "Origin not provided"} to ${leg.destinationName ?? "Destination not provided"}`,
+    location: leg.destinationUnlocode ?? leg.destinationName ?? "Destination not provided",
+    scheduledTime: leg.estimatedArrival ?? leg.plannedArrival ?? undefined,
+    actualTime: leg.actualArrival ?? undefined,
+    status: leg.actualArrival ? "COMPLETED" : leg.status === "DELAYED" ? "DELAYED" : "UPCOMING",
+    source: "TransportLeg",
+  }));
+
+  const journey = legs.length > 0
+    ? legs
+    : (shipment.trackingStops ?? []).map((stop: any) => ({
+        id: stop.id,
+        name: stop.type,
+        title: stop.type.replaceAll("_", " "),
+        location: stop.unlocode ?? stop.name,
+        scheduledTime: stop.estimatedArrival ?? stop.plannedArrival ?? undefined,
+        actualTime: stop.actualArrival ?? undefined,
+        status: stop.actualArrival ? "COMPLETED" : "UPCOMING",
+        source: "ShipmentStop",
+      }));
+
+  if (latestFiling) {
+    journey.push({
+      id: `customs-${latestFiling.id}`,
       name: "Customs Clearance",
       title: "Customs Clearance",
-      location: "CBP Entry 7501",
-      status: isCustomsReleased ? "COMPLETED" : "UPCOMING",
-    },
-    {
-      id: "m_5",
-      name: "Drayage Dispatch",
-      title: "Drayage Dispatch",
-      location: "Port -> Terminal",
-      status: isCustomsReleased ? "UPCOMING" : "BLOCKED",
-    },
-    {
-      id: "m_6",
+      location: shipment.portOfEntry ?? "Port of entry not provided",
+      status: isCustomsReleased ? "COMPLETED" : latestFiling.filingStatus?.toUpperCase().includes("HOLD") ? "BLOCKED" : "UPCOMING",
+      source: "CustomsFiling",
+    });
+  }
+  if (shipment.status === "Completed") {
+    journey.push({
+      id: "shipment-delivered",
       name: "Final Delivery",
       title: "Final Delivery",
-      location: shipment.destinationCountry || "Final Destination",
-      status: "UPCOMING",
-    },
-  ];
+      location: shipment.destinationCountry ?? "Destination not provided",
+      status: "COMPLETED",
+      source: "Shipment",
+    });
+  }
+  return journey;
 }
 
 export const computeShipmentJourney = computeMultimodalJourney;
@@ -494,22 +513,28 @@ export function evaluateCrossDomainRisks(shipment: any) {
   const latestFiling = shipment.customsFilings?.[0];
   const isCustomsReleased = latestFiling?.filingStatus === "RELEASED" || latestFiling?.filingStatus === "ACCEPTED" || latestFiling?.filingStatus === "Released";
 
-  if (!isCustomsReleased) {
+  const hasCustomsHold = latestFiling?.filingStatus?.toUpperCase().includes("HOLD") ||
+    shipment.exceptionItems?.some((item: any) => item.type === "CUSTOMS_HOLD" && ["Open", "OPEN"].includes(item.status));
+  if (latestFiling && !isCustomsReleased && (hasCustomsHold || shipment.arrivalDate || shipment.lastFreeDay)) {
     risks.push({
       code: "CUSTOMS_BLOCKING_DELIVERY",
       title: "Customs Clearance Awaiting Release — Drayage Blocked",
       severity: "CRITICAL",
-      description: "Customs entry 7501 has been submitted to CBP. Drayage dispatch is held until official Customs release to avoid demurrage penalties.",
+      description: hasCustomsHold
+        ? "A recorded customs hold is blocking downstream delivery execution."
+        : "Cargo is approaching or has reached the port while the linked customs filing is not released.",
     });
   }
 
-  const hasLfdRisk = shipment.complianceDeadlines?.some((c: any) => c.deadlineType === "LAST_FREE_DAY") || shipment.lastFreeDay;
+  const lastFreeDay = shipment.lastFreeDay ?? shipment.complianceDeadlines?.find((c: any) => c.deadlineType === "LAST_FREE_DAY" && c.status === "OPEN")?.dueAt;
+  const hoursToLfd = lastFreeDay ? (new Date(lastFreeDay).getTime() - Date.now()) / 3_600_000 : null;
+  const hasLfdRisk = hoursToLfd != null && hoursToLfd < 48;
   if (hasLfdRisk) {
     risks.push({
       code: "LAST_FREE_DAY_RISK",
       title: "Last Free Day Risk — Demurrage Exposure",
-      severity: "CRITICAL",
-      description: "Last Free Day is approaching or exceeded. Clear customs and arrange drayage immediately.",
+      severity: hoursToLfd < 12 ? "CRITICAL" : "WARNING",
+      description: `Last Free Day is ${hoursToLfd < 0 ? `${Math.abs(hoursToLfd).toFixed(1)} hours overdue` : `${hoursToLfd.toFixed(1)} hours away`}.`,
     });
   }
 

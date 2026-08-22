@@ -34,17 +34,23 @@ describe("Phase 3 — Unified Shipment Workspace & Cross-Domain Intelligence", (
       estimatedArrival: new Date("2026-08-25"),
       arrivalDate: new Date("2026-08-25"),
       customsFilings: [{ filingStatus: "RELEASED" }],
+      transportLegs: [{
+        id: "leg_1",
+        mode: "OCEAN",
+        originName: "Shanghai",
+        destinationName: "Oakland",
+        destinationUnlocode: "USOAK",
+        actualArrival: new Date("2026-08-25"),
+      }],
     };
 
     const journey = computeMultimodalJourney(shipment);
 
-    expect(journey).toHaveLength(6);
-    expect(journey[0].name).toBe("Origin Port");
+    expect(journey).toHaveLength(2);
+    expect(journey[0].name).toBe("OCEAN leg");
     expect(journey[0].status).toBe("COMPLETED");
-    expect(journey[1].name).toBe("Ocean Transit");
+    expect(journey[1].name).toBe("Customs Clearance");
     expect(journey[1].status).toBe("COMPLETED");
-    expect(journey[3].name).toBe("Customs Clearance");
-    expect(journey[3].status).toBe("COMPLETED");
   });
 
   it("evaluates cross-domain risk: CUSTOMS_BLOCKING_DELIVERY when container is available but Customs is unreleased", () => {

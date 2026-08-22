@@ -1,15 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getPipelineStatus } from "@/lib/tmsPipelineEngine";
+import { withAuthenticatedRoute } from "@qubere/auth";
+import { getTmsPipelineStatus } from "@/lib/tmsPipelineEngine";
+import { NextResponse } from "next/server";
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const status = getPipelineStatus(id);
-    return NextResponse.json(status);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch pipeline status" }, { status: 500 });
-  }
-}
+export const GET = withAuthenticatedRoute<{ id: string }>(
+  async ({ ctx, params, requestId }) => {
+    const status = await getTmsPipelineStatus(ctx.accountId, params.id);
+    if (!status) {
+      return NextResponse.json(
+        { error: "No TMS processing run exists for this shipment.", requestId },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ ...status, requestId });
+  },
+  { permission: "shipments.read" }
+);

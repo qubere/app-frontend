@@ -23,7 +23,7 @@ describe("Phase 8 — AI-Native Exception-First Architecture & Shipment Health",
 
     expect(snapshot.overallHealth).toBe("AT_RISK");
     expect(snapshot.healthScore).toBe(78);
-    expect(snapshot.etaConfidence).toBe(88);
+    expect(snapshot.etaConfidence).toBe(0);
     expect(snapshot.dimensions).toHaveLength(7);
 
     const scheduleDim = snapshot.dimensions.find((d) => d.key === "schedule");
@@ -42,16 +42,22 @@ describe("Phase 8 — AI-Native Exception-First Architecture & Shipment Health",
       destinationCountry: "Sacramento, CA",
       portOfEntry: "Oakland (USOAK)",
       customsFilings: [{ filingStatus: "RELEASED" }],
+      transportLegs: [{
+        id: "leg_802",
+        mode: "OCEAN",
+        originName: "Shanghai",
+        destinationName: "Oakland",
+        destinationUnlocode: "USOAK",
+        status: "IN_TRANSIT",
+      }],
     };
 
     const journey = computeMultimodalJourney(mockShipment);
 
-    expect(journey).toHaveLength(6);
-    expect(journey[0].name).toBe("Origin Port");
-    expect(journey[1].name).toBe("Ocean Transit");
-    expect(journey[3].name).toBe("Customs Clearance");
-    expect(journey[3].status).toBe("COMPLETED");
-    expect(journey[4].name).toBe("Drayage Dispatch");
+    expect(journey).toHaveLength(2);
+    expect(journey[0].name).toBe("OCEAN leg");
+    expect(journey[1].name).toBe("Customs Clearance");
+    expect(journey[1].status).toBe("COMPLETED");
   });
 
   it("detects cross-domain customs clearance blocking delivery risk", () => {
@@ -60,7 +66,7 @@ describe("Phase 8 — AI-Native Exception-First Architecture & Shipment Health",
       arrivalDate: new Date("2026-08-26T10:00:00Z"),
       customsFilings: [{ filingStatus: "CustomsHold" }],
       complianceDeadlines: [
-        { deadlineType: "LAST_FREE_DAY", status: "OPEN", dueAt: new Date("2026-08-27T23:59:59Z") },
+        { deadlineType: "LAST_FREE_DAY", status: "OPEN", dueAt: new Date(Date.now() + 6 * 3_600_000) },
       ],
     };
 

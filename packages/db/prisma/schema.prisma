@@ -2893,15 +2893,26 @@ model PipelineJob {
   accountId    String
   userId       String
   shipmentId   String
+  /// Namespaces jobs that share this durable queue. Existing Customs jobs use
+  /// CUSTOMS; TMS document workflows use TMS_DOCUMENT_PROCESSING.
+  workflowType String    @default("CUSTOMS")
+  /// Stable trigger identity used to make enqueue idempotent. Nullable for
+  /// legacy jobs. TMS uses document id + checksum + workflow version.
+  idempotencyKey String?
+  correlationId String?
   status       String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
   currentStep  Int       @default(1)
   totalSteps   Int       @default(10)
   priority     Int       @default(0) // Higher number = higher priority
   state        Json      @default("{}") // The AgentState object
   errorMessage String?
+  attemptCount Int       @default(0)
+  maxAttempts  Int       @default(3)
+  nextRetryAt  DateTime?
   startedAt    DateTime?
   completedAt  DateTime?
   lockedAt     DateTime? // Used by worker to detect stalled jobs
+  heartbeatAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -2909,8 +2920,12 @@ model PipelineJob {
   shipment       Shipment                @relation(fields: [shipmentId], references: [id])
   account        Account                 @relation(fields: [accountId], references: [id])
 
+  @@unique([accountId, idempotencyKey])
   @@index([status, priority, createdAt])
   @@index([shipmentId])
+  @@index([accountId, workflowType, shipmentId, createdAt])
+  @@index([status, nextRetryAt])
+  @@index([status, heartbeatAt])
 }
 
 model PipelineStepExecution {
@@ -2918,7 +2933,8 @@ model PipelineStepExecution {
   jobId        String
   stepNumber   Int
   agentName    String
-  status       String // SUCCESS, FAILED, SKIPPED, REVIEW_REQUIRED
+  status       String // RUNNING, SUCCESS, FAILED, SKIPPED, REVIEW_REQUIRED
+  attempt      Int       @default(1)
   startedAt    DateTime  @default(now())
   completedAt  DateTime?
   output       Json? // The output returned by the agent
@@ -2927,6 +2943,7 @@ model PipelineStepExecution {
   job PipelineJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId, stepNumber])
+  @@index([jobId, attempt])
 }
 
 // ============================================================================
