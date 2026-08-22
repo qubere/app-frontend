@@ -18,6 +18,10 @@ import {
   Building,
   Filter,
   RefreshCw,
+  ShieldCheck,
+  Cpu,
+  ArrowUpRight,
+  Truck,
 } from "lucide-react";
 import { Card, Button } from "@/components/ui";
 import type {
@@ -27,8 +31,91 @@ import type {
   TmsEntityUsage,
   TmsCopilotHealth,
   TmsDocumentProcessingAnalytics,
-  TmsAiAnalyticsScope,
 } from "@/lib/tmsAiAnalytics";
+
+// Static Autonomous Agents Roster (Renders instantly with 0 latency)
+const DEPLOYED_AGENT_ROSTER = [
+  {
+    id: "intake-agent",
+    name: "Inbound Freight Intake Agent",
+    surface: "freight-intake",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "Verified",
+    description: "Extracts origin/destination ports, equipment requirements, pickup windows, and stop locations from PDF rate sheets & emails.",
+    icon: FileText,
+  },
+  {
+    id: "tender-agent",
+    name: "Waterfall Tender Dispatch Agent",
+    surface: "tender-dispatch",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "60-Min SLA",
+    description: "Evaluates contracted tariff rate sheets ($/mile + FSC) and dispatches waterfall tenders with 60-minute SLA fallback rules.",
+    icon: Truck,
+  },
+  {
+    id: "demurrage-agent",
+    name: "Demurrage & LFD Defense Agent",
+    surface: "demurrage-risk",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "Shield Enabled",
+    description: "Monitors port terminal container availability, Last Free Day (LFD) expiration, and calculates demurrage exposure risk ($350/day).",
+    icon: AlertTriangle,
+  },
+  {
+    id: "tracking-agent",
+    name: "Telematics & Tracking Cascade Agent",
+    surface: "tracking-eta",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "EDI 214 Live",
+    description: "Streams GPS telematics, container status events, and dynamically recalculates customer promise dates.",
+    icon: Layers,
+  },
+  {
+    id: "safety-agent",
+    name: "HOS Safety Compliance Agent",
+    surface: "safety-compliance",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "49 CFR § 395.3",
+    description: "Enforces Federal Motor Carrier Safety Administration (FMCSA) driver hours-of-service rules before tender acceptance.",
+    icon: ShieldCheck,
+  },
+  {
+    id: "audit-agent",
+    name: "3-Way Linehaul & FSC Audit Agent",
+    surface: "freight-audit",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "POD Mandatory",
+    description: "Reconciles carrier invoices against contracted tariffs and proof of delivery (POD) to auto-verify linehaul + FSC fees.",
+    icon: Wrench,
+  },
+  {
+    id: "copilot-agent",
+    name: "Qubere Freight Supervisor Assistant",
+    surface: "copilot",
+    model: "gemini-2.5-pro",
+    status: "ACTIVE",
+    policy: "Tool Execution",
+    description: "Conversational AI copilot executing search_shipments, recommend_carrier, and movement planning tools.",
+    icon: Bot,
+  },
+  {
+    id: "telemetry-agent",
+    name: "Metered AI Telemetry Auditor",
+    surface: "telemetry-audit",
+    model: "gemini-2.5-flash",
+    status: "ACTIVE",
+    policy: "Tenant Isolated",
+    description: "Audits token consumption, LLM call latency, and copilot turn health across overall TMS and customer account scopes.",
+    icon: Cpu,
+  },
+];
 
 function formatShortDate(dateKey: string | undefined): string {
   if (!dateKey) return "";
@@ -337,13 +424,13 @@ function DocumentProcessingSection({ data }: { data: TmsDocumentProcessingAnalyt
   );
 }
 
-export function TmsAiAnalyticsPanel({ data: initialData }: { data: TmsAiAnalyticsData }) {
-  const [data, setData] = useState<TmsAiAnalyticsData>(initialData);
-  const [loading, setLoading] = useState(false);
+export function TmsAiAnalyticsPanel({ data: initialData }: { data?: TmsAiAnalyticsData }) {
+  const [data, setData] = useState<TmsAiAnalyticsData | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
 
-  const [scopeLevel, setScopeLevel] = useState<"OVERALL" | "ACCOUNT">(initialData.scope?.level ?? "OVERALL");
-  const [rangeDays, setRangeDays] = useState<number>(initialData.rangeDays ?? 30);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(initialData.filterOptions.accounts[0]?.id ?? "");
+  const [scopeLevel, setScopeLevel] = useState<"OVERALL" | "ACCOUNT">(initialData?.scope?.level ?? "OVERALL");
+  const [rangeDays, setRangeDays] = useState<number>(initialData?.rangeDays ?? 30);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(initialData?.filterOptions?.accounts[0]?.id ?? "");
 
   const fetchTelemetry = useCallback(async () => {
     setLoading(true);
@@ -372,34 +459,89 @@ export function TmsAiAnalyticsPanel({ data: initialData }: { data: TmsAiAnalytic
 
   return (
     <div className="space-y-6">
-      {/* Scope Filter Controls Bar */}
-      <Card className="p-5 rounded-2xl border border-border bg-white shadow-sm space-y-4">
+      {/* 1. INSTANT STATIC SECTION: DEPLOYED AUTONOMOUS AGENTS ROSTER */}
+      <Card className="p-6 bg-white border border-border shadow-2xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand shrink-0">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-base font-black text-ink">Autonomous AI Agents Roster</h3>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-100 text-emerald-800">
+                  8 Deployed Agents
+                </span>
+              </div>
+              <p className="text-xs text-ink-muted mt-0.5 font-medium">
+                Policy-verified background agents executing freight intake, waterfall tendering, demurrage defense, and 3-way audit.
+              </p>
+            </div>
+          </div>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={fetchTelemetry}
+            disabled={loading}
+            className="text-xs flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-brand ${loading ? "animate-spin" : ""}`} />
+            <span>{loading ? "Refreshing..." : "Refresh Telemetry"}</span>
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {DEPLOYED_AGENT_ROSTER.map((agent) => {
+            const IconComponent = agent.icon;
+            return (
+              <div
+                key={agent.id}
+                className="p-4 rounded-2xl bg-surface-muted/60 border border-border hover:border-brand/40 hover:bg-white transition-all space-y-2 flex flex-col justify-between"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="w-8 h-8 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
+                      <IconComponent className="w-4 h-4" />
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full font-mono text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      {agent.status}
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-ink leading-tight">{agent.name}</h4>
+                    <span className="text-[10px] font-mono text-ink-muted block mt-0.5">{agent.model} • {agent.policy}</span>
+                  </div>
+                  <p className="text-[11px] text-ink-muted leading-relaxed">{agent.description}</p>
+                </div>
+
+                <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[10px] font-mono text-brand font-semibold">
+                  <span>Surface: {agent.surface}</span>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* 2. DYNAMIC TELEMETRY CONTROLS & SCOPING */}
+      <Card className="p-5 rounded-2xl border border-border bg-white shadow-2xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border pb-4">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
               <Filter className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-ink">TMS AI Telemetry Scope</h3>
-              <p className="text-xs text-ink-muted">
+              <h3 className="font-bold text-sm text-ink">TMS AI Telemetry Metering Scope</h3>
+              <p className="text-xs text-ink-muted font-medium">
                 Denormalized token usage and LLM call metrics for Overall TMS Platform or Customer Accounts.
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={fetchTelemetry}
-              disabled={loading}
-              className="text-xs flex items-center space-x-1.5 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-brand ${loading ? "animate-spin" : ""}`} />
-              <span>{loading ? "Fetching..." : "Refresh Telemetry"}</span>
-            </Button>
-
-            <span className="text-xs font-semibold text-ink-muted pl-2">Lookback:</span>
+            <span className="text-xs font-semibold text-ink-muted">Lookback:</span>
             {[7, 30, 90].map((d) => (
               <button
                 key={d}
@@ -417,7 +559,6 @@ export function TmsAiAnalyticsPanel({ data: initialData }: { data: TmsAiAnalytic
           </div>
         </div>
 
-        {/* Scope Level Selector Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
@@ -452,8 +593,7 @@ export function TmsAiAnalyticsPanel({ data: initialData }: { data: TmsAiAnalytic
           </button>
         </div>
 
-        {/* Dynamic Selector Dropdown */}
-        {scopeLevel === "ACCOUNT" && (
+        {scopeLevel === "ACCOUNT" && data?.filterOptions?.accounts && (
           <div className="p-3.5 bg-surface-muted/60 rounded-xl border border-border flex items-center space-x-3">
             <span className="text-xs font-bold text-ink">Select Customer Account:</span>
             <select
@@ -471,48 +611,48 @@ export function TmsAiAnalyticsPanel({ data: initialData }: { data: TmsAiAnalytic
         )}
       </Card>
 
-      {/* Top Stat Tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatTile
-          icon={Bot}
-          label="LLM Calls"
-          value={data.totals.requests.toLocaleString()}
-          footnote={`Last ${rangeDays} days, all surfaces (${scopeLevel})`}
-        />
-        <StatTile
-          icon={Zap}
-          label="Tokens Spent"
-          value={formatCompactNumber(data.totals.totalTokens)}
-          footnote={`${formatCompactNumber(data.totals.inputTokens)} in · ${formatCompactNumber(data.totals.outputTokens)} out`}
-        />
-        <StatTile
-          icon={Users}
-          label="Accounts Active"
-          value={data.totals.accountsActive.toString()}
-          footnote="Accounts that made at least one metered AI call"
-        />
-        <StatTile
-          icon={Layers}
-          label="Surfaces Active"
-          value={data.totals.surfacesActive.toString()}
-          footnote="TMS autonomous agent surfaces metered"
-        />
-      </div>
+      {/* 3. NON-BLOCKING TELEMETRY METRICS SECTION */}
+      {data ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatTile
+              icon={Bot}
+              label="LLM Calls"
+              value={data.totals.requests.toLocaleString()}
+              footnote={`Last ${rangeDays} days, all surfaces (${scopeLevel})`}
+            />
+            <StatTile
+              icon={Zap}
+              label="Tokens Spent"
+              value={formatCompactNumber(data.totals.totalTokens)}
+              footnote={`${formatCompactNumber(data.totals.inputTokens)} in · ${formatCompactNumber(data.totals.outputTokens)} out`}
+            />
+            <StatTile
+              icon={Users}
+              label="Accounts Active"
+              value={data.totals.accountsActive.toString()}
+              footnote="Accounts that made at least one metered AI call"
+            />
+            <StatTile
+              icon={Layers}
+              label="Surfaces Active"
+              value={data.totals.surfacesActive.toString()}
+              footnote="TMS autonomous agent surfaces metered"
+            />
+          </div>
 
-      {/* Usage Trend Chart */}
-      <UsageTrendChart daily={data.daily} />
-
-      {/* Usage by Surface Table */}
-      <SurfaceUsageTable bySurface={data.bySurface} totalTokens={data.totals.totalTokens} />
-
-      {/* Top Accounts Table */}
-      <EntityUsageTables accounts={data.topAccounts} />
-
-      {/* Chat Assistant Query Health */}
-      <CopilotHealthSection data={data.copilot} />
-
-      {/* Document Processing */}
-      <DocumentProcessingSection data={data.documentProcessing} />
+          <UsageTrendChart daily={data.daily} />
+          <SurfaceUsageTable bySurface={data.bySurface} totalTokens={data.totals.totalTokens} />
+          <EntityUsageTables accounts={data.topAccounts} />
+          <CopilotHealthSection data={data.copilot} />
+          <DocumentProcessingSection data={data.documentProcessing} />
+        </>
+      ) : (
+        <div className="p-8 text-center bg-white border border-border rounded-2xl space-y-3 shadow-2xs">
+          <RefreshCw className="w-6 h-6 text-brand animate-spin mx-auto" />
+          <p className="text-xs font-bold text-ink">Loading Telemetry & Token Metering Data...</p>
+        </div>
+      )}
     </div>
   );
 }
