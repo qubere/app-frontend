@@ -97,7 +97,7 @@ export const POST = withAuthenticatedRoute(async ({ ctx }) => {
   try {
     const filename = `compliance-exports/export-${ctx.accountId}-${Date.now()}.json`;
     const blob = await put(filename, JSON.stringify(exportPayload, null, 2), {
-      access: "public",
+      access: "private",
       contentType: "application/json",
       token,
     });

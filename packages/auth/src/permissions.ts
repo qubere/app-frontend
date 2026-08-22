@@ -142,6 +142,18 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
     defaultRoles: ALL_BUT_VIEWER,
   },
   {
+    name: "customs.create",
+    description: "Create customs cases and filing packages.",
+    category: "Filing",
+    defaultRoles: ALL_BUT_VIEWER,
+  },
+  {
+    name: "customs.handoff",
+    description: "Send TMS shipments to the Customs workspace.",
+    category: "Filing",
+    defaultRoles: ALL_BUT_VIEWER,
+  },
+  {
     name: "filings.submit",
     description: "Transmit an entry to customs.",
     category: "Filing",

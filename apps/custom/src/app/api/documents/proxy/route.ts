@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
-import { resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
+import { resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
 
 /**
  * Streams a stored document back to the browser.
@@ -107,21 +107,30 @@ function buildContentDisposition(fileName: string): string {
   return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
-/** Serves a locally stored upload, confined to the uploads directory. */
+/** Serves a locally stored upload, confined to authorized upload directories. */
 async function streamLocalFile(fileUrl: string, contentDisposition: string) {
-  const uploadsRoot = path.join(process.cwd(), "public", "uploads");
-  const requested = path.join(uploadsRoot, path.basename(fileUrl));
+  const localPath = resolveLocalFilePath(fileUrl);
 
-  if (path.dirname(requested) !== uploadsRoot) {
-    return new NextResponse("Invalid document path", { status: 400 });
+  if (!localPath) {
+    return new NextResponse("Document not found", { status: 404 });
   }
 
   try {
-    const contents = await fs.readFile(requested);
+    const contents = await fs.readFile(localPath);
+    const ext = path.extname(localPath).toLowerCase();
+    const contentType =
+      ext === ".pdf"
+        ? "application/pdf"
+        : ext === ".png"
+        ? "image/png"
+        : ext === ".jpg" || ext === ".jpeg"
+        ? "image/jpeg"
+        : "application/octet-stream";
+
     return new NextResponse(new Uint8Array(contents), {
       status: 200,
       headers: {
-        "Content-Type": "application/pdf",
+        "Content-Type": contentType,
         "Content-Disposition": contentDisposition,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

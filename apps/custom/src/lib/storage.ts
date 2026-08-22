@@ -38,12 +38,47 @@ const ALLOWED_STORAGE_HOSTS = [
 export type RemoteStorageOrigin = "vercel-blob";
 
 /**
+ * Resolves a local document reference (e.g. "/uploads/...", "file://...", or a filename)
+ * to a verified absolute file path within allowed local storage directories.
+ * Returns null if the file does not exist or attempts path traversal outside allowed roots.
+ */
+export function resolveLocalFilePath(fileUrl: string): string | null {
+  if (!fileUrl) return null;
+  const fileName = path.basename(fileUrl.startsWith("file://") ? fileUrl.slice(7) : fileUrl);
+  if (!fileName || fileName === "." || fileName === "..") return null;
+
+  const allowedDirs = [
+    path.join(process.cwd(), ".qubere", "storage", "uploads"),
+    path.join(process.cwd(), "public", "uploads"),
+    path.join(os.tmpdir(), "uploads"),
+  ];
+
+  for (const dir of allowedDirs) {
+    const candidate = path.resolve(dir, fileName);
+    if (candidate.startsWith(dir + path.sep) && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  if (fileUrl.startsWith("file://")) {
+    const rawPath = path.resolve(fileUrl.slice(7));
+    for (const dir of allowedDirs) {
+      if (rawPath.startsWith(dir + path.sep) && fs.existsSync(rawPath)) {
+        return rawPath;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Resolves a stored file URL to a trusted remote storage origin.
  *
  * Returns `null` for values that are not remote allowlisted objects (for example
- * local `/uploads/...` paths), and throws for anything that looks remote but is
- * not allowlisted. Credentials must only ever be attached when this returns a
- * non-null origin.
+ * local `/uploads/...` paths or `file://...` paths), and throws for anything that
+ * looks remote but is not allowlisted. Credentials must only ever be attached when
+ * this returns a non-null origin.
  */
 export function resolveStorageOrigin(fileUrl: string): RemoteStorageOrigin | null {
   if (fileUrl.startsWith("/")) return null;
@@ -302,9 +337,9 @@ export async function storeDocumentFile(
     }
     const filePath = path.join(uploadDir, safeFilename);
     fs.writeFileSync(filePath, buffer);
-    const localRefUrl = `file://${filePath}`;
+    const localRefUrl = `/uploads/${safeFilename}`;
 
-    console.log(`[Storage] Saved ${filename} locally at ${localRefUrl} sha256=${checksum}`);
+    console.log(`[Storage] Saved ${filename} locally at ${localRefUrl} (path: ${filePath}) sha256=${checksum}`);
 
     return {
       url: localRefUrl,

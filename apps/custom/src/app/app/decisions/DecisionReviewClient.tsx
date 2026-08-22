@@ -128,9 +128,8 @@ export function DecisionReviewClient({
   };
 
   const getProxyUrl = (url: string, documentId: string) => {
-    if (!url || url === "#") return "#";
-    if (url.includes("vercel-storage.com")) return documentViewUrl(documentId);
-    return url;
+    if (documentId) return documentViewUrl(documentId);
+    return url || "#";
   };
 
   if (initialShipmentId && localDecisions.length === 0) {

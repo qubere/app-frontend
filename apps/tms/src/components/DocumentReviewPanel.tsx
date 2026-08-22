@@ -41,7 +41,7 @@ export function DocumentReviewPanel({
   const [selectedFieldName, setSelectedFieldName] = useState<string | null>(null);
   const [copiedJson, setCopiedJson] = useState(false);
 
-  const proxyUrl = fileUrl || `/api/documents/proxy?documentId=${encodeURIComponent(documentId)}`;
+  const proxyUrl = documentId ? `/api/documents/proxy?documentId=${encodeURIComponent(documentId)}` : fileUrl || "#";
   const extractedFields: ProvenanceField[] = parsedFields ?? [];
 
   const handleCopyJson = () => {

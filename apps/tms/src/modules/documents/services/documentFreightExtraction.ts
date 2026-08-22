@@ -133,7 +133,11 @@ Warnings must call out conflicts, illegible content, and fields that are operati
 
 async function loadDocumentBytes(fileUrl: string): Promise<Buffer> {
   if (/^https:\/\//i.test(fileUrl)) {
-    const response = await fetch(fileUrl, { cache: "no-store" });
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const response = await fetch(fileUrl, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      cache: "no-store",
+    });
     if (!response.ok) throw new Error(`Stored document could not be read (${response.status}).`);
     return Buffer.from(await response.arrayBuffer());
   }

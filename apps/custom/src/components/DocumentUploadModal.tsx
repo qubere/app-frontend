@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Link2 } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Link2, ChevronDown, Check } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Label, FormField } from "@/components/ui/Input";
@@ -43,6 +43,107 @@ interface DocumentUploadModalProps {
 }
 
 const TITLE_ID = "upload-document-title";
+
+function SearchableShipmentSelect({
+  selectedId,
+  onSelect,
+  availableShipments,
+  searchQuery,
+  onSearchChange,
+  shipmentTotal,
+}: {
+  selectedId: string;
+  onSelect: (id: string) => void;
+  availableShipments: ShipmentOption[];
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  shipmentTotal: number | null;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedShipment = availableShipments.find((s) => s.id === selectedId);
+  const displayLabel = selectedShipment
+    ? `${selectedShipment.shipmentNumber ?? selectedShipment.id}${selectedShipment.status ? ` (${selectedShipment.status})` : ""}`
+    : selectedId || "Select a Shipment";
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        id="upload-shipment"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs bg-white border border-border rounded-xl font-medium text-ink focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all text-left cursor-pointer"
+      >
+        <span className="truncate">{displayLabel}</span>
+        <ChevronDown className="w-4 h-4 text-ink-muted shrink-0 ml-2" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-border rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+          <div className="p-2 border-b border-border bg-surface-muted/50">
+            <input
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search accessible shipments..."
+              className="w-full px-2.5 py-1.5 text-xs bg-white border border-border rounded-lg text-ink focus:outline-none focus:border-brand"
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto p-1 space-y-0.5">
+            {availableShipments.length > 0 ? (
+              availableShipments.map((shp) => {
+                const isSelected = shp.id === selectedId;
+                return (
+                  <button
+                    key={shp.id}
+                    type="button"
+                    onClick={() => {
+                      onSelect(shp.id);
+                      setIsOpen(false);
+                    }}
+                    className={cn(
+                      "w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition-colors cursor-pointer",
+                      isSelected
+                        ? "bg-brand/10 text-brand font-bold"
+                        : "hover:bg-surface-muted text-ink font-medium"
+                    )}
+                  >
+                    <span>
+                      {shp.shipmentNumber ?? shp.id}
+                      {shp.status ? ` (${shp.status})` : ""}
+                    </span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-brand shrink-0 ml-2" />}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="p-3 text-xs text-ink-muted text-center">
+                No shipments found matching &quot;{searchQuery}&quot;.
+              </div>
+            )}
+          </div>
+          {shipmentTotal !== null && shipmentTotal > availableShipments.length && (
+            <div className="px-3 py-1.5 bg-surface-muted/50 border-t border-border text-[10px] text-ink-muted">
+              Showing {availableShipments.length} of {shipmentTotal} shipments. Type to search.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function DocumentUploadModal({
   isOpen,
@@ -345,45 +446,17 @@ export function DocumentUploadModal({
           <ModalBody className="space-y-5">
           {/* Shipment Selection */}
           <FormField>
-            <Label htmlFor="upload-shipment-search" className="ml-1">
-              Find a shipment
+            <Label htmlFor="upload-shipment" className="font-bold">
+              Shipment
             </Label>
-            <Input
-              id="upload-shipment-search"
-              type="search"
-              value={shipmentSearch}
-              onChange={(e) => setShipmentSearch(e.target.value)}
-              placeholder="Shipment number or importer"
-              className="bg-white"
+            <SearchableShipmentSelect
+              selectedId={selectedShipmentId}
+              onSelect={(id) => setSelectedShipmentId(id)}
+              availableShipments={availableShipments.length > 0 ? availableShipments : shipments}
+              searchQuery={shipmentSearch}
+              onSearchChange={(q) => setShipmentSearch(q)}
+              shipmentTotal={shipmentTotal}
             />
-            <Label htmlFor="upload-shipment" className="ml-1 block pt-1">
-              Target Shipment
-            </Label>
-            <Select
-              id="upload-shipment"
-              value={selectedShipmentId}
-              onChange={(e) => setSelectedShipmentId(e.target.value)}
-              className="bg-white"
-            >
-              <option value="" disabled>Select a Shipment</option>
-              {(availableShipments.length > 0 ? availableShipments : shipments).map((shp) => (
-                <option key={shp.id} value={shp.id}>
-                  {shp.shipmentNumber ?? shp.id}
-                  {shp.status ? ` (${shp.status})` : ""}
-                </option>
-              ))}
-            </Select>
-            {shipmentTotal !== null && shipmentTotal > availableShipments.length && (
-              <p role="status" className="text-xs text-ink-muted ml-1">
-                Showing {availableShipments.length} of {shipmentTotal} shipments. Search to narrow
-                the list.
-              </p>
-            )}
-            {shipmentTotal === 0 && (
-              <p role="status" className="text-xs text-ink-muted ml-1">
-                No shipment matches that search.
-              </p>
-            )}
           </FormField>
 
           {/* Document Type Dropdown */}

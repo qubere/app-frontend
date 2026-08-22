@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
-import { db } from "@/lib/db";
+import { db, generateCustomsCaseNumber } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { computeReadinessScore } from "@/lib/shipmentReadiness";
 import { generateShipmentNumber } from "@/modules/shipments/shipmentNumber";
@@ -43,14 +43,33 @@ function listPage(raw: string | null): number {
 export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   const params = new URL(req.url).searchParams;
   const search = params.get("q")?.trim() ?? "";
-  // The summary view exists because a shipment picker needs an id and a
-  // number. It used to receive every document, line item, decision and filing
-  // in the account to fill a dropdown.
   const summaryOnly = params.get("view") === "summary";
+  const tab = params.get("tab")?.trim().toLowerCase();
   const pageSize = listPageSize(params.get("pageSize"));
   const page = listPage(params.get("page"));
 
   const whereClause: Prisma.ShipmentWhereInput = { accountId: ctx.accountId, deletedAt: null };
+
+  // Filter based on product workspace activation (Bug 6 & 11)
+  if (tab === "available_from_tms") {
+    whereClause.productWorkspaces = {
+      some: {
+        product: "TMS",
+        status: "ACTIVE",
+      },
+      none: {
+        product: "CUSTOMS",
+        status: "ACTIVE",
+      },
+    };
+  } else {
+    whereClause.productWorkspaces = {
+      some: {
+        product: "CUSTOMS",
+        status: "ACTIVE",
+      },
+    };
+  }
 
   // RLS: Planners can only see shipments assigned to them
   if (ctx.roleNames.includes("PLANNER")) {
@@ -58,13 +77,18 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   }
 
   if (search) {
-    whereClause.OR = [
-      { shipmentNumber: { contains: search, mode: "insensitive" } },
-      { importerName: { contains: search, mode: "insensitive" } },
+    const searchCondition = [
+      { shipmentNumber: { contains: search, mode: "insensitive" as const } },
+      { importerName: { contains: search, mode: "insensitive" as const } },
     ];
+    if (whereClause.OR) {
+      whereClause.AND = [{ OR: whereClause.OR }, { OR: searchCondition }];
+      delete whereClause.OR;
+    } else {
+      whereClause.OR = searchCondition;
+    }
   }
 
-  // The list used to have no limit at all, so its cost grew with the account.
   const listArgs = {
     where: whereClause,
     orderBy: { createdAt: "desc" as const },
@@ -72,8 +96,6 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
     take: pageSize,
   };
 
-  // total is the count of everything matching, not of what was returned, so a
-  // caller can tell that it is looking at a page rather than the account.
   const total = await db.shipment.count({ where: whereClause });
 
   if (summaryOnly) {
@@ -96,11 +118,15 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       houseShipments: true,
       exceptionItems: { omit: { resolutionReasonCode: true } },
       client: true,
+      productWorkspaces: true,
+      customsCaseLinks: {
+        include: {
+          customsCase: true,
+        },
+      },
     },
   });
 
-  // readinessScore is a static column default (87), never updated as
-  // documents/line items/exceptions change -- compute the real figure here.
   const shipmentsWithReadiness = shipments.map((s) => ({
     ...s,
     readinessScore: computeReadinessScore(s),
@@ -115,7 +141,6 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     return NextResponse.json(
       {
         error: "ValidationError",
-        // Field-keyed so the form can map errors back to inputs.
         fieldErrors: z.flattenError(parsed.error).fieldErrors,
         requestId,
       },
@@ -125,7 +150,6 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
 
   const input = parsed.data;
 
-  // Storing the raw spelling is what left three vocabularies in this column.
   let entryTypeCode: string | null = null;
   if (input.entryType) {
     entryTypeCode = normalizeEntryType(input.entryType);
@@ -164,18 +188,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     }
   }
 
-  // Verify masterShipment exists and belongs to the same account if specified
   if (input.masterShipmentId) {
     const master = await db.shipment.findFirst({
       where: { id: input.masterShipmentId, accountId: ctx.accountId },
       select: { id: true },
-});
+    });
     if (!master) {
       return NextResponse.json({ error: "Invalid masterShipmentId: Master shipment not found in this account" });
     }
   }
 
-  // Verify client exists and belongs to the same account if specified
   if (input.clientId) {
     const client = await db.client.findFirst({
       where: { id: input.clientId, accountId: ctx.accountId },
@@ -189,25 +211,61 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
 
   const shipmentNumber = await generateShipmentNumber(db, ctx.accountId);
 
-  const shipment = await db.shipment.create({
-    data: {
-      accountId: ctx.accountId,
-      shipmentNumber,
-      importerName: input.importerName,
-      poReference: input.poReference,
-      entryType: entryTypeCode,
-      incoterm: input.incoterm,
-      portOfEntry: input.portOfEntry,
-      carrierName: input.carrierName,
-      countryOfExport: input.countryOfExport,
-      destinationCountry: destinationCountryCode,
-      estimatedArrival: input.estimatedArrival,
-      status: MANUAL_INTAKE_INITIAL_STATUS,
-      ownerName: [ctx.firstName, ctx.lastName].filter(Boolean).join(" ") || null,
-      assignedBrokerId: ctx.roleNames.includes("PLANNER") ? ctx.userId : null,
-      masterShipmentId: input.masterShipmentId || null,
-      clientId: input.clientId || null,
-    },
+  const shipment = await db.$transaction(async (tx) => {
+    const caseNumber = await generateCustomsCaseNumber(tx, ctx.accountId);
+    const shp = await tx.shipment.create({
+      data: {
+        accountId: ctx.accountId,
+        shipmentNumber,
+        importerName: input.importerName,
+        poReference: input.poReference,
+        entryType: entryTypeCode,
+        incoterm: input.incoterm,
+        portOfEntry: input.portOfEntry,
+        carrierName: input.carrierName,
+        countryOfExport: input.countryOfExport,
+        destinationCountry: destinationCountryCode,
+        estimatedArrival: input.estimatedArrival,
+        status: MANUAL_INTAKE_INITIAL_STATUS,
+        ownerName: [ctx.firstName, ctx.lastName].filter(Boolean).join(" ") || null,
+        assignedBrokerId: ctx.roleNames.includes("PLANNER") ? ctx.userId : null,
+        masterShipmentId: input.masterShipmentId || null,
+        clientId: input.clientId || null,
+        customsRequired: true,
+        productWorkspaces: {
+          create: {
+            accountId: ctx.accountId,
+            product: "CUSTOMS",
+            status: "ACTIVE",
+            source: "CUSTOMS_INTAKE",
+            activatedByUserId: ctx.userId,
+          },
+        },
+      },
+    });
+
+    const cCase = await tx.customsCase.create({
+      data: {
+        accountId: ctx.accountId,
+        caseNumber,
+        status: "OPEN",
+        entryType: entryTypeCode,
+        destinationCountry: destinationCountryCode,
+        assignedBrokerId: ctx.roleNames.includes("PLANNER") ? ctx.userId : null,
+        copiedFromShipmentId: shp.id,
+        copiedAtVersion: shp.version,
+      },
+    });
+
+    await tx.customsCaseShipment.create({
+      data: {
+        accountId: ctx.accountId,
+        customsCaseId: cCase.id,
+        shipmentId: shp.id,
+      },
+    });
+
+    return shp;
   });
 
   await createAuditLog({

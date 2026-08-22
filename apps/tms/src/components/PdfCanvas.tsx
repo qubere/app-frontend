@@ -62,84 +62,28 @@ export function PdfCanvas({ url, page = 1, bbox, className }: PdfCanvasProps) {
 
   function paintFallbackCanvas(canvas: HTMLCanvasElement, containerWidth: number) {
     const width = containerWidth || 640;
-    const height = Math.floor(width * 1.3);
+    const height = Math.floor(width * 0.7);
     canvas.width = width;
     canvas.height = height;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#f8fafc";
     ctx.fillRect(0, 0, width, height);
 
-    // Draw document header
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(20, 20, width - 40, height - 40);
+
     ctx.fillStyle = "#1e293b";
-    ctx.font = "bold 16px Inter, sans-serif";
-    ctx.fillText("COMMERCIAL INVOICE", 40, 50);
+    ctx.font = "bold 15px Inter, sans-serif";
+    ctx.fillText("DOCUMENT PREVIEW UNAVAILABLE", 40, 65);
 
     ctx.fillStyle = "#64748b";
     ctx.font = "12px Inter, sans-serif";
-    ctx.fillText("Invoice #: INV-990182 • Date: Aug 21, 2026", 40, 72);
-    ctx.fillText("Shipment #: SHP-2026-000002", 40, 90);
-
-    // Divider
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(40, 105);
-    ctx.lineTo(width - 40, 105);
-    ctx.stroke();
-
-    // Section 1: Shipper / Consignee
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 12px Inter, sans-serif";
-    ctx.fillText("EXPORTER / SHIPPER:", 40, 130);
-    ctx.font = "11px Inter, sans-serif";
-    ctx.fillStyle = "#334155";
-    ctx.fillText("Shanghai High-Tech Manufacturing Co.", 40, 148);
-    ctx.fillText("No. 888 Century Ave, Pudong, Shanghai, China", 40, 164);
-
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 12px Inter, sans-serif";
-    ctx.fillText("IMPORTER OF RECORD:", width / 2 + 10, 130);
-    ctx.font = "11px Inter, sans-serif";
-    ctx.fillStyle = "#334155";
-    ctx.fillText("Acme Import Logistics LLC", width / 2 + 10, 148);
-    ctx.fillText("100 Logistics Way, Oakland, CA 94607 US", width / 2 + 10, 164);
-
-    // Section 2: Port & Voyage
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 12px Inter, sans-serif";
-    ctx.fillText("PORT OF LOADING: Shanghai, China (CNSHA)", 40, 205);
-    ctx.fillText("PORT OF UNLADING: Port of Oakland, CA (USOAK)", 40, 225);
-
-    // Table Header
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(40, 250, width - 80, 28);
-    ctx.fillStyle = "#475569";
-    ctx.font = "bold 11px Inter, sans-serif";
-    ctx.fillText("HTS CODE", 50, 268);
-    ctx.fillText("DESCRIPTION", 150, 268);
-    ctx.fillText("QTY", width - 180, 268);
-    ctx.fillText("AMOUNT (USD)", width - 110, 268);
-
-    // Table Rows
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "11px Inter, sans-serif";
-    ctx.fillText("8471.30.0100", 50, 298);
-    ctx.fillText("Portable Automated Processing Units", 150, 298);
-    ctx.fillText("120", width - 180, 298);
-    ctx.fillText("$145,000.00", width - 110, 298);
-
-    ctx.fillText("8504.40.9580", 50, 328);
-    ctx.fillText("Industrial Power Inverters & Modules", 150, 328);
-    ctx.fillText("80", width - 180, 328);
-    ctx.fillText("$182,000.00", width - 110, 328);
-
-    // Footer summary
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 13px Inter, sans-serif";
-    ctx.fillText("TOTAL DECLARED VALUE: $327,000.00 USD", width - 300, 380);
+    ctx.fillText("The PDF document canvas preview could not be rendered directly.", 40, 95);
+    ctx.fillText("Click 'Open Full View' in the top action bar to download or view the document.", 40, 118);
 
     pageDims.current = { width, height };
   }

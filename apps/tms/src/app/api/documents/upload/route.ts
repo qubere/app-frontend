@@ -36,7 +36,7 @@ async function storeOriginal(input: {
   const blobPath = `tms/documents/${input.accountId}/${storageName}`;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const blob = await put(blobPath, input.bytes, {
-      access: "public",
+      access: "private",
       contentType: input.mimeType,
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });

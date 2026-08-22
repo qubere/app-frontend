@@ -13,6 +13,7 @@ import { Card, Badge, Button } from "@/components/ui";
 import { DocumentWorkspacePanel } from "@/components/DocumentWorkspacePanel";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
+import { CustomsHandoffCard } from "@/components/CustomsHandoffCard";
 
 const TMS_PIPELINE_STAGES = [
   { id: "document-intake", name: "1. Intake", surface: "document-intake", icon: FileText, agentName: "Document Intake Agent" },
@@ -322,6 +323,16 @@ export function ShipmentWorkspaceClient({
                   </span>
                 </Card>
               )}
+
+              <CustomsHandoffCard
+                shipmentId={shipment.id}
+                shipmentNumber={shipment.shipmentNumber}
+                customsRequired={Boolean(shipment.customsRequired)}
+                customsCaseId={shipment.customsCaseLinks?.[0]?.customsCaseId}
+                customsCaseNumber={shipment.customsCaseLinks?.[0]?.customsCase?.caseNumber}
+                workspaceStatus={shipment.productWorkspaces?.find((pw: any) => pw.product === "CUSTOMS")?.status}
+                filingStatus={latestFiling?.filingStatus}
+              />
 
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <Card className="p-5 bg-white border border-border space-y-3">

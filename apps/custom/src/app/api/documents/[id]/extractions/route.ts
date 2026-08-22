@@ -191,11 +191,9 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
         if (res.ok) fileBuffer = Buffer.from(await res.arrayBuffer());
       } else {
         const fs = await import("node:fs");
-        const path = await import("node:path");
-        const uploadsRoot = path.join(process.cwd(), "public", "uploads");
-        const localPath = path.resolve(process.cwd(), "public", `.${doc.fileUrl}`);
-        // Confine to the uploads directory so a crafted fileUrl cannot traverse.
-        if (localPath.startsWith(uploadsRoot + path.sep) && fs.existsSync(localPath)) {
+        const { resolveLocalFilePath } = await import("@/lib/storage");
+        const localPath = resolveLocalFilePath(doc.fileUrl);
+        if (localPath && fs.existsSync(localPath)) {
           fileBuffer = fs.readFileSync(localPath);
         }
       }

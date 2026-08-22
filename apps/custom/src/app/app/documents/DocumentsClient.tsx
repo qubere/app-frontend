@@ -919,13 +919,7 @@ export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) 
           fileName={previewDoc.name}
           shipmentNumber={previewDoc.shipmentRef}
           fileUrl={previewDoc.url}
-          proxyUrl={
-            previewDoc.url && previewDoc.url !== "#"
-              ? previewDoc.url.includes("vercel-storage.com")
-                ? documentViewUrl(previewDoc.id)
-                : previewDoc.url
-              : undefined
-          }
+          proxyUrl={previewDoc?.id ? documentViewUrl(previewDoc.id) : undefined}
         />
         </>
       )}

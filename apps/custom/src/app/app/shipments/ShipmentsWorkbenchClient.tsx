@@ -31,6 +31,9 @@ interface ShipmentItem {
   healthStatus?: string | null;
   status: string;
   createdAt: string;
+  customsRequired?: boolean;
+  isCustomsActive?: boolean;
+  productWorkspaces?: Array<{ product: string; status: string }> | null;
   clientId?: string | null;
   client?: { id: string; name: string } | null;
   assignedBrokerId?: string | null;
@@ -161,6 +164,7 @@ export function ShipmentsWorkbenchClient({
   });
 
   const [searchQuery, setSearchQueryValue] = useState("");
+  const [customsTab, setCustomsTab] = useState<"ACTIVE" | "AVAILABLE_FROM_TMS">("ACTIVE");
   const [shipmentsList, setShipmentsList] = useState<ShipmentItem[]>(initialShipments);
   const [sortCol, setSortCol] = useState<"isf" | "ef" | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -240,6 +244,14 @@ export function ShipmentsWorkbenchClient({
   // Filter shipments based on top-level filter, column filters, and global search query
   const filteredShipments = useMemo(() => {
     return shipmentsList.filter((shp) => {
+      // 0. Customs Product Workspace Tab filter
+      if (customsTab === "AVAILABLE_FROM_TMS") {
+        if (!shp.customsRequired || shp.isCustomsActive) return false;
+      } else {
+        // ACTIVE customs cases
+        if (shp.customsRequired && !shp.isCustomsActive && shp.productWorkspaces?.length) return false;
+      }
+
       // 1. Top assignee filter
       if (isEnterpriseAdmin) {
         if (selectedUserIds.length > 0) {
@@ -499,8 +511,25 @@ export function ShipmentsWorkbenchClient({
       <div className="bg-white rounded-2xl border border-border shadow-2xs overflow-hidden">
         {/* Table Header Bar */}
         <div className="px-4 py-2.5 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#FAF9F6]/50">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-sm font-bold text-ink">All Shipments</h2>
+          <div className="flex items-center space-x-3">
+            <div className="flex bg-surface-muted p-1 rounded-xl border border-border text-xs">
+              <button
+                onClick={() => { setPage(1); setCustomsTab("ACTIVE"); }}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  customsTab === "ACTIVE" ? "bg-white text-ink shadow-3xs" : "text-ink-muted"
+                }`}
+              >
+                Active Customs Cases
+              </button>
+              <button
+                onClick={() => { setPage(1); setCustomsTab("AVAILABLE_FROM_TMS"); }}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  customsTab === "AVAILABLE_FROM_TMS" ? "bg-white text-ink shadow-3xs" : "text-ink-muted"
+                }`}
+              >
+                Available from TMS
+              </button>
+            </div>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-border text-ink">
               {totalCount}
             </span>

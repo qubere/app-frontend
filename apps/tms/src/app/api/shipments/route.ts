@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
+import { activateProductWorkspace } from "@/modules/shipments/services/shipmentProductWorkspaceService";
 
 export const GET = withAuthenticatedRoute(
   async ({ req, ctx }: any) => {
@@ -9,7 +10,17 @@ export const GET = withAuthenticatedRoute(
       const mode = searchParams.get("mode");
       const status = searchParams.get("status");
 
-      const where: any = { accountId: ctx.accountId };
+      const where: any = {
+        accountId: ctx.accountId,
+        deletedAt: null,
+        productWorkspaces: {
+          some: {
+            product: "TMS",
+            status: "ACTIVE",
+          },
+        },
+      };
+
       if (mode && mode !== "all") where.transportMode = mode.toUpperCase();
       if (status && status !== "all") where.status = status;
 
@@ -20,6 +31,7 @@ export const GET = withAuthenticatedRoute(
         include: {
           customsFilings: true,
           exceptionItems: true,
+          productWorkspaces: true,
         },
       });
 
@@ -43,6 +55,7 @@ export const POST = withAuthenticatedRoute(
       const originPort = body.originPort?.trim() || body.countryOfExport || "CNSHA";
       const destinationPort = body.destinationPort?.trim() || body.destinationCountry || "USOAK";
       const poReference = body.poReference?.trim() || `PO-${Math.floor(100000 + Math.random() * 900000)}`;
+      const customsRequired = Boolean(body.customsRequired);
 
       const shipmentNumber = `SHP-2026-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -57,21 +70,25 @@ export const POST = withAuthenticatedRoute(
           destinationCountry: destinationPort,
           portOfEntry: destinationPort,
           poReference,
+          customsRequired,
           status: "In Progress",
-          currentStage: "FILING_PREP",
+          currentStage: "DOCUMENT_INTAKE",
           readinessScore: 85,
           riskScore: 15,
           estimatedArrival: new Date(Date.now() + 14 * 86400 * 1000),
           customerPromiseDate: new Date(Date.now() + 15 * 86400 * 1000),
-          customsFilings: {
+          productWorkspaces: {
             create: {
               accountId: ctx.accountId,
-              entryNumber: `7501-${Math.floor(100000 + Math.random() * 900000)}`,
-              filingType: "ENTRY_SUMMARY",
-              filingStatus: "Draft",
-              entryType: "01",
+              product: "TMS",
+              status: "ACTIVE",
+              source: "TMS_INTAKE",
+              activatedByUserId: ctx.userId,
             },
           },
+        },
+        include: {
+          productWorkspaces: true,
         },
       });
 

@@ -213,6 +213,12 @@ model Account {
   etaObservations             EtaObservation[]
   trackingSubscriptions       TrackingSubscription[]
 
+  shipmentProductWorkspaces ShipmentProductWorkspace[]
+  productEntitlements     AccountProductEntitlement[]
+  customsCases            CustomsCase[]
+  customsCaseShipments    CustomsCaseShipment[]
+  customsCaseDocuments    CustomsCaseDocument[]
+
   transportationOrders TransportationOrder[]
   carriers             Carrier[]
   carrierProfiles      CarrierProfile[]
@@ -327,6 +333,7 @@ model User {
   createdPSCs                 PostSummaryCorrection[] @relation("PSCCreator")
   shipmentChangeEvents        ShipmentChangeEvent[]
   assignedDocuments           ShipmentDocument[]      @relation("DocumentAssignee")
+  assignedCustomsCases        CustomsCase[]           @relation("CustomsCaseBroker")
   inboundSenderRoutes         InboundSenderRoute[]    @relation("InboundRouteAssignee")
   notifications               Notification[]
 
@@ -528,6 +535,7 @@ model Shipment {
   transportMode      String? // Ocean | Air | Truck | Rail — ISF applies to Ocean only
   filingDeadline     DateTime? // Derived cache: min(dueAt) over OPEN blocking ComplianceDeadlines
   status             String            @default("Draft") // Draft, In Progress, Ready to File, On Hold, Submitted, Completed
+  customsRequired    Boolean           @default(false)
   // Workflow lifecycle stage. Values: DOCUMENT_INTAKE | CLASSIFICATION | VALUATION | ORIGIN | COMPLIANCE | FILING_PREP | READY_TO_FILE
   currentStage       String?
   healthStatus       String? // Healthy, At Risk, Critical — derived, null until evaluated
@@ -606,6 +614,8 @@ model Shipment {
   transportationEvents            TransportationEvent[]
   freightQuotes                   FreightQuote[]
   tenders                         Tender[]
+  productWorkspaces               ShipmentProductWorkspace[]
+  customsCaseLinks                CustomsCaseShipment[]
 
   usageEvents       UsageEvent[]
   shipmentCharges   ShipmentCharge[]
@@ -965,6 +975,7 @@ model ShipmentDocument {
   productEvidence    ProductEvidence[]
   partyEvidence      PartyEvidence[]
   shipmentCandidates DocumentShipmentCandidate[]
+  customsCaseLinks   CustomsCaseDocument[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -1265,6 +1276,8 @@ model CustomsFiling {
   id                 String            @id @default(cuid())
   shipmentId         String?
   shipment           Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  customsCaseId      String?
+  customsCase        CustomsCase?      @relation(fields: [customsCaseId], references: [id], onDelete: SetNull)
   accountId          String
   account            Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   importerOfRecordId String?
@@ -1382,9 +1395,119 @@ model CustomsFiling {
 
   @@unique([accountId, entryNumber])
   @@index([shipmentId])
+  @@index([customsCaseId])
   @@index([accountId])
   @@index([filingStatus])
-  @@index([country, procedureCode])
+}
+
+// =============================================================================
+// SHARED SHIPMENT ARCHITECTURE & WORKSPACE MODELS
+// =============================================================================
+
+model AccountProductEntitlement {
+  id          String    @id @default(cuid())
+  accountId   String
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  product     String    // TMS | CUSTOMS
+  status      String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED
+  enabledAt   DateTime  @default(now())
+  disabledAt  DateTime?
+  plan        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([accountId, product])
+  @@index([accountId, product, status])
+}
+
+model ShipmentProductWorkspace {
+  id                String   @id @default(cuid())
+  accountId         String
+  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId        String
+  shipment          Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  product           String   // TMS | CUSTOMS
+  status            String   @default("ACTIVE") // ACTIVE | INACTIVE | AVAILABLE_FROM_TMS
+  source            String   @default("SYSTEM") // TMS_INTAKE | CUSTOMS_INTAKE | HANDOFF | MIGRATION
+  activatedAt       DateTime @default(now())
+  activatedByUserId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([shipmentId, product])
+  @@index([accountId, product, status])
+  @@index([shipmentId])
+}
+
+model CustomsCase {
+  id                   String            @id @default(cuid())
+  accountId            String
+  account              Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  caseNumber           String            // e.g. CC-2026-000001
+  status               String            @default("OPEN") // OPEN | READY_FOR_FILING | FILED | RELEASED | CLOSED
+  importerOfRecordId   String?
+  importerOfRecord     ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: SetNull)
+  assignedBrokerId     String?
+  assignedBroker       User?             @relation("CustomsCaseBroker", fields: [assignedBrokerId], references: [id], onDelete: SetNull)
+  entryType            String?
+  customsValue         Decimal?          @db.Decimal(12, 2)
+  countryOfOrigin      String?
+  destinationCountry   String?
+  copiedFromShipmentId String?
+  copiedAtVersion      Int?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  deletedAt            DateTime?
+
+  shipmentLinks CustomsCaseShipment[]
+  documents     CustomsCaseDocument[]
+  filings       CustomsFiling[]
+
+  @@unique([accountId, caseNumber])
+  @@index([accountId, status])
+  @@index([deletedAt])
+}
+
+model CustomsCaseShipment {
+  id            String      @id @default(cuid())
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customsCaseId String
+  customsCase   CustomsCase @relation(fields: [customsCaseId], references: [id], onDelete: Cascade)
+  shipmentId    String
+  shipment      Shipment    @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([customsCaseId, shipmentId])
+  @@index([accountId])
+  @@index([shipmentId])
+}
+
+model CustomsCaseDocument {
+  id                  String           @id @default(cuid())
+  accountId           String
+  account             Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customsCaseId       String
+  customsCase         CustomsCase      @relation(fields: [customsCaseId], references: [id], onDelete: Cascade)
+  documentId          String
+  document            ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status              String           @default("SUGGESTED") // SUGGESTED | INCLUDED | EXCLUDED | SUPERSEDED
+  documentRole        String?
+  relevanceReason     String?
+  relevanceConfidence Float?
+  includedAt          DateTime?
+  includedByUserId    String?
+  excludedAt          DateTime?
+  excludedByUserId    String?
+  sourceChecksum      String?
+  documentVersionId   String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([customsCaseId, documentId])
+  @@index([accountId])
+  @@index([customsCaseId, status])
 }
 
 model CustomsResponse {
@@ -1422,7 +1545,6 @@ model FilingCountryCustomsVersion {
   updatedBy     String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
   customerMappings FilingCustomerCustomsVersion[]
 
   @@unique([country, procedureCode, release])
@@ -1937,6 +2059,7 @@ model ImporterOfRecord {
 
   shipments        Shipment[]
   customsFilings   CustomsFiling[]
+  customsCases     CustomsCase[]
   powersOfAttorney PowerOfAttorney[]
 
   rateCards RateCard[]

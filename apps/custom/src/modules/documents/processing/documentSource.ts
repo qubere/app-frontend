@@ -141,12 +141,10 @@ async function readRemoteObject(fileUrl: string): Promise<Buffer> {
 
 async function readLocalUpload(fileUrl: string): Promise<Buffer> {
   const fs = await import("node:fs");
-  const path = await import("node:path");
-  const uploadsRoot = path.join(process.cwd(), "public", "uploads");
-  const resolved = path.resolve(uploadsRoot, path.basename(fileUrl));
+  const { resolveLocalFilePath } = await import("@/lib/storage");
 
-  // Confined to the uploads directory so a crafted fileUrl cannot traverse.
-  if (path.dirname(resolved) !== uploadsRoot || !fs.existsSync(resolved)) {
+  const resolved = resolveLocalFilePath(fileUrl);
+  if (!resolved) {
     throw new DocumentParserError(
       "SOURCE_FILE_UNAVAILABLE",
       "The locally stored document could not be found.",

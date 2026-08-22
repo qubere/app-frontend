@@ -84,9 +84,7 @@ export function DocumentWorkspacePanel({
   const viewerData = useMemo(() => {
     if (!primaryDoc) return null;
 
-    const proxyUrl = primaryDoc.fileUrl?.includes("vercel-storage.com")
-      ? documentViewUrl(primaryDoc.id)
-      : primaryDoc.fileUrl || "#";
+    const proxyUrl = primaryDoc ? documentViewUrl(primaryDoc.id) : "#";
 
     let docLineItems: ShipmentLineItemRow[] = [];
     // Set only when this document's extraction actually produced HTS-bearing

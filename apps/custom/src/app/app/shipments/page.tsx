@@ -36,11 +36,13 @@ export default async function ShipmentsConsolePage() {
       incoterm: true,
       status: true,
       healthStatus: true,
+      customsRequired: true,
       createdAt: true,
       clientId: true,
       client: { select: { id: true, name: true } },
       assignedBrokerId: true,
       assignedBroker: { select: { id: true, firstName: true, lastName: true, email: true } },
+      productWorkspaces: { select: { product: true, status: true } },
       // computeReadinessScore's inputs -- not sent to the client, only used
       // to derive the readinessScore scalar below.
       documents: { select: { docType: true, status: true } },
@@ -103,9 +105,8 @@ export default async function ShipmentsConsolePage() {
     entryType: s.entryType,
     poReference: s.poReference,
     portOfEntry: s.portOfEntry,
-    carrierName: s.carrierName,
-    // readinessScore is a static column default, never updated as
-    // documents/line items/exceptions change -- compute the real figure.
+    customsRequired: s.customsRequired,
+    isCustomsActive: s.productWorkspaces.some((pw) => pw.product === "CUSTOMS" && pw.status === "ACTIVE"),
     readinessScore: computeReadinessScore(s),
     healthStatus: s.healthStatus,
     status: s.status,

@@ -2,6 +2,7 @@ import { AccountContext, getAccountContext, hasPermission } from "./auth";
 import { runWithAccountId, runWithDataMode } from "@qubere/db";
 import { buildErrorResponse, generateRequestId, handleApiError } from "./error";
 import { canWrite, READ_ONLY_MESSAGE } from "./write-access";
+import { hasProductEntitlement } from "./entitlements";
 
 export type AuthenticatedRouteHandler = (
   ctx: AccountContext,
@@ -63,6 +64,21 @@ export async function authorizeRequest(
           `Missing required permission: ${describePermission(requiredPermission)}`
         ),
       };
+    }
+
+    const permStr = describePermission(requiredPermission);
+    if (permStr.includes("customs.handoff") || permStr.includes("customs.create")) {
+      const entitled = await hasProductEntitlement(ctx.accountId, "CUSTOMS");
+      if (!entitled) {
+        return {
+          ctx: null,
+          errorResponse: buildErrorResponse(
+            403,
+            "NOT_ENTITLED",
+            "Account is not entitled to CUSTOMS product"
+          ),
+        };
+      }
     }
   }
 
