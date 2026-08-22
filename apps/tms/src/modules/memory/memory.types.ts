@@ -85,6 +85,10 @@ export interface TmsMemoryScope extends Record<string, unknown> {
   exceptionType?: string;
   chargeCode?: string;
   targetMarginPct?: number;
+  requiredDocuments?: string[];
+  trackingFreshnessHours?: number;
+  promiseRiskBufferHours?: number;
+  lfdRiskHours?: number;
   outcome?: "APPROVED" | "REJECTED" | "ACCEPTED" | "EXPIRED" | "RESOLVED" | "DISPUTED";
   ruleKey?: string;
 }
@@ -151,6 +155,7 @@ export interface TmsAccountMemoryContext {
   memories: ScoredTmsMemory[];
   formattedText: string;
   memoryCount: number;
+  retrievalStatus: "AVAILABLE" | "EMPTY" | "UNAVAILABLE";
 }
 
 export interface TmsMemoryCandidate {

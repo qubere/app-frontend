@@ -15,11 +15,14 @@ export class TmsAccountContextBuilder {
     limit?: number;
   }): Promise<TmsAccountMemoryContext> {
     let memories: ScoredTmsMemory[] = [];
+    let retrievalStatus: TmsAccountMemoryContext["retrievalStatus"] = "EMPTY";
     try {
       memories = await TmsHybridMemoryRetriever.search(params);
+      retrievalStatus = memories.length > 0 ? "AVAILABLE" : "EMPTY";
     } catch (error) {
       // Memory is derived context. A retrieval outage must not block freight execution.
       console.error("[TmsAccountContextBuilder] Retrieval failed; continuing without memory", error);
+      retrievalStatus = "UNAVAILABLE";
     }
     return {
       accountId: params.accountId,
@@ -27,6 +30,7 @@ export class TmsAccountContextBuilder {
       memories,
       memoryCount: memories.length,
       formattedText: this.format(params.task, memories),
+      retrievalStatus,
     };
   }
 
@@ -53,7 +57,12 @@ export class TmsAccountContextBuilder {
       content: memory.content,
       sourceType: memory.sourceType,
       confidence: memory.confidence,
+      score: memory.score,
+      lexicalRank: memory.lexicalRank,
+      vectorRank: memory.vectorRank,
+      scopeMatches: memory.scopeMatches,
       scope: memory.scope,
+      lastObservedAt: memory.lastObservedAt,
     }));
   }
 

@@ -6,9 +6,18 @@ import {
   parseStoredFreightExtraction,
   type TmsDocumentExtraction,
 } from "../modules/documents/services/documentFreightExtraction";
+import { TmsAccountContextBuilder } from "../modules/memory/memory.context-builder";
+import { buildLaneKey } from "../modules/memory/memory.domain-events";
+import type {
+  ScoredTmsMemory,
+  TmsAccountMemoryContext,
+  TmsAgentTask,
+  TmsMemoryScope,
+} from "../modules/memory/memory.types";
 
 export const TMS_WORKFLOW_TYPE = "TMS_DOCUMENT_PROCESSING";
 export const TMS_WORKFLOW_VERSION = "tms-document-v1";
+export const TMS_PIPELINE_OUTBOX_EVENT = "tms.pipeline.requested";
 export const TMS_PIPELINE_STEPS = [
   { stepNumber: 1, agentName: "Document Intake Agent", surface: "document-intake" },
   { stepNumber: 2, agentName: "Shipment Enrichment Agent", surface: "shipment-enrichment" },
@@ -19,6 +28,7 @@ export const TMS_PIPELINE_STEPS = [
 ] as const;
 
 const STALL_THRESHOLD_MS = 5 * 60 * 1000;
+const PENDING_STALL_THRESHOLD_MS = 2 * 60 * 1000;
 
 type StepResult = {
   status: "SUCCESS" | "REVIEW_REQUIRED";
@@ -55,6 +65,57 @@ function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+const AUTHORITATIVE_MEMORY_SOURCES = new Set(["HUMAN_DECISION", "CUSTOMER_INSTRUCTION"]);
+
+function memoryScopeForShipment(shipment: Record<string, unknown>, order?: Record<string, unknown> | null): TmsMemoryScope {
+  const mode = cleanString((shipment.transportMode ?? order?.mode) as string | null | undefined) ?? undefined;
+  const equipment = Array.isArray(order?.equipmentRequirements)
+    ? cleanString(order.equipmentRequirements[0] as string | undefined) ?? undefined
+    : undefined;
+  const origin = order?.origin ?? (shipment.countryOfExport ? { country: shipment.countryOfExport } : undefined);
+  const destination = order?.destination ?? (shipment.destinationCountry ? { country: shipment.destinationCountry } : undefined);
+  return {
+    shipmentId: shipment.id as string,
+    customerId: cleanString(shipment.clientId as string | null | undefined) ?? undefined,
+    customerName: cleanString(shipment.importerName as string | null | undefined) ?? undefined,
+    carrierName: cleanString(shipment.carrierName as string | null | undefined) ?? undefined,
+    mode,
+    equipment,
+    origin: cleanString(shipment.countryOfExport as string | null | undefined) ?? undefined,
+    destination: cleanString(shipment.destinationCountry as string | null | undefined) ?? undefined,
+    laneKey: buildLaneKey({ mode, equipment, origin, destination }),
+  };
+}
+
+async function buildStepMemory(input: {
+  accountId: string;
+  task: TmsAgentTask;
+  shipment: Record<string, unknown>;
+  order?: Record<string, unknown> | null;
+  queryParts: Array<string | null | undefined>;
+  limit?: number;
+}): Promise<TmsAccountMemoryContext> {
+  return TmsAccountContextBuilder.build({
+    accountId: input.accountId,
+    task: input.task,
+    query: input.queryParts.filter(Boolean).join(" "),
+    scope: memoryScopeForShipment(input.shipment, input.order),
+    limit: input.limit ?? 6,
+  });
+}
+
+function trustedMemories(context: TmsAccountMemoryContext): ScoredTmsMemory[] {
+  return context.memories.filter((memory) => AUTHORITATIVE_MEMORY_SOURCES.has(memory.sourceType));
+}
+
+function memoryLineage(...contexts: TmsAccountMemoryContext[]) {
+  const byId = new Map<string, ReturnType<typeof TmsAccountContextBuilder.summarizeForEvidence>[number]>();
+  for (const context of contexts) {
+    for (const memory of TmsAccountContextBuilder.summarizeForEvidence(context)) byId.set(memory.memoryId, memory);
+  }
+  return [...byId.values()];
 }
 
 async function createAgentDecision(input: {
@@ -144,28 +205,61 @@ export async function enqueueTmsDocumentPipeline(input: {
 
   let job;
   try {
-    job = await db.pipelineJob.create({ data });
+    job = await db.$transaction(async (tx) => {
+      const created = await tx.pipelineJob.create({ data });
+      await tx.workflowOutboxEvent.create({
+        data: {
+          accountId: input.accountId,
+          eventKey: `${TMS_PIPELINE_OUTBOX_EVENT}:${created.id}`,
+          eventType: TMS_PIPELINE_OUTBOX_EVENT,
+          aggregateType: "PipelineJob",
+          aggregateId: created.id,
+          correlationId: input.correlationId,
+          payload: { jobId: created.id },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          accountId: input.accountId,
+          userId: input.userId,
+          action: "TMS_PIPELINE_QUEUED",
+          entity: "PipelineJob",
+          entityId: created.id,
+          source: "SYSTEM",
+          metadata: safeJson({
+            shipmentId: input.shipmentId,
+            documentId: document.id,
+            workflowType: TMS_WORKFLOW_TYPE,
+            idempotencyKey,
+            correlationId: input.correlationId,
+          }),
+        },
+      });
+      return created;
+    });
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
     job = await db.pipelineJob.findFirst({ where: { accountId: input.accountId, idempotencyKey } });
     if (!job) throw error;
+    // Backfill the hand-off record for an idempotent job created before the
+    // outbox migration. Completed jobs are intentionally not redispatched.
+    await db.workflowOutboxEvent.upsert({
+      where: { eventKey: `${TMS_PIPELINE_OUTBOX_EVENT}:${job.id}` },
+      update: {},
+      create: {
+        accountId: input.accountId,
+        eventKey: `${TMS_PIPELINE_OUTBOX_EVENT}:${job.id}`,
+        eventType: TMS_PIPELINE_OUTBOX_EVENT,
+        aggregateType: "PipelineJob",
+        aggregateId: job.id,
+        correlationId: input.correlationId,
+        payload: { jobId: job.id },
+        status: job.status === "COMPLETED" ? "DISPATCHED" : "PENDING",
+        dispatchedAt: job.status === "COMPLETED" ? new Date() : null,
+      },
+    });
   }
 
-  await createAuditLog({
-    accountId: input.accountId,
-    userId: input.userId,
-    action: "TMS_PIPELINE_QUEUED",
-    entity: "PipelineJob",
-    entityId: job.id,
-    source: "SYSTEM",
-    correlationId: input.correlationId,
-    metadata: {
-      shipmentId: input.shipmentId,
-      documentId: document.id,
-      workflowType: TMS_WORKFLOW_TYPE,
-      idempotencyKey,
-    },
-  });
   return job;
 }
 
@@ -412,9 +506,23 @@ async function runDocumentReadiness(job: Awaited<ReturnType<typeof loadJob>>, do
     include: { documents: true, transportationOrders: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
   if (!shipment) throw new Error("Shipment not found.");
-  const customsRequired = shipment.transportationOrders[0]?.customsRequired ?? true;
+  const order = shipment.transportationOrders[0];
+  const accountMemory = await buildStepMemory({
+    accountId: job.accountId,
+    task: "FREIGHT_INTAKE",
+    shipment: shipment as unknown as Record<string, unknown>,
+    order: order as unknown as Record<string, unknown> | undefined,
+    queryParts: [shipment.transportMode, shipment.importerName, shipment.countryOfExport, shipment.destinationCountry, "required freight documents"],
+  });
+  const customsRequired = order?.customsRequired ?? true;
   const required = shipment.transportMode === "AIR" ? ["AIR_WAYBILL", "PACKING_LIST"] : ["BILL_OF_LADING", "PACKING_LIST"];
   if (customsRequired) required.push("COMMERCIAL_INVOICE");
+  for (const memory of trustedMemories(accountMemory)) {
+    const remembered = Array.isArray(memory.scope?.requiredDocuments) ? memory.scope.requiredDocuments : [];
+    for (const docType of remembered.map(canonicalDocType)) {
+      if (/^[A-Z0-9_]{2,80}$/.test(docType) && !required.includes(docType)) required.push(docType);
+    }
+  }
   const present = new Set(shipment.documents.map((doc) => canonicalDocType(doc.docType)));
   const missing = required.filter((type) => !present.has(type));
 
@@ -455,9 +563,22 @@ async function runDocumentReadiness(job: Awaited<ReturnType<typeof loadJob>>, do
     agentName: "Document Readiness Agent", summary,
     confidence: 100, needsReview: missing.length > 0,
     purpose: "Check mode- and customs-dependent operational document completeness.",
-    sources: shipment.documents.map((doc) => doc.fileName), evidence: { required, present: [...present], missing },
+    sources: shipment.documents.map((doc) => doc.fileName),
+    evidence: {
+      required,
+      present: [...present],
+      missing,
+      memoryRetrievalStatus: accountMemory.retrievalStatus,
+      memories: memoryLineage(accountMemory),
+    },
   });
-  return { status: missing.length ? "REVIEW_REQUIRED" : "SUCCESS", summary, confidence: 100, decisionId: decision.id, details: { required, missing } };
+  return {
+    status: missing.length ? "REVIEW_REQUIRED" : "SUCCESS",
+    summary,
+    confidence: 100,
+    decisionId: decision.id,
+    details: { required, missing, memoryRetrievalStatus: accountMemory.retrievalStatus, memories: memoryLineage(accountMemory) },
+  };
 }
 
 async function runMovementReadiness(job: Awaited<ReturnType<typeof loadJob>>, documentId: string): Promise<StepResult> {
@@ -473,6 +594,16 @@ async function runMovementReadiness(job: Awaited<ReturnType<typeof loadJob>>, do
   });
   if (!shipment) throw new Error("Shipment not found.");
   const order = shipment.transportationOrders[0];
+  const accountMemory = await buildStepMemory({
+    accountId: job.accountId,
+    task: "MOVEMENT_PLANNING",
+    shipment: shipment as unknown as Record<string, unknown>,
+    order: order as unknown as Record<string, unknown> | undefined,
+    queryParts: [shipment.transportMode, shipment.countryOfExport, shipment.destinationCountry, shipment.carrierName, "movement equipment stops"],
+  });
+  const rememberedEquipment = trustedMemories(accountMemory)
+    .map((memory) => cleanString(memory.scope?.equipment as string | undefined))
+    .find(Boolean) ?? null;
   const missing: string[] = [];
   if (!shipment.transportMode && !order?.mode) missing.push("transport mode");
   if (!shipment.countryOfExport && !order?.origin) missing.push("origin");
@@ -481,41 +612,107 @@ async function runMovementReadiness(job: Awaited<ReturnType<typeof loadJob>>, do
   if (shipment.trackingIdentifiers.length === 0) missing.push("carrier tracking reference");
   const hasPlan = shipment.shipmentMovements.length > 0;
   if (!hasPlan) missing.push("movement plan");
-  const summary = missing.length
+  let summary = missing.length
     ? `Movement is not execution-ready. Missing ${missing.join(", ")}. No carrier action was taken.`
     : `${shipment.shipmentMovements.length} movement plan(s) and ${shipment.trackingIdentifiers.length} tracking reference(s) are ready for execution.`;
+  if (rememberedEquipment && missing.includes("equipment requirement")) {
+    summary += ` Account memory suggests ${rememberedEquipment}, but it was not promoted without current-shipment confirmation.`;
+  }
   const decision = await createAgentDecision({
     accountId: job.accountId, shipmentId: job.shipmentId, documentId,
     agentName: "Movement Readiness Agent", summary, confidence: missing.length ? null : 100, needsReview: missing.length > 0,
     purpose: "Verify that route, equipment, stops, and tracking references are sufficient to execute movement.",
-    sources: ["Shipment", "TransportationOrder", "Movement", "TrackingIdentifier"], evidence: { missing, movementCount: shipment.shipmentMovements.length },
+    sources: ["Shipment", "TransportationOrder", "Movement", "TrackingIdentifier"],
+    evidence: {
+      missing,
+      movementCount: shipment.shipmentMovements.length,
+      rememberedEquipment,
+      memoryRetrievalStatus: accountMemory.retrievalStatus,
+      memories: memoryLineage(accountMemory),
+    },
   });
-  return { status: missing.length ? "REVIEW_REQUIRED" : "SUCCESS", summary, confidence: missing.length ? null : 100, decisionId: decision.id, details: { missing } };
+  return {
+    status: missing.length ? "REVIEW_REQUIRED" : "SUCCESS",
+    summary,
+    confidence: missing.length ? null : 100,
+    decisionId: decision.id,
+    details: { missing, rememberedEquipment, memoryRetrievalStatus: accountMemory.retrievalStatus, memories: memoryLineage(accountMemory) },
+  };
 }
 
 async function runCostCarrierReadiness(job: Awaited<ReturnType<typeof loadJob>>, documentId: string): Promise<StepResult> {
   if (!job) throw new Error("Pipeline job not found.");
   const shipment = await db.shipment.findFirst({
     where: { id: job.shipmentId, accountId: job.accountId },
-    include: { freightQuotes: { orderBy: { createdAt: "desc" } }, tenders: { orderBy: { createdAt: "desc" } }, shipmentCharges: true, shipmentCosts: true },
+    include: {
+      freightQuotes: { orderBy: { createdAt: "desc" } },
+      tenders: { orderBy: { createdAt: "desc" } },
+      shipmentCharges: true,
+      shipmentCosts: true,
+      transportationOrders: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
   if (!shipment) throw new Error("Shipment not found.");
+  const order = shipment.transportationOrders[0];
+  const [carrierMemory, rateMemory] = await Promise.all([
+    buildStepMemory({
+      accountId: job.accountId,
+      task: "CARRIER_SELECTION",
+      shipment: shipment as unknown as Record<string, unknown>,
+      order: order as unknown as Record<string, unknown> | undefined,
+      queryParts: [shipment.transportMode, shipment.countryOfExport, shipment.destinationCountry, shipment.carrierName, "carrier tender preference"],
+    }),
+    buildStepMemory({
+      accountId: job.accountId,
+      task: "RATE_QUOTING",
+      shipment: shipment as unknown as Record<string, unknown>,
+      order: order as unknown as Record<string, unknown> | undefined,
+      queryParts: [shipment.transportMode, shipment.countryOfExport, shipment.destinationCountry, shipment.importerName, "buy cost target margin"],
+    }),
+  ]);
+  const preferredCarrier = trustedMemories(carrierMemory)
+    .map((memory) => cleanString((memory.scope?.carrierName ?? memory.scope?.scac) as string | undefined))
+    .find(Boolean) ?? null;
+  const rememberedTargetMargin = TmsAccountContextBuilder.rememberedTargetMargin(rateMemory);
   const acceptedQuote = shipment.freightQuotes.find((quote) => quote.status === "ACCEPTED");
   const activeTender = shipment.tenders.find((tender) => ["SENT", "ACCEPTED"].includes(tender.status));
   const missing: string[] = [];
   if (!acceptedQuote) missing.push("accepted freight quote");
   if (!activeTender) missing.push("active carrier tender");
   if (shipment.shipmentCosts.length === 0 && shipment.expectedBuyCost == null) missing.push("expected buy cost");
-  const summary = missing.length
+  let summary = missing.length
     ? `Commercial execution is incomplete: ${missing.join(", ")}. No rate or tender was fabricated.`
     : `Accepted quote, carrier tender, and expected cost are present. Gross margin is ${shipment.grossMarginPct == null ? "not yet calculated" : `${Number(shipment.grossMarginPct).toFixed(1)}%`}.`;
+  if (!activeTender && preferredCarrier) summary += ` Account memory identifies ${preferredCarrier} as a candidate, pending current-rate and operator validation.`;
+  if (rememberedTargetMargin != null) summary += ` The approved account target margin is ${rememberedTargetMargin.toFixed(1)}%.`;
   const decision = await createAgentDecision({
     accountId: job.accountId, shipmentId: job.shipmentId, documentId,
     agentName: "Cost & Carrier Readiness Agent", summary, confidence: missing.length ? null : 100, needsReview: missing.length > 0,
     purpose: "Verify rate, cost, margin, and carrier commitment before execution.",
-    sources: ["FreightQuote", "Tender", "ShipmentCost"], evidence: { missing, acceptedQuoteId: acceptedQuote?.id, activeTenderId: activeTender?.id },
+    sources: ["FreightQuote", "Tender", "ShipmentCost"],
+    evidence: {
+      missing,
+      acceptedQuoteId: acceptedQuote?.id,
+      activeTenderId: activeTender?.id,
+      preferredCarrier,
+      rememberedTargetMargin,
+      memoryRetrievalStatus: [carrierMemory.retrievalStatus, rateMemory.retrievalStatus],
+      memories: memoryLineage(carrierMemory, rateMemory),
+    },
   });
-  return { status: missing.length ? "REVIEW_REQUIRED" : "SUCCESS", summary, confidence: missing.length ? null : 100, decisionId: decision.id, details: { missing } };
+  return {
+    status: missing.length ? "REVIEW_REQUIRED" : "SUCCESS",
+    summary,
+    confidence: missing.length ? null : 100,
+    decisionId: decision.id,
+    details: {
+      missing,
+      preferredCarrier,
+      rememberedTargetMargin,
+      memoryRetrievalStatus: [carrierMemory.retrievalStatus, rateMemory.retrievalStatus],
+      memories: memoryLineage(carrierMemory, rateMemory),
+    },
+  };
 }
 
 async function runOperationalRisk(job: Awaited<ReturnType<typeof loadJob>>, documentId: string): Promise<StepResult> {
@@ -525,20 +722,34 @@ async function runOperationalRisk(job: Awaited<ReturnType<typeof loadJob>>, docu
     include: { trackingEvents: { orderBy: { receivedAt: "desc" }, take: 1 }, exceptionItems: { where: { status: { in: ["Open", "OPEN"] } } }, customsFilings: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
   if (!shipment) throw new Error("Shipment not found.");
+  const accountMemory = await buildStepMemory({
+    accountId: job.accountId,
+    task: "RISK_DETECTION",
+    shipment: shipment as unknown as Record<string, unknown>,
+    queryParts: [shipment.transportMode, shipment.countryOfExport, shipment.destinationCountry, shipment.carrierName, "tracking ETA promise last free day risk"],
+  });
+  const authoritativeMemory = trustedMemories(accountMemory);
+  const rememberedNumber = (key: "trackingFreshnessHours" | "promiseRiskBufferHours" | "lfdRiskHours", fallback: number, min: number, max: number) => {
+    const candidate = authoritativeMemory.map((memory) => memory.scope?.[key]).find((value) => typeof value === "number");
+    return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= min && candidate <= max ? candidate : fallback;
+  };
+  const trackingFreshnessHours = rememberedNumber("trackingFreshnessHours", 24, 1, 168);
+  const promiseRiskBufferHours = rememberedNumber("promiseRiskBufferHours", 4, 0, 72);
+  const lfdRiskHours = rememberedNumber("lfdRiskHours", 48, 1, 168);
   const latestTracking = shipment.trackingEvents[0];
   const trackingAgeHours = latestTracking ? (Date.now() - latestTracking.receivedAt.getTime()) / 3_600_000 : null;
   const eta = shipment.estimatedArrival;
   const promise = shipment.customerPromiseDate;
   const bufferHours = eta && promise ? (promise.getTime() - eta.getTime()) / 3_600_000 : null;
-  const promiseState = bufferHours == null ? null : bufferHours < 0 ? "MISSED" : bufferHours < 4 ? "AT_RISK" : "ON_PROMISE";
+  const promiseState = bufferHours == null ? null : bufferHours < 0 ? "MISSED" : bufferHours < promiseRiskBufferHours ? "AT_RISK" : "ON_PROMISE";
   const hoursToLfd = shipment.lastFreeDay ? (shipment.lastFreeDay.getTime() - Date.now()) / 3_600_000 : null;
   const released = shipment.customsFilings[0]?.filingStatus?.toUpperCase() === "RELEASED";
   const riskReasons: string[] = [];
   if (trackingAgeHours == null) riskReasons.push("no tracking signal");
-  else if (trackingAgeHours > 24) riskReasons.push(`tracking data is ${Math.round(trackingAgeHours)}h old`);
+  else if (trackingAgeHours > trackingFreshnessHours) riskReasons.push(`tracking data is ${Math.round(trackingAgeHours)}h old`);
   if (promiseState === "MISSED") riskReasons.push("customer promise missed");
-  else if (promiseState === "AT_RISK") riskReasons.push("customer promise buffer below 4h");
-  if (hoursToLfd != null && hoursToLfd < 48 && !released) riskReasons.push("last free day within 48h without customs release");
+  else if (promiseState === "AT_RISK") riskReasons.push(`customer promise buffer below ${promiseRiskBufferHours}h`);
+  if (hoursToLfd != null && hoursToLfd < lfdRiskHours && !released) riskReasons.push(`last free day within ${lfdRiskHours}h without customs release`);
   if (shipment.exceptionItems.length > 0) riskReasons.push(`${shipment.exceptionItems.length} open exception(s)`);
   const healthStatus = riskReasons.length === 0 ? "Healthy" : promiseState === "MISSED" || (hoursToLfd != null && hoursToLfd < 12) ? "Critical" : "At Risk";
   await db.shipment.update({ where: { id: shipment.id }, data: { promiseState, healthStatus } });
@@ -547,9 +758,30 @@ async function runOperationalRisk(job: Awaited<ReturnType<typeof loadJob>>, docu
     accountId: job.accountId, shipmentId: job.shipmentId, documentId,
     agentName: "Operational Risk Agent", summary, confidence: latestTracking?.confidence == null ? null : Math.round(latestTracking.confidence), needsReview: riskReasons.length > 0,
     purpose: "Evaluate tracking freshness, customer promise, last free day, customs release, and active exceptions.",
-    sources: ["TrackingEvent", "Shipment", "CustomsFiling", "ExceptionItem"], evidence: { trackingAgeHours, bufferHours, hoursToLfd, riskReasons },
+    sources: ["TrackingEvent", "Shipment", "CustomsFiling", "ExceptionItem"],
+    evidence: {
+      trackingAgeHours,
+      bufferHours,
+      hoursToLfd,
+      riskReasons,
+      thresholds: { trackingFreshnessHours, promiseRiskBufferHours, lfdRiskHours },
+      memoryRetrievalStatus: accountMemory.retrievalStatus,
+      memories: memoryLineage(accountMemory),
+    },
   });
-  return { status: riskReasons.length ? "REVIEW_REQUIRED" : "SUCCESS", summary, confidence: latestTracking?.confidence == null ? null : Math.round(latestTracking.confidence), decisionId: decision.id, details: { riskReasons, healthStatus } };
+  return {
+    status: riskReasons.length ? "REVIEW_REQUIRED" : "SUCCESS",
+    summary,
+    confidence: latestTracking?.confidence == null ? null : Math.round(latestTracking.confidence),
+    decisionId: decision.id,
+    details: {
+      riskReasons,
+      healthStatus,
+      thresholds: { trackingFreshnessHours, promiseRiskBufferHours, lfdRiskHours },
+      memoryRetrievalStatus: accountMemory.retrievalStatus,
+      memories: memoryLineage(accountMemory),
+    },
+  };
 }
 
 const stepRunners = [runDocumentIntake, runShipmentEnrichment, runDocumentReadiness, runMovementReadiness, runCostCarrierReadiness, runOperationalRisk];
@@ -661,47 +893,77 @@ export async function executeTmsPipelineJob(jobId: string) {
 }
 
 export async function getTmsPipelineStatus(accountId: string, shipmentId: string) {
-  const job = await db.pipelineJob.findFirst({
+  const jobs = await db.pipelineJob.findMany({
     where: { accountId, shipmentId, workflowType: TMS_WORKFLOW_TYPE },
     orderBy: { createdAt: "desc" },
+    take: 6,
     include: { stepExecutions: { orderBy: [{ attempt: "desc" }, { stepNumber: "asc" }] } },
   });
-  if (!job) return null;
-  const latestByStep = new Map<number, (typeof job.stepExecutions)[number]>();
-  for (const execution of job.stepExecutions) {
-    const current = latestByStep.get(execution.stepNumber);
-    if (!current || execution.attempt > current.attempt) latestByStep.set(execution.stepNumber, execution);
-  }
-  const stalled = job.status === "PROCESSING" && !!job.heartbeatAt && Date.now() - job.heartbeatAt.getTime() > STALL_THRESHOLD_MS;
-  return {
-    jobId: job.id,
-    workflowType: job.workflowType,
-    status: job.status,
-    currentStep: job.currentStep,
-    totalSteps: job.totalSteps,
-    progressPercent: job.status === "COMPLETED" ? 100 : Math.round((Math.max(0, job.currentStep - (job.status === "PROCESSING" ? 1 : 0)) / job.totalSteps) * 100),
-    activeAgent: job.status === "PROCESSING" ? TMS_PIPELINE_STEPS.find((step) => step.stepNumber === job.currentStep)?.agentName ?? null : null,
-    attemptCount: job.attemptCount,
-    maxAttempts: job.maxAttempts,
-    stalled,
-    errorMessage: job.errorMessage,
-    nextRetryAt: job.nextRetryAt,
-    startedAt: job.startedAt,
-    completedAt: job.completedAt,
-    correlationId: job.correlationId,
-    steps: TMS_PIPELINE_STEPS.map((definition) => {
-      const execution = latestByStep.get(definition.stepNumber);
-      return {
-        ...definition,
-        status: execution?.status ?? "PENDING",
-        attempt: execution?.attempt ?? null,
-        startedAt: execution?.startedAt ?? null,
-        completedAt: execution?.completedAt ?? null,
-        errorMessage: execution?.errorMessage ?? null,
-        output: execution?.output ?? null,
-      };
-    }),
-  };
+  if (jobs.length === 0) return null;
+  const outboxEvents = await db.workflowOutboxEvent.findMany({
+    where: { eventType: TMS_PIPELINE_OUTBOX_EVENT, aggregateId: { in: jobs.map((job) => job.id) } },
+  });
+  const outboxByJob = new Map(outboxEvents.map((event) => [event.aggregateId, event]));
+  const runs = jobs.map((job) => {
+    const latestByStep = new Map<number, (typeof job.stepExecutions)[number]>();
+    for (const execution of job.stepExecutions) {
+      const current = latestByStep.get(execution.stepNumber);
+      if (!current || execution.attempt > current.attempt) latestByStep.set(execution.stepNumber, execution);
+    }
+    const outbox = outboxByJob.get(job.id);
+    const processingStalled = job.status === "PROCESSING" && !!job.heartbeatAt && Date.now() - job.heartbeatAt.getTime() > STALL_THRESHOLD_MS;
+    const pendingStalled = job.status === "PENDING" && (
+      Date.now() - job.createdAt.getTime() > PENDING_STALL_THRESHOLD_MS || outbox?.status === "FAILED"
+    );
+    const stalled = processingStalled || pendingStalled;
+    const stallReason = processingStalled
+      ? "The active worker heartbeat expired. The recovery sweep will safely reclaim this run."
+      : pendingStalled
+        ? outbox?.lastError || "The dispatch event has not claimed this queued job. Recovery is pending."
+        : null;
+    return {
+      jobId: job.id,
+      workflowType: job.workflowType,
+      status: job.status,
+      currentStep: job.currentStep,
+      totalSteps: job.totalSteps,
+      progressPercent: job.status === "COMPLETED" ? 100 : Math.round((Math.max(0, job.currentStep - (job.status === "PROCESSING" ? 1 : 0)) / job.totalSteps) * 100),
+      activeAgent: job.status === "PROCESSING" ? TMS_PIPELINE_STEPS.find((step) => step.stepNumber === job.currentStep)?.agentName ?? null : null,
+      attemptCount: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      stalled,
+      stallReason,
+      errorMessage: job.errorMessage,
+      nextRetryAt: job.nextRetryAt,
+      lastHeartbeatAt: job.heartbeatAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      correlationId: job.correlationId,
+      dispatch: outbox ? {
+        status: outbox.status,
+        attemptCount: outbox.attemptCount,
+        maxAttempts: outbox.maxAttempts,
+        nextAttemptAt: outbox.nextAttemptAt,
+        dispatchedAt: outbox.dispatchedAt,
+        lastError: outbox.lastError,
+      } : null,
+      steps: TMS_PIPELINE_STEPS.map((definition) => {
+        const execution = latestByStep.get(definition.stepNumber);
+        return {
+          ...definition,
+          status: execution?.status ?? "PENDING",
+          attempt: execution?.attempt ?? null,
+          startedAt: execution?.startedAt ?? null,
+          completedAt: execution?.completedAt ?? null,
+          errorMessage: execution?.errorMessage ?? null,
+          output: execution?.output ?? null,
+        };
+      }),
+    };
+  });
+  return { ...runs[0], runs };
 }
 
 export async function retryTmsPipeline(accountId: string, shipmentId: string, userId: string) {
@@ -710,10 +972,36 @@ export async function retryTmsPipeline(accountId: string, shipmentId: string, us
     orderBy: { createdAt: "desc" },
   });
   if (!job) throw new Error("No TMS pipeline run exists for this shipment.");
-  const stalled = job.status === "PROCESSING" && !!job.heartbeatAt && Date.now() - job.heartbeatAt.getTime() > STALL_THRESHOLD_MS;
+  const outbox = await db.workflowOutboxEvent.findFirst({
+    where: { eventType: TMS_PIPELINE_OUTBOX_EVENT, aggregateId: job.id },
+  });
+  const processingStalled = job.status === "PROCESSING" && !!job.heartbeatAt && Date.now() - job.heartbeatAt.getTime() > STALL_THRESHOLD_MS;
+  const pendingStalled = job.status === "PENDING" && (
+    Date.now() - job.createdAt.getTime() > PENDING_STALL_THRESHOLD_MS || outbox?.status === "FAILED"
+  );
+  const stalled = processingStalled || pendingStalled;
   if (job.status !== "FAILED" && !stalled) throw new Error(`The latest TMS pipeline is ${job.status} and cannot be retried.`);
   if (job.attemptCount >= job.maxAttempts) throw new Error("The TMS pipeline exhausted its retry budget.");
-  await db.pipelineJob.update({ where: { id: job.id }, data: { status: "PENDING", errorMessage: null, nextRetryAt: null, lockedAt: null, heartbeatAt: null, completedAt: null } });
+  const eventKey = `${TMS_PIPELINE_OUTBOX_EVENT}:${job.id}`;
+  await db.$transaction(async (tx) => {
+    await tx.pipelineJob.update({
+      where: { id: job.id },
+      data: { status: "PENDING", errorMessage: null, nextRetryAt: null, lockedAt: null, heartbeatAt: null, completedAt: null },
+    });
+    await tx.workflowOutboxEvent.upsert({
+      where: { eventKey },
+      update: { status: "PENDING", attemptCount: 0, nextAttemptAt: new Date(), lockedAt: null, lastError: null },
+      create: {
+        accountId,
+        eventKey,
+        eventType: TMS_PIPELINE_OUTBOX_EVENT,
+        aggregateType: "PipelineJob",
+        aggregateId: job.id,
+        correlationId: job.correlationId,
+        payload: { jobId: job.id },
+      },
+    });
+  });
   await createAuditLog({
     accountId, userId, action: "TMS_PIPELINE_RETRY_REQUESTED", entity: "PipelineJob", entityId: job.id, source: "UI",
     correlationId: job.correlationId, metadata: { shipmentId, previousStatus: job.status, stalled },

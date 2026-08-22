@@ -1,11 +1,7 @@
 import { executeTmsPipelineJob } from "@/lib/tmsPipelineEngine";
+import { recoverTmsPipelineDispatches } from "@/lib/tmsPipelineOutbox";
 import { tmsInngest } from "../client";
-
-export const TMS_PIPELINE_EVENT = "tms/pipeline.requested";
-
-export async function queueTmsPipelineJob(jobId: string): Promise<void> {
-  await tmsInngest.send({ name: TMS_PIPELINE_EVENT, data: { jobId } });
-}
+import { TMS_PIPELINE_EVENT } from "../tmsPipelineEvents";
 
 export const tmsPipelineProcessingJob = (tmsInngest.createFunction as any)(
   {
@@ -20,4 +16,15 @@ export const tmsPipelineProcessingJob = (tmsInngest.createFunction as any)(
     );
     return { jobId: event.data.jobId, status: result?.status ?? "UNKNOWN" };
   }
+);
+
+export const tmsPipelineRecoveryJob = (tmsInngest.createFunction as any)(
+  {
+    id: "tms-pipeline-outbox-recovery",
+    retries: 2,
+    triggers: [{ cron: "*/2 * * * *" }],
+    concurrency: [{ limit: 1 }],
+  },
+  async ({ step }: { step: any }) =>
+    step.run("recover-undelivered-tms-workflows", () => recoverTmsPipelineDispatches())
 );

@@ -1,14 +1,29 @@
 import { randomUUID } from "node:crypto";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
-import { after, NextResponse } from "next/server";
-import { enqueueTmsDocumentPipeline, executeTmsPipelineJob } from "@/lib/tmsPipelineEngine";
-import { queueTmsPipelineJob } from "@/lib/inngest/functions/tmsPipelineProcessing";
+import { NextResponse } from "next/server";
+import { enqueueTmsDocumentPipeline, TMS_WORKFLOW_TYPE } from "@/lib/tmsPipelineEngine";
+import { scheduleTmsPipelineDispatch } from "@/lib/tmsPipelineOutbox";
 
 export const maxDuration = 60;
 
 export const POST = withAuthenticatedRoute<{ id: string }>(
   async ({ ctx, params, requestId }) => {
+    const activeJob = await db.pipelineJob.findFirst({
+      where: {
+        accountId: ctx.accountId,
+        shipmentId: params.id,
+        workflowType: TMS_WORKFLOW_TYPE,
+        status: { in: ["PENDING", "PROCESSING"] },
+      },
+      select: { id: true, status: true },
+    });
+    if (activeJob) {
+      return NextResponse.json(
+        { error: `Pipeline ${activeJob.id} is already ${activeJob.status.toLowerCase()}.`, requestId },
+        { status: 409 }
+      );
+    }
     const document = await db.shipmentDocument.findFirst({
       where: { accountId: ctx.accountId, shipmentId: params.id },
       orderBy: { createdAt: "desc" },
@@ -29,17 +44,8 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       correlationId: runKey,
       runKey,
     });
-    if (process.env.INNGEST_EVENT_KEY) await queueTmsPipelineJob(job.id);
-    else {
-      after(async () => {
-        try {
-          await executeTmsPipelineJob(job.id);
-        } catch (error) {
-          console.error("[TMS pipeline manual trigger]", error);
-        }
-      });
-    }
-    return NextResponse.json({ jobId: job.id, status: job.status, requestId }, { status: 202 });
+    const dispatch = await scheduleTmsPipelineDispatch(job.id);
+    return NextResponse.json({ jobId: job.id, status: job.status, dispatch, requestId }, { status: 202 });
   },
   { permission: "shipments.write", write: true }
 );

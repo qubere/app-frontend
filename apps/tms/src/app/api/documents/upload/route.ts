@@ -5,9 +5,9 @@ import { put } from "@vercel/blob";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { createAuditLog } from "@qubere/decisions";
-import { after, NextResponse } from "next/server";
-import { enqueueTmsDocumentPipeline, executeTmsPipelineJob } from "@/lib/tmsPipelineEngine";
-import { queueTmsPipelineJob } from "@/lib/inngest/functions/tmsPipelineProcessing";
+import { NextResponse } from "next/server";
+import { enqueueTmsDocumentPipeline } from "@/lib/tmsPipelineEngine";
+import { scheduleTmsPipelineDispatch } from "@/lib/tmsPipelineOutbox";
 
 export const maxDuration = 60;
 
@@ -150,19 +150,7 @@ export const POST = withAuthenticatedRoute(
       correlationId,
     });
 
-    let dispatch: "INNGEST" | "NEXT_AFTER" = "NEXT_AFTER";
-    if (process.env.INNGEST_EVENT_KEY) {
-      await queueTmsPipelineJob(job.id);
-      dispatch = "INNGEST";
-    } else {
-      after(async () => {
-        try {
-          await executeTmsPipelineJob(job.id);
-        } catch (error) {
-          console.error("[TMS document pipeline]", error);
-        }
-      });
-    }
+    const dispatch = await scheduleTmsPipelineDispatch(job.id);
 
     return NextResponse.json(
       {

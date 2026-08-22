@@ -183,6 +183,7 @@ model Account {
   agentExecutionRecords       AgentExecutionRecord[]
   shipmentStateRecords        ShipmentStateRecord[]
   pipelineJobs                PipelineJob[]
+  workflowOutboxEvents        WorkflowOutboxEvent[]
   classificationCases         ClassificationCase[]
   classificationChangeImpacts ClassificationChangeImpact[]
   caseDocuments               CaseDocument[]
@@ -2944,6 +2945,42 @@ model PipelineStepExecution {
 
   @@index([jobId, stepNumber])
   @@index([jobId, attempt])
+}
+
+enum WorkflowOutboxStatus {
+  PENDING
+  DISPATCHING
+  DISPATCHED
+  FAILED
+}
+
+/// Transactional hand-off between authoritative workflow state and the
+/// external executor. Producers insert this record in the same transaction as
+/// the PipelineJob; a dispatcher can safely retry publication by eventKey.
+model WorkflowOutboxEvent {
+  id            String               @id @default(cuid())
+  accountId     String
+  eventKey      String               @unique
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  correlationId String?
+  payload       Json
+  status        WorkflowOutboxStatus @default(PENDING)
+  attemptCount  Int                  @default(0)
+  maxAttempts   Int                  @default(12)
+  nextAttemptAt DateTime             @default(now())
+  lockedAt      DateTime?
+  dispatchedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([aggregateType, aggregateId])
+  @@index([accountId, createdAt])
 }
 
 // ============================================================================
