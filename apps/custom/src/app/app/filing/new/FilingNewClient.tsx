@@ -24,6 +24,7 @@ export function FilingNewClient() {
   const country = searchParams.get("country");
   const procedure = searchParams.get("procedure");
   const message = searchParams.get("message");
+  const release = searchParams.get("release") ?? "1.0"; // default for backwards compat
 
   const [activeTab, setActiveTab] = useState<"overview" | "declaration" | "response">("declaration");
   const [declarationData, setDeclarationData] = useState<any>({});
@@ -127,7 +128,7 @@ export function FilingNewClient() {
     }
     
     try {
-      // Create filing with declaration data
+      // Create filing with declaration data — pass release for version-specific processing
       const res = await fetch("/api/filing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,6 +136,7 @@ export function FilingNewClient() {
           country,
           procedureCode: procedure,
           messageName: message,
+          release,
           standalone: true,
           declarationData,
           localReferenceNumber: localReferenceNumber.trim(),
@@ -182,6 +184,7 @@ export function FilingNewClient() {
           country,
           procedureCode: procedure,
           messageName: message,
+          release, // include detected release so the filing row reflects correct version
           standalone: true,
           declarationData,
           localReferenceNumber: localReferenceNumber.trim(),
@@ -385,6 +388,7 @@ export function FilingNewClient() {
                 procedureCode={procedure}
                 messageName={message}
                 messageType="request"
+                release={release}
                 data={declarationData}
                 onChange={updateDeclarationField}
                 readOnly={false}
