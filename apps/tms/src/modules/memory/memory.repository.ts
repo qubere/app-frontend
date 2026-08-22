@@ -184,6 +184,7 @@ export class TmsMemoryRepository {
       FROM "AccountMemory"
       WHERE "accountId" = ${accountId}
         AND domain = 'TMS'::"AccountMemoryDomain"
+        AND task = ${task}
         AND ("validUntil" IS NULL OR "validUntil" > now())
         AND "subjectType"::text = ANY(${subjectTypes}::text[])
         AND (
@@ -213,6 +214,7 @@ export class TmsMemoryRepository {
       FROM "AccountMemory"
       WHERE "accountId" = ${accountId}
         AND domain = 'TMS'::"AccountMemoryDomain"
+        AND task = ${task}
         AND "embeddingVector" IS NOT NULL
         AND ("validUntil" IS NULL OR "validUntil" > now())
         AND "subjectType"::text = ANY(${subjectTypes}::text[])
@@ -232,6 +234,7 @@ export class TmsMemoryRepository {
       where: {
         accountId,
         domain: "TMS",
+        task,
         subjectType: { in: subjectTypes },
         OR: [{ validUntil: null }, { validUntil: { gt: new Date() } }],
       },

@@ -1,102 +1,173 @@
-import { NextRequest, NextResponse } from "next/server";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { put } from "@vercel/blob";
-import { getAccountContext } from "@qubere/auth";
+import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { createAuditLog } from "@qubere/decisions";
-import { runTmsAutonomousPipeline } from "@/lib/tmsPipelineEngine";
+import { NextResponse } from "next/server";
+import { enqueueTmsDocumentPipeline } from "@/lib/tmsPipelineEngine";
+import { scheduleTmsPipelineDispatch } from "@/lib/tmsPipelineOutbox";
 
-export async function POST(req: NextRequest) {
-  try {
-    const context = await getAccountContext().catch(() => null);
-    const accountId = context?.accountId || "default-account";
-    const userId = context?.userId || "system";
+export const maxDuration = 60;
 
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
+
+function fileSignatureMatches(bytes: Buffer, mimeType: string): boolean {
+  if (mimeType === "application/pdf") return bytes.subarray(0, 5).toString("ascii") === "%PDF-";
+  if (mimeType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (mimeType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  return false;
+}
+
+function safeFileName(fileName: string): string {
+  const base = path.basename(fileName).replace(/[^a-zA-Z0-9._-]+/g, "-");
+  return base.slice(0, 180) || "freight-document";
+}
+
+async function storeOriginal(input: {
+  accountId: string;
+  fileName: string;
+  mimeType: string;
+  bytes: Buffer;
+}): Promise<{ url: string; provider: "VERCEL_BLOB" | "LOCAL_DEV" }> {
+  const storageName = `${Date.now()}-${randomUUID()}-${safeFileName(input.fileName)}`;
+  const blobPath = `tms/documents/${input.accountId}/${storageName}`;
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const blob = await put(blobPath, input.bytes, {
+      access: "public",
+      contentType: input.mimeType,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    return { url: blob.url, provider: "VERCEL_BLOB" };
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Document storage is not configured. Set BLOB_READ_WRITE_TOKEN before accepting production uploads.");
+  }
+  const uploadDir = path.join(process.cwd(), "public", "uploads");
+  await mkdir(uploadDir, { recursive: true });
+  await writeFile(path.join(uploadDir, storageName), input.bytes, { flag: "wx" });
+  return { url: `/uploads/${storageName}`, provider: "LOCAL_DEV" };
+}
+
+export const POST = withAuthenticatedRoute(
+  async ({ req, ctx, requestId }) => {
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const docType = (formData.get("docType") as string) || "BILL_OF_LADING";
-    const shipmentId = formData.get("shipmentId") as string | null;
+    const file = formData.get("file");
+    const shipmentId = typeof formData.get("shipmentId") === "string"
+      ? String(formData.get("shipmentId")).trim()
+      : "";
+    const declaredDocType = typeof formData.get("docType") === "string"
+      ? String(formData.get("docType")).trim()
+      : "OTHER";
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "No file was provided.", requestId }, { status: 400 });
+    }
+    if (!shipmentId) {
+      return NextResponse.json({ error: "A shipment is required to run TMS document processing.", requestId }, { status: 400 });
+    }
+    if (file.size === 0 || file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: "File must be between 1 byte and 25 MB.", requestId }, { status: 400 });
+    }
+    const mimeType = file.type || "application/pdf";
+    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+      return NextResponse.json({ error: "Only PDF, PNG, and JPEG freight documents are supported.", requestId }, { status: 415 });
     }
 
-    const fileName = file.name;
-    let fileUrl = `/uploads/${fileName}`;
-
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token) {
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const blobPath = `tms/documents/${accountId}/${Date.now()}-${fileName}`;
-        const blob = await put(blobPath, buffer, {
-          access: "public",
-          contentType: file.type || "application/pdf",
-          token,
-        });
-        fileUrl = blob.url;
-      } catch (blobErr) {
-        console.warn("Vercel blob upload fallback:", blobErr);
-      }
+    const shipment = await db.shipment.findFirst({
+      where: { id: shipmentId, accountId: ctx.accountId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!shipment) {
+      return NextResponse.json({ error: "Shipment not found in this account.", requestId }, { status: 404 });
     }
 
-    // Ensure target shipment exists if shipmentId provided
-    let validShipmentId: string | null = null;
-    if (shipmentId) {
-      const existingShipment = await db.shipment.findFirst({
-        where: { id: shipmentId },
-        select: { id: true },
-      }).catch(() => null);
-      if (existingShipment) {
-        validShipmentId = existingShipment.id;
-      }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    if (!fileSignatureMatches(bytes, mimeType)) {
+      return NextResponse.json({ error: "The file contents do not match the declared file type.", requestId }, { status: 400 });
     }
-
-    const doc = await db.shipmentDocument.create({
-      data: {
-        accountId,
-        docType: docType,
-        fileName,
-        fileUrl,
-        shipmentId: validShipmentId,
-        status: "PARSED",
-        confidence: 96,
-        version: "1.0",
-        byteSize: file.size,
-        mimeType: file.type || "application/pdf",
-      },
+    const checksum = createHash("sha256").update(bytes).digest("hex");
+    const correlationId = randomUUID();
+    const existing = await db.shipmentDocument.findFirst({
+      where: { accountId: ctx.accountId, shipmentId, checksum },
     });
 
-    await createAuditLog({
-      accountId,
-      userId,
-      source: "UI",
-      action: "DOCUMENT_UPLOADED",
-      entity: "ShipmentDocument",
-      entityId: doc.id,
-      metadata: { fileName, docType, shipmentId: validShipmentId, fileUrl },
-    }).catch(() => null);
-
-    // Trigger Autonomous Agent Orchestration Pipeline
-    if (validShipmentId) {
-      runTmsAutonomousPipeline(validShipmentId, accountId, userId).catch((err) => {
-        console.error("Pipeline trigger error:", err);
+    let document = existing;
+    let storageProvider: "VERCEL_BLOB" | "LOCAL_DEV" | "EXISTING" = "EXISTING";
+    if (!document) {
+      const stored = await storeOriginal({
+        accountId: ctx.accountId,
+        fileName: file.name,
+        mimeType,
+        bytes,
+      });
+      storageProvider = stored.provider;
+      document = await db.shipmentDocument.create({
+        data: {
+          accountId: ctx.accountId,
+          shipmentId,
+          fileName: safeFileName(file.name),
+          fileUrl: stored.url,
+          checksum,
+          byteSize: file.size,
+          mimeType,
+          docType: declaredDocType || "OTHER",
+          status: "Processing",
+          confidence: null,
+          source: "UPLOAD",
+        },
       });
     }
 
-    return NextResponse.json({
-      ok: true,
-      documentId: doc.id,
-      fileName,
-      fileUrl,
-      docType,
-      message: "Document uploaded and autonomous agent pipeline triggered",
+    await createAuditLog({
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      action: existing ? "TMS_DOCUMENT_DUPLICATE_REUSED" : "TMS_DOCUMENT_UPLOADED",
+      entity: "ShipmentDocument",
+      entityId: document.id,
+      source: "UI",
+      requestId,
+      correlationId,
+      failClosed: true,
+      metadata: {
+        shipmentId,
+        fileName: document.fileName,
+        mimeType,
+        byteSize: file.size,
+        checksum,
+        storageProvider,
+      },
     });
-  } catch (err: any) {
-    console.error("Document upload API handler error:", err);
+
+    const job = await enqueueTmsDocumentPipeline({
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      shipmentId,
+      documentId: document.id,
+      correlationId,
+    });
+
+    const dispatch = await scheduleTmsPipelineDispatch(job.id);
+
     return NextResponse.json(
-      { error: err?.message || "Failed to process document upload" },
-      { status: 500 }
+      {
+        status: job.status === "COMPLETED" ? "COMPLETED" : "ACCEPTED",
+        requestId,
+        correlationId,
+        shipmentId,
+        documentId: document.id,
+        jobId: job.id,
+        duplicate: Boolean(existing),
+        dispatch,
+        message: existing
+          ? "Existing document reused; processing status is available on the shipment."
+          : "Document stored and queued for TMS agent processing.",
+      },
+      { status: 202 }
     );
-  }
-}
+  },
+  { permission: "documents.create", write: true }
+);

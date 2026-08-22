@@ -190,7 +190,7 @@ export function DocumentUploadModal({
           {uploadSuccess && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Document uploaded, parsed, and attached to shipment workspace!</span>
+              <span>Document stored and queued. Agent progress is now visible on the shipment.</span>
             </div>
           )}
         </div>
@@ -206,7 +206,7 @@ export function DocumentUploadModal({
             className="px-4 py-2 rounded-xl bg-brand text-white text-xs font-bold hover:bg-brand-hover disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer shadow-xs"
           >
             {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{isUploading ? "AI Extracting..." : "Upload & Parse"}</span>
+            <span>{isUploading ? "Uploading & Queuing..." : "Upload & Process"}</span>
           </button>
         </div>
       </div>

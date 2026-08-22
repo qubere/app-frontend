@@ -44,6 +44,7 @@ function context(memories: TmsMemoryRecord[]): TmsAccountMemoryContext {
     memories: fuseTmsMemoryResults(memories, [], 10),
     memoryCount: memories.length,
     formattedText: "",
+    retrievalStatus: memories.length ? "AVAILABLE" : "EMPTY",
   };
 }
 
@@ -68,6 +69,18 @@ describe("TMS account memory", () => {
     });
     expect(scored[0].id).toBe("matching");
     expect(scored[0].scopeMatches).toBe(1);
+  });
+
+  it("applies time decay so equally ranked recent memory wins", () => {
+    const recent = memory({ id: "recent", lastObservedAt: new Date() });
+    const old = memory({
+      id: "old",
+      lastObservedAt: new Date(Date.now() - 730 * 86_400_000),
+      validFrom: new Date(Date.now() - 730 * 86_400_000),
+    });
+    const scored = fuseTmsMemoryResults([old, recent], [old, recent], 10);
+    expect(scored[0].id).toBe("recent");
+    expect(scored[0].score).toBeGreaterThan(scored[1].score);
   });
 
   it("applies bounded human and tender outcome adjustments to carrier ranking", () => {

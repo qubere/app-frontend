@@ -33,10 +33,12 @@ export class TmsHybridMemoryRetriever {
         const values = payload.embedding?.values ?? payload.embeddings?.[0]?.values;
         if (Array.isArray(values) && values.length === EMBEDDING_DIMENSIONS) return values;
       } catch (error) {
-        console.warn("[TmsHybridMemoryRetriever] Gemini embedding failed; using deterministic fallback", error);
+        console.warn("[TmsHybridMemoryRetriever] Gemini embedding failed; using lexical retrieval only", error);
       }
     }
-    return generateDeterministicEmbedding(text);
+    // The deterministic helper remains exported for repeatable unit tests, but
+    // it is not a semantic embedding and must not influence production ranking.
+    return [];
   }
 
   static async search(params: TmsMemorySearchQuery): Promise<ScoredTmsMemory[]> {
