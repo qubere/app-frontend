@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, X } from "lucide-react";
 
 interface DocumentUploadModalProps {
@@ -16,35 +17,82 @@ export function DocumentUploadModal({
   shipmentId,
   onUploadSuccess,
 }: DocumentUploadModalProps) {
+  const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [docType, setDocType] = useState<string>("BILL_OF_LADING");
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadSuccess, setUploadSuccess] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFiles(Array.from(e.target.files));
+      setErrorMessage(null);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFiles(Array.from(e.dataTransfer.files));
+      setErrorMessage(null);
     }
   };
 
   const handleUpload = async () => {
     if (files.length === 0) return;
     setIsUploading(true);
+    setErrorMessage(null);
 
     try {
-      // Simulate AI Parsing Agent upload and extraction pipeline
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("docType", docType);
+        if (shipmentId) {
+          formData.append("shipmentId", shipmentId);
+        }
+
+        const res = await fetch("/api/documents/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || `Upload failed with status ${res.status}`);
+        }
+      }
+
       setUploadSuccess(true);
       if (onUploadSuccess) onUploadSuccess();
+      router.refresh();
+
       setTimeout(() => {
         onClose();
         setFiles([]);
         setUploadSuccess(false);
         setIsUploading(false);
       }, 1200);
-    } catch {
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to process document upload");
       setIsUploading(false);
     }
   };
@@ -58,7 +106,7 @@ export function DocumentUploadModal({
             <Sparkles className="w-4 h-4 text-brand" />
             <h3 className="text-sm font-bold text-ink">AI Document Ingestion & Parser Agent</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded-full text-ink-muted hover:text-ink hover:bg-white">
+          <button onClick={onClose} className="p-1 rounded-full text-ink-muted hover:text-ink hover:bg-white cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -82,16 +130,37 @@ export function DocumentUploadModal({
           </div>
 
           {/* Drag & Drop Box */}
-          <div className="border-2 border-dashed border-border hover:border-brand rounded-2xl p-6 text-center space-y-3 bg-surface-muted/30 transition-colors">
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-6 text-center space-y-3 transition-colors ${
+              isDragging
+                ? "border-brand bg-brand/5"
+                : "border-border hover:border-brand bg-surface-muted/30"
+            }`}
+          >
             <div className="w-12 h-12 rounded-full bg-brand/10 text-brand flex items-center justify-center mx-auto">
               <Upload className="w-6 h-6" />
             </div>
             <div>
               <p className="text-xs font-bold text-ink">
-                Drag & drop trade PDFs or image files here, or <label className="text-brand hover:underline cursor-pointer">browse</label>
+                Drag & drop trade PDFs or image files here, or{" "}
+                <label htmlFor="doc-file-input" className="text-brand hover:underline cursor-pointer font-extrabold">
+                  browse
+                </label>
               </p>
-              <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileChange} className="hidden" id="doc-file-input" />
-              <p className="text-[10px] text-ink-muted mt-1">Supports PDF, PNG, JPG up to 25MB. AI agent automatically extracts fields and bounding boxes.</p>
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleFileChange}
+                className="hidden"
+                id="doc-file-input"
+              />
+              <p className="text-[10px] text-ink-muted mt-1">
+                Supports PDF, PNG, JPG up to 25MB. AI agent automatically extracts fields and links to shipment workspace.
+              </p>
             </div>
           </div>
 
@@ -111,17 +180,24 @@ export function DocumentUploadModal({
             </div>
           )}
 
+          {errorMessage && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           {uploadSuccess && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Document successfully parsed and attached to shipment workspace!</span>
+              <span>Document uploaded, parsed, and attached to shipment workspace!</span>
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="p-4 border-t border-border flex items-center justify-end space-x-2 bg-surface-muted/30">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-ink hover:bg-white">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-ink hover:bg-white cursor-pointer">
             Cancel
           </button>
           <button

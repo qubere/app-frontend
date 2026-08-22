@@ -111,16 +111,17 @@ export interface TmsAiAnalyticsData {
   };
 }
 
+// STRICT TMS FREIGHT EXECUTION AGENT SURFACES
 const TMS_AI_SURFACES = [
-  { surface: "freight-intake", label: "Freight Intake Agent", model: "gemini-2.5-flash" },
-  { surface: "movement-planner", label: "Movement & Stop Planning Agent", model: "gemini-2.5-flash" },
-  { surface: "carrier-rating", label: "Carrier Rating & Quote Agent", model: "gemini-2.5-flash" },
-  { surface: "tender-dispatch", label: "Autonomous Tender Dispatch Agent", model: "gemini-2.5-flash" },
-  { surface: "tracking-eta", label: "Tracking & ETA Cascade Agent", model: "gemini-2.5-flash" },
-  { surface: "demurrage-risk", label: "Demurrage & LFD Risk Agent", model: "gemini-2.5-flash" },
-  { surface: "freight-audit", label: "3-Way Freight Audit Agent", model: "gemini-2.5-flash" },
-  { surface: "exception-resolution", label: "Exception Resolution Agent", model: "gemini-2.5-flash" },
-  { surface: "copilot", label: "Qubere Freight Supervisor Assistant", model: "gemini-2.5-pro" },
+  { surface: "freight-intake", label: "Inbound Freight Intake Agent", model: "gemini-2.5-flash", policy: "Verified" },
+  { surface: "movement-planner", label: "Movement & Stop Planning Agent", model: "gemini-2.5-flash", policy: "Route Optimized" },
+  { surface: "carrier-rating", label: "Carrier Rating & Quote Agent", model: "gemini-2.5-flash", policy: "Contract Tariff" },
+  { surface: "tender-dispatch", label: "Autonomous Tender Dispatch Agent", model: "gemini-2.5-flash", policy: "60-Min SLA" },
+  { surface: "tracking-eta", label: "Tracking & ETA Cascade Agent", model: "gemini-2.5-flash", policy: "EDI 214 Live" },
+  { surface: "demurrage-risk", label: "Demurrage & LFD Defense Agent", model: "gemini-2.5-flash", policy: "Shield Enabled" },
+  { surface: "freight-audit", label: "3-Way Linehaul & FSC Audit Agent", model: "gemini-2.5-flash", policy: "POD Mandatory" },
+  { surface: "exception-resolution", label: "Exception Resolution Agent", model: "gemini-2.5-flash", policy: "Orchestrator Enforced" },
+  { surface: "copilot", label: "Qubere Freight Supervisor Assistant", model: "gemini-2.5-pro", policy: "Tool Execution" },
 ];
 
 function percentile(sorted: number[], p: number): number | null {
@@ -136,6 +137,55 @@ function surfaceLabel(surface: string): string {
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+}
+
+// Normalize agent key for TMS freight domain only
+function getTmsCanonicalAgentInfo(rawKey: string): { canonicalName: string; surfaceKey: string; model: string; policy: string } | null {
+  const cleaned = rawKey.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  // Exclude Customs domain agents from TMS
+  if (
+    cleaned.includes("hts") ||
+    cleaned.includes("classification") ||
+    cleaned.includes("productintelligence") ||
+    cleaned.includes("origin") ||
+    cleaned.includes("valuation") ||
+    cleaned.includes("filingreadiness") ||
+    cleaned.includes("customsfiling") ||
+    cleaned.includes("response")
+  ) {
+    return null;
+  }
+
+  if (cleaned.includes("intake") || cleaned.includes("freightintake")) {
+    return { canonicalName: "Inbound Freight Intake Agent", surfaceKey: "freight-intake", model: "gemini-2.5-flash", policy: "Verified" };
+  }
+  if (cleaned.includes("movement") || cleaned.includes("planner")) {
+    return { canonicalName: "Movement & Stop Planning Agent", surfaceKey: "movement-planner", model: "gemini-2.5-flash", policy: "Route Optimized" };
+  }
+  if (cleaned.includes("rating") || cleaned.includes("carrierquote")) {
+    return { canonicalName: "Carrier Rating & Quote Agent", surfaceKey: "carrier-rating", model: "gemini-2.5-flash", policy: "Contract Tariff" };
+  }
+  if (cleaned.includes("tender") || cleaned.includes("dispatch")) {
+    return { canonicalName: "Autonomous Tender Dispatch Agent", surfaceKey: "tender-dispatch", model: "gemini-2.5-flash", policy: "60-Min SLA" };
+  }
+  if (cleaned.includes("tracking") || cleaned.includes("eta")) {
+    return { canonicalName: "Tracking & ETA Cascade Agent", surfaceKey: "tracking-eta", model: "gemini-2.5-flash", policy: "EDI 214 Live" };
+  }
+  if (cleaned.includes("demurrage") || cleaned.includes("lfd")) {
+    return { canonicalName: "Demurrage & LFD Defense Agent", surfaceKey: "demurrage-risk", model: "gemini-2.5-flash", policy: "Shield Enabled" };
+  }
+  if (cleaned.includes("audit") || cleaned.includes("linehaul")) {
+    return { canonicalName: "3-Way Linehaul & FSC Audit Agent", surfaceKey: "freight-audit", model: "gemini-2.5-flash", policy: "POD Mandatory" };
+  }
+  if (cleaned.includes("exception")) {
+    return { canonicalName: "Exception Resolution Agent", surfaceKey: "exception-resolution", model: "gemini-2.5-flash", policy: "Orchestrator Enforced" };
+  }
+  if (cleaned.includes("copilot") || cleaned.includes("assistant") || cleaned.includes("supervisor")) {
+    return { canonicalName: "Qubere Freight Supervisor Assistant", surfaceKey: "copilot", model: "gemini-2.5-pro", policy: "Tool Execution" };
+  }
+
+  return null;
 }
 
 // Memory Cache with 15-second TTL
@@ -170,7 +220,7 @@ export async function getTmsAiAnalytics(scope: TmsAiAnalyticsScope = { level: "O
     usageWhere.accountId = scope.accountId;
   }
 
-  // Live Orchestrator Agent Discovery & Telemetry Parallel Queries
+  // Parallel database queries
   const [
     bySurfaceRows,
     dailyRows,
@@ -255,93 +305,98 @@ export async function getTmsAiAnalytics(scope: TmsAiAnalyticsScope = { level: "O
 
   const accountNameMap = new Map<string, string>(accounts.map((a: any) => [a.id, a.name]));
 
-  // Dynamically Build Discovered Agents List from Database OR fallback to active registered surfaces
-  const discoveredAgentsMap = new Map<string, TmsDiscoveredAgent>();
-
-  // 1. Ingest agents directly from db.agentDecision orchestrator logs
-  for (const group of dbAgentGroups as any[]) {
-    const name = group.agentName;
-    const surfaceKey = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    discoveredAgentsMap.set(name, {
-      id: surfaceKey,
-      name: name,
-      surface: surfaceKey,
-      model: name.includes("Assistant") || name.includes("Copilot") ? "gemini-2.5-pro" : "gemini-2.5-flash",
-      status: "ACTIVE",
-      policy: "Orchestrator Verified",
-      decisionsCount: group._count._all,
-      tokensCount: 0,
-      lastActive: group._max.createdAt ? group._max.createdAt.toISOString() : null,
-    });
-  }
-
-  // 2. Supplement from metered aiUsageWindow surfaces
-  const surfaceUsageMap = new Map<string, number>();
-  for (const r of bySurfaceRows as any[]) {
-    const input = r._sum?.inputTokens ? Number(r._sum.inputTokens) : 0;
-    const output = r._sum?.outputTokens ? Number(r._sum.outputTokens) : 0;
-    surfaceUsageMap.set(r.surface, input + output);
-  }
-
-  for (const registered of TMS_AI_SURFACES) {
-    const existingKey = Array.from(discoveredAgentsMap.keys()).find((k) =>
-      k.toLowerCase().includes(registered.surface.replace("-", " "))
-    );
-    const tokens = surfaceUsageMap.get(registered.surface) ?? 0;
-
-    if (!existingKey) {
-      discoveredAgentsMap.set(registered.label, {
-        id: registered.surface,
-        name: registered.label,
-        surface: registered.surface,
-        model: registered.model,
-        status: "ACTIVE",
-        policy: "Orchestrator Enforced",
-        decisionsCount: Math.round(agentDecisionCount / TMS_AI_SURFACES.length),
-        tokensCount: tokens,
-        lastActive: new Date().toISOString(),
-      });
-    } else {
-      const agent = discoveredAgentsMap.get(existingKey)!;
-      agent.tokensCount = tokens;
-    }
-  }
-
-  const discoveredAgents: TmsDiscoveredAgent[] = Array.from(discoveredAgentsMap.values());
-
-  // Compute Surface Usage from real DB rows
-  const bySurfaceMap = new Map<string, any>(bySurfaceRows.map((r: any) => [r.surface, r]));
-  const surfacesSeen = new Set<string>(bySurfaceRows.map((r: any) => r.surface));
-  const allSurfaceKeys = Array.from(new Set([...TMS_AI_SURFACES.map((s) => s.surface), ...surfacesSeen]));
-
+  // Surface Token Usage Map from db.aiUsageWindow
+  const surfaceTokenMap = new Map<string, number>();
   let totalRequests = 0;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
 
-  const bySurface: TmsSurfaceUsage[] = allSurfaceKeys.map((surfaceKey) => {
-    const row = bySurfaceMap.get(surfaceKey);
-    const meta = TMS_AI_SURFACES.find((s) => s.surface === surfaceKey);
+  for (const r of bySurfaceRows as any[]) {
+    const input = r._sum?.inputTokens ? Number(r._sum.inputTokens) : 0;
+    const output = r._sum?.outputTokens ? Number(r._sum.outputTokens) : 0;
+    const reqs = r._sum?.requests ? Number(r._sum.requests) : 0;
+    const total = input + output;
+
+    surfaceTokenMap.set(r.surface, total);
+    totalRequests += reqs;
+    totalInputTokens += input;
+    totalOutputTokens += output;
+  }
+
+  const totalTokensSpent = totalInputTokens + totalOutputTokens;
+
+  // Clean Normalized Agents Map strictly for TMS Freight domain
+  const canonicalAgentMap = new Map<string, TmsDiscoveredAgent>();
+
+  // 1. Seed strict TMS Autonomous Agents catalog
+  for (const surfaceObj of TMS_AI_SURFACES) {
+    const tokens = surfaceTokenMap.get(surfaceObj.surface) ?? 0;
+    canonicalAgentMap.set(surfaceObj.label, {
+      id: surfaceObj.surface,
+      name: surfaceObj.label,
+      surface: surfaceObj.surface,
+      model: surfaceObj.model,
+      status: "ACTIVE",
+      policy: surfaceObj.policy,
+      decisionsCount: 0,
+      tokensCount: tokens,
+      lastActive: new Date().toISOString(),
+    });
+  }
+
+  // 2. Ingest matching TMS AgentDecision rows from database
+  for (const group of dbAgentGroups as any[]) {
+    const rawName = group.agentName;
+    const info = getTmsCanonicalAgentInfo(rawName);
+    if (!info) continue; // Skip non-TMS / Customs agents
+
+    const count = group._count._all;
+    const maxDate = group._max.createdAt ? group._max.createdAt.toISOString() : null;
+    const tokens = surfaceTokenMap.get(info.surfaceKey) ?? surfaceTokenMap.get(rawName) ?? 0;
+
+    const existing = canonicalAgentMap.get(info.canonicalName);
+    if (existing) {
+      existing.decisionsCount += count;
+      if (tokens > existing.tokensCount) existing.tokensCount = tokens;
+      if (maxDate && (!existing.lastActive || maxDate > existing.lastActive)) existing.lastActive = maxDate;
+    } else {
+      canonicalAgentMap.set(info.canonicalName, {
+        id: info.surfaceKey,
+        name: info.canonicalName,
+        surface: info.surfaceKey,
+        model: info.model,
+        status: "ACTIVE",
+        policy: info.policy,
+        decisionsCount: count,
+        tokensCount: tokens,
+        lastActive: maxDate ?? new Date().toISOString(),
+      });
+    }
+  }
+
+  const discoveredAgents: TmsDiscoveredAgent[] = Array.from(canonicalAgentMap.values()).sort(
+    (a, b) => b.decisionsCount - a.decisionsCount || b.tokensCount - a.tokensCount
+  );
+
+  // Compute Surface Usage strictly for TMS surfaces
+  const bySurfaceMap = new Map<string, any>(bySurfaceRows.map((r: any) => [r.surface, r]));
+  const bySurface: TmsSurfaceUsage[] = TMS_AI_SURFACES.map((surfaceObj) => {
+    const row = bySurfaceMap.get(surfaceObj.surface);
     const inputTokens = row?._sum?.inputTokens ? Number(row._sum.inputTokens) : 0;
     const outputTokens = row?._sum?.outputTokens ? Number(row._sum.outputTokens) : 0;
     const requests = row?._sum?.requests ? Number(row._sum.requests) : 0;
     const totalTokens = inputTokens + outputTokens;
 
-    totalRequests += requests;
-    totalInputTokens += inputTokens;
-    totalOutputTokens += outputTokens;
-
     return {
-      surface: surfaceKey,
-      label: meta?.label ?? surfaceLabel(surfaceKey),
-      model: meta?.model ?? "gemini-2.5-flash",
+      surface: surfaceObj.surface,
+      label: surfaceObj.label,
+      model: surfaceObj.model,
       requests,
       inputTokens,
       outputTokens,
       totalTokens,
     };
   });
-
-  const totalTokensSpent = totalInputTokens + totalOutputTokens;
 
   // Daily Trend Map from real DB rows
   const dailyMap = new Map<string, { requests: number; inputTokens: number; outputTokens: number; totalTokens: number }>(

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@qubere/db";
 import { getAccountContext } from "@qubere/auth";
 import { TmsAdminWorkbenchClient } from "../admin/TmsAdminWorkbenchClient";
+import { getTmsAiAnalytics } from "@/lib/tmsAiAnalytics";
 
 export default async function PlatformAdminPage() {
   const { userId } = await auth();
@@ -16,11 +17,18 @@ export default async function PlatformAdminPage() {
     ? await db.account.findUnique({ where: { id: context.accountId } }).catch(() => null)
     : null;
 
-  const [allAccounts, agentDecisionCount, openExceptionCount, carrierInvoiceCount] = await Promise.all([
+  const [
+    allAccounts,
+    agentDecisionCount,
+    openExceptionCount,
+    carrierInvoiceCount,
+    aiAnalytics,
+  ] = await Promise.all([
     db.account.findMany({ take: 20, orderBy: { createdAt: "desc" } }).catch(() => []),
     db.agentDecision.count().catch(() => 0),
     db.exceptionItem.count({ where: { status: "Open" } }).catch(() => 0),
     db.carrierInvoice.count().catch(() => 0),
+    getTmsAiAnalytics({ level: "OVERALL", rangeDays: 30 }),
   ]);
 
   const initialAccounts = allAccounts.map((a) => ({
@@ -44,6 +52,7 @@ export default async function PlatformAdminPage() {
           : undefined
       }
       initialAccounts={initialAccounts}
+      aiAnalytics={aiAnalytics}
       telemetry={{
         agentDecisionCount,
         openExceptionCount,
