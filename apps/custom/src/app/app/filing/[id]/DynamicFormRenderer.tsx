@@ -1,7 +1,16 @@
 /**
  * Dynamic Form Renderer Component
  *
- * Renders form fields dynamically based on UI configuration fetched from the database.
+ * Renders the declaration form for a filing. Three rendering paths:
+ *
+ *  1. NEW UI CONFIG FORMAT (FilingUIConfigData with layout/fields/layoutHints)
+ *     → Uses LayoutRenderer (same production path as CustomsFiling module)
+ *
+ *  2. LEGACY UI CONFIG FORMAT (sections dict with UIFieldConfig arrays)
+ *     → Uses the legacy field-by-field rendering (backwards compat)
+ *
+ *  3. DEFAULT (no active UI config found, or 404)
+ *     → Uses EnhancedSchemaRenderer (auto-generated from JSON Schema)
  */
 
 "use client";
@@ -11,6 +20,8 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import LineItemsManager from "./LineItemsManager";
 import EnhancedSchemaRenderer from "./EnhancedSchemaRenderer";
+import LayoutRenderer from "@/components/form/layouts/LayoutRenderer";
+import type { FilingUIConfigData } from "@/types/ui-config.types";
 
 interface UIFieldConfig {
   id: string;
@@ -39,6 +50,8 @@ interface DynamicFormRendererProps {
   procedureCode: string;
   messageName: string;
   messageType: "request" | "response";
+  /** Release version from FilingCountryCustomsVersion (e.g. "1.0"). Used to select the correct UI config and schema. */
+  release?: string;
   data: Record<string, any>;
   onChange: (fieldPath: string, value: any) => void;
   onSave?: () => void;
@@ -55,17 +68,28 @@ export default function DynamicFormRenderer({
   procedureCode,
   messageName,
   messageType,
+  release,
   data,
   onChange,
   onSave,
   readOnly = false,
 }: DynamicFormRendererProps) {
+  // Legacy format (old UIConfigSection dict)
   const [uiConfig, setUiConfig] = useState<UIConfigSection | null>(null);
+  // New format (FilingUIConfigData — rendered by LayoutRenderer)
+  const [configData, setConfigData] = useState<FilingUIConfigData | null>(null);
+  // Schema for the default EnhancedSchemaRenderer fallback
+  const [schema, setSchema] = useState<any>(null);
+
   const [masterDataCache, setMasterDataCache] = useState<Record<string, MasterDataOption[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [schema, setSchema] = useState<any>(null);
   const [useDefaultRenderer, setUseDefaultRenderer] = useState(false);
+
+  // Use release as the schema version — normalize "1.0" → "1.0.0" if needed
+  const schemaVersion = release
+    ? (release.split(".").length === 2 ? `${release}.0` : release)
+    : "1.0.0";
 
   const loadSchema = useCallback(async () => {
     try {
@@ -74,42 +98,88 @@ export default function DynamicFormRenderer({
         ? "ImportDeclaration.schema.json"
         : "ExportDeclaration.schema.json";
       const response = await fetch(
-        `/schemas/customs-filing/filing-schemas/${transactionType}/1.0.0/${schemaFileName}`
+        `/schemas/customs-filing/filing-schemas/${transactionType}/${schemaVersion}/${schemaFileName}`
       );
       if (response.ok) {
         setSchema(await response.json());
       } else {
-        console.error("Failed to load schema for default renderer");
+        // Fallback to 1.0.0 if release-specific schema not found
+        const fallback = await fetch(
+          `/schemas/customs-filing/filing-schemas/${transactionType}/1.0.0/${schemaFileName}`
+        );
+        if (fallback.ok) setSchema(await fallback.json());
+        else console.error("Failed to load schema for default renderer");
       }
     } catch (err) {
       console.error("Error loading schema:", err);
     }
-  }, [procedureCode]);
+  }, [procedureCode, schemaVersion]);
 
   useEffect(() => {
     async function fetchUIConfig() {
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(
-          `/api/filing/ui-config?country=${country}&procedureCode=${procedureCode}&messageName=${messageName}&messageType=${messageType}`
-        );
+        // Build the UI config URL — include release so admin-configured per-release configs are returned
+        const params = new URLSearchParams({
+          country,
+          procedureCode,
+          messageName,
+          messageType,
+        });
+        if (release) params.set("release", release);
+
+        const response = await fetch(`/api/filing/ui-config?${params}`);
 
         if (response.ok) {
           const result = await response.json();
-          const hasConfigs = result.sections && Object.keys(result.sections).length > 0;
-          if (hasConfigs) {
-            const filteredSections: UIConfigSection = {};
-            Object.entries(result.sections).forEach(([section, fields]) => {
-              const fieldList = Array.isArray(fields) ? (fields as UIFieldConfig[]) : [];
-              const visibleFields = fieldList.filter((field) => field.isVisible !== false);
-              if (visibleFields.length > 0) filteredSections[section] = visibleFields;
-            });
-            setUiConfig(filteredSections);
+
+          // ── NEW FORMAT: FilingUIConfigData (layout, fields array, layoutHints) ──
+          // Detected by presence of `configVersion` and `fields` as an array
+          if (result.configVersion && Array.isArray(result.fields)) {
+            // Reconstruct the full FilingUIConfigData from the API response
+            const fullConfig: FilingUIConfigData = {
+              version: result.configVersion,
+              metadata: result.metadata ?? {},
+              layout: result.layout ?? { mode: "single-page" },
+              layoutHints: result.metadata?.layoutHints ?? result.layoutHints,
+              tabs: result.tabs ?? [],
+              sections: result.sections ?? [],
+              panels: result.panels ?? [],
+              fields: result.fields ?? [],
+              validation: result.validation,
+              conditionalLogic: result.conditionalLogic,
+              translations: result.translations,
+              theme: result.theme,
+              permissions: result.permissions,
+            };
+
+            // Carry layoutHints stored inside configData.layoutHints
+            // The API strips it — try to restore from configData.metadata or inline
+            // The LayoutRenderer needs layoutHints to work correctly
+            setConfigData(fullConfig);
+            setUiConfig(null);
             setUseDefaultRenderer(false);
-          } else {
-            setUseDefaultRenderer(true);
+            // Also load schema so LayoutRenderer can auto-detect arrays/refs
             await loadSchema();
+
+          // ── LEGACY FORMAT: sections as dict → UIFieldConfig arrays ────────────
+          } else {
+            const hasConfigs = result.sections && typeof result.sections === "object" && !Array.isArray(result.sections) && Object.keys(result.sections).length > 0;
+            if (hasConfigs) {
+              const filteredSections: UIConfigSection = {};
+              Object.entries(result.sections).forEach(([section, fields]) => {
+                const fieldList = Array.isArray(fields) ? (fields as UIFieldConfig[]) : [];
+                const visibleFields = fieldList.filter((field) => field.isVisible !== false);
+                if (visibleFields.length > 0) filteredSections[section] = visibleFields;
+              });
+              setUiConfig(filteredSections);
+              setConfigData(null);
+              setUseDefaultRenderer(false);
+            } else {
+              setUseDefaultRenderer(true);
+              await loadSchema();
+            }
           }
         } else if (response.status === 404) {
           setUseDefaultRenderer(true);
@@ -127,7 +197,7 @@ export default function DynamicFormRenderer({
     }
 
     void fetchUIConfig();
-  }, [country, procedureCode, messageName, messageType, loadSchema]);
+  }, [country, procedureCode, messageName, messageType, release, loadSchema]);
 
   const fetchMasterData = useCallback(async (sourceName: string): Promise<MasterDataOption[]> => {
     if (masterDataCache[sourceName]) return masterDataCache[sourceName];
@@ -181,7 +251,23 @@ export default function DynamicFormRenderer({
 
   if (loading) return <div className="flex items-center justify-center p-8"><div className="text-sm text-ink-muted">Loading form configuration...</div></div>;
   if (error) return <div className="p-4 bg-red-50 border border-red-200 rounded-lg"><p className="text-sm text-red-800">Error loading form: {error}</p></div>;
+
+  // ── PATH 1: NEW FORMAT — use LayoutRenderer (production path) ───────────────
+  if (configData) {
+    return (
+      <LayoutRenderer
+        config={configData}
+        formData={data}
+        onChange={onChange}
+        schema={schema}
+      />
+    );
+  }
+
+  // ── PATH 2: DEFAULT — EnhancedSchemaRenderer (auto-generated from schema) ──
   if (useDefaultRenderer && schema) return <EnhancedSchemaRenderer schema={schema} data={data} onChange={onChange} onSave={onSave} readOnly={readOnly} maxDepth={10} />;
+
+  // ── PATH 3: LEGACY FORMAT — field-by-field rendering ────────────────────────
   if (!uiConfig) return <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg"><p className="text-sm text-yellow-800">No form configuration or schema available for {country} / {procedureCode} / {messageName} ({messageType})</p><p className="text-xs text-yellow-700 mt-2">Please configure fields in the Filing Configuration section.</p></div>;
 
   const sectionTitles: Record<string, string> = {

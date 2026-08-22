@@ -35,18 +35,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch UI configuration
-    const config = await db.filingUIConfig.findUnique({
-      where: {
-        country_procedureCode_messageName_messageType: {
-          country,
-          procedureCode,
-          messageName,
-          messageType,
+    // Fetch the currently active (published) UI configuration.
+    // Priority: release-specific config first → fallback to release=null (all-releases config)
+    const release = searchParams.get("release") ?? null;
+
+    let config = null;
+
+    // Try release-specific config first (if release param provided)
+    if (release) {
+      config = await db.filingUIConfig.findFirst({
+        where: { country, procedureCode, messageName, messageType, release, isActive: true },
+      });
+    }
+
+    // Fallback: config without a release (applies to all releases)
+    if (!config) {
+      config = await db.filingUIConfig.findFirst({
+        where: {
+          country, procedureCode, messageName, messageType,
+          isActive: true,
+          release: null,
         },
-        isActive: true,
-      },
-    });
+      });
+    }
 
     if (!config) {
       return NextResponse.json(
@@ -108,6 +119,7 @@ export async function GET(request: NextRequest) {
       configVersion: configData.version,
       metadata: configData.metadata,
       layout: configData.layout,
+      layoutHints: configData.layoutHints,
       tabs: visibleTabs,
       sections: visibleSections,
       panels: configData.panels,

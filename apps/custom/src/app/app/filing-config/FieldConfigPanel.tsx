@@ -1,23 +1,23 @@
 /**
- * Enhanced Field Configuration Panel
- * 
- * Comprehensive field property editor with:
- * - Basic properties (label, type, visibility)
- * - Validation rules (required, pattern, minLength, custom)
- * - Conditional logic (showWhen, hideWhen, enableWhen)
- * - Data sources (dropdowns, API endpoints)
- * - Translations (multi-language support)
- * - Hooks (onChange, onLoad, onBlur)
- * - Grid config (for array fields)
- * - RBAC permissions
+ * Field Configuration Panel
+ *
+ * Comprehensive field property editor with structured builders (no raw JSON textareas).
+ * Each complex tab has an "Edit as JSON" toggle for power users.
+ *
+ * Tabs: Basic Â· Validation Â· Conditional Â· Data Source Â· Translations Â· Hooks Â· Permissions
  */
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/Input";
-import { X } from "lucide-react";
+import { X, Plus, Trash2, Code } from "lucide-react";
 import type { FieldConfig } from "@/types/ui-config.types";
+import { schemaToDefaultWidget, isWidgetCustomized } from "@/lib/ui-config/schema-widget-mapper";
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Types
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface FieldConfigPanelProps {
   fieldPath: string;
@@ -27,7 +27,51 @@ interface FieldConfigPanelProps {
   onCancel: () => void;
 }
 
-type TabId = 'basic' | 'validation' | 'conditional' | 'datasource' | 'translations' | 'hooks' | 'permissions';
+type TabId = "basic" | "validation" | "conditional" | "datasource" | "translations" | "hooks" | "permissions";
+
+interface ConditionRule {
+  id: string;
+  field: string;
+  operator: string;
+  value: string;
+}
+
+interface ConditionalGroup {
+  logic: "AND" | "OR";
+  rules: ConditionRule[];
+}
+
+type ConditionalAction = "showWhen" | "hideWhen" | "enableWhen" | "disableWhen" | "requiredWhen";
+
+const CONDITION_OPERATORS = [
+  { value: "equals", label: "equals" },
+  { value: "notEquals", label: "â‰  not equals" },
+  { value: "contains", label: "contains" },
+  { value: "startsWith", label: "starts with" },
+  { value: "greaterThan", label: "> greater than" },
+  { value: "lessThan", label: "< less than" },
+  { value: "isEmpty", label: "is empty" },
+  { value: "isNotEmpty", label: "is not empty" },
+];
+
+const CONDITIONAL_ACTIONS: { id: ConditionalAction; label: string; hint: string }[] = [
+  { id: "showWhen", label: "Show When", hint: "Field appears when true" },
+  { id: "hideWhen", label: "Hide When", hint: "Field hides when true" },
+  { id: "enableWhen", label: "Enable When", hint: "Field becomes editable when true" },
+  { id: "disableWhen", label: "Disable When", hint: "Field becomes read-only when true" },
+  { id: "requiredWhen", label: "Required When", hint: "Field becomes required when true" },
+];
+
+const SUPPORTED_LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "nl", name: "Dutch" },
+  { code: "fr", name: "French" },
+  { code: "de", name: "German" },
+  { code: "es", name: "Spanish" },
+  { code: "pt", name: "Portuguese" },
+];
+
+const DEFAULT_ROLES = ["admin", "operator", "viewer", "auditor"];
 
 const FIELD_TYPES = [
   { value: "text", label: "Text" },
@@ -49,64 +93,637 @@ const FIELD_TYPES = [
   { value: "url", label: "URL" },
 ];
 
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helpers
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function uid(): string {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function parseConditionalGroup(value: any): ConditionalGroup | null {
+  if (!value) return null;
+  try {
+    const v = typeof value === "string" ? JSON.parse(value) : value;
+    if (v && Array.isArray(v.rules)) return v as ConditionalGroup;
+    // Legacy single-rule format: { field, equals/operator, value }
+    if (v && v.field) {
+      return {
+        logic: "AND",
+        rules: [{ id: uid(), field: v.field, operator: v.equals !== undefined ? "equals" : (v.operator ?? "equals"), value: String(v.equals ?? v.value ?? "") }],
+      };
+    }
+  } catch {}
+  return null;
+}
+
+function serializeConditionalGroup(group: ConditionalGroup): any {
+  if (group.rules.length === 0) return undefined;
+  return group;
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sub-components
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// JSON mode toggle button
+function JsonToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      title={active ? "Switch to guided builder" : "Edit as raw JSON"}
+      className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded border transition-colors ${
+        active
+          ? "border-amber-400 bg-amber-50 text-amber-700"
+          : "border-border bg-white text-ink-muted hover:text-ink hover:border-brand"
+      }`}
+    >
+      <Code className="w-3 h-3" />
+      {active ? "Builder" : "Edit JSON"}
+    </button>
+  );
+}
+
+// Condition rule row
+function ConditionRuleRow({
+  rule,
+  onChange,
+  onRemove,
+}: {
+  rule: ConditionRule;
+  onChange: (updated: ConditionRule) => void;
+  onRemove: () => void;
+}) {
+  const hasValue = !["isEmpty", "isNotEmpty"].includes(rule.operator);
+  return (
+    <div className="flex items-center gap-1.5 bg-white border border-border rounded-lg px-2 py-1.5">
+      <input
+        value={rule.field}
+        onChange={(e) => onChange({ ...rule, field: e.target.value })}
+        placeholder="field.path"
+        className="w-28 px-2 py-1 text-xs font-mono border border-border rounded focus:outline-none focus:ring-1 focus:ring-brand"
+      />
+      <select
+        value={rule.operator}
+        onChange={(e) => onChange({ ...rule, operator: e.target.value })}
+        className="text-xs border border-border rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-brand"
+      >
+        {CONDITION_OPERATORS.map((op) => (
+          <option key={op.value} value={op.value}>{op.label}</option>
+        ))}
+      </select>
+      {hasValue && (
+        <input
+          value={rule.value}
+          onChange={(e) => onChange({ ...rule, value: e.target.value })}
+          placeholder="value"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+      )}
+      <button onClick={onRemove} className="text-red-400 hover:text-red-600 flex-shrink-0">
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// Single conditional action builder (showWhen / hideWhen / etc.)
+function ConditionalBuilder({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: any;
+  onChange: (v: any) => void;
+}) {
+  const [jsonMode, setJsonMode] = useState(false);
+  const [jsonText, setJsonText] = useState(() => (value ? JSON.stringify(value, null, 2) : ""));
+  const [group, setGroup] = useState<ConditionalGroup>(
+    () => parseConditionalGroup(value) ?? { logic: "AND", rules: [] }
+  );
+
+  // Keep jsonText in sync when switching to JSON mode
+  useEffect(() => {
+    if (jsonMode) setJsonText(value ? JSON.stringify(value, null, 2) : "");
+  }, [jsonMode, value]);
+
+  const applyGroup = useCallback((g: ConditionalGroup) => {
+    setGroup(g);
+    onChange(serializeConditionalGroup(g));
+  }, [onChange]);
+
+  const addRule = () =>
+    applyGroup({ ...group, rules: [...group.rules, { id: uid(), field: "", operator: "equals", value: "" }] });
+
+  const updateRule = (idx: number, r: ConditionRule) =>
+    applyGroup({ ...group, rules: group.rules.map((x, i) => (i === idx ? r : x)) });
+
+  const removeRule = (idx: number) =>
+    applyGroup({ ...group, rules: group.rules.filter((_, i) => i !== idx) });
+
+  const applyJsonText = () => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      onChange(parsed);
+      setGroup(parseConditionalGroup(parsed) ?? { logic: "AND", rules: [] });
+      setJsonMode(false);
+    } catch {}
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-xs font-semibold text-ink">{label}</span>
+          <span className="text-[10px] text-ink-muted ml-2">{hint}</span>
+        </div>
+        <JsonToggle active={jsonMode} onToggle={() => setJsonMode((v) => !v)} />
+      </div>
+
+      {jsonMode ? (
+        <div className="space-y-1">
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            rows={4}
+            className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+          <button
+            onClick={applyJsonText}
+            className="text-[10px] px-2 py-1 bg-brand text-white rounded hover:bg-brand/90"
+          >
+            Apply JSON
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1.5 bg-gray-50 rounded-lg p-2">
+          {/* Logic toggle */}
+          {group.rules.length > 1 && (
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] text-ink-muted">Match</span>
+              {(["AND", "OR"] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => applyGroup({ ...group, logic: l })}
+                  className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${
+                    group.logic === l
+                      ? "bg-brand text-white border-brand"
+                      : "bg-white text-ink-muted border-border"
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+              <span className="text-[10px] text-ink-muted">conditions</span>
+            </div>
+          )}
+
+          {group.rules.length === 0 && (
+            <p className="text-[10px] text-ink-muted italic px-1">No conditions â€” add one below</p>
+          )}
+
+          {group.rules.map((rule, i) => (
+            <ConditionRuleRow
+              key={rule.id}
+              rule={rule}
+              onChange={(r) => updateRule(i, r)}
+              onRemove={() => removeRule(i)}
+            />
+          ))}
+
+          <button
+            onClick={addRule}
+            className="flex items-center gap-1 text-[10px] text-brand hover:underline"
+          >
+            <Plus className="w-3 h-3" /> Add condition
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Translations table
+function TranslationsTable({
+  value,
+  onChange,
+}: {
+  value: any;
+  onChange: (v: any) => void;
+}) {
+  const [jsonMode, setJsonMode] = useState(false);
+  const [jsonText, setJsonText] = useState(() => JSON.stringify(value || {}, null, 2));
+
+  useEffect(() => {
+    if (jsonMode) setJsonText(JSON.stringify(value || {}, null, 2));
+  }, [jsonMode, value]);
+
+  const get = (lang: string, col: "label" | "placeholder" | "helpText") =>
+    (value?.[col]?.[lang]) ?? "";
+
+  const set = (lang: string, col: "label" | "placeholder" | "helpText", text: string) => {
+    const updated = {
+      label: { ...(value?.label || {}) },
+      placeholder: { ...(value?.placeholder || {}) },
+      helpText: { ...(value?.helpText || {}) },
+    };
+    if (text) updated[col][lang] = text;
+    else delete updated[col][lang];
+    onChange(updated);
+  };
+
+  const applyJsonText = () => {
+    try { onChange(JSON.parse(jsonText)); setJsonMode(false); } catch {}
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-ink">Translations</span>
+        <JsonToggle active={jsonMode} onToggle={() => setJsonMode((v) => !v)} />
+      </div>
+
+      {jsonMode ? (
+        <div className="space-y-1">
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            rows={8}
+            className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+          <button onClick={applyJsonText} className="text-[10px] px-2 py-1 bg-brand text-white rounded">Apply JSON</button>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-border">
+                <th className="px-3 py-2 text-left font-semibold text-ink-muted w-24">Language</th>
+                <th className="px-3 py-2 text-left font-semibold text-ink-muted">Label</th>
+                <th className="px-3 py-2 text-left font-semibold text-ink-muted">Placeholder</th>
+                <th className="px-3 py-2 text-left font-semibold text-ink-muted">Help Text</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SUPPORTED_LANGUAGES.map((lang, i) => (
+                <tr key={lang.code} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                  <td className="px-3 py-1.5 font-mono text-ink-muted font-semibold">
+                    {lang.code}
+                    <span className="block text-[9px] font-normal">{lang.name}</span>
+                  </td>
+                  {(["label", "placeholder", "helpText"] as const).map((col) => (
+                    <td key={col} className="px-2 py-1">
+                      <input
+                        value={get(lang.code, col)}
+                        onChange={(e) => set(lang.code, col, e.target.value)}
+                        placeholder="â€”"
+                        className="w-full px-2 py-1 text-xs border border-transparent rounded hover:border-border focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-transparent focus:bg-white transition-colors"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Permissions matrix
+function PermissionsMatrix({
+  value,
+  onChange,
+}: {
+  value: any;
+  onChange: (v: any) => void;
+}) {
+  const [jsonMode, setJsonMode] = useState(false);
+  const [jsonText, setJsonText] = useState(() => JSON.stringify(value || {}, null, 2));
+  const [roles, setRoles] = useState<string[]>(() => {
+    const existing = Object.keys(value || {});
+    return Array.from(new Set([...DEFAULT_ROLES, ...existing]));
+  });
+  const [newRole, setNewRole] = useState("");
+
+  useEffect(() => {
+    if (jsonMode) setJsonText(JSON.stringify(value || {}, null, 2));
+  }, [jsonMode, value]);
+
+  const get = (role: string, perm: "read" | "write" | "mask"): boolean =>
+    value?.[role]?.[perm] ?? false;
+
+  const set = (role: string, perm: "read" | "write" | "mask", checked: boolean) => {
+    const updated = { ...(value || {}) };
+    updated[role] = { ...(updated[role] || { read: false, write: false, mask: false }), [perm]: checked };
+    onChange(updated);
+  };
+
+  const addRole = () => {
+    const r = newRole.trim().toLowerCase();
+    if (r && !roles.includes(r)) { setRoles([...roles, r]); setNewRole(""); }
+  };
+
+  const applyJsonText = () => {
+    try { onChange(JSON.parse(jsonText)); setJsonMode(false); } catch {}
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-ink">Role Permissions</span>
+        <JsonToggle active={jsonMode} onToggle={() => setJsonMode((v) => !v)} />
+      </div>
+
+      {jsonMode ? (
+        <div className="space-y-1">
+          <textarea value={jsonText} onChange={(e) => setJsonText(e.target.value)} rows={8}
+            className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand" />
+          <button onClick={applyJsonText} className="text-[10px] px-2 py-1 bg-brand text-white rounded">Apply JSON</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b border-border">
+                  <th className="px-3 py-2 text-left font-semibold text-ink-muted">Role</th>
+                  {(["read", "write", "mask"] as const).map((p) => (
+                    <th key={p} className="px-3 py-2 text-center font-semibold text-ink-muted capitalize">{p}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {roles.map((role, i) => (
+                  <tr key={role} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                    <td className="px-3 py-2 font-mono text-ink font-medium">{role}</td>
+                    {(["read", "write", "mask"] as const).map((perm) => (
+                      <td key={perm} className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={get(role, perm)}
+                          onChange={(e) => set(role, perm, e.target.checked)}
+                          className="w-4 h-4 rounded border-border text-brand focus:ring-brand cursor-pointer"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Add role */}
+          <div className="flex gap-1.5">
+            <input
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addRole()}
+              placeholder="Add roleâ€¦"
+              className="flex-1 px-2 py-1 text-xs border border-border rounded focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <button onClick={addRole} className="text-[10px] px-2 py-1 bg-brand text-white rounded flex items-center gap-1">
+              <Plus className="w-3 h-3" /> Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Custom validation function runner
+function ValidationFunctionEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [testValue, setTestValue] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const runTest = () => {
+    if (!value.trim()) return;
+    try {
+      // eslint-disable-next-line no-new-func
+      const fn = new Function("value", `return (${value})(value)`);
+      const result = fn(testValue);
+      if (result === true) {
+        setTestResult({ ok: true, message: "âœ“ Passes validation" });
+      } else if (typeof result === "string") {
+        setTestResult({ ok: false, message: result });
+      } else {
+        setTestResult({ ok: false, message: "Validation returned false" });
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, message: `Error: ${e.message}` });
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-xs font-semibold text-ink block">Custom Validation Function</label>
+      <div className="relative">
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="(value) => value.length > 5 || 'Must be longer than 5 characters'"
+          rows={4}
+          className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md bg-gray-950 text-green-400 focus:outline-none focus:ring-1 focus:ring-brand placeholder:text-gray-600"
+          spellCheck={false}
+        />
+      </div>
+      <p className="text-[10px] text-ink-muted">
+        Arrow function receiving <code className="font-mono bg-gray-100 px-1 rounded">value</code>. Return <code className="font-mono bg-gray-100 px-1 rounded">true</code> to pass or a string error message.
+      </p>
+      {/* Test runner */}
+      <div className="flex gap-2 items-center">
+        <input
+          value={testValue}
+          onChange={(e) => setTestValue(e.target.value)}
+          placeholder="Test valueâ€¦"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+        <button
+          onClick={runTest}
+          disabled={!value.trim()}
+          className="text-[10px] px-3 py-1 bg-brand text-white rounded disabled:opacity-40 hover:bg-brand/90 transition-colors"
+        >
+          Test â–¶
+        </button>
+      </div>
+      {testResult && (
+        <div className={`text-xs px-3 py-2 rounded-lg border ${testResult.ok ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+          {testResult.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Hooks builder â€” method + endpoint per event + "Edit as JSON" toggle
+const HOOK_EVENTS = [
+  { id: "onLoad", label: "On Load", hint: "Called when field initialises" },
+  { id: "onChange", label: "On Change", hint: "Called when value changes" },
+  { id: "onBlur", label: "On Blur", hint: "Called when field loses focus" },
+  { id: "onFocus", label: "On Focus", hint: "Called when field gains focus" },
+];
+
+function HooksBuilder({
+  value,
+  onChange,
+}: {
+  value: any;
+  onChange: (v: any) => void;
+}) {
+  const [jsonMode, setJsonMode] = useState(false);
+  const [jsonText, setJsonText] = useState(() => JSON.stringify(value || {}, null, 2));
+
+  useEffect(() => {
+    if (jsonMode) setJsonText(JSON.stringify(value || {}, null, 2));
+  }, [jsonMode, value]);
+
+  const getHook = (event: string) => {
+    const h = value?.[event];
+    if (!h) return { method: "POST", endpoint: "" };
+    if (typeof h === "string") return { method: "POST", endpoint: h };
+    return { method: h.method ?? "POST", endpoint: h.endpoint ?? "" };
+  };
+
+  const setHook = (event: string, method: string, endpoint: string) => {
+    const updated = { ...(value || {}) };
+    if (!endpoint) { delete updated[event]; }
+    else { updated[event] = { method, endpoint }; }
+    onChange(Object.keys(updated).length ? updated : undefined);
+  };
+
+  const applyJsonText = () => {
+    try { onChange(JSON.parse(jsonText)); setJsonMode(false); } catch {}
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-ink">Hooks</span>
+        <JsonToggle active={jsonMode} onToggle={() => setJsonMode((v) => !v)} />
+      </div>
+
+      {jsonMode ? (
+        <div className="space-y-1">
+          <textarea value={jsonText} onChange={(e) => setJsonText(e.target.value)} rows={8}
+            className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand" />
+          <button onClick={applyJsonText} className="text-[10px] px-2 py-1 bg-brand text-white rounded">Apply JSON</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {HOOK_EVENTS.map(({ id, label, hint }) => {
+            const hook = getHook(id);
+            return (
+              <div key={id} className="bg-gray-50 border border-border rounded-lg p-3 space-y-2">
+                <div>
+                  <span className="text-xs font-semibold text-ink">{label}</span>
+                  <span className="text-[10px] text-ink-muted ml-2">{hint}</span>
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={hook.method}
+                    onChange={(e) => setHook(id, e.target.value, hook.endpoint)}
+                    className="w-20 text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"
+                  >
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                  </select>
+                  <input
+                    value={hook.endpoint}
+                    onChange={(e) => setHook(id, hook.method, e.target.value)}
+                    placeholder="/api/field-hook/â€¦"
+                    className="flex-1 px-2 py-1 text-xs font-mono border border-border rounded focus:outline-none focus:ring-1 focus:ring-brand"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Main Component
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 export default function FieldConfigPanel({
   fieldPath,
-  fieldSchema: _fieldSchema,
+  fieldSchema,
   currentConfig,
   onConfigChange,
-  onCancel
+  onCancel,
 }: FieldConfigPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('basic');
-  const [config, setConfig] = useState<Partial<FieldConfig>>({
+  const [activeTab, setActiveTab] = useState<TabId>("basic");
+
+  // Derive the schema-implied default widget once per schema node
+  const fieldName = fieldPath.split(".").pop() ?? "";
+  const defaultWidget = schemaToDefaultWidget(fieldSchema, fieldName);
+
+  const [config, setConfig] = useState<Partial<FieldConfig>>(() => ({
     fieldPath,
-    fieldLabel: currentConfig?.fieldLabel || fieldPath.split('.').pop() || '',
-    fieldType: currentConfig?.fieldType || 'text',
-    section: currentConfig?.section || 'default-section', // Changed from sectionId
+    fieldLabel: currentConfig?.fieldLabel || fieldName || "",
+    // Auto-propose the schema-implied widget type when the field has no existing config
+    fieldType: currentConfig?.fieldType || defaultWidget.widget,
+    section: currentConfig?.section || "default-section",
     displayOrder: currentConfig?.displayOrder || 0,
-    isVisible: currentConfig?.isVisible ?? false, // Default to false
+    isVisible: currentConfig?.isVisible ?? false,
     isRequired: currentConfig?.isRequired ?? false,
     isReadOnly: currentConfig?.isReadOnly ?? false,
-    ...currentConfig
-  });
+    ...currentConfig,
+  }));
 
   // Reset state when fieldPath or currentConfig changes
   useEffect(() => {
+    const name = fieldPath.split(".").pop() ?? "";
+    const dw = schemaToDefaultWidget(fieldSchema, name);
     setConfig({
       fieldPath,
-      fieldLabel: currentConfig?.fieldLabel || fieldPath.split('.').pop() || '',
-      fieldType: currentConfig?.fieldType || 'text',
-      section: currentConfig?.section || 'default-section',
+      fieldLabel: currentConfig?.fieldLabel || name || "",
+      fieldType: currentConfig?.fieldType || dw.widget,
+      section: currentConfig?.section || "default-section",
       displayOrder: currentConfig?.displayOrder || 0,
-      isVisible: currentConfig?.isVisible ?? false, // Default to false
+      isVisible: currentConfig?.isVisible ?? false,
       isRequired: currentConfig?.isRequired ?? false,
       isReadOnly: currentConfig?.isReadOnly ?? false,
-      ...currentConfig
+      ...currentConfig,
     });
-    // Reset to basic tab when field changes
-    setActiveTab('basic');
-  }, [fieldPath, currentConfig]);
+    setActiveTab("basic");
+  }, [fieldPath, currentConfig, fieldSchema]);
 
-  const updateConfig = (updates: Partial<FieldConfig>) => {
+  const updateConfig = useCallback((updates: Partial<FieldConfig>) => {
     const newConfig = { ...config, ...updates };
     setConfig(newConfig);
     onConfigChange(newConfig);
-  };
+  }, [config, onConfigChange]);
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'basic', label: 'Basic' },
-    { id: 'validation', label: 'Validation' },
-    { id: 'conditional', label: 'Conditional' },
-    { id: 'datasource', label: 'Data Source' },
-    { id: 'translations', label: 'Translations' },
-    { id: 'hooks', label: 'Hooks' },
-    { id: 'permissions', label: 'Permissions' },
+    { id: "basic", label: "Basic" },
+    { id: "validation", label: "Validation" },
+    { id: "conditional", label: "Conditional" },
+    { id: "datasource", label: "Data Source" },
+    { id: "translations", label: "Translations" },
+    { id: "hooks", label: "Hooks" },
+    { id: "permissions", label: "Permissions" },
   ];
 
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border bg-gray-50">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-bold text-ink">Field Configuration</h3>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
             <X className="w-4 h-4" />
@@ -118,17 +735,15 @@ export default function FieldConfigPanel({
       {/* Tabs */}
       <div className="border-b border-border bg-gray-50 px-4">
         <div className="flex gap-1 overflow-x-auto">
-          {tabs.map(tab => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`
-                px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors
-                ${activeTab === tab.id
-                  ? 'border-primary text-primary bg-white'
-                  : 'border-transparent text-ink-muted hover:text-ink hover:border-gray-300'
-                }
-              `}
+              className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? "border-primary text-primary bg-white"
+                  : "border-transparent text-ink-muted hover:text-ink hover:border-gray-300"
+              }`}
             >
               {tab.label}
             </button>
@@ -136,17 +751,18 @@ export default function FieldConfigPanel({
         </div>
       </div>
 
-      {/* Content */}
+      {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'basic' && (
+
+        {/* â”€â”€ Basic â”€â”€ */}
+        {activeTab === "basic" && (
           <div className="space-y-4">
-            {/* Basic Properties */}
             <div>
               <label className="text-xs font-medium text-ink block mb-1">
                 Field Label <span className="text-red-600">*</span>
               </label>
               <Input
-                value={config.fieldLabel || ''}
+                value={config.fieldLabel || ""}
                 onChange={(e) => updateConfig({ fieldLabel: e.target.value })}
                 placeholder="Display label for the field"
                 className="text-xs"
@@ -158,14 +774,33 @@ export default function FieldConfigPanel({
                 Field Type <span className="text-red-600">*</span>
               </label>
               <select
-                value={config.fieldType || 'text'}
+                value={config.fieldType || "text"}
                 onChange={(e) => updateConfig({ fieldType: e.target.value as any })}
                 className="w-full px-3 py-2 text-xs border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                {FIELD_TYPES.map(type => (
-                  <option key={type.value} value={type.value}>{type.label}</option>
+                {FIELD_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
+
+              {/* Schema default hint + customized badge */}
+              <div className="flex items-center justify-between mt-1.5">
+                <p className="text-[10px] text-ink-muted">
+                  Schema default:{" "}
+                  <span className="font-mono font-semibold text-ink">{defaultWidget.widget}</span>
+                  <span className="ml-1 text-ink-muted/70">
+                    ({defaultWidget.confidence === "definite" ? "strong signal" : "suggested"})
+                  </span>
+                </p>
+                {config.fieldType && isWidgetCustomized(config.fieldType, fieldSchema, fieldName) && (
+                  <span
+                    title={`Schema suggests "${defaultWidget.widget}": ${defaultWidget.reason}`}
+                    className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 border border-amber-300 rounded font-semibold"
+                  >
+                    ⚡ Customized
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -181,13 +816,13 @@ export default function FieldConfigPanel({
               <div>
                 <label className="text-xs font-medium text-ink block mb-1">Grid Column</label>
                 <select
-                  value={config.gridColumn || 6}
+                  value={config.gridColumn || 4}
                   onChange={(e) => updateConfig({ gridColumn: parseInt(e.target.value) })}
                   className="w-full px-3 py-2 text-xs border border-border rounded-md"
                 >
                   <option value="3">3 (25%)</option>
-                  <option value="4">4 (33%)</option>
-                  <option value="6">6 (50%)</option>
+                  <option value="4">4 (33%) — 3 columns</option>
+                  <option value="6">6 (50%) — 2 columns</option>
                   <option value="8">8 (66%)</option>
                   <option value="12">12 (100%)</option>
                 </select>
@@ -197,9 +832,9 @@ export default function FieldConfigPanel({
             <div>
               <label className="text-xs font-medium text-ink block mb-1">Placeholder</label>
               <Input
-                value={config.placeholder || ''}
+                value={config.placeholder || ""}
                 onChange={(e) => updateConfig({ placeholder: e.target.value })}
-                placeholder="Placeholder text..."
+                placeholder="Placeholder textâ€¦"
                 className="text-xs"
               />
             </div>
@@ -207,9 +842,9 @@ export default function FieldConfigPanel({
             <div>
               <label className="text-xs font-medium text-ink block mb-1">Help Text</label>
               <textarea
-                value={config.helpText || ''}
+                value={config.helpText || ""}
                 onChange={(e) => updateConfig({ helpText: e.target.value })}
-                placeholder="Help text to guide users..."
+                placeholder="Help text to guide usersâ€¦"
                 className="w-full px-3 py-2 text-xs border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                 rows={2}
               />
@@ -218,38 +853,54 @@ export default function FieldConfigPanel({
             <div>
               <label className="text-xs font-medium text-ink block mb-1">Default Value</label>
               <Input
-                value={config.defaultValue || ''}
+                value={config.defaultValue || ""}
                 onChange={(e) => updateConfig({ defaultValue: e.target.value })}
                 placeholder="Default value for the field"
                 className="text-xs"
               />
             </div>
 
-            <div className="space-y-2 pt-2 border-t">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.isVisible ?? false}
-                  onChange={(e) => updateConfig({ isVisible: e.target.checked })}
-                  className="w-4 h-4 text-primary border-border rounded"
-                />
-                <span className="text-xs font-medium text-ink">Visible</span>
-              </label>
-              <label className="flex items-center gap-2">
+            {/* Visibility â€” explicit toggle, not bare checkbox */}
+            <div className="pt-3 border-t border-border space-y-3">
+              {/* Visibility toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-medium text-ink">Visibility</span>
+                  <p className="text-[10px] text-ink-muted">Controls whether this field is shown in the form</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateConfig({ isVisible: !config.isVisible })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-1 ${
+                    config.isVisible ? "bg-green-500" : "bg-gray-300"
+                  }`}
+                  aria-pressed={config.isVisible}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${config.isVisible ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+                <span className={`text-xs font-semibold ml-2 ${config.isVisible ? "text-green-600" : "text-gray-400"}`}>
+                  {config.isVisible ? "Shown" : "Hidden"}
+                </span>
+              </div>
+
+              {/* Required */}
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.isRequired ?? false}
                   onChange={(e) => updateConfig({ isRequired: e.target.checked })}
-                  className="w-4 h-4 text-primary border-border rounded"
+                  className="w-4 h-4 text-primary border-border rounded cursor-pointer"
                 />
                 <span className="text-xs font-medium text-ink">Required</span>
               </label>
-              <label className="flex items-center gap-2">
+
+              {/* Read Only */}
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.isReadOnly ?? false}
                   onChange={(e) => updateConfig({ isReadOnly: e.target.checked })}
-                  className="w-4 h-4 text-primary border-border rounded"
+                  className="w-4 h-4 text-primary border-border rounded cursor-pointer"
                 />
                 <span className="text-xs font-medium text-ink">Read Only</span>
               </label>
@@ -257,21 +908,16 @@ export default function FieldConfigPanel({
           </div>
         )}
 
-        {activeTab === 'validation' && (
+        {/* â”€â”€ Validation â”€â”€ */}
+        {activeTab === "validation" && (
           <div className="space-y-4">
-            <p className="text-xs text-ink-muted mb-3">
-              Configure validation rules for this field
-            </p>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-ink block mb-1">Min Length</label>
                 <Input
                   type="number"
-                  value={config.validation?.minLength || ''}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, minLength: parseInt(e.target.value) || undefined }
-                  })}
+                  value={config.validation?.minLength || ""}
+                  onChange={(e) => updateConfig({ validation: { ...config.validation, minLength: parseInt(e.target.value) || undefined } })}
                   placeholder="Minimum length"
                   className="text-xs"
                 />
@@ -280,10 +926,8 @@ export default function FieldConfigPanel({
                 <label className="text-xs font-medium text-ink block mb-1">Max Length</label>
                 <Input
                   type="number"
-                  value={config.validation?.maxLength || ''}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, maxLength: parseInt(e.target.value) || undefined }
-                  })}
+                  value={config.validation?.maxLength || ""}
+                  onChange={(e) => updateConfig({ validation: { ...config.validation, maxLength: parseInt(e.target.value) || undefined } })}
                   placeholder="Maximum length"
                   className="text-xs"
                 />
@@ -295,10 +939,8 @@ export default function FieldConfigPanel({
                 <label className="text-xs font-medium text-ink block mb-1">Min Value</label>
                 <Input
                   type="number"
-                  value={config.validation?.min || ''}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, min: parseFloat(e.target.value) || undefined }
-                  })}
+                  value={config.validation?.min || ""}
+                  onChange={(e) => updateConfig({ validation: { ...config.validation, min: parseFloat(e.target.value) || undefined } })}
                   placeholder="Minimum value"
                   className="text-xs"
                 />
@@ -307,10 +949,8 @@ export default function FieldConfigPanel({
                 <label className="text-xs font-medium text-ink block mb-1">Max Value</label>
                 <Input
                   type="number"
-                  value={config.validation?.max || ''}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, max: parseFloat(e.target.value) || undefined }
-                  })}
+                  value={config.validation?.max || ""}
+                  onChange={(e) => updateConfig({ validation: { ...config.validation, max: parseFloat(e.target.value) || undefined } })}
                   placeholder="Maximum value"
                   className="text-xs"
                 />
@@ -320,386 +960,182 @@ export default function FieldConfigPanel({
             <div>
               <label className="text-xs font-medium text-ink block mb-1">Pattern (Regex)</label>
               <Input
-                value={config.validation?.pattern || ''}
-                onChange={(e) => updateConfig({ 
-                  validation: { ...config.validation, pattern: e.target.value }
-                })}
+                value={config.validation?.pattern || ""}
+                onChange={(e) => updateConfig({ validation: { ...config.validation, pattern: e.target.value } })}
                 placeholder="^[A-Z]{2}\d{4}$"
                 className="text-xs font-mono"
               />
-              <p className="text-xs text-ink-muted mt-1">Regular expression for validation</p>
+              <p className="text-[10px] text-ink-muted mt-1">Regular expression for validation</p>
             </div>
 
             <div>
               <label className="text-xs font-medium text-ink block mb-1">Custom Error Message</label>
               <Input
-                value={config.validation?.message || ''}
-                onChange={(e) => updateConfig({ 
-                  validation: { ...config.validation, message: e.target.value }
-                })}
+                value={config.validation?.message || ""}
+                onChange={(e) => updateConfig({ validation: { ...config.validation, message: e.target.value } })}
                 placeholder="Error message to display"
                 className="text-xs"
               />
             </div>
 
-            <div className="space-y-2 pt-2 border-t">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.validation?.email ?? false}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, email: e.target.checked || undefined }
-                  })}
-                  className="w-4 h-4 text-primary border-border rounded"
-                />
-                <span className="text-xs font-medium text-ink">Email format</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.validation?.url ?? false}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, url: e.target.checked || undefined }
-                  })}
-                  className="w-4 h-4 text-primary border-border rounded"
-                />
-                <span className="text-xs font-medium text-ink">URL format</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.validation?.phone ?? false}
-                  onChange={(e) => updateConfig({ 
-                    validation: { ...config.validation, phone: e.target.checked || undefined }
-                  })}
-                  className="w-4 h-4 text-primary border-border rounded"
-                />
-                <span className="text-xs font-medium text-ink">Phone format</span>
-              </label>
+            <div className="space-y-2 pt-2 border-t border-border">
+              {(["email", "url", "phone"] as const).map((fmt) => (
+                <label key={fmt} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={config.validation?.[fmt] ?? false}
+                    onChange={(e) => updateConfig({ validation: { ...config.validation, [fmt]: e.target.checked || undefined } })}
+                    className="w-4 h-4 text-primary border-border rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-medium text-ink capitalize">{fmt} format</span>
+                </label>
+              ))}
             </div>
 
-            <div className="pt-2 border-t">
-              <label className="text-xs font-medium text-ink block mb-1">Custom Validation Function</label>
-              <textarea
-                value={config.validation?.custom || ''}
-                onChange={(e) => updateConfig({ 
-                  validation: { ...config.validation, custom: e.target.value }
-                })}
-                placeholder="(value) => value.length > 5 || 'Must be longer than 5'"
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={3}
+            <div className="pt-2 border-t border-border">
+              <ValidationFunctionEditor
+                value={config.validation?.custom || ""}
+                onChange={(v) => updateConfig({ validation: { ...config.validation, custom: v || undefined } })}
               />
-              <p className="text-xs text-ink-muted mt-1">
-                JavaScript function returning true or error message
-              </p>
             </div>
           </div>
         )}
 
-        {activeTab === 'conditional' && (
-          <div className="space-y-4">
-            <p className="text-xs text-ink-muted mb-3">
-              Control field visibility and behavior based on other field values
+        {/* â”€â”€ Conditional â”€â”€ */}
+        {activeTab === "conditional" && (
+          <div className="space-y-5">
+            <p className="text-xs text-ink-muted">
+              Control field visibility and behavior based on other field values.
+              Each action evaluates its conditions independently.
             </p>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Show When</label>
-              <textarea
-                value={config.showWhen || ''}
-                onChange={(e) => updateConfig({ showWhen: e.target.value })}
-                placeholder={'{"field": "transactionType", "equals": "import"}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={3}
+            {CONDITIONAL_ACTIONS.map(({ id, label, hint }) => (
+              <ConditionalBuilder
+                key={id}
+                label={label}
+                hint={hint}
+                value={(config as any)[id]}
+                onChange={(v) => updateConfig({ [id]: v })}
               />
-              <p className="text-xs text-ink-muted mt-1">
-                JSON condition - field appears when condition is true
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Hide When</label>
-              <textarea
-                value={config.hideWhen || ''}
-                onChange={(e) => updateConfig({ hideWhen: e.target.value })}
-                placeholder={'{"field": "isExempt", "equals": true}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={3}
-              />
-              <p className="text-xs text-ink-muted mt-1">
-                JSON condition - field hides when condition is true
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Enable When</label>
-              <textarea
-                value={config.enableWhen || ''}
-                onChange={(e) => updateConfig({ enableWhen: e.target.value })}
-                placeholder={'{"field": "canEdit", "equals": true}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={3}
-              />
-              <p className="text-xs text-ink-muted mt-1">
-                JSON condition - field becomes editable when condition is true
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Disable When</label>
-              <textarea
-                value={config.disableWhen || ''}
-                onChange={(e) => updateConfig({ disableWhen: e.target.value })}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md"
-                rows={3}
-                placeholder={'{"field": "isLocked", "equals": true}'}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Required When</label>
-              <textarea
-                value={config.requiredWhen || ''}
-                onChange={(e) => updateConfig({ requiredWhen: e.target.value })}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md"
-                rows={3}
-                placeholder={'{"field": "procedureCode", "equals": "H1"}'}
-              />
-            </div>
+            ))}
           </div>
         )}
 
-        {activeTab === 'datasource' && (
+        {/* â”€â”€ Data Source â”€â”€ */}
+        {activeTab === "datasource" && (
           <div className="space-y-4">
-            <p className="text-xs text-ink-muted mb-3">
-              Configure data source for dropdowns, lookups, and autocomplete fields
+            <p className="text-xs text-ink-muted">
+              Configure data source for dropdowns, lookups, and autocomplete fields.
             </p>
 
             <div>
               <label className="text-xs font-medium text-ink block mb-1">Master Data Source</label>
               <Input
-                value={config.masterDataSource || ''}
+                value={config.masterDataSource || ""}
                 onChange={(e) => updateConfig({ masterDataSource: e.target.value })}
                 placeholder="e.g., countries, currencies, ports"
                 className="text-xs"
               />
-              <p className="text-xs text-ink-muted mt-1">
-                Reference to master data table
-              </p>
+              <p className="text-[10px] text-ink-muted mt-1">Reference to master data table</p>
             </div>
 
-            <div className="space-y-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={config.isMultiSelect ?? false}
-                  onChange={(e) => updateConfig({ isMultiSelect: e.target.checked })}
-                  className="w-4 h-4 text-primary border-border rounded"
-                />
-                <span className="text-xs font-medium text-ink">Allow Multiple Selection</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.isMultiSelect ?? false}
+                onChange={(e) => updateConfig({ isMultiSelect: e.target.checked })}
+                className="w-4 h-4 text-primary border-border rounded cursor-pointer"
+              />
+              <span className="text-xs font-medium text-ink">Allow Multiple Selection</span>
+            </label>
 
             <div>
               <label className="text-xs font-medium text-ink block mb-2">API Data Source</label>
               <div className="space-y-2">
-                <Input
-                  value={config.dataSource?.apiEndpoint || ''}
-                  onChange={(e) => updateConfig({ 
-                    dataSource: { ...config.dataSource, apiEndpoint: e.target.value }
-                  })}
-                  placeholder="/api/master-data/countries"
-                  className="text-xs"
-                />
-                <Input
-                  value={config.dataSource?.valueField || ''}
-                  onChange={(e) => updateConfig({ 
-                    dataSource: { ...config.dataSource, valueField: e.target.value }
-                  })}
-                  placeholder="Value field (e.g., 'code')"
-                  className="text-xs"
-                />
-                <Input
-                  value={config.dataSource?.labelField || ''}
-                  onChange={(e) => updateConfig({ 
-                    dataSource: { ...config.dataSource, labelField: e.target.value }
-                  })}
-                  placeholder="Label field (e.g., 'name')"
-                  className="text-xs"
-                />
+                <div className="flex gap-2">
+                  <select
+                    value={config.dataSource?.method || "GET"}
+                    onChange={(e) => updateConfig({ dataSource: { ...config.dataSource, method: e.target.value as any } })}
+                    className="w-20 text-xs border border-border rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-brand"
+                  >
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                  </select>
+                  <Input
+                    value={config.dataSource?.apiEndpoint || ""}
+                    onChange={(e) => updateConfig({ dataSource: { ...config.dataSource, apiEndpoint: e.target.value } })}
+                    placeholder="/api/master-data/countries"
+                    className="text-xs flex-1"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-ink-muted">Value field</label>
+                    <Input
+                      value={config.dataSource?.valueField || ""}
+                      onChange={(e) => updateConfig({ dataSource: { ...config.dataSource, valueField: e.target.value } })}
+                      placeholder="code"
+                      className="text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-ink-muted">Label field</label>
+                    <Input
+                      value={config.dataSource?.labelField || ""}
+                      onChange={(e) => updateConfig({ dataSource: { ...config.dataSource, labelField: e.target.value } })}
+                      placeholder="name"
+                      className="text-xs mt-0.5"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-ink-muted">Depends on (comma-separated field paths)</label>
+                  <Input
+                    value={Array.isArray(config.dataSource?.dependsOn) ? config.dataSource!.dependsOn.join(", ") : (config.dataSource?.dependsOn as string) || ""}
+                    onChange={(e) => updateConfig({ dataSource: { ...config.dataSource, dependsOn: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) } })}
+                    placeholder="country, procedureCode"
+                    className="text-xs mt-0.5"
+                  />
+                </div>
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Cascading Dependency</label>
-              <Input
-                value={config.dataSource?.dependsOn || ''}
-                onChange={(e) => updateConfig({ 
-                  dataSource: { ...config.dataSource, dependsOn: e.target.value }
-                })}
-                placeholder="Field path this depends on (e.g., 'country')"
-                className="text-xs"
-              />
-              <p className="text-xs text-ink-muted mt-1">
-                Field that triggers data refresh
-              </p>
-            </div>
           </div>
         )}
 
-        {activeTab === 'translations' && (
-          <div className="space-y-4">
-            <p className="text-xs text-ink-muted mb-3">
-              Add translations for labels, placeholders, and help text
-            </p>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Field Label Translations</label>
-              <textarea
-                value={JSON.stringify(config.translations?.label || {}, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    updateConfig({ translations: { ...config.translations, label: parsed }});
-                  } catch {}
-                }}
-                placeholder={'{\n  "en": "Country",\n  "nl": "Land",\n  "fr": "Pays"\n}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={5}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Placeholder Translations</label>
-              <textarea
-                value={JSON.stringify(config.translations?.placeholder || {}, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    updateConfig({ translations: { ...config.translations, placeholder: parsed }});
-                  } catch {}
-                }}
-                placeholder={'{\n  "en": "Select a country",\n  "nl": "Selecteer een land"\n}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md"
-                rows={4}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Help Text Translations</label>
-              <textarea
-                value={JSON.stringify(config.translations?.helpText || {}, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    updateConfig({ translations: { ...config.translations, helpText: parsed }});
-                  } catch {}
-                }}
-                placeholder={'{\n  "en": "ISO 2-letter code",\n  "nl": "ISO 2-letter code"\n}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md"
-                rows={4}
-              />
-            </div>
-          </div>
+        {/* â”€â”€ Translations â”€â”€ */}
+        {activeTab === "translations" && (
+          <TranslationsTable
+            value={config.translations}
+            onChange={(v) => updateConfig({ translations: v })}
+          />
         )}
 
-        {activeTab === 'hooks' && (
-          <div className="space-y-4">
-            <p className="text-xs text-ink-muted mb-3">
-              Configure event hooks to trigger API calls or custom logic
-            </p>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-1">On Load</label>
-              <Input
-                value={config.hooks?.onLoad || ''}
-                onChange={(e) => updateConfig({ 
-                  hooks: { ...config.hooks, onLoad: e.target.value }
-                })}
-                placeholder="/api/field-data/load?field=country"
-                className="text-xs"
-              />
-              <p className="text-xs text-ink-muted mt-1">API endpoint called when field loads</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-1">On Change</label>
-              <Input
-                value={config.hooks?.onChange || ''}
-                onChange={(e) => updateConfig({ 
-                  hooks: { ...config.hooks, onChange: e.target.value }
-                })}
-                placeholder="/api/field-data/changed?field=country"
-                className="text-xs"
-              />
-              <p className="text-xs text-ink-muted mt-1">API endpoint called when value changes</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-1">On Blur</label>
-              <Input
-                value={config.hooks?.onBlur || ''}
-                onChange={(e) => updateConfig({ 
-                  hooks: { ...config.hooks, onBlur: e.target.value }
-                })}
-                placeholder="/api/field-data/validate?field=country"
-                className="text-xs"
-              />
-              <p className="text-xs text-ink-muted mt-1">API endpoint called when field loses focus</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-1">On Focus</label>
-              <Input
-                value={config.hooks?.onFocus || ''}
-                onChange={(e) => updateConfig({ 
-                  hooks: { ...config.hooks, onFocus: e.target.value }
-                })}
-                placeholder="/api/field-data/focus?field=country"
-                className="text-xs"
-              />
-              <p className="text-xs text-ink-muted mt-1">API endpoint called when field gains focus</p>
-            </div>
-          </div>
+        {/* â”€â”€ Hooks â”€â”€ */}
+        {activeTab === "hooks" && (
+          <HooksBuilder
+            value={config.hooks}
+            onChange={(v) => updateConfig({ hooks: v })}
+          />
         )}
 
-        {activeTab === 'permissions' && (
-          <div className="space-y-4">
-            <p className="text-xs text-ink-muted mb-3">
-              Control field visibility and editability by user role
-            </p>
-
-            <div>
-              <label className="text-xs font-medium text-ink block mb-2">Permission Rules</label>
-              <textarea
-                value={JSON.stringify(config.permissions || {}, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    updateConfig({ permissions: parsed });
-                  } catch {}
-                }}
-                placeholder={'{\n  "admin": { "read": true, "write": true },\n  "operator": { "read": true, "write": false },\n  "viewer": { "read": true, "write": false }\n}'}
-                className="w-full px-3 py-2 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={8}
-              />
-              <p className="text-xs text-ink-muted mt-1">
-                Define read/write/mask permissions per role
-              </p>
-            </div>
-          </div>
+        {/* â”€â”€ Permissions â”€â”€ */}
+        {activeTab === "permissions" && (
+          <PermissionsMatrix
+            value={config.permissions}
+            onChange={(v) => updateConfig({ permissions: v })}
+          />
         )}
       </div>
 
-      {/* Footer with stats */}
+      {/* Footer */}
       <div className="px-4 py-3 border-t border-border bg-gray-50 text-xs text-ink-muted">
         <div className="flex items-center justify-between">
-          <div>
-            Editing: <span className="font-mono font-semibold">{fieldPath}</span>
-          </div>
+          <span className="font-mono font-semibold truncate max-w-[60%]">{fieldPath}</span>
           <div className="flex items-center gap-2">
             {config.isRequired && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded">Required</span>}
             {config.isReadOnly && <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded">Read-only</span>}
-            {!config.isVisible && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">Hidden</span>}
+            {config.isVisible
+              ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded">Shown</span>
+              : <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">Hidden</span>}
           </div>
         </div>
       </div>

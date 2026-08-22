@@ -72,6 +72,7 @@ export default async function CustomsFilingDetailPage(props: { params: Promise<{
     country: filing.country ?? null,
     procedureCode: filing.procedureCode ?? null,
     messageName: filing.messageName ?? latestMessage?.messageName ?? null,
+    release: filing.release ?? null,
     totalValue: filing.totalValue === null ? null : Number(filing.totalValue),
     totalDuties: filing.totalDuties === null ? null : Number(filing.totalDuties),
     totalTaxes: filing.totalTaxes === null ? null : Number(filing.totalTaxes),

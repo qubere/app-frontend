@@ -1,8 +1,14 @@
 /**
  * API endpoint for managing UI configuration
- * 
- * POST /api/filing-config/ui-configuration - Create/Update complete configuration
- * GET /api/filing-config/ui-configuration - List all configurations
+ *
+ * GET  /api/filing-config/ui-configuration        - List all configurations (active + drafts)
+ * POST /api/filing-config/ui-configuration        - Create or update a draft configuration
+ *
+ * Lifecycle per country+procedureCode+messageName+messageType:
+ *   - At most one draft (isDraft=true,  isActive=false)
+ *   - At most one active (isDraft=false, isActive=true)
+ *   POST always targets the draft row.
+ *   Use /[id]/publish to promote a draft to active.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -14,15 +20,14 @@ import { FilingUIConfigData } from "@/types/ui-config.types";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    
+
     const country = searchParams.get("country");
     const procedureCode = searchParams.get("procedureCode");
     const messageName = searchParams.get("messageName");
     const messageType = searchParams.get("messageType");
     const transactionType = searchParams.get("transactionType");
 
-    // Build where clause
-    const where: any = { isActive: true };
+    const where: any = {};
     if (country) where.country = country;
     if (procedureCode) where.procedureCode = procedureCode;
     if (messageName) where.messageName = messageName;
@@ -32,29 +37,35 @@ export async function GET(request: NextRequest) {
     const configs = await db.filingUIConfig.findMany({
       where,
       orderBy: [
-        { country: 'asc' },
-        { procedureCode: 'asc' },
-        { messageName: 'asc' },
-      ]
+        { country: "asc" },
+        { procedureCode: "asc" },
+        { messageName: "asc" },
+        // active rows first within the same combo
+        { isActive: "desc" },
+      ],
     });
 
-    // Transform to match FilingConfigClient expected format: { rows: [...] }
-    const rows = configs.map(c => {
+    const rows = configs.map((c) => {
       const configData = c.configData as unknown as FilingUIConfigData;
+      // Derive status label for the dashboard
+      const status = c.isActive ? "active" : c.isDraft ? "draft" : "inactive";
       return {
         id: c.id,
         country: c.country,
         procedureCode: c.procedureCode,
         messageName: c.messageName,
         messageType: c.messageType,
+        release: c.release,
         version: c.version,
         description: c.description,
         totalFields: configData.fields?.length || 0,
         totalTabs: configData.tabs?.length || 0,
         totalSections: configData.sections?.length || 0,
-        layoutMode: configData.layout?.mode || 'single-page',
-        configVersion: configData.version || 'unknown',
+        layoutMode: configData.layout?.mode || "single-page",
+        configVersion: configData.version || "unknown",
         isActive: c.isActive,
+        isDraft: c.isDraft,
+        status,
         updatedAt: c.updatedAt.toISOString(),
         createdBy: c.createdBy,
         updatedBy: c.updatedBy,
@@ -73,20 +84,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get the authenticated user
     const accountContext = await getAccountContext();
     if (!accountContext) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const userIdentifier = accountContext.email || accountContext.userId;
-
     const body = await request.json();
 
-    // Validate required fields
     if (!body.country || !body.procedureCode || !body.messageName || !body.messageType) {
       return NextResponse.json(
         { error: "Missing required fields: country, procedureCode, messageName, messageType" },
@@ -95,19 +100,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (!body.configData) {
-      return NextResponse.json(
-        { error: "configData is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "configData is required" }, { status: 400 });
     }
 
-    // Validate configData structure
     const configData = body.configData as unknown as FilingUIConfigData;
     const validationResult = validateConfig(configData);
-    
+
     if (!validationResult.valid) {
       return NextResponse.json(
-        { 
+        {
           error: "Configuration validation failed",
           summary: getValidationSummary(validationResult.errors, validationResult.warnings),
           errors: formatValidationErrors(validationResult.errors),
@@ -116,60 +117,63 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
-    // Ensure metadata includes last modified timestamp
+
     if (configData.metadata) {
       configData.metadata.lastModifiedBy = userIdentifier;
       configData.metadata.lastModifiedAt = new Date().toISOString();
     }
-    
-    // Check if configuration already exists
-    const existing = await db.filingUIConfig.findUnique({
+
+    // Find the existing draft (if any) for this combination
+    // Include release in the lookup so per-release drafts don't overwrite each other
+    const release: string | null = body.release ?? null;
+
+    const existingDraft = await db.filingUIConfig.findFirst({
       where: {
-        country_procedureCode_messageName_messageType: {
-          country: body.country,
-          procedureCode: body.procedureCode,
-          messageName: body.messageName,
-          messageType: body.messageType,
-        }
-      }
+        country: body.country,
+        procedureCode: body.procedureCode,
+        messageName: body.messageName,
+        messageType: body.messageType,
+        release,
+        isDraft: true,
+      },
     });
 
     let config;
-    if (existing) {
-      // Update existing configuration
+    if (existingDraft) {
+      // Update the existing draft — never touch the active row
       config = await db.filingUIConfig.update({
-        where: { id: existing.id },
+        where: { id: existingDraft.id },
         data: {
           configData: body.configData,
-          version: { increment: 1 },
+          release,
           description: body.description,
-          isActive: body.isActive !== undefined ? body.isActive : undefined, // Allow updating isActive
           updatedAt: new Date(),
           updatedBy: userIdentifier,
         },
       });
     } else {
-      // Create new configuration
+      // Create a new draft row (isDraft=true, isActive=false)
       config = await db.filingUIConfig.create({
         data: {
           country: body.country,
           procedureCode: body.procedureCode,
           messageName: body.messageName,
           messageType: body.messageType,
+          release,
           configData: body.configData,
           version: 1,
           description: body.description,
-          isActive: body.isActive !== undefined ? body.isActive : true, // Default to active
+          isDraft: true,
+          isActive: false,
           createdBy: userIdentifier,
           updatedBy: userIdentifier,
         },
       });
     }
 
-    return NextResponse.json(config, { status: existing ? 200 : 201 });
+    return NextResponse.json(config, { status: existingDraft ? 200 : 201 });
   } catch (error) {
-    console.error("Error creating/updating UI configuration:", error);
+    console.error("Error saving UI configuration draft:", error);
     return NextResponse.json(
       { error: "Failed to save UI configuration" },
       { status: 500 }
