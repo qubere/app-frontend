@@ -3,7 +3,9 @@ import { Prisma } from "@prisma/client";
 import { createAuditLog } from "@/lib/audit";
 import { createExceptionItem } from "@/lib/exceptions/createException";
 import { DocumentIntakeAgent } from "@/modules/intake/documentIntakeAgent";
-import { DocumentIntelligenceAgent, DocumentIntelligenceOutput } from "./documentIntelligenceAgent";
+import { DocumentIntelligenceAgent, DocumentIntelligenceInput, DocumentIntelligenceOutput } from "./documentIntelligenceAgent";
+import { buildContextForDocument } from "@/modules/documents/context/documentContextService";
+import { QUBERE_DOCUMENT_CONTEXT_VERSION } from "@/modules/documents/context/qubereDocumentContext";
 import { ProductIntelligenceAgent, ProductIntelligenceOutput } from "./productIntelligenceAgent";
 import { HTSClassificationAgent, HTSClassificationOutput } from "./htsClassificationAgent";
 import { OriginRulesAgent, OriginRulesOutput } from "./originRulesAgent";
@@ -403,7 +405,29 @@ export class PipelineOrchestrator {
 
       case "Document Intelligence Agent": {
         const packetId = scratch.packetId || documentId || "pkt_default";
-        const agentInput = {
+
+        let documentContext: DocumentIntelligenceInput["documentContext"] = undefined;
+        if (documentId) {
+          try {
+            const resolved = await buildContextForDocument({
+              accountId,
+              documentId,
+              purpose: "TRADE_EXTRACTION",
+            });
+            documentContext = {
+              text: resolved.promptText,
+              processingRunId: resolved.processingRunId,
+              parserProvider: resolved.context.parser.provider,
+              parserProfile: resolved.context.parser.profile,
+              contextSchemaVersion: `QubereDocumentContextV${QUBERE_DOCUMENT_CONTEXT_VERSION}`,
+              truncated: resolved.context.budget.truncated,
+            };
+          } catch {
+            // Document not parsed by Docling yet or parse not found -- fallback to direct fileBuffer / vision pass
+          }
+        }
+
+        const agentInput: DocumentIntelligenceInput = {
           accountId,
           userId,
           shipmentId,
@@ -412,6 +436,7 @@ export class PipelineOrchestrator {
           fileBuffer: payload?.fileBuffer,
           fileName: payload?.fileName,
           mimeType: payload?.mimeType,
+          documentContext,
         };
         const output = await DocumentIntelligenceAgent.execute(agentInput);
         await this.persistIntelligence(shipmentId, accountId, documentId, output);

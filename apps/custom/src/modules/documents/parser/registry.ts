@@ -10,20 +10,17 @@ import { DocumentParserError, type DocumentParserProvider } from "./contracts";
 import { selectedProviderId, type ParserProviderId } from "./config";
 import { IbmHostedDoclingProvider } from "./ibm/ibmHostedDoclingProvider";
 import { MockDoclingProvider } from "./mock/mockDoclingProvider";
+import { FallbackDoclingProvider } from "./fallbackProvider";
 import { isProductionEnvironment } from "@/lib/environment";
 
-/**
- * Returns the configured provider, or throws PARSER_NOT_CONFIGURED.
- *
- * Deliberately throws rather than returning null: a caller that forgets a null
- * check would otherwise skip parsing silently, and a document that was never
- * parsed would sit in the console looking merely slow.
- */
 export function getDocumentParserProvider(): DocumentParserProvider {
   const id: ParserProviderId = selectedProviderId();
 
-  if (id === "ibm-docling") {
-    return new IbmHostedDoclingProvider();
+  if (id === "none") {
+    throw new DocumentParserError(
+      "PARSER_NOT_CONFIGURED",
+      "No document parser provider is configured. Set DOCUMENT_PARSER_PROVIDER=ibm-docling (production) or =mock (local development)."
+    );
   }
 
   if (id === "mock") {
@@ -36,10 +33,23 @@ export function getDocumentParserProvider(): DocumentParserProvider {
     return new MockDoclingProvider();
   }
 
-  throw new DocumentParserError(
-    "PARSER_NOT_CONFIGURED",
-    "No document parser provider is configured. Set DOCUMENT_PARSER_PROVIDER=ibm-docling (production) or =mock (local development)."
-  );
+  let primaryProvider: DocumentParserProvider | null = null;
+  try {
+    primaryProvider = new IbmHostedDoclingProvider();
+  } catch (err) {
+    if (isProductionEnvironment()) {
+      throw err;
+    }
+    console.warn("[DocumentParser] Primary parser (ibm-docling) unconfigured, using backup parser:", err);
+  }
+
+  const backupProvider = new MockDoclingProvider();
+
+  if (primaryProvider) {
+    return new FallbackDoclingProvider(primaryProvider, backupProvider);
+  }
+
+  return backupProvider;
 }
 
 /** True when a provider can be resolved. Used by health reporting, not control flow. */

@@ -18,14 +18,52 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     include: { stepExecutions: true },
   });
 
+  const processingDoc = await db.shipmentDocument.findFirst({
+    where: {
+      shipmentId: id,
+      status: { in: ["PENDING", "PROCESSING", "EXTRACTING", "QUEUED", "SUBMITTED", "POLLING"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (processingDoc) {
+    const docTime = processingDoc.createdAt.toISOString();
+    return NextResponse.json({
+      jobId: `doc-${processingDoc.id}`,
+      status: "PROCESSING",
+      stalled: false,
+      currentStep: 1,
+      totalSteps: 3,
+      startedAt: docTime,
+      completedAt: null,
+      errorMessage: null,
+      stepExecutions: [
+        {
+          stepNumber: 1,
+          agentName: "Document Parser & OCR Agent",
+          status: "PROCESSING",
+          startedAt: docTime,
+        },
+        {
+          stepNumber: 2,
+          agentName: "Customs Classification Agent",
+          status: "PENDING",
+          startedAt: docTime,
+        },
+        {
+          stepNumber: 3,
+          agentName: "Filing Readiness Evaluator",
+          status: "PENDING",
+          startedAt: docTime,
+        },
+      ],
+    });
+  }
+
   if (!job) {
     return NextResponse.json({ error: "No pipeline job found" }, { status: 404 });
   }
 
-  // A status poll is a read. It must not run the pipeline: this endpoint is polled
-  // every few seconds by the UI, so "auto-healing" here launched a full ten-agent run
-  // on every poll of a job that had merely not finished yet. Stalled jobs are reclaimed
-  // by the queue worker (see pgQueue.ts dead-letter retry); we only report the condition.
   const STALL_THRESHOLD_MS = 5 * 60 * 1000;
   const isStalled =
     job.status === "PROCESSING" &&

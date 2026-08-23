@@ -1,5 +1,6 @@
 import { getAccountContext } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { SYSTEM_ROLES } from "@/lib/permissions";
 import { UserManagementPanel } from "./UserManagementPanel";
 
 export default async function AdminUsersPage() {
@@ -15,13 +16,24 @@ export default async function AdminUsersPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  // Roles are per-account (custom roles like PLANNER) plus system-wide ones
-  // (OWNER) -- not a fixed OWNER/ADMIN/MEMBER/VIEWER set, so the assignable
-  // list must be queried rather than hardcoded.
-  const availableRoles = await db.role.findMany({
+  let availableRoles = await db.role.findMany({
     where: { OR: [{ accountId: context.accountId }, { accountId: null }] },
     orderBy: { name: "asc" },
   });
+
+  if (availableRoles.length === 0) {
+    await Promise.all(
+      SYSTEM_ROLES.map((name) =>
+        db.role.create({
+          data: { name, isSystem: true, accountId: null, description: `System ${name} Role` },
+        }).catch(() => null)
+      )
+    );
+    availableRoles = await db.role.findMany({
+      where: { OR: [{ accountId: context.accountId }, { accountId: null }] },
+      orderBy: { name: "asc" },
+    });
+  }
 
   const formattedMembers = memberships.map((m) => ({
     membershipId: m.id,

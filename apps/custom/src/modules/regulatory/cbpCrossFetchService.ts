@@ -1,4 +1,5 @@
 import { CrossIngestionService } from "./crossIngestionService";
+import { thirdPartyFetch } from "@/lib/api/thirdPartyLogger";
 
 export interface FetchOptions {
   searchTerms?: string[];
@@ -29,7 +30,7 @@ export class CbpCrossFetchService {
         await delay(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
       }
       try {
-        const res = await fetch(url, init);
+        const res = await thirdPartyFetch("CBP_CROSS", url, init);
         if (res.ok) return res;
         if (res.status === 429 || res.status >= 500) {
           lastError = new Error(`HTTP ${res.status}: ${res.statusText}`);

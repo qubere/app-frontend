@@ -4,3 +4,8 @@ export * from "./auth-guards";
 export * from "./write-access";
 export * from "./error";
 export * from "./entitlements";
+export * from "./scope-engine";
+export * from "./impersonation-service";
+export * from "./audit-service";
+export * from "./authorization-service";
+export * from "./client-auth";

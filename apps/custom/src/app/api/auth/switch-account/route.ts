@@ -26,21 +26,24 @@ export const POST = withPublicRoute(async ({ req }) => {
   }
 
   return withAccountIdContext(targetAccountId, async () => {
-    // Verify user belongs to target account
     const user = await db.user.findUnique({
       where: { clerkUserId },
       include: {
+        platformRoles: { include: { platformRole: true } },
         memberships: {
           where: { accountId: targetAccountId, status: "ACTIVE" },
         },
       },
     });
 
-    if (!user || user.memberships.length === 0) {
+    const isPlatformAdmin = user?.platformRoles.some((pr) =>
+      ["PLATFORM_ADMIN", "SUPER_ADMIN_READWRITE", "SUPER_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_SETTINGS"].includes(pr.platformRole.name)
+    );
+
+    if (!user || (!isPlatformAdmin && user.memberships.length === 0)) {
       return NextResponse.json({ error: "No active membership in specified account" }, { status: 403 });
     }
 
-    // Set cookie for active account
     const cookieStore = await cookies();
     cookieStore.set(ACTIVE_ACCOUNT_COOKIE, targetAccountId, {
       path: "/",

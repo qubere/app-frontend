@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Activity, FileText, Layers, Route } from "lucide-react";
 
 type ShipmentTab = "workspace" | "tracking" | "filing" | "audit";
@@ -42,6 +42,28 @@ export function ShipmentTabsPanel({
   auditContent,
 }: ShipmentTabsPanelProps) {
   const [activeTab, setActiveTab] = useState<ShipmentTab>(() => normalizeTab(initialTab));
+
+  useEffect(() => {
+    const handleSwitchTab = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tab: ShipmentTab; scrollId?: string }>;
+      if (customEvent.detail?.tab) {
+        selectTab(customEvent.detail.tab);
+        if (customEvent.detail.scrollId) {
+          setTimeout(() => {
+            const el = document.getElementById(customEvent.detail.scrollId!);
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth" });
+            }
+          }, 50);
+        }
+      }
+    };
+
+    window.addEventListener("qubere:switch-tab", handleSwitchTab);
+    return () => {
+      window.removeEventListener("qubere:switch-tab", handleSwitchTab);
+    };
+  }, []);
 
   const selectTab = (tab: ShipmentTab) => {
     setActiveTab(tab);

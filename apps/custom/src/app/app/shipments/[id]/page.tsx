@@ -1375,27 +1375,10 @@ export default async function ShipmentWorkspacePage(props: {
     /* Secondary Audit Tab: Agent Executions & Event Logs */
     <div className="space-y-6">
       {/* Incremental Audit Log Table */}
-      <div className="apple-card p-6 rounded-3xl border border-border bg-white shadow-sm space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
-          <div>
-            <h3 className="text-lg font-bold text-ink flex items-center space-x-2">
-              <HistoryIcon className="w-5 h-5 text-brand" />
-              <span>Shipment Audit Log & Event Table</span>
-            </h3>
-            <p className="text-xs text-ink-muted mt-0.5">
-              Append-only audit table tracking every action, field edit, document upload, and filing submission on this shipment.
-            </p>
-          </div>
-          <span className="self-start sm:self-auto px-3 py-1 bg-brand/10 text-brand text-xs font-bold rounded-full font-mono">
-            {combinedAuditEntries.length} Events Logged
-          </span>
-        </div>
-
-        <ShipmentAuditTrail entries={combinedAuditEntries} />
-      </div>
+      <ShipmentAuditTrail entries={combinedAuditEntries} />
 
       {/* Agent Execution Waterfall */}
-      <div className="apple-card p-6 rounded-3xl border border-border bg-white shadow-sm space-y-6">
+      <div id="waterfall-view" className="apple-card p-6 rounded-3xl border border-border bg-white shadow-sm space-y-6">
         <div>
           <h3 className="text-lg font-bold text-ink flex items-center space-x-2">
             <Layers className="w-5 h-5 text-brand" />

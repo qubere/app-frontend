@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { thirdPartyFetch } from "@/lib/api/thirdPartyLogger";
 
 export class ExchangeRateService {
   /**
@@ -13,7 +14,7 @@ export class ExchangeRateService {
     const url = new URL("https://api.currencyfreaks.com/v2.0/rates/latest");
     if (apiKey) url.searchParams.set("apikey", apiKey);
 
-    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    const res = await thirdPartyFetch("EXCHANGE_RATES", url.toString(), { headers: { Accept: "application/json" } });
     if (!res.ok) {
       throw new Error(`CurrencyFreaks API returned HTTP ${res.status}: ${res.statusText}. FX rate refresh aborted.`);
     }

@@ -1,35 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate } from "@/lib/utils";
-import { Users, UserPlus, UserX, UserCheck, Eye, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Users, UserPlus, UserX, UserCheck, Eye, Loader2, CheckCircle2, AlertCircle, ShieldCheck, Calendar, Mail, User, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Label } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 
 export interface MemberItem {
   membershipId: string;
   userId: string;
+  clerkUserId?: string;
   email: string;
   firstName?: string | null;
   lastName?: string | null;
   status: string;
-  createdAt: string;
-  updatedAt?: string | null;
-  // A membership can hold multiple roles simultaneously (e.g. Admin + Agent).
   roleNames: string[];
+  roleIds?: string[];
+  createdAt: string;
+  updatedAt?: string;
 }
 
-interface UserManagementTableProps {
+export interface UserManagementTableProps {
   members: MemberItem[];
   currentUserId: string;
-  // Roles assignable on this account: system-wide (OWNER) plus this
-  // account's own custom roles (e.g. PLANNER) -- not a fixed set, so this
-  // is queried by the server rather than hardcoded here.
   availableRoles: string[];
-  /** Called after any successful mutation, in addition to router.refresh(), so embedders that don't rely on the route's server data (e.g. a modal fetching client-side) can refresh their own copy. */
   onSaved?: () => void;
+}
+
+function getErrMsg(err: unknown, fallback: string): string {
+  if (!err) return fallback;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    if ("message" in err && typeof (err as { message: unknown }).message === "string") {
+      return (err as { message: string }).message;
+    }
+  }
+  return fallback;
 }
 
 export function UserManagementTable({ members, currentUserId, availableRoles, onSaved }: UserManagementTableProps) {
@@ -40,8 +49,14 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
   const [showInactive, setShowInactive] = useState(false);
 
   const [loadingMembershipId, setLoadingMembershipId] = useState<string | null>(null);
-  const [, setSelectedMember] = useState<MemberItem | null>(null);
+  const [selectedMember, setSelectedMember] = useState<MemberItem | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    if ((!inviteRole || !availableRoles.includes(inviteRole)) && availableRoles.length > 0) {
+      setInviteRole(availableRoles.find((r) => r !== "OWNER") ?? availableRoles[0] ?? "");
+    }
+  }, [availableRoles, inviteRole]);
 
   const visibleMembers = showInactive ? members : members.filter((m) => m.status === "ACTIVE");
 
@@ -64,7 +79,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
         router.refresh();
         onSaved?.();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to send invitation" });
+        setMessage({ type: "error", text: getErrMsg(data.error, "Failed to send invitation") });
       }
     } catch (err) {
       console.error(err);
@@ -102,7 +117,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
         router.refresh();
         onSaved?.();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update user roles." });
+        setMessage({ type: "error", text: getErrMsg(data.error, "Failed to update user roles.") });
       }
     } catch (err) {
       console.error(err);
@@ -130,7 +145,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
         router.refresh();
         onSaved?.();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update status." });
+        setMessage({ type: "error", text: getErrMsg(data.error, "Failed to update status.") });
       }
     } catch (err) {
       console.error(err);
@@ -342,6 +357,71 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
           </table>
         </div>
       </div>
+
+      {/* User Details Modal */}
+      {selectedMember && (
+        <Modal isOpen={!!selectedMember} onClose={() => setSelectedMember(null)} titleId="user-details-modal-title">
+          <ModalHeader>
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-full bg-brand/10 text-brand flex items-center justify-center font-bold text-sm">
+                {(selectedMember.firstName?.[0] ?? selectedMember.email[0]).toUpperCase()}
+              </div>
+              <div>
+                <h3 id="user-details-modal-title" className="text-base font-bold text-ink">
+                  {selectedMember.firstName || selectedMember.lastName
+                    ? `${selectedMember.firstName ?? ""} ${selectedMember.lastName ?? ""}`.trim()
+                    : selectedMember.email}
+                </h3>
+                <p className="text-xs text-ink-muted">{selectedMember.email}</p>
+              </div>
+            </div>
+          </ModalHeader>
+
+          <ModalBody className="space-y-4 py-2">
+            <div className="bg-surface-muted/50 p-4 rounded-2xl border border-border space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-ink-muted">Membership Status</span>
+                <Badge variant={selectedMember.status === "ACTIVE" ? "success" : "neutral"}>
+                  {selectedMember.status}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-ink-muted">User ID</span>
+                <span className="font-mono text-ink text-[11px]">{selectedMember.userId}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-ink-muted">Membership ID</span>
+                <span className="font-mono text-ink text-[11px]">{selectedMember.membershipId}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-ink-muted">Joined Date</span>
+                <span className="text-ink">{formatDate(selectedMember.createdAt)}</span>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold text-ink mb-2 uppercase tracking-wider">Assigned Account Roles</h4>
+              <div className="flex flex-wrap gap-2">
+                {selectedMember.roleNames.map((role) => (
+                  <span
+                    key={role}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand/10 text-brand border border-brand/20 text-xs font-bold rounded-full"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    {role}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button variant="secondary" onClick={() => setSelectedMember(null)} className="rounded-full">
+              Close Details
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
     </div>
   );
 }

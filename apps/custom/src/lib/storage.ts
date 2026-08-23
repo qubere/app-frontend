@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { logThirdPartyCall, thirdPartyFetch } from "@/lib/api/thirdPartyLogger";
 
 // QPR-004: Allowlisted MIME types for customs document uploads.
 // Only structured document formats acceptable for trade records.
@@ -243,7 +244,7 @@ export async function readProcessingArtifact(storageRef: string): Promise<Buffer
 
   assertQubereStorageUrl(storageRef);
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const response = await fetch(storageRef, {
+  const response = await thirdPartyFetch("VERCEL_BLOB_STORAGE", storageRef, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     cache: "no-store",
   });
@@ -301,11 +302,22 @@ export async function storeDocumentFile(
 
   // Provider 1: Vercel Blob Storage
   if (token) {
+    const startTime = Date.now();
     try {
       console.log(`[Storage] Uploading ${safeFilename} (${file.size} bytes) sha256=${checksum} to Vercel Blob Storage...`);
       const blob = await put(`documents/${safeFilename}`, buffer, {
         access: "private",
         token,
+      });
+      const durationMs = Date.now() - startTime;
+      void logThirdPartyCall({
+        provider: "VERCEL_BLOB_STORAGE",
+        url: blob.url,
+        method: "PUT",
+        status: 200,
+        statusText: "OK",
+        durationMs,
+        metadata: `size=${file.size}B`,
       });
 
       return {
@@ -316,6 +328,15 @@ export async function storeDocumentFile(
         provider: "vercel-blob",
       };
     } catch (err: unknown) {
+      const durationMs = Date.now() - startTime;
+      void logThirdPartyCall({
+        provider: "VERCEL_BLOB_STORAGE",
+        url: `documents/${safeFilename}`,
+        method: "PUT",
+        durationMs,
+        error: err,
+        metadata: `size=${file.size}B`,
+      });
       console.error("[Storage] Vercel Blob upload failed:", err);
       // In serverless environments, local filesystem is read-only.
       // Do not fall through silently; surface the Vercel Blob error directly.
