@@ -90,6 +90,7 @@ function ConfigSelectorModal({ isOpen, onClose, onSelect }: ConfigSelectorModalP
   const [messageName, setMessageName] = useState("");
   const [messageType, setMessageType] = useState("request");
   const [release, setRelease] = useState("");
+  const [schemaChecking, setSchemaChecking] = useState(false);
 
   // Load all procedure configs and releases once
   useEffect(() => {
@@ -112,7 +113,7 @@ function ConfigSelectorModal({ isOpen, onClose, onSelect }: ConfigSelectorModalP
 
   // Cascade: reset downstream when parent changes
   useEffect(() => { setProcedureCode(""); setMessageName(""); }, [country]);
-  useEffect(() => { setMessageName(""); }, [procedureCode]);
+  useEffect(() => { setMessageName(""); setRelease(""); }, [procedureCode]);
   useEffect(() => { setRelease(""); }, [country]);
 
   // Derived option lists
@@ -130,9 +131,9 @@ function ConfigSelectorModal({ isOpen, onClose, onSelect }: ConfigSelectorModalP
     )
   ).sort();
 
-  const releases = allReleases.filter((r) => r.country === country).sort((a, b) =>
-    a.release.localeCompare(b.release)
-  );
+  const releases = allReleases
+    .filter((r) => r.country === country && r.procedureCode === procedureCode)
+    .sort((a, b) => a.release.localeCompare(b.release));
 
   // Auto-select first option when list resolves
   useEffect(() => {
@@ -154,9 +155,29 @@ function ConfigSelectorModal({ isOpen, onClose, onSelect }: ConfigSelectorModalP
 
   const canSubmit = country && procedureCode && messageName && messageType && release;
 
-  const handleSubmit = () => {
-    if (canSubmit) {
+  const handleSubmit = async () => {
+    if (!canSubmit || schemaChecking) return;
+
+    setSchemaChecking(true);
+    try {
+      const response = await fetch(
+        `/api/schemas/${encodeURIComponent(country)}/${encodeURIComponent(procedureCode)}/${encodeURIComponent(messageName)}/${encodeURIComponent(messageType)}?version=${encodeURIComponent(release)}`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        alert(
+          errorData.message ||
+          `Schema not found for ${procedureCode.toLowerCase()} release ${release}. Please add the canonical schema before configuring fields.`
+        );
+        return;
+      }
+
       onSelect(country, procedureCode, messageName, messageType, release);
+    } catch (error: any) {
+      alert(error?.message || `Unable to check schema for ${procedureCode.toLowerCase()} release ${release}.`);
+    } finally {
+      setSchemaChecking(false);
     }
   };
 
@@ -273,9 +294,9 @@ function ConfigSelectorModal({ isOpen, onClose, onSelect }: ConfigSelectorModalP
           variant="primary"
           size="sm"
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || schemaChecking}
         >
-          Continue
+          {schemaChecking ? "Checking schema..." : "Continue"}
         </Button>
       </ModalFooter>
     </Modal>
@@ -288,6 +309,7 @@ interface UIConfigEditorProps {
 }
 
 type LifecycleStatus = 'draft' | 'validated' | 'published';
+type SavingAction = 'draft' | 'validate' | null;
 
 export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps) {
   // Configuration target state
@@ -307,6 +329,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
   const [lifecycleStatus, setLifecycleStatus] = useState<LifecycleStatus>('draft');
   const [savedConfigId, setSavedConfigId] = useState<string | null>(configId || null);
   const [isSaving, setIsSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState<SavingAction>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   
   // Validation state (NEW)
@@ -643,12 +666,16 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
       description: config.metadata?.description,
     };
 
-    // Always POST (creates/updates the draft row for this combo)
-    const response = await fetch("/api/filing-config/ui-configuration", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(
+      savedConfigId
+        ? `/api/filing-config/ui-configuration/${savedConfigId}`
+        : "/api/filing-config/ui-configuration",
+      {
+        method: savedConfigId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
 
     if (!response.ok) {
       const err = await response.json();
@@ -669,8 +696,9 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
 
   // ── Save Draft ──────────────────────────────────────────────────────────────
   const handleSaveDraft = async () => {
-    if (!config || isSaving) return;
+    if (!config || isSaving || lifecycleStatus === "published") return;
     setIsSaving(true);
+    setSavingAction('draft');
 
     try {
       await persistDraft('draft', "Draft saved");
@@ -678,6 +706,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
       setSaveStatus({ show: true, type: "error", message: error.message || "Failed to save draft" });
       setTimeout(() => setSaveStatus(null), 5000);
     } finally {
+      setSavingAction(null);
       setIsSaving(false);
     }
   };
@@ -692,12 +721,14 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
 
     if (result.valid) {
       setIsSaving(true);
+      setSavingAction('validate');
       try {
         await persistDraft('validated', "Validation passed — ready to publish");
       } catch (error: any) {
         setSaveStatus({ show: true, type: "error", message: error.message || "Validation passed, but saving the draft failed" });
         setTimeout(() => setSaveStatus(null), 5000);
       } finally {
+        setSavingAction(null);
         setIsSaving(false);
       }
     } else {
@@ -1034,10 +1065,15 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
                 onClick={handleSaveDraft}
                 variant="secondary"
                 size="sm"
-                disabled={!hasUnsavedChanges || isSaving}
+                disabled={!hasUnsavedChanges || isSaving || lifecycleStatus === "published"}
+                title={
+                  lifecycleStatus === "published"
+                    ? "Published configurations cannot be saved as drafts. Validate and publish to update this record."
+                    : "Save this configuration as a draft"
+                }
               >
                 <Save className="w-4 h-4 mr-1.5" />
-                {isSaving ? "Saving…" : "Save Draft"}
+                {savingAction === "draft" ? "Saving…" : "Save Draft"}
               </Button>
 
               {/* Validate */}
@@ -1048,7 +1084,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
                 disabled={!config || isSaving}
               >
                 <FileCheck className="w-4 h-4 mr-1.5" />
-                {isSaving ? "Saving..." : "Validate"}
+                {savingAction === "validate" ? "Validating..." : "Validate"}
               </Button>
 
               {/* Publish — enabled only for a saved, validated draft */}
@@ -1056,7 +1092,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
                 onClick={handlePublish}
                 variant="primary"
                 size="sm"
-                disabled={!savedConfigId || hasUnsavedChanges || isPublishing || lifecycleStatus !== "validated"}
+                disabled={!savedConfigId || hasUnsavedChanges || isSaving || isPublishing || lifecycleStatus !== "validated"}
                 title={
                   lifecycleStatus === "published"
                     ? "Already published"

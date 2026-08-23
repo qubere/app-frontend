@@ -59,6 +59,7 @@ export type PermissionCategory =
   | "Tender"
   | "Tracking"
   | "Invoice"
+  | "Freight"
   | "Integration"
   | "System";
 
@@ -259,6 +260,14 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "invoice.send", description: "Send customer invoice email", category: "Invoice", defaultRoles: ["TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
   { name: "invoice.void", description: "Void invoice", category: "Invoice", defaultRoles: ["TMS_ADMIN", "TMS_BILLING", "OWNER"] },
   { name: "invoice.export", description: "Export invoice batch for ERP ingestion", category: "Invoice", defaultRoles: ["TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
+
+  // Freight workflow aliases used by shared TMS services/routes
+  { name: "transportationOrders.read", description: "View transportation orders in freight workflows", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "MEMBER", "VIEWER"] },
+  { name: "transportationOrders.write", description: "Create and update transportation orders in freight workflows", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "OWNER", "ADMIN", "MEMBER"] },
+  { name: "carriers.manage", description: "Manage carrier master data and approval controls", category: "Freight", defaultRoles: ["TMS_ADMIN", "OWNER", "ADMIN"] },
+  { name: "tenders.send", description: "Send freight tenders to carriers", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "OWNER", "ADMIN", "MEMBER"] },
+  { name: "carrierInvoices.match", description: "Match carrier invoices to shipments, tenders, and rate agreements", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN", "MEMBER"] },
+  { name: "carrierInvoices.override", description: "Override carrier invoice match exceptions and approval controls", category: "Freight", defaultRoles: ["TMS_ADMIN", "OWNER", "ADMIN"] },
 
   // TMS Integration Testing & Extra
   { name: "integration.test", description: "Execute test payload against EDI/API integration", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
