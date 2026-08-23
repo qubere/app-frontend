@@ -27,8 +27,11 @@ function systemContext(accountId: string): AccountContext {
   return {
     accountId,
     userId: "system_cron",
+    actorUserId: "system_cron",
+    effectiveUserId: "system_cron",
     clerkUserId: "system_cron",
     email: "system@qubere.internal",
+    isImpersonating: false,
     isPlatformAdmin: false,
     platformRoles: [],
     accountName: "System",
@@ -39,6 +42,8 @@ function systemContext(accountId: string): AccountContext {
     roleIds: [],
     roleNames: [],
     permissions: [],
+    authorizedClientIds: [],
+    isAllClients: true,
     memberships: [],
     account: {
       id: accountId,
