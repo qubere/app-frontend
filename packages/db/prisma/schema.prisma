@@ -145,6 +145,7 @@ model Account {
   updatedAt   DateTime  @updatedAt
 
   memberships                 AccountMembership[]
+  productEntitlements         AccountProductEntitlement[]
   roles                       Role[]
   invitations                 Invitation[]
   auditLogs                   AuditLog[]
@@ -266,6 +267,23 @@ model Account {
   @@index([slug])
   @@index([ownerUserId])
   @@index([deletedAt])
+}
+
+model AccountProductEntitlement {
+  id         String    @id @default(cuid())
+  accountId  String
+  product    String
+  status     String    @default("ACTIVE")
+  enabledAt  DateTime  @default(now())
+  disabledAt DateTime?
+  plan       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, product], map: "AccountProductEntitlement_accountId_product_key")
+  @@index([accountId, product, status], map: "AccountProductEntitlement_accountId_product_status_idx")
 }
 
 /// Concurrency-safe allocator for per-account, per-year shipment numbers.
