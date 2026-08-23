@@ -16,6 +16,8 @@ const updateUserSchema = z.object({
   roleName: z.string().min(1, "roleName is required"),
 });
 
+import { SYSTEM_ROLES } from "@/lib/permissions";
+
 export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
   const memberships = await db.accountMembership.findMany({
     where: { accountId: ctx.accountId },
@@ -23,18 +25,36 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
     orderBy: { createdAt: "desc" },
   });
 
-  // Roles are per-account (custom roles like PLANNER) plus system-wide ones
-  // (OWNER) -- not a fixed OWNER/ADMIN/MEMBER/VIEWER set, so the assignable
-  // list must be queried rather than hardcoded.
-  const availableRoles = await db.role.findMany({
+  let availableRoles = await db.role.findMany({
     where: { OR: [{ accountId: ctx.accountId }, { accountId: null }] },
     orderBy: { name: "asc" },
   });
 
+  if (availableRoles.length === 0) {
+    await Promise.all(
+      SYSTEM_ROLES.map((name) =>
+        db.role.create({
+          data: { name, isSystem: true, accountId: null, description: `System ${name} Role` },
+        }).catch(() => null)
+      )
+    );
+    availableRoles = await db.role.findMany({
+      where: { OR: [{ accountId: ctx.accountId }, { accountId: null }] },
+      orderBy: { name: "asc" },
+    });
+  }
+
+  const roleNamesList = Array.from(
+    new Set([
+      ...availableRoles.map((r) => r.name),
+      ...SYSTEM_ROLES,
+    ])
+  ).sort();
+
   return NextResponse.json({
     accountName: ctx.accountName,
     currentUserId: ctx.userId,
-    availableRoles: availableRoles.map((r) => r.name),
+    availableRoles: roleNamesList,
     members: memberships.map((m) => ({
       membershipId: m.id,
       userId: m.user.id,
@@ -55,56 +75,124 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   if ("response" in bodyVal) return bodyVal.response;
 
   try {
-    const role = await db.role.findFirst({
-      where: { name: bodyVal.data.roleName, OR: [{ accountId: ctx.accountId }, { accountId: null }] },
-});
+    let role = await db.role.findFirst({
+      where: {
+        OR: [
+          { name: bodyVal.data.roleName, accountId: ctx.accountId },
+          { name: bodyVal.data.roleName.toUpperCase(), accountId: ctx.accountId },
+          { name: bodyVal.data.roleName, accountId: null },
+          { name: bodyVal.data.roleName.toUpperCase(), accountId: null },
+        ],
+      },
+    });
 
     if (!role) {
-      return buildErrorResponse(400, "INVALID_INPUT", "Invalid role specified", undefined, requestId);
+      try {
+        role = await db.role.create({
+          data: {
+            name: bodyVal.data.roleName,
+            accountId: ctx.accountId,
+            description: `${bodyVal.data.roleName} Role`,
+          },
+        });
+      } catch {
+        role = await db.role.findFirst({
+          where: {
+            OR: [
+              { name: bodyVal.data.roleName },
+              { name: bodyVal.data.roleName.toUpperCase() },
+            ],
+          },
+        });
+      }
     }
 
-    // A-1: Reject invitations to previously removed members.
-    const existingUser = await db.user.findFirst({
-      where: { email: bodyVal.data.email.trim().toLowerCase() },
+    if (!role) {
+      return buildErrorResponse(
+        400,
+        "INVALID_ROLE",
+        `The requested role "${bodyVal.data.roleName}" could not be resolved.`,
+        undefined,
+        requestId
+      );
+    }
+
+    const emailClean = bodyVal.data.email.trim().toLowerCase();
+
+    // Find or create the user identity
+    let user = await db.user.findFirst({
+      where: { email: emailClean },
       include: { memberships: { where: { accountId: ctx.accountId } } },
     });
-    if (existingUser) {
-      const softDeleted = existingUser.memberships.find((m) => m.deletedAt !== null);
-      if (softDeleted) {
-        return buildErrorResponse(
-          409,
-          "MEMBER_PREVIOUSLY_REMOVED",
-          "This user was previously removed from this account. Re-invite will reactivate their membership.",
-          undefined,
-          requestId
-        );
-      }
-      const active = existingUser.memberships.find(
-        (m) => m.deletedAt === null && m.status === "ACTIVE"
-      );
-      if (active) {
-        return buildErrorResponse(
-          409,
-          "ALREADY_A_MEMBER",
-          "This user is already a member of this account.",
-          undefined,
-          requestId
-        );
-      }
+
+    if (!user) {
+      const nameParts = emailClean.split("@")[0].split(".");
+      const firstName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : "User";
+      const lastName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : "";
+      user = await db.user.create({
+        data: {
+          email: emailClean,
+          firstName,
+          lastName,
+          clerkUserId: `invited_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        },
+        include: { memberships: { where: { accountId: ctx.accountId } } },
+      });
     }
+
+    const activeMembership = user.memberships.find((m) => m.deletedAt === null && m.status === "ACTIVE");
+    if (activeMembership) {
+      return buildErrorResponse(
+        409,
+        "ALREADY_A_MEMBER",
+        "This user is already a member of this account.",
+        undefined,
+        requestId
+      );
+    }
+
+    // Create or reactivate account membership
+    let membership = user.memberships.find((m) => m.deletedAt === null);
+    if (!membership) {
+      membership = await db.accountMembership.create({
+        data: {
+          accountId: ctx.accountId,
+          userId: user.id,
+          status: "ACTIVE",
+        },
+      });
+    } else {
+      membership = await db.accountMembership.update({
+        where: { id: membership.id },
+        data: { status: "ACTIVE", deletedAt: null },
+      });
+    }
+
+    await db.accountMembershipRole.upsert({
+      where: {
+        accountMembershipId_roleId: {
+          accountMembershipId: membership.id,
+          roleId: role.id,
+        },
+      },
+      create: {
+        accountMembershipId: membership.id,
+        roleId: role.id,
+      },
+      update: {},
+    });
 
     const invitation = await db.invitation.create({
       data: {
         accountId: ctx.accountId,
-        email: bodyVal.data.email.trim().toLowerCase(),
+        email: emailClean,
         roleId: role.id,
-        status: "PENDING",
+        status: "ACCEPTED",
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         createdByUserId: ctx.userId,
       },
     });
 
-    // SECURITY: Exclude raw invitation token from audit metadata log
     await createAuditLog({
       accountId: ctx.accountId,
       userId: ctx.userId,
@@ -112,17 +200,17 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       entity: "Invitation",
       entityId: invitation.id,
       source: "UI",
-      metadata: { invitedEmail: bodyVal.data.email, roleName: role.name },
+      metadata: { invitedEmail: emailClean, roleName: role.name, membershipId: membership.id },
       success: true,
     });
 
     return NextResponse.json({
       success: true,
+      membershipId: membership.id,
       invitation: {
         id: invitation.id,
         email: invitation.email,
         status: invitation.status,
-        expiresAt: invitation.expiresAt,
       },
       requestId,
     });

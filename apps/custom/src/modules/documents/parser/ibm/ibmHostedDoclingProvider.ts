@@ -11,6 +11,7 @@
  */
 
 import { createHash } from "crypto";
+import { logThirdPartyCall } from "@/lib/api/thirdPartyLogger";
 import {
   DocumentParserError,
   isDocumentParserError,
@@ -221,8 +222,14 @@ export class IbmHostedDoclingProvider implements DocumentParserProvider {
 
     // FormData must set its own Content-Type so fetch can append the multipart
     // boundary; setting it by hand produces a body the server cannot parse.
-    const isMultipart = typeof FormData !== "undefined" && init.body instanceof FormData;
+    const isMultipart =
+      this.config.submitEncoding === "multipart" ||
+      (init.body !== undefined &&
+        typeof init.body === "object" &&
+        init.body !== null &&
+        "append" in init.body);
 
+    const startTime = Date.now();
     let response: Response;
     try {
       response = await fetch(url, {
@@ -239,8 +246,27 @@ export class IbmHostedDoclingProvider implements DocumentParserProvider {
         signal: controller.signal,
         cache: "no-store",
       });
+      const durationMs = Date.now() - startTime;
+      void logThirdPartyCall({
+        provider: "IBM_DOCLING",
+        url,
+        method: init.method,
+        status: response.status,
+        statusText: response.statusText,
+        durationMs,
+        correlationId: init.correlationId,
+      });
     } catch (error) {
+      const durationMs = Date.now() - startTime;
       const aborted = error instanceof Error && error.name === "AbortError";
+      void logThirdPartyCall({
+        provider: "IBM_DOCLING",
+        url,
+        method: init.method,
+        durationMs,
+        error,
+        correlationId: init.correlationId,
+      });
       throw new DocumentParserError(
         aborted ? "PARSER_TIMEOUT" : "PARSER_PROVIDER_ERROR",
         aborted

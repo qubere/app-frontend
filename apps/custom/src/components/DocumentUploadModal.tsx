@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Link2, ChevronDown, Check } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -152,6 +153,7 @@ export function DocumentUploadModal({
   shipments = [],
   onUploadSuccess,
 }: DocumentUploadModalProps) {
+  const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [docType, setDocType] = useState<string>("Commercial Invoice");
   const [selectedShipmentId, setSelectedShipmentId] = useState<string>(initialShipmentId);
@@ -173,18 +175,21 @@ export function DocumentUploadModal({
     onClose();
   }, [onClose]);
 
+  // Always synchronize selectedShipmentId to initialShipmentId whenever the modal opens or initialShipmentId changes.
+  useEffect(() => {
+    if (isOpen) {
+      if (initialShipmentId) {
+        setSelectedShipmentId(initialShipmentId);
+      }
+    }
+  }, [isOpen, initialShipmentId]);
+
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
 
-    // The picker used to request /api/shipments with no arguments, which
-    // returned every shipment in the account together with its documents, line
-    // items, decisions and filings, to fill a dropdown that needs two fields.
     const timer = setTimeout(() => {
       void (async () => {
-        if (initialShipmentId) {
-          setSelectedShipmentId(initialShipmentId);
-        }
         try {
           const query = new URLSearchParams({ view: "summary", pageSize: "50" });
           if (shipmentSearch.trim()) query.set("q", shipmentSearch.trim());
@@ -194,10 +199,14 @@ export function DocumentUploadModal({
           const data = await res.json();
           if (controller.signal.aborted) return;
           if (Array.isArray(data.shipments)) {
-            setAvailableShipments(data.shipments);
+            let fetchedShipments: ShipmentOption[] = data.shipments;
+            if (initialShipmentId && !fetchedShipments.some((s) => s.id === initialShipmentId)) {
+              fetchedShipments = [{ id: initialShipmentId, shipmentNumber: initialShipmentId }, ...fetchedShipments];
+            }
+            setAvailableShipments(fetchedShipments);
             setShipmentTotal(typeof data.total === "number" ? data.total : null);
-            if (!initialShipmentId && data.shipments.length > 0) {
-              setSelectedShipmentId((prev) => prev || data.shipments[0].id);
+            if (!initialShipmentId && fetchedShipments.length > 0) {
+              setSelectedShipmentId((prev) => prev || fetchedShipments[0].id);
             }
           }
         } catch (err) {
@@ -247,6 +256,13 @@ export function DocumentUploadModal({
         throw new Error(data.error || "Failed to attach document");
       }
       setSuccessMsg("Document attached and agents triggered.");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("qubere:document-uploaded", {
+            detail: { shipmentId: initialShipmentId },
+          })
+        );
+      }
       if (onUploadSuccess) onUploadSuccess();
       setTimeout(() => {
         setSuccessMsg(null);
@@ -329,19 +345,24 @@ export function DocumentUploadModal({
 
     const succeeded = results.filter((r) => r.ok);
     if (succeeded.length > 0) {
-      setFiles(files.filter((f) => !succeeded.some((s) => s.fileName === f.name)));
+      setFiles((prev) => prev.filter((f) => !succeeded.some((s) => s.fileName === f.name)));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("qubere:document-uploaded", {
+            detail: { shipmentId: selectedShipmentId },
+          })
+        );
+      }
       onUploadSuccess?.();
+      try {
+        router.refresh();
+      } catch {
+        // Ignore if router context not present
+      }
     }
 
-    // The dialog stays open while anything failed, so the per-file errors are
-    // still on screen instead of being wiped by a reload. Same for a duplicate
-    // warning -- an auto-reload would wipe it before the operator can read it.
-    const hasDuplicates = results.some((r) => r.duplicates && r.duplicates.length > 0);
-    if (succeeded.length === results.length && !hasDuplicates) {
-      setTimeout(() => {
-        closeModal();
-        window.location.reload();
-      }, 1200);
+    if (succeeded.length === results.length) {
+      closeModal();
     }
   };
 

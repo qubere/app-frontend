@@ -122,9 +122,11 @@ export function assertParseableFormat(bytes: Buffer): void {
   }
 }
 
+import { thirdPartyFetch } from "@/lib/api/thirdPartyLogger";
+
 async function readRemoteObject(fileUrl: string): Promise<Buffer> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const response = await fetch(fileUrl, {
+  const response = await thirdPartyFetch("VERCEL_BLOB_STORAGE", fileUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     cache: "no-store",
   });

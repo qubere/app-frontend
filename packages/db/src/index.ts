@@ -5,6 +5,7 @@ import type { DataMode } from "./dataMode";
 export * from "./dataMode";
 export * from "./environment";
 export * from "./caseNumber";
+export * from "../prisma/seeds/authorizationSeed";
 
 const dataModeStorage = new AsyncLocalStorage<{ mode: DataMode | null }>();
 
@@ -94,7 +95,7 @@ if (Prisma.dmmf?.datamodel?.models) {
     if (fieldNames.has("dataMode")) {
       modelsWithDataMode.add(model.name);
     }
-    if (fieldNames.has("account")) {
+    if (fieldNames.has("account") && model.name !== "Role") {
       modelsWithAccountRelation.add(model.name);
     }
     const accountIdField = model.fields.find((f) => f.name === "accountId");
@@ -203,7 +204,7 @@ export function buildIsolatedQueryArgs(
   }
 
   const hasDataModeField = modelsWithDataMode.has(model);
-  const hasAccountRel = modelsWithAccountRelation.has(model);
+  const hasAccountRel = modelsWithAccountRelation.has(model) && model !== "Role";
 
   if (!hasDataModeField && !hasAccountRel) {
     return { newArgs: args, effectiveOperation: operation };

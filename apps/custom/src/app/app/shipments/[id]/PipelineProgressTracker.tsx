@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronRight, Layers, RefreshCw, XCircle } from "lucide-react";
 
 interface StepExecution {
   stepNumber: number;
@@ -54,7 +54,7 @@ export function PipelineProgressTracker({ shipmentId }: { shipmentId: string }) 
         if (data.status === "FAILED") return;
 
         if (data.status === "PENDING" || data.status === "PROCESSING") {
-          timer = setTimeout(checkStatus, 5000);
+          timer = setTimeout(checkStatus, 3000);
         }
       } catch (err) {
         console.error("Error checking pipeline status", err);
@@ -63,15 +63,36 @@ export function PipelineProgressTracker({ shipmentId }: { shipmentId: string }) 
 
     checkStatus();
 
+    const handleUploadEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ shipmentId?: string }>;
+      if (!customEvent.detail?.shipmentId || customEvent.detail.shipmentId === shipmentId) {
+        setHasRefreshed(false);
+        if (timer) clearTimeout(timer);
+        void checkStatus();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void checkStatus();
+      }
+    };
+
+    window.addEventListener("qubere:document-uploaded", handleUploadEvent);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       isCancelled = true;
       if (timer) clearTimeout(timer);
+      window.removeEventListener("qubere:document-uploaded", handleUploadEvent);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [shipmentId, hasRefreshed, router]);
 
   const [retrying, setRetrying] = useState(false);
 
-  const handleRetry = async () => {
+  const handleRetry = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setRetrying(true);
     try {
       const res = await fetch(`/api/shipments/${shipmentId}/pipeline-retry`, { method: "POST" });
@@ -86,27 +107,62 @@ export function PipelineProgressTracker({ shipmentId }: { shipmentId: string }) 
     }
   };
 
+  const handleWaterfallClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+
+    window.dispatchEvent(
+      new CustomEvent("qubere:switch-tab", {
+        detail: { tab: "audit", scrollId: "waterfall-view" },
+      })
+    );
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", "audit");
+      url.hash = "waterfall-view";
+      window.history.replaceState(null, "", url);
+    } catch {
+      // Ignore if URL update fails
+    }
+
+    const el = document.getElementById("waterfall-view");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
   if (!status || status.status === "COMPLETED") return null;
 
   if (status.status === "FAILED") {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center justify-between mb-6">
+      <div
+        onClick={handleWaterfallClick}
+        title="Click to view pipeline execution waterfall"
+        className="bg-red-50 hover:bg-red-100/60 border border-red-200 rounded-2xl p-4 flex items-center justify-between mb-6 cursor-pointer transition-colors"
+      >
         <div className="flex items-center space-x-3 text-red-800">
-          <AlertCircle className="w-5 h-5 text-red-600" />
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
           <div>
             <h4 className="text-sm font-bold">Processing Exception</h4>
             <p className="text-xs opacity-80">{status.errorMessage || "An error occurred during AI processing."}</p>
           </div>
         </div>
-        <button
-          type="button"
-          disabled={retrying}
-          onClick={handleRetry}
-          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${retrying ? "animate-spin" : ""}`} />
-          <span>{retrying ? "Retrying..." : "Retry Pipeline"}</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            type="button"
+            disabled={retrying}
+            onClick={handleRetry}
+            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${retrying ? "animate-spin" : ""}`} />
+            <span>{retrying ? "Retrying..." : "Retry Pipeline"}</span>
+          </button>
+          <div className="hidden sm:flex items-center space-x-1 text-xs font-semibold text-red-700 hover:underline">
+            <Layers className="w-3.5 h-3.5" />
+            <span>Waterfall</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -118,12 +174,23 @@ export function PipelineProgressTracker({ shipmentId }: { shipmentId: string }) 
       ?.agentName ?? null;
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6 space-y-3">
+    <div
+      onClick={handleWaterfallClick}
+      title="Click to view agent execution waterfall"
+      className="bg-blue-50/90 hover:bg-blue-100/60 border border-blue-200 rounded-2xl p-4 mb-6 space-y-3 cursor-pointer transition-colors group"
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3 text-blue-900">
-          <RefreshCw className="w-5 h-5 animate-spin text-brand" />
+          <RefreshCw className="w-5 h-5 animate-spin text-brand shrink-0" />
           <div>
-            <h4 className="text-sm font-bold">Autonomous AI Pipeline Running</h4>
+            <h4 className="text-sm font-bold flex items-center gap-2">
+              <span>Autonomous AI Pipeline Running</span>
+              <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1 group-hover:bg-brand group-hover:text-white transition-colors">
+                <Layers className="w-3 h-3" />
+                View Waterfall
+                <ChevronRight className="w-3 h-3" />
+              </span>
+            </h4>
             <p className="text-xs opacity-80">
               {status.status === "PENDING"
                 ? "Waiting for available worker…"

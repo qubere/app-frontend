@@ -18,14 +18,8 @@ export default function NewShipmentPage() {
 
   const [formData, setFormData] = useState({
     importerName: "",
-    poReference: "",
     entryType: "",
-    incoterm: "",
-    portOfEntry: "",
-    carrierName: "",
-    countryOfExport: "",
     destinationCountry: "",
-    estimatedArrival: "",
     clientId: "",
   });
 
@@ -69,7 +63,7 @@ export default function NewShipmentPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 md:p-8 space-y-6">
+    <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-6">
       {/* Top Header */}
       <div className="flex items-center space-x-4">
         <Link
@@ -100,12 +94,14 @@ export default function NewShipmentPage() {
             </CardHeaderIcon>
             <div>
               <h2 className="text-base font-semibold text-ink">Shipment & Importer Details</h2>
-              <p className="text-xs text-ink-muted">Enter logistics details to initialize compliance checking & document ingestion.</p>
+              <p className="text-xs text-ink-muted">
+                Initialize compliance checking & document ingestion. Logistics, PO, and port details will be automatically extracted from uploaded documents.
+              </p>
             </div>
           </CardHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <FormField>
+            <FormField className="md:col-span-2">
               <Label>Importer of Record Name *</Label>
               <Input
                 required
@@ -116,12 +112,19 @@ export default function NewShipmentPage() {
             </FormField>
 
             <FormField>
-              <Label>Purchase Order (PO) Reference</Label>
-              <Input
-                value={formData.poReference}
-                onChange={(e) => setFormData({ ...formData, poReference: e.target.value })}
-                placeholder="e.g. PO-2026-849102"
-              />
+              <Label>Destination Country *</Label>
+              <Select
+                required
+                value={formData.destinationCountry}
+                onChange={(e) => setFormData({ ...formData, destinationCountry: e.target.value })}
+              >
+                <option value="">Select destination country</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name} ({c.code})
+                  </option>
+                ))}
+              </Select>
             </FormField>
 
             <FormField>
@@ -139,69 +142,8 @@ export default function NewShipmentPage() {
               </Select>
             </FormField>
 
-            <FormField>
-              <Label>Incoterms & Delivery Port</Label>
-              <Input
-                value={formData.incoterm}
-                onChange={(e) => setFormData({ ...formData, incoterm: e.target.value })}
-                placeholder="e.g. CIF Los Angeles"
-              />
-            </FormField>
-
-            <FormField>
-              <Label>US Port of Entry</Label>
-              <Input
-                value={formData.portOfEntry}
-                onChange={(e) => setFormData({ ...formData, portOfEntry: e.target.value })}
-                placeholder="e.g. Port of Los Angeles (2704)"
-              />
-            </FormField>
-
-            <FormField>
-              <Label>Carrier / Ocean Vessel</Label>
-              <Input
-                value={formData.carrierName}
-                onChange={(e) => setFormData({ ...formData, carrierName: e.target.value })}
-                placeholder="e.g. Maersk Line"
-              />
-            </FormField>
-
-            <FormField>
-              <Label>Country of Export</Label>
-              <Input
-                value={formData.countryOfExport}
-                onChange={(e) => setFormData({ ...formData, countryOfExport: e.target.value })}
-                placeholder="e.g. Germany"
-              />
-            </FormField>
-
-            <FormField>
-              <Label>Destination Country *</Label>
-              <Select
-                required
-                value={formData.destinationCountry}
-                onChange={(e) => setFormData({ ...formData, destinationCountry: e.target.value })}
-              >
-                <option value="">Select the country this shipment is being imported into</option>
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name} ({c.code})
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-
-            <FormField>
-              <Label>Estimated Date of Arrival (ETA)</Label>
-              <Input
-                type="date"
-                value={formData.estimatedArrival}
-                onChange={(e) => setFormData({ ...formData, estimatedArrival: e.target.value })}
-              />
-            </FormField>
-
-            <FormField>
-              <Label>Client</Label>
+            <FormField className="md:col-span-2">
+              <Label>Client (Optional)</Label>
               <Select
                 value={formData.clientId}
                 onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}

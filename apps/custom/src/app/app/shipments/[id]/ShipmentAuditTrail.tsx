@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
   Send,
+  History,
 } from "lucide-react";
 
 export interface ShipmentAuditEntry {
@@ -73,6 +74,7 @@ function formatTimestamp(iso: string) {
 }
 
 export function ShipmentAuditTrail({ entries }: { entries: ShipmentAuditEntry[] }) {
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [filter, setFilter] = useState<string>("ALL");
   const [sourceFilter, setSourceFilter] = useState<string>("ALL");
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
@@ -88,92 +90,124 @@ export function ShipmentAuditTrail({ entries }: { entries: ShipmentAuditEntry[] 
   });
 
   return (
-    <div className="space-y-4">
-      {/* Filter Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-ink-muted font-bold flex items-center space-x-1 mr-1">
-            <Filter className="w-3.5 h-3.5 text-ink-muted" />
-            <span>Category:</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setFilter("ALL")}
-            className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              filter === "ALL" ? "bg-brand text-white" : "bg-slate-100 text-ink-muted hover:text-ink"
-            }`}
-          >
-            All Categories ({entries.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("FIELD_APPROVAL")}
-            className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              filter === "FIELD_APPROVAL" ? "bg-brand text-white" : "bg-slate-100 text-ink-muted hover:text-ink"
-            }`}
-          >
-            Field Edits & Approvals ({entries.filter((e) => e.category === "FIELD_APPROVAL").length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("DOCUMENT_INGESTION")}
-            className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              filter === "DOCUMENT_INGESTION" ? "bg-brand text-white" : "bg-slate-100 text-ink-muted hover:text-ink"
-            }`}
-          >
-            Document Uploads ({entries.filter((e) => e.category === "DOCUMENT_INGESTION").length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("FILING_SUBMISSION")}
-            className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              filter === "FILING_SUBMISSION" ? "bg-brand text-white" : "bg-slate-100 text-ink-muted hover:text-ink"
-            }`}
-          >
-            Filing Submissions ({entries.filter((e) => e.category === "FILING_SUBMISSION").length})
-          </button>
+    <div className="apple-card rounded-3xl border border-border bg-white shadow-sm overflow-hidden">
+      {/* Header Bar */}
+      <button
+        type="button"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="w-full flex items-center justify-between p-6 hover:bg-surface-muted transition-colors text-left group cursor-pointer"
+      >
+        <div className="flex items-center space-x-3 min-w-0">
+          <History className="w-5 h-5 text-brand shrink-0" />
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-ink group-hover:text-brand transition-colors">
+              Shipment Audit Log & Event Table
+            </h3>
+            <p className="text-xs text-ink-muted mt-0.5">
+              Append-only audit table tracking every action, field edit, document upload, and filing submission on this shipment.
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-xs pt-1 sm:pt-0 border-t sm:border-t-0 border-border">
-          <span className="text-ink-muted font-bold mr-1">Origin:</span>
-          <button
-            type="button"
-            onClick={() => setSourceFilter("ALL")}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
-              sourceFilter === "ALL" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={() => setSourceFilter("UI")}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
-              sourceFilter === "UI" ? "bg-purple-600 text-white" : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
-            }`}
-          >
-            User
-          </button>
-          <button
-            type="button"
-            onClick={() => setSourceFilter("CHAT")}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
-              sourceFilter === "CHAT" ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
-            }`}
-          >
-            Copilot
-          </button>
-          <button
-            type="button"
-            onClick={() => setSourceFilter("API")}
-            className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
-              sourceFilter === "API" ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
-            }`}
-          >
-            API
-          </button>
+        <div className="flex items-center space-x-3 shrink-0 ml-3">
+          <span className="px-3 py-1 bg-brand/10 text-brand text-xs font-bold rounded-full font-mono">
+            {entries.length} Event{entries.length !== 1 ? "s" : ""} Logged
+          </span>
+          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-bold text-ink-muted bg-slate-100 group-hover:bg-slate-200 transition-colors">
+            <span>{isCollapsed ? "Expand" : "Collapse"}</span>
+            {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          </span>
         </div>
-      </div>
+      </button>
+
+      {/* Expanded Content */}
+      {!isCollapsed && (
+        <div className="px-6 pb-6 pt-2 space-y-4 border-t border-border bg-[#FAFAFC]">
+          {/* Filter Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-ink-muted font-bold flex items-center space-x-1 mr-1">
+                <Filter className="w-3.5 h-3.5 text-ink-muted" />
+                <span>Category:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setFilter("ALL")}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filter === "ALL" ? "bg-brand text-white" : "bg-white text-ink-muted hover:text-ink border border-border"
+                }`}
+              >
+                All Categories ({entries.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("FIELD_APPROVAL")}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filter === "FIELD_APPROVAL" ? "bg-brand text-white" : "bg-white text-ink-muted hover:text-ink border border-border"
+                }`}
+              >
+                Field Edits & Approvals ({entries.filter((e) => e.category === "FIELD_APPROVAL").length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("DOCUMENT_INGESTION")}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filter === "DOCUMENT_INGESTION" ? "bg-brand text-white" : "bg-white text-ink-muted hover:text-ink border border-border"
+                }`}
+              >
+                Document Uploads ({entries.filter((e) => e.category === "DOCUMENT_INGESTION").length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("FILING_SUBMISSION")}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filter === "FILING_SUBMISSION" ? "bg-brand text-white" : "bg-white text-ink-muted hover:text-ink border border-border"
+                }`}
+              >
+                Filing Submissions ({entries.filter((e) => e.category === "FILING_SUBMISSION").length})
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-xs pt-1 sm:pt-0 border-t sm:border-t-0 border-border">
+              <span className="text-ink-muted font-bold mr-1">Origin:</span>
+              <button
+                type="button"
+                onClick={() => setSourceFilter("ALL")}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                  sourceFilter === "ALL" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter("UI")}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                  sourceFilter === "UI" ? "bg-purple-600 text-white" : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
+                }`}
+              >
+                User
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter("CHAT")}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                  sourceFilter === "CHAT" ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                }`}
+              >
+                Copilot
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter("API")}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                  sourceFilter === "API" ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                }`}
+              >
+                API
+              </button>
+            </div>
+          </div>
 
       {/* Audit Log Table */}
       {filteredEntries.length === 0 ? (
@@ -286,5 +320,7 @@ export function ShipmentAuditTrail({ entries }: { entries: ShipmentAuditEntry[] 
         </div>
       )}
     </div>
+  )}
+</div>
   );
 }

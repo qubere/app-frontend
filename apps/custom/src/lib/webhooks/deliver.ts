@@ -4,6 +4,7 @@
  */
 import { createHmac, randomUUID } from "crypto";
 import { db } from "@/lib/db";
+import { thirdPartyFetch } from "@/lib/api/thirdPartyLogger";
 
 export type WebhookEventType =
   | "shipment.status_changed"
@@ -35,7 +36,7 @@ async function attempt(
   const timestamp = Math.floor(Date.now() / 1000);
 
   try {
-    const res = await fetch(webhook.url, {
+    const res = await thirdPartyFetch("WEBHOOK_DELIVERY", webhook.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

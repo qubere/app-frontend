@@ -163,6 +163,8 @@ model Account {
   exceptionItems              ExceptionItem[]
   fieldApprovals              FieldApproval[]
   landedCostScenarios         LandedCostScenario[]
+  teams                       Team[]
+  impersonationSessions       ImpersonationSession[]
   refundOpportunities         RefundOpportunity[]
   postSummaryCorrections      PostSummaryCorrection[]
   protests                    Protest[]
@@ -336,6 +338,12 @@ model User {
   assignedCustomsCases        CustomsCase[]           @relation("CustomsCaseBroker")
   inboundSenderRoutes         InboundSenderRoute[]    @relation("InboundRouteAssignee")
   notifications               Notification[]
+  clientAssignments           UserClientAssignment[]
+  teamMemberships             AccountTeamMembership[]
+  impersonationsStarted       ImpersonationSession[]  @relation("ImpersonationActor")
+  impersonatedSessions        ImpersonationSession[]  @relation("ImpersonationEffective")
+  auditLogsAsActor            AuditLog[]              @relation("AuditActor")
+  auditLogsAsEffective        AuditLog[]              @relation("AuditEffective")
 
   @@index([clerkUserId])
   @@index([email])
@@ -457,24 +465,39 @@ model Invitation {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  accountId String
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action    String
-  entity    String
-  entityId  String
-  source    String   @default("UI")
-  metadata  Json?
-  ipAddress String?
-  userAgent String?
-  requestId String?
-  success   Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id                     String                @id @default(cuid())
+  accountId              String
+  account                Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userId                 String?
+  user                   User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actorUserId            String?
+  actorUser              User?                 @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  effectiveUserId        String?
+  effectiveUser          User?                 @relation("AuditEffective", fields: [effectiveUserId], references: [id], onDelete: SetNull)
+  impersonationSessionId String?
+  impersonationSession   ImpersonationSession? @relation(fields: [impersonationSessionId], references: [id], onDelete: SetNull)
+  reason                 String?
+  action                 String
+  entity                 String
+  entityId               String
+  resourceType           String?
+  resourceId             String?
+  clientId               String?
+  oldValue               Json?
+  newValue               Json?
+  source                 String                @default("UI")
+  metadata               Json?
+  ipAddress              String?
+  userAgent              String?
+  requestId              String?
+  success                Boolean               @default(true)
+  createdAt              DateTime              @default(now())
 
   @@index([accountId])
   @@index([userId])
+  @@index([actorUserId])
+  @@index([effectiveUserId])
+  @@index([impersonationSessionId])
   @@index([source])
   @@index([success])
 }
@@ -2100,8 +2123,87 @@ model Client {
   integrationConfigs  IntegrationConfig[]
   integrationPayloads IntegrationPayload[]
 
+  userAssignments UserClientAssignment[]
+  teamAssignments TeamClientAssignment[]
+
   @@index([accountId])
   @@index([accountId, status])
+}
+
+model UserClientAssignment {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+  assignedBy String?
+
+  @@unique([userId, clientId])
+  @@index([userId])
+  @@index([clientId])
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members AccountTeamMembership[]
+  clients TeamClientAssignment[]
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+model AccountTeamMembership {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("MEMBER") // MANAGER, MEMBER
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@index([teamId])
+}
+
+model TeamClientAssignment {
+  teamId     String
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@id([teamId, clientId])
+  @@index([clientId])
+}
+
+model ImpersonationSession {
+  id              String    @id @default(cuid())
+  actorUserId     String
+  actorUser       User      @relation("ImpersonationActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  effectiveUserId String
+  effectiveUser   User      @relation("ImpersonationEffective", fields: [effectiveUserId], references: [id], onDelete: Cascade)
+  accountId       String
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reason          String
+  expiresAt       DateTime
+  endedAt         DateTime?
+  createdAt       DateTime  @default(now())
+
+  auditLogs AuditLog[]
+
+  @@index([actorUserId])
+  @@index([effectiveUserId])
+  @@index([accountId])
+  @@index([expiresAt])
 }
 
 model Bond {

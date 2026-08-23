@@ -28,7 +28,10 @@ export function selectedProviderId(): ParserProviderId {
   if ((PARSER_PROVIDER_IDS as readonly string[]).includes(raw)) {
     return raw as ParserProviderId;
   }
-  return "none";
+  if (process.env.NODE_ENV === "test") {
+    return "none";
+  }
+  return "ibm-docling";
 }
 
 export interface IbmDoclingConfig {

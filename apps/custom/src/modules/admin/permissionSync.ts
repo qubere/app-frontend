@@ -113,7 +113,10 @@ export const databasePermissionSyncStore: PermissionSyncStore = {
   },
   async listSystemRoles() {
     const { db } = await import("@/lib/db");
-    return db.role.findMany({ where: { isSystem: true }, select: { id: true, name: true } });
+    return db.role.findMany({
+      where: { OR: [{ isSystem: true }, { accountId: null }] },
+      select: { id: true, name: true },
+    });
   },
   async listGrants(roleId) {
     const { db } = await import("@/lib/db");

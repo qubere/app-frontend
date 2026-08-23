@@ -3,6 +3,7 @@ import { runWithAccountId, runWithDataMode } from "@qubere/db";
 import { buildErrorResponse, generateRequestId, handleApiError } from "./error";
 import { canWrite, READ_ONLY_MESSAGE } from "./write-access";
 import { hasProductEntitlement } from "./entitlements";
+import { authorizeResource, AuthorizationResult } from "./authorization-service";
 
 export type AuthenticatedRouteHandler = (
   ctx: AccountContext,
@@ -83,6 +84,47 @@ export async function authorizeRequest(
   }
 
   return { ctx, errorResponse: null };
+}
+
+export async function authorizeResourceRequest(params: {
+  permission: string;
+  resourceType?: string;
+  resourceId?: string;
+  clientId?: string;
+}): Promise<{ ctx: AccountContext | null; authResult: AuthorizationResult | null; errorResponse: ReturnType<typeof buildErrorResponse> | null }> {
+  const ctx = await getAccountContext();
+  if (!ctx) {
+    return {
+      ctx: null,
+      authResult: null,
+      errorResponse: buildErrorResponse(401, "UNAUTHENTICATED", "Authentication required"),
+    };
+  }
+
+  const authResult = await authorizeResource({
+    userId: ctx.effectiveUserId,
+    actorUserId: ctx.actorUserId,
+    effectiveUserId: ctx.effectiveUserId,
+    accountId: ctx.accountId,
+    permission: params.permission,
+    resourceType: params.resourceType,
+    resourceId: params.resourceId,
+    clientId: params.clientId,
+  });
+
+  if (!authResult.allowed) {
+    return {
+      ctx,
+      authResult,
+      errorResponse: buildErrorResponse(
+        403,
+        "FORBIDDEN",
+        authResult.reason || `Unauthorized for resource action ${params.permission}`
+      ),
+    };
+  }
+
+  return { ctx, authResult, errorResponse: null };
 }
 
 export async function authorizeWrite(

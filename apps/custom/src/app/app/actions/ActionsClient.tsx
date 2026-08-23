@@ -461,7 +461,13 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-bold text-brand text-sm">{g.shipmentNumber}</span>
+                      <Link
+                        href={`/app/shipments/${g.shipmentId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-mono font-bold text-brand text-sm hover:underline cursor-pointer"
+                      >
+                        {g.shipmentNumber}
+                      </Link>
                       <div className="flex items-center gap-1.5">
                         {isFilingBlocked && (
                           <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200 shrink-0">
@@ -541,7 +547,12 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-extrabold text-brand text-lg">{selectedGroup.shipmentNumber}</span>
+                    <Link
+                      href={`/app/shipments/${selectedGroup.shipmentId}`}
+                      className="font-mono font-extrabold text-brand text-lg hover:underline cursor-pointer"
+                    >
+                      {selectedGroup.shipmentNumber}
+                    </Link>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
                       selectedGroup.priority === "critical"
                         ? "bg-red-50 border-red-200 text-red-700"

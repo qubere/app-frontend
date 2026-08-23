@@ -18,6 +18,7 @@
 
 import { recordAiTokens, type AiSurface } from "./aiQuota";
 import { readGeminiUsage } from "./geminiUsage";
+import { logThirdPartyCall } from "@/lib/api/thirdPartyLogger";
 
 export interface AiMeterIdentity {
   /** Whose budget this spends. A missing account means the call is not metered. */
@@ -59,14 +60,29 @@ export async function meterGeminiCall(
         : null
     );
 
+    const inputTokens = usage?.inputTokens ?? null;
+    const outputTokens = usage?.outputTokens ?? null;
+
+    void logThirdPartyCall({
+      provider: "GOOGLE_GEMINI",
+      url: `gemini-api://${surface}`,
+      method: "POST",
+      status: 200,
+      statusText: "OK",
+      durationMs: 0,
+      userId: identity.userId,
+      accountId: identity.accountId,
+      metadata: `Tokens: input=${inputTokens ?? "N/A"}, output=${outputTokens ?? "N/A"}`,
+    });
+
     await recordAiTokens({
       accountId: identity.accountId,
       // "system" rather than a fabricated id: a cron-triggered classification has
       // no user, and inventing one would put spend on a person who was asleep.
       userId: identity.userId || "system",
       surface,
-      inputTokens: usage?.inputTokens ?? null,
-      outputTokens: usage?.outputTokens ?? null,
+      inputTokens,
+      outputTokens,
     });
   } catch (err) {
     console.warn(

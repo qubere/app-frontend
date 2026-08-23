@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate, cn } from "@/lib/utils";
-import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert } from "lucide-react";
+import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck } from "lucide-react";
 import { HtsAdminPanel, HtsAdminData } from "./HtsAdminPanel";
 import { DeploymentsPanel } from "./DeploymentsPanel";
 import { AgentsAnalyticsPanel } from "./AgentsAnalyticsPanel";
@@ -53,6 +53,29 @@ export function PlatformAdminConsole({
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+  const handleImpersonateAccount = async (accountId: string) => {
+    setImpersonatingId(accountId);
+    try {
+      const res = await fetch("/api/auth/switch-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetAccountId: accountId }),
+      });
+      if (res.ok) {
+        window.location.href = "/app/actions";
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to impersonate account");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error impersonating account.");
+    } finally {
+      setImpersonatingId(null);
+    }
+  };
 
   const handleDeactivateAccount = async (accountId: string, accountName: string) => {
     if (!confirm(`Are you sure you want to deactivate account "${accountName}" (${accountId})?`)) {
@@ -383,7 +406,16 @@ export function PlatformAdminConsole({
                   <td className="px-6 py-4 text-xs text-ink-muted">
                     {formatDate(acc.createdAt)}
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right flex items-center justify-end space-x-2">
+                    <button
+                      type="button"
+                      disabled={impersonatingId === acc.id}
+                      onClick={() => handleImpersonateAccount(acc.id)}
+                      className="px-2.5 py-1 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg transition-colors disabled:opacity-50 cursor-pointer flex items-center space-x-1"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>{impersonatingId === acc.id ? "Entering..." : "Impersonate Workspace"}</span>
+                    </button>
                     {acc.status !== "INACTIVE" && acc.status !== "DEACTIVATED" && (
                       <button
                         type="button"
