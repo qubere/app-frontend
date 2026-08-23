@@ -1,4 +1,4 @@
-import { PERMISSION_CATALOGUE, type PermissionDefinition } from "@/lib/permissions";
+import { PERMISSION_DEFINITIONS, type PermissionDefinition } from "@/lib/permissions";
 
 /**
  * Creates the Permission rows the catalogue names, and grants each system role
@@ -39,7 +39,7 @@ export interface PermissionSyncResult {
 
 function defaultsFor(roleName: string): PermissionDefinition[] {
   const upper = roleName.toUpperCase();
-  return PERMISSION_CATALOGUE.filter((p) =>
+  return PERMISSION_DEFINITIONS.filter((p) =>
     (p.defaultRoles as readonly string[]).includes(upper)
   );
 }
@@ -53,7 +53,7 @@ export async function syncPermissionCatalogue(
   const permissionsCreated: string[] = [];
   const descriptionsUpdated: string[] = [];
 
-  for (const definition of PERMISSION_CATALOGUE) {
+  for (const definition of PERMISSION_DEFINITIONS) {
     const found = byName.get(definition.name);
     if (found) {
       // The description is what the admin screen shows a person; keeping it in
@@ -85,7 +85,7 @@ export async function syncPermissionCatalogue(
   }
 
   const namedInCatalogue = new Set<string>();
-  for (const definition of PERMISSION_CATALOGUE) {
+  for (const definition of PERMISSION_DEFINITIONS) {
     for (const roleName of definition.defaultRoles) namedInCatalogue.add(roleName);
   }
 
