@@ -1,12 +1,11 @@
 /**
  * Qubere Agentic Customs — Parties & Products Seed Data.
  *
- * Builds a durable demo tenant ("Qubere Demo Trading") with a realistic
- * network of parties and products, exercised entirely through the domain
+ * Builds a realistic network of parties and products inside the platform
+ * admin's own workspace account, exercised entirely through the domain
  * service layer (createParty/createProduct and their mutation companions) so
  * that normalization, matching, versioning, and automatic change detection
- * run exactly as they do for a real caller. A second tenant ("Qubere Test
- * Logistics") carries a couple of isolated rows for cross-tenant checks.
+ * run exactly as they do for a real caller.
  *
  * Idempotent: every step looks up its target before creating it, so this can
  * be re-run safely. Nothing here deletes or overwrites prior seed output —
@@ -58,20 +57,13 @@ async function withTransientRetry<T>(fn: () => Promise<T>, attempts = 3): Promis
 
 const REQUEST_ID = "seed:qubere-trade-network";
 
-const TENANT_A_SLUG = "qubere-demo-trading";
-const TENANT_B_SLUG = "qubere-test-logistics";
+// The platform admin's own workspace account — this seed script populates it
+// directly rather than creating separate demo tenants.
+const PLATFORM_ADMIN_ACCOUNT_ID = "cmsz864t10001fxmw308stwp5";
 
 // ---------------------------------------------------------------------------
 // Accounts, roles, users
 // ---------------------------------------------------------------------------
-
-async function seedAccount(slug: string, name: string) {
-  return db.account.upsert({
-    where: { slug },
-    update: {},
-    create: { name, slug, type: "ENTERPRISE", status: "ACTIVE", dataMode: "DEMO" },
-  });
-}
 
 async function seedUser(email: string, firstName: string, lastName: string, clerkSuffix: string) {
   return db.user.upsert({
@@ -96,8 +88,13 @@ async function attachOwner(accountId: string, userId: string, ownerRoleId: strin
 }
 
 async function seedAccountsAndUsers() {
-  const tenantA = await seedAccount(TENANT_A_SLUG, "Qubere Demo Trading");
-  const tenantB = await seedAccount(TENANT_B_SLUG, "Qubere Test Logistics");
+  const account = await db.account.findUnique({ where: { id: PLATFORM_ADMIN_ACCOUNT_ID } });
+  if (!account) {
+    throw new Error(
+      `No account found with id "${PLATFORM_ADMIN_ACCOUNT_ID}". The platform admin workspace ` +
+        "account must already exist before running this seed script."
+    );
+  }
 
   let ownerRole = await db.role.findFirst({ where: { accountId: null, name: "OWNER" } });
   if (!ownerRole) {
@@ -110,30 +107,27 @@ async function seedAccountsAndUsers() {
     ownerRole = await db.role.findFirstOrThrow({ where: { accountId: null, name: "OWNER" } });
   }
 
-  const seedAgentUser = await seedUser(
-    "seed-agent@qubere-demo.local",
-    "Qubere",
-    "Seed Agent",
-    "trade_network_seed_agent"
-  );
+  const platformAdminEmail = "admin@qubere.ai";
+  const platformAdminUser = await db.user.findFirst({
+    where: { email: platformAdminEmail, deletedAt: null },
+  });
+  if (!platformAdminUser) {
+    throw new Error(
+      `No user found with email "${platformAdminEmail}". The platform admin must sign in at least ` +
+        "once (and be bootstrapped via scripts/bootstrap-admin.ts) before running this seed script."
+    );
+  }
   const reviewerUser = await seedUser(
     "trade-compliance-reviewer@qubere-demo.local",
     "Trade Compliance",
     "Reviewer",
     "trade_network_reviewer"
   );
-  const tenantBUser = await seedUser(
-    "isolation-check@qubere-test-logistics.local",
-    "Isolation",
-    "Check",
-    "trade_network_tenant_b"
-  );
 
-  await attachOwner(tenantA.id, seedAgentUser.id, ownerRole.id);
-  await attachOwner(tenantA.id, reviewerUser.id, ownerRole.id);
-  await attachOwner(tenantB.id, tenantBUser.id, ownerRole.id);
+  await attachOwner(account.id, platformAdminUser.id, ownerRole.id);
+  await attachOwner(account.id, reviewerUser.id, ownerRole.id);
 
-  return { tenantA, tenantB, seedAgentUser, reviewerUser, tenantBUser };
+  return { account, platformAdminUser, reviewerUser };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +151,7 @@ interface PartyDef {
   needsLegalEntity: boolean;
 }
 
-const TENANT_A_PARTY_DEFS: PartyDef[] = [
+const PARTY_DEFS: PartyDef[] = [
   {
     code: "NORTHSTAR-IMPORTS-US",
     legalName: "NorthStar Imports USA Inc.",
@@ -323,22 +317,6 @@ const TENANT_A_PARTY_DEFS: PartyDef[] = [
   },
 ];
 
-const TENANT_B_PARTY_DEFS: PartyDef[] = [
-  {
-    code: "CASCADE-FREIGHT-TB",
-    legalName: "Cascade Freight Solutions Ltd.",
-    country: "US",
-    entityType: "US_CORPORATION",
-    addressLine1: "77 Isolation Way",
-    city: "Seattle",
-    stateProvince: "WA",
-    postalCode: "98101",
-    roles: [{ roleType: "IMPORTER" }],
-    identifiers: [{ identifierType: "EORI", value: "QBR-EORI-US-90001" }],
-    needsLegalEntity: false,
-  },
-];
-
 interface SeededParty {
   partyId: string;
   legalEntityId: string | null;
@@ -470,7 +448,7 @@ interface ProductDef {
   countryFacts?: CreateProductInput["countryFacts"];
 }
 
-const TENANT_A_PRODUCT_DEFS: ProductDef[] = [
+const PRODUCT_DEFS: ProductDef[] = [
   {
     sku: "VALVE-1001",
     productName: "Industrial Ball Valve VX-220",
@@ -1243,94 +1221,49 @@ async function seedStandaloneExceptions(accountId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Tenant B isolation fixture
-// ---------------------------------------------------------------------------
-
-async function seedTenantB(actor: PartyActor, productActor: ProductActor) {
-  const parties = await seedParties(actor, TENANT_B_PARTY_DEFS);
-
-  const existing = await db.product.findFirst({
-    where: { accountId: productActor.accountId, internalSku: "TB-PRODUCT-0001", deletedAt: null },
-  });
-  if (!existing) {
-    await withTransientRetry(() =>
-      createProduct(productActor, {
-        productName: "Isolation Check Test Product",
-        internalSku: "TB-PRODUCT-0001",
-        commercialDescription: "Tenant B fixture used only to verify cross-tenant isolation.",
-      })
-    );
-  }
-
-  return parties;
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
   console.log("Seeding Qubere Agentic Customs trade network demo data...");
 
-  const { tenantA, tenantB, seedAgentUser, reviewerUser, tenantBUser } = await seedAccountsAndUsers();
-  console.log(`  Tenant A: ${tenantA.name} (${tenantA.id})`);
-  console.log(`  Tenant B: ${tenantB.name} (${tenantB.id})`);
+  const { account, platformAdminUser, reviewerUser } = await seedAccountsAndUsers();
+  console.log(`  Account: ${account.name} (${account.id})`);
 
   const partyActor: PartyActor = {
-    accountId: tenantA.id,
-    userId: seedAgentUser.id,
+    accountId: account.id,
+    userId: platformAdminUser.id,
     canApproveParty: true,
     canVerifyRegistration: true,
     canResolveRevalidation: true,
     requestId: REQUEST_ID,
   };
   const productActor: ProductActor = {
-    accountId: tenantA.id,
-    userId: seedAgentUser.id,
+    accountId: account.id,
+    userId: platformAdminUser.id,
     canApproveClassification: true,
     requestId: REQUEST_ID,
   };
 
-  const parties = await seedParties(partyActor, TENANT_A_PARTY_DEFS);
-  console.log(`  Seeded ${parties.size} Tenant A parties.`);
+  const parties = await seedParties(partyActor, PARTY_DEFS);
+  console.log(`  Seeded ${parties.size} parties.`);
   await seedPartyRelationships(partyActor, parties);
 
-  const products = await seedProducts(productActor, TENANT_A_PRODUCT_DEFS, parties);
-  console.log(`  Seeded ${products.size} Tenant A products.`);
+  const products = await seedProducts(productActor, PRODUCT_DEFS, parties);
+  console.log(`  Seeded ${products.size} products.`);
 
-  const valveId = products.get("VALVE-1001");
-  if (valveId) await seedValveChangeScenario(productActor, valveId, parties);
-  const elecId = products.get("ELEC-2001");
-  if (elecId) await seedElectronicsChangeScenario(productActor, elecId);
-  console.log("  Applied change scenarios for VALVE-1001 and ELEC-2001.");
+  await seedValveChangeScenario(productActor, products.get("VALVE-1001")!, parties);
+  await seedElectronicsChangeScenario(productActor, products.get("ELEC-2001")!);
+  console.log("  Applied change scenarios.");
 
-  const reviewerProductActor: ProductActor = {
-    accountId: tenantA.id,
-    userId: reviewerUser.id,
-    canApproveClassification: true,
-    requestId: REQUEST_ID,
-  };
-  await seedClassifications(reviewerProductActor, products);
-  console.log("  Seeded classifications: VALVE-1001 (CANDIDATE), METAL-7001 (APPROVED).");
+  await seedClassifications(productActor, products);
+  console.log("  Seeded classifications.");
 
-  await seedShipments(tenantA.id, reviewerUser.id, parties, products);
-  await seedStandaloneExceptions(tenantA.id);
-  console.log(`  Seeded ${SHIPMENT_DEFS.length} shipments with documents, line items, decisions, and exceptions.`);
+  await seedShipments(account.id, reviewerUser.id, parties, products);
+  console.log(`  Seeded ${SHIPMENT_DEFS.length} shipments.`);
 
-  const tenantBPartyActor: PartyActor = {
-    accountId: tenantB.id,
-    userId: tenantBUser.id,
-    canApproveParty: true,
-    requestId: REQUEST_ID,
-  };
-  const tenantBProductActor: ProductActor = {
-    accountId: tenantB.id,
-    userId: tenantBUser.id,
-    canApproveClassification: true,
-    requestId: REQUEST_ID,
-  };
-  await seedTenantB(tenantBPartyActor, tenantBProductActor);
-  console.log("  Seeded Tenant B isolation fixture.");
+  await seedStandaloneExceptions(account.id);
+  console.log("  Seeded standalone exceptions.");
 
   console.log("\nDone.");
 }
