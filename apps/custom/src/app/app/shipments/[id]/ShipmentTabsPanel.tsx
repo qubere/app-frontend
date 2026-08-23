@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { Activity, FileText, Layers, Route } from "lucide-react";
 
 type ShipmentTab = "workspace" | "tracking" | "filing" | "audit";
@@ -43,6 +43,16 @@ export function ShipmentTabsPanel({
 }: ShipmentTabsPanelProps) {
   const [activeTab, setActiveTab] = useState<ShipmentTab>(() => normalizeTab(initialTab));
 
+  const selectTab = useCallback((tab: ShipmentTab) => {
+    setActiveTab(tab);
+    // Keeps the URL shareable/deep-linkable without going through the
+    // router -- a router navigation here is exactly the full-page
+    // re-render this component exists to avoid.
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", tab);
+    window.history.replaceState(null, "", url);
+  }, []);
+
   useEffect(() => {
     const handleSwitchTab = (e: Event) => {
       const customEvent = e as CustomEvent<{ tab: ShipmentTab; scrollId?: string }>;
@@ -63,17 +73,7 @@ export function ShipmentTabsPanel({
     return () => {
       window.removeEventListener("qubere:switch-tab", handleSwitchTab);
     };
-  }, []);
-
-  const selectTab = (tab: ShipmentTab) => {
-    setActiveTab(tab);
-    // Keeps the URL shareable/deep-linkable without going through the
-    // router -- a router navigation here is exactly the full-page
-    // re-render this component exists to avoid.
-    const url = new URL(window.location.href);
-    url.searchParams.set("view", tab);
-    window.history.replaceState(null, "", url);
-  };
+  }, [selectTab]);
 
   return (
     <div className="space-y-6">
