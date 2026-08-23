@@ -219,7 +219,7 @@ model Account {
   webhooks AccountWebhook[]
   apiKeys  AccountApiKey[]
 
-  integrationConfigs IntegrationConfig[]
+  integrationConfigs  IntegrationConfig[]
   integrationPayloads IntegrationPayload[]
 
   accountMemories AccountMemory[]
@@ -1292,18 +1292,18 @@ model CustomsResponse {
 // =============================================================================
 
 model FilingCountryCustomsVersion {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   country       String // Two-letter country code (e.g., NL, BE, FR)
   procedureCode String // Procedure code (e.g., IMPORT, EXPORT, NCTS)
   release       String // Version number (e.g., 1.0, 2.0)
   validFrom     DateTime
   validTo       DateTime?
   description   String?
-  isActive      Boolean  @default(true)
+  isActive      Boolean   @default(true)
   createdBy     String?
   updatedBy     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   customerMappings FilingCustomerCustomsVersion[]
 
@@ -1314,16 +1314,16 @@ model FilingCountryCustomsVersion {
 }
 
 model FilingCustomerCustomsVersion {
-  id                      String   @id @default(cuid())
-  customerId              String? // Null when applyToAllCustomers is true
-  filingCountryCustomsId  String
-  applyToAllCustomers     Boolean  @default(false)
-  notes                   String?
-  isActive                Boolean  @default(true)
-  createdBy               String?
-  updatedBy               String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  customerId             String? // Null when applyToAllCustomers is true
+  filingCountryCustomsId String
+  applyToAllCustomers    Boolean  @default(false)
+  notes                  String?
+  isActive               Boolean  @default(true)
+  createdBy              String?
+  updatedBy              String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   countryCustomsVersion FilingCountryCustomsVersion @relation(fields: [filingCountryCustomsId], references: [id], onDelete: Cascade)
 
@@ -1835,7 +1835,7 @@ model Client {
   invoices          Invoice[]
   billingExceptions BillingException[]
 
-  integrationConfigs IntegrationConfig[]
+  integrationConfigs  IntegrationConfig[]
   integrationPayloads IntegrationPayload[]
 
   @@index([accountId])
@@ -4653,15 +4653,17 @@ model FilingActionDataRequirement {
 
 /// UI Configuration for dynamic form rendering
 /// Stores complete field configuration as JSON - ONE ROW PER CONFIGURATION
-/// Each configuration is uniquely identified by country + procedure + message + messageType + transactionType
+/// Each configuration is scoped by country + procedure + message + messageType + release.
+/// Release-aware draft/active uniqueness is enforced by PostgreSQL partial indexes
+/// in migration 20260823201000_support_release_scoped_filing_ui_configs.
 model FilingUIConfig {
   id String @id @default(cuid())
 
   // Configuration identifier
-  country       String  // ISO code (NL, IE, FR, etc.)
-  procedureCode String  // e.g., H1, H4, H7
-  messageName   String  // e.g., IE501, IE503, IE015
-  messageType   String  // "request" or "response"
+  country       String // ISO code (NL, IE, FR, etc.)
+  procedureCode String // e.g., H1, H4, H7
+  messageName   String // e.g., IE501, IE503, IE015
+  messageType   String // "request" or "response"
   /// Customs release/version (e.g. "1.0", "2.0") from FilingCountryCustomsVersion.
   /// Null = applies to all releases (fallback config).
   release       String?
@@ -4672,17 +4674,16 @@ model FilingUIConfig {
   // Metadata
   version     Int     @default(1) // Increments on each publish
   description String?
-  // Lifecycle: at most one isDraft=true and one isActive=true per combo.
-  isDraft  Boolean @default(true)
-  isActive Boolean @default(false)
+  // Lifecycle: at most one isDraft=true and one isActive=true per combo/release.
+  isDraft     Boolean @default(true)
+  isActive    Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy String?
   updatedBy String?
 
-  @@index([country, procedureCode, messageName, messageType, isActive], map: "FilingUIConfig_combo_active_idx")
-  @@index([country, procedureCode, messageName, messageType, isDraft], map: "FilingUIConfig_combo_draft_idx")
+  @@index([country, procedureCode, messageName, messageType, release, isActive, isDraft], map: "FilingUIConfig_combo_release_status_idx")
   @@index([isActive])
 }
 
@@ -6037,6 +6038,7 @@ model IntegrationPayload {
   @@index([accountId, clientId])
   @@index([integrationConfigId, fetchedAt])
 }
+
 // Added minimal models to satisfy tests (auto-generated patch)
 model CensusWarningOverride {
   id String @id @default(cuid())
@@ -6097,4 +6099,3 @@ model StatementRecord {
 model StatementFeeLine {
   id String @id @default(cuid())
 }
-

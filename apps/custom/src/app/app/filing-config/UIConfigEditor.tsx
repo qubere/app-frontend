@@ -620,49 +620,60 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
     setHasUnsavedChanges(true);
   };
 
+  const persistDraft = async (
+    nextLifecycleStatus: LifecycleStatus = 'draft',
+    successMessage = "Draft saved"
+  ) => {
+    if (!config) return null;
+
+    const configToSave = {
+      ...config,
+      metadata: {
+        ...config.metadata,
+        lastModifiedBy: "current-user",
+        lastModifiedAt: new Date().toISOString(),
+      },
+    };
+
+    const payload = {
+      country, procedureCode, messageName, messageType,
+      // schemaVersion holds the release value selected in the ConfigSelectorModal
+      release: schemaVersion || undefined,
+      configData: configToSave,
+      description: config.metadata?.description,
+    };
+
+    // Always POST (creates/updates the draft row for this combo)
+    const response = await fetch("/api/filing-config/ui-configuration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "Failed to save draft");
+    }
+
+    const saved = await response.json();
+    setSavedConfigId(saved.id);
+    setConfig(configToSave);
+    setOriginalConfig(JSON.parse(JSON.stringify(configToSave)));
+    setHasUnsavedChanges(false);
+    setLifecycleStatus(nextLifecycleStatus);
+
+    setSaveStatus({ show: true, type: "success", message: successMessage });
+    setTimeout(() => setSaveStatus(null), 4000);
+    return saved;
+  };
+
   // ── Save Draft ──────────────────────────────────────────────────────────────
   const handleSaveDraft = async () => {
     if (!config || isSaving) return;
     setIsSaving(true);
 
     try {
-      const configToSave = {
-        ...config,
-        metadata: {
-          ...config.metadata,
-          lastModifiedBy: "current-user",
-          lastModifiedAt: new Date().toISOString(),
-        },
-      };
-
-      const payload = {
-        country, procedureCode, messageName, messageType,
-        // schemaVersion holds the release value selected in the ConfigSelectorModal
-        release: schemaVersion || undefined,
-        configData: configToSave,
-        description: config.metadata?.description,
-      };
-
-      // Always POST (creates/updates the draft row for this combo)
-      const response = await fetch("/api/filing-config/ui-configuration", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to save draft");
-      }
-
-      const saved = await response.json();
-      setSavedConfigId(saved.id);
-      setOriginalConfig(JSON.parse(JSON.stringify(configToSave)));
-      setHasUnsavedChanges(false);
-      setLifecycleStatus('draft');
-
-      setSaveStatus({ show: true, type: "success", message: "Draft saved" });
-      setTimeout(() => setSaveStatus(null), 4000);
+      await persistDraft('draft', "Draft saved");
     } catch (error: any) {
       setSaveStatus({ show: true, type: "error", message: error.message || "Failed to save draft" });
       setTimeout(() => setSaveStatus(null), 5000);
@@ -672,17 +683,23 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
   };
 
   // ── Validate ────────────────────────────────────────────────────────────────
-  const handleValidate = () => {
-    if (!config) return;
+  const handleValidate = async () => {
+    if (!config || isSaving) return;
     const result = validateConfig(config);
     setValidationErrors(result.errors);
     setValidationWarnings(result.warnings);
     setShowWarningsPanel(true);
 
     if (result.valid) {
-      setLifecycleStatus('validated');
-      setSaveStatus({ show: true, type: "success", message: "Validation passed — ready to publish" });
-      setTimeout(() => setSaveStatus(null), 4000);
+      setIsSaving(true);
+      try {
+        await persistDraft('validated', "Validation passed — ready to publish");
+      } catch (error: any) {
+        setSaveStatus({ show: true, type: "error", message: error.message || "Validation passed, but saving the draft failed" });
+        setTimeout(() => setSaveStatus(null), 5000);
+      } finally {
+        setIsSaving(false);
+      }
     } else {
       setSaveStatus({
         show: true, type: "error",
@@ -1028,21 +1045,23 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
                 onClick={handleValidate}
                 variant="secondary"
                 size="sm"
-                disabled={!config}
+                disabled={!config || isSaving}
               >
                 <FileCheck className="w-4 h-4 mr-1.5" />
-                Validate
+                {isSaving ? "Saving..." : "Validate"}
               </Button>
 
-              {/* Publish — enabled after saving (skips strict validate gate for drafts) */}
+              {/* Publish — enabled only for a saved, validated draft */}
               <Button
                 onClick={handlePublish}
                 variant="primary"
                 size="sm"
-                disabled={!savedConfigId || hasUnsavedChanges || isPublishing || lifecycleStatus === "published"}
+                disabled={!savedConfigId || hasUnsavedChanges || isPublishing || lifecycleStatus !== "validated"}
                 title={
                   lifecycleStatus === "published"
                     ? "Already published"
+                    : lifecycleStatus !== "validated"
+                    ? "Validate successfully before publishing"
                     : hasUnsavedChanges
                     ? "Save your draft first"
                     : !savedConfigId

@@ -31,7 +31,7 @@ interface ProcedureOption {
 interface ReleaseResult {
   release: string;
   description: string;
-  source: "customer" | "fallback";
+  source: "customer" | "all";
 }
 
 interface NewFilingModalProps {

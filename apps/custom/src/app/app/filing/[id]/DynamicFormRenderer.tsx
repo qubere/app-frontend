@@ -93,27 +93,20 @@ export default function DynamicFormRenderer({
 
   const loadSchema = useCallback(async () => {
     try {
-      const transactionType = procedureCode.toUpperCase().startsWith("H") ? "import" : "export";
-      const schemaFileName = transactionType === "import"
-        ? "ImportDeclaration.schema.json"
-        : "ExportDeclaration.schema.json";
       const response = await fetch(
-        `/schemas/customs-filing/filing-schemas/${transactionType}/${schemaVersion}/${schemaFileName}`
+        `/api/schemas/${encodeURIComponent(country)}/${encodeURIComponent(procedureCode)}/${encodeURIComponent(messageName)}/${messageType}?version=${encodeURIComponent(schemaVersion)}`
       );
+
       if (response.ok) {
-        setSchema(await response.json());
+        const result = await response.json();
+        setSchema(result.schema ?? result);
       } else {
-        // Fallback to 1.0.0 if release-specific schema not found
-        const fallback = await fetch(
-          `/schemas/customs-filing/filing-schemas/${transactionType}/1.0.0/${schemaFileName}`
-        );
-        if (fallback.ok) setSchema(await fallback.json());
-        else console.error("Failed to load schema for default renderer");
+        console.error("Failed to load schema for declaration renderer", await response.json().catch(() => null));
       }
     } catch (err) {
       console.error("Error loading schema:", err);
     }
-  }, [procedureCode, schemaVersion]);
+  }, [country, procedureCode, messageName, messageType, schemaVersion]);
 
   useEffect(() => {
     async function fetchUIConfig() {

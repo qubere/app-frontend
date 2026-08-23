@@ -57,6 +57,44 @@ export async function PUT(
       return NextResponse.json({ error: "Configuration not found" }, { status: 404 });
     }
 
+    // The dashboard can disable an already-published configuration so the
+    // application falls back to the schema renderer. Reactivation is limited
+    // to published rows; drafts must go through the validated publish route.
+    if (typeof body.isActive === "boolean" && body.configData === undefined && body.description === undefined) {
+      if (body.isActive && existing.isDraft) {
+        return NextResponse.json(
+          { error: "Draft configurations must be published before activation." },
+          { status: 409 }
+        );
+      }
+
+      const config = body.isActive
+        ? await db.$transaction(async (tx) => {
+            await tx.filingUIConfig.updateMany({
+              where: {
+                country: existing.country,
+                procedureCode: existing.procedureCode,
+                messageName: existing.messageName,
+                messageType: existing.messageType,
+                release: existing.release,
+                isActive: true,
+                id: { not: id },
+              },
+              data: { isActive: false },
+            });
+            return tx.filingUIConfig.update({
+              where: { id },
+              data: { isActive: true, updatedBy: userIdentifier },
+            });
+          })
+        : await db.filingUIConfig.update({
+            where: { id },
+            data: { isActive: false, updatedBy: userIdentifier },
+          });
+
+      return NextResponse.json(config);
+    }
+
     // Only drafts are editable via PUT. To edit an active config, create a new draft first.
     if (!existing.isDraft) {
       return NextResponse.json(

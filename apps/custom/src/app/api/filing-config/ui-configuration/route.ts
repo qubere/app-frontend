@@ -25,14 +25,15 @@ export async function GET(request: NextRequest) {
     const procedureCode = searchParams.get("procedureCode");
     const messageName = searchParams.get("messageName");
     const messageType = searchParams.get("messageType");
-    const transactionType = searchParams.get("transactionType");
 
     const where: any = {};
     if (country) where.country = country;
     if (procedureCode) where.procedureCode = procedureCode;
     if (messageName) where.messageName = messageName;
     if (messageType) where.messageType = messageType;
-    if (transactionType) where.transactionType = transactionType;
+    // FilingUIConfig intentionally does not store transactionType. It belongs
+    // to FilingProcedureConfig, which the editor uses to select a schema.
+    // Do not add it to this Prisma query: the column was removed by migration.
 
     const configs = await db.filingUIConfig.findMany({
       where,
