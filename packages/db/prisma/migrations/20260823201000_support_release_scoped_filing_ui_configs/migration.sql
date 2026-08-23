@@ -4,6 +4,7 @@
 ALTER TABLE "FilingUIConfig"
 DROP CONSTRAINT IF EXISTS "FilingUIConfig_country_procedureCode_messageName_messageTyp_key";
 
+DROP INDEX IF EXISTS "FilingUIConfig_country_procedureCode_messageName_messageTyp_key";
 DROP INDEX IF EXISTS "FilingUIConfig_country_procedureCode_messageName_messageTyp_idx";
 DROP INDEX IF EXISTS "FilingUIConfig_combo_draft_idx";
 
