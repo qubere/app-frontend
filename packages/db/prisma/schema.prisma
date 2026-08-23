@@ -216,10 +216,10 @@ model Account {
   trackingSubscriptions       TrackingSubscription[]
 
   shipmentProductWorkspaces ShipmentProductWorkspace[]
-  productEntitlements     AccountProductEntitlement[]
-  customsCases            CustomsCase[]
-  customsCaseShipments    CustomsCaseShipment[]
-  customsCaseDocuments    CustomsCaseDocument[]
+  productEntitlements       AccountProductEntitlement[]
+  customsCases              CustomsCase[]
+  customsCaseShipments      CustomsCaseShipment[]
+  customsCaseDocuments      CustomsCaseDocument[]
 
   transportationOrders TransportationOrder[]
   carriers             Carrier[]
@@ -1428,16 +1428,16 @@ model CustomsFiling {
 // =============================================================================
 
 model AccountProductEntitlement {
-  id          String    @id @default(cuid())
-  accountId   String
-  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  product     String    // TMS | CUSTOMS
-  status      String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED
-  enabledAt   DateTime  @default(now())
-  disabledAt  DateTime?
-  plan        String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  product    String // TMS | CUSTOMS
+  status     String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED
+  enabledAt  DateTime  @default(now())
+  disabledAt DateTime?
+  plan       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@unique([accountId, product])
   @@index([accountId, product, status])
@@ -1449,7 +1449,7 @@ model ShipmentProductWorkspace {
   account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId        String
   shipment          Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  product           String   // TMS | CUSTOMS
+  product           String // TMS | CUSTOMS
   status            String   @default("ACTIVE") // ACTIVE | INACTIVE | AVAILABLE_FROM_TMS
   source            String   @default("SYSTEM") // TMS_INTAKE | CUSTOMS_INTAKE | HANDOFF | MIGRATION
   activatedAt       DateTime @default(now())
@@ -1466,7 +1466,7 @@ model CustomsCase {
   id                   String            @id @default(cuid())
   accountId            String
   account              Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  caseNumber           String            // e.g. CC-2026-000001
+  caseNumber           String // e.g. CC-2026-000001
   status               String            @default("OPEN") // OPEN | READY_FOR_FILING | FILED | RELEASED | CLOSED
   importerOfRecordId   String?
   importerOfRecord     ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: SetNull)
@@ -1556,18 +1556,18 @@ model CustomsResponse {
 // =============================================================================
 
 model FilingCountryCustomsVersion {
-  id            String    @id @default(cuid())
-  country       String // Two-letter country code (e.g., NL, BE, FR)
-  procedureCode String // Procedure code (e.g., IMPORT, EXPORT, NCTS)
-  release       String // Version number (e.g., 1.0, 2.0)
-  validFrom     DateTime
-  validTo       DateTime?
-  description   String?
-  isActive      Boolean   @default(true)
-  createdBy     String?
-  updatedBy     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String                         @id @default(cuid())
+  country          String // Two-letter country code (e.g., NL, BE, FR)
+  procedureCode    String // Procedure code (e.g., IMPORT, EXPORT, NCTS)
+  release          String // Version number (e.g., 1.0, 2.0)
+  validFrom        DateTime
+  validTo          DateTime?
+  description      String?
+  isActive         Boolean                        @default(true)
+  createdBy        String?
+  updatedBy        String?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
   customerMappings FilingCustomerCustomsVersion[]
 
   @@unique([country, procedureCode, release])
@@ -3115,32 +3115,32 @@ model ShipmentStateRecord {
 // ============================================================================
 
 model PipelineJob {
-  id           String    @id @default(cuid())
-  accountId    String
-  userId       String
-  shipmentId   String
+  id             String    @id @default(cuid())
+  accountId      String
+  userId         String
+  shipmentId     String
   /// Namespaces jobs that share this durable queue. Existing Customs jobs use
   /// CUSTOMS; TMS document workflows use TMS_DOCUMENT_PROCESSING.
-  workflowType String    @default("CUSTOMS")
+  workflowType   String    @default("CUSTOMS")
   /// Stable trigger identity used to make enqueue idempotent. Nullable for
   /// legacy jobs. TMS uses document id + checksum + workflow version.
   idempotencyKey String?
-  correlationId String?
-  status       String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
-  currentStep  Int       @default(1)
-  totalSteps   Int       @default(10)
-  priority     Int       @default(0) // Higher number = higher priority
-  state        Json      @default("{}") // The AgentState object
-  errorMessage String?
-  attemptCount Int       @default(0)
-  maxAttempts  Int       @default(3)
-  nextRetryAt  DateTime?
-  startedAt    DateTime?
-  completedAt  DateTime?
-  lockedAt     DateTime? // Used by worker to detect stalled jobs
-  heartbeatAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  correlationId  String?
+  status         String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  currentStep    Int       @default(1)
+  totalSteps     Int       @default(10)
+  priority       Int       @default(0) // Higher number = higher priority
+  state          Json      @default("{}") // The AgentState object
+  errorMessage   String?
+  attemptCount   Int       @default(0)
+  maxAttempts    Int       @default(3)
+  nextRetryAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  lockedAt       DateTime? // Used by worker to detect stalled jobs
+  heartbeatAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   stepExecutions PipelineStepExecution[]
   shipment       Shipment                @relation(fields: [shipmentId], references: [id])
@@ -5093,32 +5093,38 @@ model FilingActionDataRequirement {
 
 /// UI Configuration for dynamic form rendering
 /// Stores complete field configuration as JSON - ONE ROW PER CONFIGURATION
-/// Each configuration is uniquely identified by country + procedure + message + messageType + transactionType
+/// Each configuration is scoped by country + procedure + message + messageType + release.
+/// Release-aware draft/active uniqueness is enforced by PostgreSQL partial indexes
+/// in migration 20260823201000_support_release_scoped_filing_ui_configs.
 model FilingUIConfig {
   id String @id @default(cuid())
 
-  // Configuration identifier (unique combination)
+  // Configuration identifier
   country       String // ISO code (NL, IE, FR, etc.)
   procedureCode String // e.g., H1, H4, H7
   messageName   String // e.g., IE501, IE503, IE015
   messageType   String // "request" or "response"
+  /// Customs release/version (e.g. "1.0", "2.0") from FilingCountryCustomsVersion.
+  /// Null = applies to all releases (fallback config).
+  release       String?
 
   // Complete field configuration stored as JSON
   // Structure: { fields: [{ fieldPath, fieldLabel, fieldType, section, displayOrder, ... }] }
   configData Json // All field configurations in one JSON object
 
   // Metadata
-  version     Int     @default(1) // Configuration version for tracking changes
-  description String? // Optional description of what this config is for
-  isActive    Boolean @default(true) // Whether this config is currently active
+  version     Int     @default(1) // Increments on each publish
+  description String?
+  // Lifecycle: at most one isDraft=true and one isActive=true per combo/release.
+  isDraft     Boolean @default(true)
+  isActive    Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy String?
   updatedBy String?
 
-  @@unique([country, procedureCode, messageName, messageType])
-  @@index([country, procedureCode, messageName, messageType])
+  @@index([country, procedureCode, messageName, messageType, release, isActive, isDraft], map: "FilingUIConfig_combo_release_status_idx")
   @@index([isActive])
 }
 
@@ -6731,6 +6737,7 @@ model InBondRecord {
 
   @@index([accountId])
 }
+
 model InBondEvent {
   id               String       @id @default(cuid())
   inBondRecordId   String

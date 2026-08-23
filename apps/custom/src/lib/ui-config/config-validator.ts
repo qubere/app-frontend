@@ -11,6 +11,8 @@ export interface ValidationError {
   type: 'error' | 'warning';
   category: 'structure' | 'reference' | 'duplicate' | 'missing' | 'orphaned';
   message: string;
+  /** Field path this issue relates to — used to jump to the field in the editor */
+  path?: string;
   details?: Record<string, any>;
 }
 
@@ -193,6 +195,7 @@ function validateDuplicates(
         type: 'error',
         category: 'duplicate',
         message: `Duplicate field path: "${field.fieldPath}"`,
+        path: field.fieldPath,
         details: { fieldPath: field.fieldPath },
       });
     }
@@ -266,6 +269,7 @@ function validateReferences(
         type: 'error',
         category: 'reference',
         message: `Field "${field.fieldPath}" references non-existent section: "${field.section}"`,
+        path: field.fieldPath,
         details: { fieldPath: field.fieldPath, section: field.section },
       });
     }
@@ -276,6 +280,7 @@ function validateReferences(
         type: 'error',
         category: 'reference',
         message: `Field "${field.fieldPath}" references non-existent panel: "${field.panelId}"`,
+        path: field.fieldPath,
         details: { fieldPath: field.fieldPath, panelId: field.panelId },
       });
     }
@@ -286,6 +291,7 @@ function validateReferences(
         type: 'error',
         category: 'reference',
         message: `Field "${field.fieldPath}" references non-existent tab: "${field.tabId}"`,
+        path: field.fieldPath,
         details: { fieldPath: field.fieldPath, tabId: field.tabId },
       });
     }

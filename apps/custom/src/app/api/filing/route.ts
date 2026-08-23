@@ -282,6 +282,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     country,
     procedureCode,
     messageName,
+    release,
     declarationData,
     localReferenceNumber,
     registrationNumber,
@@ -325,6 +326,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         country,
         procedureCode,
         messageName,
+        release: release || null,
         filingType: filingType || "Standard",
         filingStatus: "Draft",
         preparedByUserId: ctx.userId,
@@ -356,6 +358,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         country,
         procedureCode,
         messageName,
+        release: release || null,
       },
     });
 

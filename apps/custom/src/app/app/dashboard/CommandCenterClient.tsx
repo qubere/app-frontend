@@ -817,7 +817,7 @@ export function CommandCenterClient({
         </div>
 
         {/* Unified 1-line grid of operational KPI tiles */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-7 gap-3">
           {/* Tile 1: Open Exceptions (Clickable -> /app/actions) */}
           <Link
             href="/app/actions"
@@ -863,7 +863,7 @@ export function CommandCenterClient({
                 <span className="font-semibold min-w-0 leading-tight">Value at Risk</span>
                 <ShieldAlert className="w-4 h-4 shrink-0 text-red-500 group-hover:scale-110 transition-transform" />
               </div>
-              <p className="text-2xl font-extrabold text-ink truncate">
+              <p className="text-2xl font-extrabold text-ink whitespace-nowrap">
                 {valueAtRiskCurrency
                   ? displayCurrency(Math.round(valueAtRisk), valueAtRiskCurrency)
                   : valueAtRisk.toLocaleString(undefined, { maximumFractionDigits: 0 })}

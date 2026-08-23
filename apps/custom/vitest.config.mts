@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    // Increase global test timeout to accommodate long-running integration tests
+    // (in milliseconds). Adjust as needed for CI environments.
+    testTimeout: 300000, // 5 minutes
     // e2e/*.spec.ts is Playwright's; the default glob would otherwise claim it.
     include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
     // This suite validates the persistent Qubere Trade Network demo seed and

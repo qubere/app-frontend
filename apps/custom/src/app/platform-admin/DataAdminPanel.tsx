@@ -308,7 +308,9 @@ export function DataAdminPanel() {
                   <th className="py-3.5 px-4 min-w-[260px]">&lt;how is it refreshed&gt;</th>
                   <th className="py-3.5 px-4 whitespace-nowrap">&lt;frequency&gt;</th>
                   <th className="py-3.5 px-4 min-w-[170px]">&lt;last run&gt;</th>
-                  <th className="py-3.5 px-4 text-right min-w-[130px]">&lt;run now&gt;</th>
+                  <th className="py-3.5 px-4 text-right min-w-[130px] sticky right-0 bg-surface-muted shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)]">
+                    &lt;run now&gt;
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -441,7 +443,11 @@ export function DataAdminPanel() {
                       </td>
 
                       {/* Run Now Column */}
-                      <td className="py-4 px-4 text-right">
+                      <td
+                        className={`py-4 px-4 text-right sticky right-0 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] ${
+                          isLive ? "bg-white" : "bg-amber-50"
+                        }`}
+                      >
                         {isLive ? (
                           <button
                             onClick={() => handleRunNow(d)}

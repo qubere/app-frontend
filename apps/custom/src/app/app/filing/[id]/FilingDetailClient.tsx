@@ -39,6 +39,7 @@ interface FilingProps {
   country: string | null; // Multi-country support
   procedureCode?: string | null; // Procedure code for standalone filings
   messageName?: string | null; // Message name for standalone filings
+  release?: string | null; // Release version (from FilingCountryCustomsVersion)
   totalValue: number | null;
   totalDuties: number | null;
   totalTaxes: number | null;
@@ -1238,6 +1239,7 @@ export function FilingDetailClient({
                 procedureCode={filing.procedureCode}
                 messageName={filing.messageName}
                 messageType="request"
+                release={filing.release ?? undefined}
                 data={declarationData}
                 onChange={updateDeclarationField}
                 readOnly={false}

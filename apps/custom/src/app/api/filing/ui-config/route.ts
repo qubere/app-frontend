@@ -10,6 +10,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { FilingUIConfigData } from "@/types/ui-config.types";
 
+function releaseCandidates(release: string | null): string[] {
+  if (!release) return [];
+
+  const candidates = [release];
+  const parts = release.split(".");
+
+  if (parts.length === 2) {
+    candidates.push(`${release}.0`);
+  } else if (parts.length === 3 && parts[2] === "0") {
+    candidates.push(parts.slice(0, 2).join("."));
+  }
+
+  return Array.from(new Set(candidates));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -35,18 +50,39 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch UI configuration
-    const config = await db.filingUIConfig.findUnique({
-      where: {
-        country_procedureCode_messageName_messageType: {
+    // Fetch the currently active (published) UI configuration.
+    // Priority: release-specific config first → fallback to release=null (all-releases config)
+    const release = searchParams.get("release") ?? null;
+
+    let config = null;
+
+    // Try release-specific config first (if release param provided).
+    // Release values historically appeared as both "1.0" and "1.0.0";
+    // check both so saved filings keep resolving their published UI config.
+    const releases = releaseCandidates(release);
+    if (releases.length > 0) {
+      config = await db.filingUIConfig.findFirst({
+        where: {
           country,
           procedureCode,
           messageName,
           messageType,
+          release: { in: releases },
+          isActive: true,
         },
-        isActive: true,
-      },
-    });
+      });
+    }
+
+    // Fallback: config without a release (applies to all releases)
+    if (!config) {
+      config = await db.filingUIConfig.findFirst({
+        where: {
+          country, procedureCode, messageName, messageType,
+          isActive: true,
+          release: null,
+        },
+      });
+    }
 
     if (!config) {
       return NextResponse.json(
@@ -104,10 +140,12 @@ export async function GET(request: NextRequest) {
       procedureCode,
       messageName,
       messageType,
+      release: config.release,
       dbVersion: config.version,
       configVersion: configData.version,
       metadata: configData.metadata,
       layout: configData.layout,
+      layoutHints: configData.layoutHints,
       tabs: visibleTabs,
       sections: visibleSections,
       panels: configData.panels,
