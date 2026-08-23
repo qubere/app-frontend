@@ -1,13 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ShieldCheck, Code2 } from "lucide-react";
-import { SignIn } from "@clerk/nextjs";
+import { SignIn, useUser } from "@clerk/nextjs";
 import { ApiStatusDrawer } from "@/components/ApiStatusDrawer";
 
 export function SignInWrapper() {
   const [isApiDrawerOpen, setIsApiDrawerOpen] = useState(false);
+  const router = useRouter();
+  const { isLoaded, isSignedIn } = useUser();
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      router.replace("/app/dashboard");
+    }
+  }, [isLoaded, isSignedIn, router]);
 
   return (
     <div className="min-h-screen bg-surface-muted flex flex-col justify-center items-center px-6 relative selection:bg-brand/20 selection:text-brand">
@@ -34,21 +43,30 @@ export function SignInWrapper() {
       </div>
 
       <div className="apple-card p-4 rounded-2xl border border-border shadow-lg max-w-md w-full">
-        <SignIn
-          forceRedirectUrl="/app/dashboard"
-          appearance={{
-            elements: {
-              card: "bg-transparent shadow-none",
-              headerTitle: "text-ink text-lg font-bold",
-              headerSubtitle: "text-ink-muted text-sm",
-              socialButtonsBlockButton: "bg-white border-border text-ink hover:bg-slate-50",
-              formFieldLabel: "text-ink text-xs font-semibold",
-              formFieldInput: "bg-white border-border text-ink rounded-xl focus:border-brand focus:ring-1 focus:ring-brand",
-              formButtonPrimary: "bg-brand hover:bg-brand-hover text-white font-semibold rounded-full py-3 shadow-md shadow-brand/20 transition-all",
-              footerActionLink: "text-brand hover:text-brand-hover font-semibold",
-            },
-          }}
-        />
+        {!isLoaded || isSignedIn ? (
+          <div className="py-6 text-center text-sm text-ink-muted">
+            {isSignedIn ? "Redirecting to dashboard..." : "Loading authentication..."}
+          </div>
+        ) : (
+          <SignIn
+            routing="path"
+            path="/sign-in"
+            signUpUrl="/sign-up"
+            forceRedirectUrl="/app/dashboard"
+            appearance={{
+              elements: {
+                card: "bg-transparent shadow-none",
+                headerTitle: "text-ink text-lg font-bold",
+                headerSubtitle: "text-ink-muted text-sm",
+                socialButtonsBlockButton: "bg-white border-border text-ink hover:bg-slate-50",
+                formFieldLabel: "text-ink text-xs font-semibold",
+                formFieldInput: "bg-white border-border text-ink rounded-xl focus:border-brand focus:ring-1 focus:ring-brand",
+                formButtonPrimary: "bg-brand hover:bg-brand-hover text-white font-semibold rounded-full py-3 shadow-md shadow-brand/20 transition-all",
+                footerActionLink: "text-brand hover:text-brand-hover font-semibold",
+              },
+            }}
+          />
+        )}
       </div>
 
       <ApiStatusDrawer isOpen={isApiDrawerOpen} onClose={() => setIsApiDrawerOpen(false)} />

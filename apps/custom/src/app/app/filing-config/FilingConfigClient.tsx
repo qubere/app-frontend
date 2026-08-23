@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import UIConfigDashboard from "./UIConfigDashboard";
 
 /**
  * Static, developer-authored UI text (table/field labels, column headers,
@@ -207,10 +208,25 @@ export function FilingConfigClient({ tables }: { tables: TableMeta[] }) {
         ))}
       </div>
 
-      {active && <TablePanel key={active.key} table={active} onShowUIConfigEditor={(configId) => {
-        setEditingConfigId(configId);
-        setShowUIConfigEditor(true);
-      }} />}
+      {active && active.key === "ui-configuration" ? (
+        <Card className="p-6">
+          <div className="mb-5 border-b border-border pb-4">
+            <p className="text-sm font-bold text-ink">{tableDict(t, active.key)?.label ?? active.label}</p>
+            <p className="text-xs text-ink-muted mt-0.5 max-w-xl">{tableDict(t, active.key)?.description ?? active.description}</p>
+          </div>
+          <UIConfigDashboard
+            onEdit={(configId) => {
+              setEditingConfigId(configId);
+              setShowUIConfigEditor(true);
+            }}
+          />
+        </Card>
+      ) : (
+        active && <TablePanel key={active.key} table={active} onShowUIConfigEditor={(configId) => {
+          setEditingConfigId(configId);
+          setShowUIConfigEditor(true);
+        }} />
+      )}
     </div>
   );
 }
