@@ -13,5 +13,5 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
     }
     return NextResponse.json({ ...status, requestId });
   },
-  { permission: "shipments.read" }
+  { permission: "shipment.read" }
 );

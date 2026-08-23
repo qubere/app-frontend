@@ -1,5 +1,6 @@
 import { db } from "@qubere/db";
 import type { AccountContext } from "@qubere/auth";
+import { computeShipmentLifecycleStatus } from "./shipmentLifecycleStatus";
 
 export interface JourneyMilestone {
   id: string;
@@ -98,6 +99,8 @@ export async function getShipmentWorkspaceDetails(
       transportationEvents: { orderBy: { occurredAt: "desc" }, take: 50 },
       freightQuotes: { orderBy: { createdAt: "desc" } },
       tenders: { orderBy: { createdAt: "desc" } },
+      proofOfDeliveries: { orderBy: { createdAt: "desc" } },
+      carrierInvoices: { orderBy: { createdAt: "desc" }, include: { lines: true } },
       shipmentCharges: true,
       shipmentCosts: true,
     },
@@ -115,7 +118,7 @@ export async function getShipmentWorkspaceDetails(
   }) ?? [];
   const auditEntityIds = [
     shipment.id,
-    ...(shipment.documents ?? []).map((document: any) => document.id),
+    ...((shipment as any).documents ?? []).map((document: any) => document.id),
     ...pipelineJobs.map((job: any) => job.id),
   ];
   const auditLogs = await (db as any).auditLog?.findMany({
@@ -128,6 +131,7 @@ export async function getShipmentWorkspaceDetails(
   const journey = computeMultimodalJourney(shipment);
   const crossDomainRisks = evaluateCrossDomainRisks(shipment);
   const healthSnapshot = computeShipmentHealthSnapshot(shipment);
+  const lifecycleStatus = computeShipmentLifecycleStatus(shipment);
 
   // Use Decimal-safe number conversion, fall back to cached Shipment fields
   const sellAmount =
@@ -146,11 +150,12 @@ export async function getShipmentWorkspaceDetails(
   const grossMarginPct = sellAmount > 0 ? (grossProfit / sellAmount) * 100 : 0;
   const markupOnCostPct = costAmount > 0 ? (grossProfit / costAmount) * 100 : 0;
 
-  return {
+  const workspace = {
     shipment: { ...shipment, pipelineJobs, auditLogs },
     journey,
     crossDomainRisks,
     healthSnapshot,
+    lifecycleStatus,
     financials: {
       totalSellAmount: sellAmount,
       totalBuyAmount: costAmount,
@@ -161,6 +166,8 @@ export async function getShipmentWorkspaceDetails(
       currency: (shipment as any).invoiceCurrency ?? "USD",
     },
   };
+
+  return JSON.parse(JSON.stringify(workspace));
 }
 
 export function computeShipmentHealthSnapshot(shipment: any): ShipmentHealthSnapshot {

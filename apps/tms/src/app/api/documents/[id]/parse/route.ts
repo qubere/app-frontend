@@ -33,5 +33,5 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     const dispatch = await scheduleTmsPipelineDispatch(job.id);
     return NextResponse.json({ documentId: document.id, jobId: job.id, status: job.status, dispatch, requestId }, { status: 202 });
   },
-  { permission: "documents.create", write: true }
+  { permission: "document.update", write: true }
 );

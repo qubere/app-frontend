@@ -16,6 +16,7 @@ const clerkClient = createClerkClient({ secretKey: clerkSecretKey });
 const defaultPassword = "QuberePass2026!";
 
 const targetUsers = [
+  { email: "admin@target.com", firstName: "Target", lastName: "Admin", roleName: "ADMIN" },
   { email: "joe@target.com", firstName: "Joe", lastName: "TargetAdmin", roleName: "ADMIN" },
   { email: "anna@target.com", firstName: "Anna", lastName: "TargetAdmin", roleName: "ADMIN" },
   { email: "sarah@target.com", firstName: "Sarah", lastName: "TargetPlanner", roleName: "PLANNER" },
@@ -66,6 +67,12 @@ async function main() {
     create: { name: "intel.read", description: "Access Regulatory Intel" },
   });
 
+  const pTmsAccess = await db.permission.upsert({
+    where: { name: "tms.access" },
+    update: {},
+    create: { name: "tms.access", description: "Access Qubere TMS Freight Execution System" },
+  });
+
   // 3. Get or create ADMIN and PLANNER roles scoped to Target account
   let adminRole = await db.role.findFirst({
     where: { name: "ADMIN", accountId: targetAccount.id }
@@ -81,11 +88,19 @@ async function main() {
             { permissionId: pDocsCreate.id },
             { permissionId: pFilingTransmit.id },
             { permissionId: pIntelRead.id },
+            { permissionId: pTmsAccess.id },
           ],
         },
       },
     });
     console.log("✅ Created ADMIN role for Target account");
+  } else {
+    // Ensure tms.access is connected if missing
+    await db.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: adminRole.id, permissionId: pTmsAccess.id } },
+      update: {},
+      create: { roleId: adminRole.id, permissionId: pTmsAccess.id },
+    });
   }
 
   let plannerRole = await db.role.findFirst({
@@ -100,11 +115,19 @@ async function main() {
         rolePermissions: {
           create: [
             { permissionId: pDocsCreate.id },
+            { permissionId: pTmsAccess.id },
           ],
         },
       },
     });
     console.log("✅ Created PLANNER role for Target account");
+  } else {
+    // Ensure tms.access is connected if missing
+    await db.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: plannerRole.id, permissionId: pTmsAccess.id } },
+      update: {},
+      create: { roleId: plannerRole.id, permissionId: pTmsAccess.id },
+    });
   }
 
   // 4. Create in Clerk and Upsert/Connect in database

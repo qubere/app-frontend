@@ -264,6 +264,9 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "integration.test", description: "Execute test payload against EDI/API integration", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
   { name: "integration.disable", description: "Disable API integration stream", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
 
+  // TMS Access & General
+  { name: "tms.access", description: "Access Qubere TMS Freight Execution System", category: "System", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE", "INTERNAL_ADMIN", "OWNER", "ADMIN", "MEMBER", "BROKER_ADMIN", "BROKER_MANAGER"] },
+
   // ─── QUBERE ADMIN / PLATFORM PERMISSIONS ─────────────────────────────────
 
   { name: "system.users.read", description: "Read all platform users across tenants", category: "System", defaultRoles: ["INTERNAL_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE"] },

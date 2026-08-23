@@ -83,14 +83,11 @@ export function DocumentUploadModal({
 
       setUploadSuccess(true);
       if (onUploadSuccess) onUploadSuccess();
+      onClose();
+      setFiles([]);
+      setUploadSuccess(false);
+      setIsUploading(false);
       router.refresh();
-
-      setTimeout(() => {
-        onClose();
-        setFiles([]);
-        setUploadSuccess(false);
-        setIsUploading(false);
-      }, 1200);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to process document upload");
       setIsUploading(false);

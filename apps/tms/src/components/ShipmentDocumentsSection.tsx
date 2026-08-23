@@ -14,6 +14,7 @@ export interface DocumentItem {
   confidence: number | null;
   status: string;
   fileUrl?: string | null;
+  extractedJson?: string | null;
 }
 
 interface ShipmentDocumentsSectionProps {
@@ -71,7 +72,14 @@ export function ShipmentDocumentsSection({
 
     setDetachingId(docId);
     try {
-      await fetch(`/api/documents/${docId}/detach`, { method: "POST" }).catch(() => null);
+      const res = await fetch(`/api/documents/${docId}/detach`, { method: "POST" });
+      if (res.ok) {
+        setDocuments((prev) => prev.filter((d) => d.id !== docId));
+        router.refresh();
+      } else {
+        setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      }
+    } catch {
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
     } finally {
       setDetachingId(null);
@@ -252,6 +260,45 @@ export function ShipmentDocumentsSection({
         onClose={() => setIsModalOpen(false)}
         shipmentId={shipmentId}
       />
+
+      {/* Unlink Confirmation Modal */}
+      {docPendingDetach && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 shadow-xl border border-border">
+            <div className="flex items-center space-x-3 text-red-600">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-extrabold text-ink">Unlink Document</h3>
+            </div>
+            <p className="text-xs text-ink-muted leading-relaxed">
+              Are you sure you want to unlink <span className="font-bold text-ink">{docPendingDetach.fileName}</span> from this shipment? The document will remain saved in your account library.
+            </p>
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDocPendingDetach(null)}
+                className="px-4 py-2 rounded-xl border border-border text-ink text-xs font-bold hover:bg-surface-muted cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(detachingId)}
+                onClick={() => void confirmDetach()}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+              >
+                {detachingId ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Unlinking…</span>
+                  </>
+                ) : (
+                  <span>Unlink Document</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

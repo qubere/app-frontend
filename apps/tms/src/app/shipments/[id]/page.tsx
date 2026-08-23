@@ -51,7 +51,7 @@ export default async function ShipmentDetailPage({
     );
   }
 
-  const { journey, crossDomainRisks, healthSnapshot, financials } = workspace;
+  const { journey, crossDomainRisks, healthSnapshot, financials, lifecycleStatus } = workspace;
   const shipment: any = workspace.shipment;
 
   return (
@@ -61,6 +61,7 @@ export default async function ShipmentDetailPage({
       crossDomainRisks={crossDomainRisks}
       healthSnapshot={healthSnapshot}
       financials={financials}
+      lifecycleStatus={lifecycleStatus}
     />
   );
 }

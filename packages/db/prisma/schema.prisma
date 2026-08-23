@@ -645,6 +645,8 @@ model Shipment {
   shipmentCosts     ShipmentCost[]
   invoiceLines      InvoiceLine[]
   billingExceptions BillingException[]
+  proofOfDeliveries ProofOfDelivery[]
+  carrierInvoices   CarrierInvoice[]
 
   @@unique([accountId, shipmentNumber])
   @@index([accountId])
@@ -7181,6 +7183,7 @@ model ProofOfDelivery {
   accountId      String
   account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId     String
+  shipment       Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   documentId     String // FK -> ShipmentDocument
   deliveredAt    DateTime?
   receivedByName String?
@@ -7191,21 +7194,24 @@ model ProofOfDelivery {
 }
 
 model CarrierInvoice {
-  id            String               @id @default(cuid())
-  accountId     String
-  account       Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  shipmentId    String
-  carrierId     String?
-  carrier       Carrier?             @relation(fields: [carrierId], references: [id], onDelete: SetNull)
-  documentId    String? // FK -> ShipmentDocument, source doc if ingested
-  invoiceNumber String?
-  invoiceDate   DateTime?
-  totalAmount   Decimal              @db.Decimal(12, 2)
-  currency      String               @default("USD")
-  matchStatus   String               @default("PENDING") // PENDING | MATCHED | DISPUTED | EXCEPTION
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  lines         CarrierInvoiceLine[]
+  id               String               @id @default(cuid())
+  accountId        String
+  account          Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId       String
+  shipment         Shipment             @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  carrierId        String?
+  carrier          Carrier?             @relation(fields: [carrierId], references: [id], onDelete: SetNull)
+  documentId       String? // FK -> ShipmentDocument, source doc if ingested
+  invoiceNumber    String?
+  invoiceDate      DateTime?
+  totalAmount      Decimal              @db.Decimal(12, 2)
+  currency         String               @default("USD")
+  matchStatus      String               @default("PENDING") // PENDING | MATCHED | DISPUTED | EXCEPTION
+  settlementStatus String               @default("PENDING") // PENDING | SCHEDULED | PAID
+  settledAt        DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  lines            CarrierInvoiceLine[]
 }
 
 model CarrierInvoiceLine {
