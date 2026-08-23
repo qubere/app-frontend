@@ -9,12 +9,18 @@ const auditMock = vi.fn();
 
 const dbMock = {
   shipment: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+  customsCase: { create: vi.fn() },
+  customsCaseShipment: { create: vi.fn() },
   agentDecision: { findMany: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
   regulatoryUpdate: { findMany: vi.fn() },
   user: { findUnique: vi.fn() },
+  $transaction: vi.fn(),
 };
 
-vi.mock("@/lib/db", () => ({ db: dbMock }));
+vi.mock("@/lib/db", () => ({
+  db: dbMock,
+  generateCustomsCaseNumber: async () => "CASE-2026-000002",
+}));
 vi.mock("@/lib/auth", () => ({
   getAccountContext: () => ctxMock(),
   hasPermission: vi.fn(async () => true),
@@ -69,6 +75,9 @@ beforeEach(() => {
   dbMock.shipment.findMany.mockResolvedValue([]);
   dbMock.shipment.count.mockResolvedValue(0);
   dbMock.regulatoryUpdate.findMany.mockResolvedValue([]);
+  dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => Promise<unknown>) =>
+    fn(dbMock)
+  );
   dbMock.user.findUnique.mockResolvedValue({
     firstName: "Jane",
     lastName: "Broker",
@@ -95,6 +104,7 @@ describe("GET /api/shipments", () => {
     expect(dbMock.shipment.findMany.mock.calls[0][0].where).toEqual({
       accountId: ACCOUNT,
       deletedAt: null,
+      productWorkspaces: { some: { product: "CUSTOMS", status: "ACTIVE" } },
     });
   });
 
@@ -185,7 +195,12 @@ describe("POST /api/shipments", () => {
   });
 
   it("creates a Draft shipment with a generated number and audits it", async () => {
-    dbMock.shipment.create.mockResolvedValue({ id: "shp_2", shipmentNumber: "SHP-2026-000002" });
+    dbMock.shipment.create.mockResolvedValue({
+      id: "shp_2",
+      shipmentNumber: "SHP-2026-000002",
+      version: 1,
+    });
+    dbMock.customsCase.create.mockResolvedValue({ id: "case_1" });
 
     const res = await shipments.POST(
       post("http://t/api/shipments", { importerName: "Global Logistics", poReference: "PO-990011" })
@@ -200,7 +215,8 @@ describe("POST /api/shipments", () => {
   });
 
   it("does not let the caller choose the account the shipment lands in", async () => {
-    dbMock.shipment.create.mockResolvedValue({ id: "shp_2" });
+    dbMock.shipment.create.mockResolvedValue({ id: "shp_2", version: 1 });
+    dbMock.customsCase.create.mockResolvedValue({ id: "case_1" });
 
     await shipments.POST(
       post("http://t/api/shipments", { importerName: "Acme", accountId: "acc_someone_else" })
