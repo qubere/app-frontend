@@ -37,6 +37,8 @@ enum DocumentType {
   POWER_OF_ATTORNEY
   ENTRY_SUMMARY
   ISF
+  PROOF_OF_DELIVERY
+  CARRIER_INVOICE
   OTHER
 }
 
@@ -145,7 +147,6 @@ model Account {
   updatedAt   DateTime  @updatedAt
 
   memberships                 AccountMembership[]
-  productEntitlements         AccountProductEntitlement[]
   roles                       Role[]
   invitations                 Invitation[]
   auditLogs                   AuditLog[]
@@ -182,6 +183,7 @@ model Account {
   agentExecutionRecords       AgentExecutionRecord[]
   shipmentStateRecords        ShipmentStateRecord[]
   pipelineJobs                PipelineJob[]
+  workflowOutboxEvents        WorkflowOutboxEvent[]
   classificationCases         ClassificationCase[]
   classificationChangeImpacts ClassificationChangeImpact[]
   caseDocuments               CaseDocument[]
@@ -199,6 +201,10 @@ model Account {
   assistantChatSessions       AssistantChatSession[]
   filingMessages              FilingMessage[]
   agentPolicyConfigs          AgentPolicyConfig[]
+  abiFilerCredential          AbiFilerCredential?
+  inBondRecords               InBondRecord[]
+  manifestRecords             ManifestRecord[]
+  statementRecords            StatementRecord[]
   shipmentTrackingIdentifiers ShipmentTrackingIdentifier[]
   transportLegs               TransportLeg[]
   shipmentStops               ShipmentStop[]
@@ -206,6 +212,26 @@ model Account {
   trackingEvents              TrackingEvent[]
   etaObservations             EtaObservation[]
   trackingSubscriptions       TrackingSubscription[]
+
+  shipmentProductWorkspaces ShipmentProductWorkspace[]
+  productEntitlements       AccountProductEntitlement[]
+  customsCases              CustomsCase[]
+  customsCaseShipments      CustomsCaseShipment[]
+  customsCaseDocuments      CustomsCaseDocument[]
+
+  transportationOrders TransportationOrder[]
+  carriers             Carrier[]
+  carrierProfiles      CarrierProfile[]
+  movements            Movement[]
+  shipmentMovements    ShipmentMovement[]
+  movementStops        MovementStop[]
+  transportationEvents TransportationEvent[]
+  carrierRates         CarrierRate[]
+  freightQuotes        FreightQuote[]
+  tenders              Tender[]
+  proofsOfDelivery     ProofOfDelivery[]
+  carrierInvoices      CarrierInvoice[]
+  carrierInvoiceLines  CarrierInvoiceLine[]
 
   billingEventDefinitions BillingEventDefinition[]
   rateCards               RateCard[]
@@ -269,23 +295,6 @@ model Account {
   @@index([deletedAt])
 }
 
-model AccountProductEntitlement {
-  id         String    @id @default(cuid())
-  accountId  String
-  product    String
-  status     String    @default("ACTIVE")
-  enabledAt  DateTime  @default(now())
-  disabledAt DateTime?
-  plan       String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-
-  @@unique([accountId, product], map: "AccountProductEntitlement_accountId_product_key")
-  @@index([accountId, product, status], map: "AccountProductEntitlement_accountId_product_status_idx")
-}
-
 /// Concurrency-safe allocator for per-account, per-year shipment numbers.
 /// Replaces count()+1 numbering, which races under concurrent creates.
 model ShipmentSequence {
@@ -310,21 +319,23 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  ownedAccounts        Account[]               @relation("AccountOwner")
-  createdInvitations   Invitation[]            @relation("InvitationCreator")
-  platformRoles        PlatformUserRole[]
-  memberships          AccountMembership[]
-  auditLogs            AuditLog[]
-  reviewedDecisions    AgentDecision[]         @relation("DecisionReviewer")
-  assignedShipments    Shipment[]              @relation("ShipmentBroker")
-  assignedExceptions   ExceptionItem[]         @relation("ExceptionAssignee")
-  assignedFindings     ComplianceFinding[]     @relation("FindingAssignee")
-  createdScenarios     LandedCostScenario[]    @relation("ScenarioCreator")
-  createdPSCs          PostSummaryCorrection[] @relation("PSCCreator")
-  shipmentChangeEvents ShipmentChangeEvent[]
-  assignedDocuments    ShipmentDocument[]      @relation("DocumentAssignee")
-  inboundSenderRoutes  InboundSenderRoute[]    @relation("InboundRouteAssignee")
-  notifications        Notification[]
+  ownedAccounts               Account[]               @relation("AccountOwner")
+  createdInvitations          Invitation[]            @relation("InvitationCreator")
+  platformRoles               PlatformUserRole[]
+  memberships                 AccountMembership[]
+  auditLogs                   AuditLog[]
+  reviewedDecisions           AgentDecision[]         @relation("DecisionReviewer")
+  assignedShipments           Shipment[]              @relation("ShipmentBroker")
+  createdTransportationOrders TransportationOrder[]   @relation("OrderCreator")
+  assignedExceptions          ExceptionItem[]         @relation("ExceptionAssignee")
+  assignedFindings            ComplianceFinding[]     @relation("FindingAssignee")
+  createdScenarios            LandedCostScenario[]    @relation("ScenarioCreator")
+  createdPSCs                 PostSummaryCorrection[] @relation("PSCCreator")
+  shipmentChangeEvents        ShipmentChangeEvent[]
+  assignedDocuments           ShipmentDocument[]      @relation("DocumentAssignee")
+  assignedCustomsCases        CustomsCase[]           @relation("CustomsCaseBroker")
+  inboundSenderRoutes         InboundSenderRoute[]    @relation("InboundRouteAssignee")
+  notifications               Notification[]
 
   @@index([clerkUserId])
   @@index([email])
@@ -524,6 +535,7 @@ model Shipment {
   transportMode      String? // Ocean | Air | Truck | Rail — ISF applies to Ocean only
   filingDeadline     DateTime? // Derived cache: min(dueAt) over OPEN blocking ComplianceDeadlines
   status             String            @default("Draft") // Draft, In Progress, Ready to File, On Hold, Submitted, Completed
+  customsRequired    Boolean           @default(false)
   // Workflow lifecycle stage. Values: DOCUMENT_INTAKE | CLASSIFICATION | VALUATION | ORIGIN | COMPLIANCE | FILING_PREP | READY_TO_FILE
   currentStage       String?
   healthStatus       String? // Healthy, At Risk, Critical — derived, null until evaluated
@@ -534,6 +546,35 @@ model Shipment {
   deletedAt          DateTime?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
+
+  // -------------------------------------------------------------------------
+  // TMS OPERATIONAL FIELDS
+  // Added for agentic TMS: customer promise, LFD, and derived financial cache.
+  // All nullable — no migration impact on existing customs-only rows.
+  // -------------------------------------------------------------------------
+
+  /// Customer's committed delivery date/time. Set at order creation or intake.
+  /// Never inferred by agent — must be explicitly set by intake or operator.
+  customerPromiseDate  DateTime?
+  /// ON_PROMISE | AT_RISK | MISSED — derived by ETA Agent when ETA changes.
+  /// Null until first ETA observation exists.
+  promiseState         String?
+  /// Last Free Day at terminal — set from carrier/terminal TrackingEvent.
+  /// When LFD is within 48h and customs is not released, Risk Agent fires.
+  lastFreeDay          DateTime?
+  /// Estimated demurrage exposure in USD — derived from LFD vs current ETA.
+  /// Updated by ETA Agent. Null until LFD is known.
+  demurrageExposureUsd Decimal?  @db.Decimal(12, 2)
+
+  // Derived financial cache — updated by financialLedgerService after each
+  // charge/cost write. Using Decimal columns to stay consistent with platform
+  // money rule (no floats). Null until charges/costs exist.
+  sellAmount      Decimal? @db.Decimal(12, 2)
+  expectedBuyCost Decimal? @db.Decimal(12, 2)
+  actualBuyCost   Decimal? @db.Decimal(12, 2)
+  grossProfit     Decimal? @db.Decimal(12, 2)
+  grossMarginPct  Decimal? @db.Decimal(5, 2)
+  costVariancePct Decimal? @db.Decimal(5, 2)
 
   scenarioId String?
   scenario   LandedCostScenario? @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
@@ -568,6 +609,13 @@ model Shipment {
   trackingEvents                  TrackingEvent[]
   etaObservations                 EtaObservation[]
   trackingSubscriptions           TrackingSubscription[]
+  transportationOrders            TransportationOrder[]
+  shipmentMovements               ShipmentMovement[]
+  transportationEvents            TransportationEvent[]
+  freightQuotes                   FreightQuote[]
+  tenders                         Tender[]
+  productWorkspaces               ShipmentProductWorkspace[]
+  customsCaseLinks                CustomsCaseShipment[]
 
   usageEvents       UsageEvent[]
   shipmentCharges   ShipmentCharge[]
@@ -582,6 +630,9 @@ model Shipment {
   @@index([deletedAt])
   @@index([masterShipmentId])
   @@index([filingDeadline])
+  @@index([promiseState])
+  @@index([lastFreeDay])
+  @@index([healthStatus])
 }
 
 // ---------------------------------------------------------------------------
@@ -924,6 +975,7 @@ model ShipmentDocument {
   productEvidence    ProductEvidence[]
   partyEvidence      PartyEvidence[]
   shipmentCandidates DocumentShipmentCandidate[]
+  customsCaseLinks   CustomsCaseDocument[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -973,7 +1025,8 @@ model InboundEmail {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  attachments InboundAttachment[]
+  attachments          InboundAttachment[]
+  transportationOrders TransportationOrder[]
 
   @@unique([provider, providerEventId])
   @@unique([provider, providerEmailId])
@@ -1089,6 +1142,8 @@ model ShipmentLineItem {
   drawbackMatches                 DrawbackMatch[]
   pgaRequirements                 PgaRequirement[]
   restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
+  ftzDetails                      FtzDetail[]
+  adcvdLineDetails                AdcvdLineDetail[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -1097,8 +1152,8 @@ model ShipmentLineItem {
 
 model AgentDecision {
   id                  String            @id @default(cuid())
-  shipmentId          String
-  shipment            Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipmentId          String?
+  shipment            Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   accountId           String
   account             Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   agentName           String // Document Intake Agent, Document Intelligence Agent, Product Intelligence Agent, Classification Agent, Origin Agent, Valuation Agent, Compliance Agent, Filing Readiness Agent, Customs Filing Agent, Response Management Agent
@@ -1154,6 +1209,8 @@ model AgentDecision {
   updatedAt           DateTime          @updatedAt
 
   originDeterminations OriginDetermination[]
+  transportationOrders TransportationOrder[]
+  freightQuotes        FreightQuote[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -1169,24 +1226,47 @@ model AgentDecision {
 /// uses its built-in defaults. Storing overrides here (not in env vars) lets
 /// a compliance officer change thresholds without a deployment.
 model AgentPolicyConfig {
-  id                     String   @id @default(cuid())
+  id                     String  @id @default(cuid())
   accountId              String
-  account                Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account                Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   agentName              String
   /// Policy type (e.g. THRESHOLD or STAGE_GATE)
-  policyType             String   @default("THRESHOLD")
+  policyType             String  @default("THRESHOLD")
   /// Minimum confidence for AUTO outcome (default 85).
-  autoThreshold          Int      @default(85)
+  autoThreshold          Int     @default(85)
   /// Minimum confidence for CONFIRM outcome (default 60).
-  confirmThreshold       Int      @default(60)
+  confirmThreshold       Int     @default(60)
   /// When true, a missing part-master match forces REVIEW regardless of confidence.
-  requirePartMasterMatch Boolean  @default(false)
+  requirePartMasterMatch Boolean @default(false)
   /// Force human review at stage gate regardless of score
-  requireHumanApproval   Boolean  @default(false)
+  requireHumanApproval   Boolean @default(false)
   /// Minimum reviewer role required to approve
-  minimumReviewerRole    String?  @default("SPECIALIST")
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  minimumReviewerRole    String? @default("SPECIALIST")
+
+  // -------------------------------------------------------------------------
+  // TMS AUTONOMY POLICY EXTENSIONS
+  // -------------------------------------------------------------------------
+
+  /// Operating mode for autonomous execution.
+  /// SUPERVISED: always ask. BALANCED: auto below thresholds. AUTONOMOUS: auto all.
+  autonomyMode            String?  @default("SUPERVISED") // SUPERVISED | BALANCED | AUTONOMOUS | CUSTOM
+  /// Explicit action allowlist. AUTONOMOUS mode does not bypass this list.
+  allowedAutoActions      Json?
+  /// Explicit deny list; evaluated before every other execution gate.
+  forbiddenAutoActions    Json?
+  /// Maximum financial commitment the agent may execute autonomously (USD).
+  financialThreshold      Decimal? @db.Decimal(12, 2)
+  /// Minimum gross margin % required before agent may auto-commit a carrier rate.
+  marginThreshold         Decimal? @db.Decimal(5, 2)
+  /// If true, carrier must be in approved list before auto-tender.
+  carrierApprovalRequired Boolean  @default(true)
+  /// If true, carrier must have valid insurance on file before auto-tender.
+  requireInsurance        Boolean  @default(true)
+  /// If true, agent must confirm customs is released before dispatching drayage.
+  requireCustomsRelease   Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([accountId, agentName])
   @@index([accountId])
@@ -1196,6 +1276,8 @@ model CustomsFiling {
   id                 String            @id @default(cuid())
   shipmentId         String?
   shipment           Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  customsCaseId      String?
+  customsCase        CustomsCase?      @relation(fields: [customsCaseId], references: [id], onDelete: SetNull)
   accountId          String
   account            Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   importerOfRecordId String?
@@ -1235,13 +1317,40 @@ model CustomsFiling {
   // TODO: Remove after data migration
   // ========================================================================
 
-  /// @deprecated Use transactionTypeId instead. US-centric field from entryType.ts
+  /// US entry type code (e.g., "01" Consumption, "11" Informational, "06" FTZ). Kept alongside country/procedureCode/messageName.
   entryType String?
 
   /// @deprecated Use country instead. Was storing authority display names like "CBP"
   authority String?
 
   // ========================================================================
+  // CATAIR 7501 HEADER & CARGO RELEASE FIELDS (Gap Closure)
+  // ================================================================= grandTotalOtherRevenueAmount
+  brokerReferenceNumber        String?
+  bondWaiverIndicator          String?
+  bondWaiverReasonCode         String?
+  liveEntryIndicator           String?
+  consolidatedSummaryIndicator String?
+  paymentTypeCode              String?
+  pgaDataIncludedIndicator     String?
+  foreignTradeZoneIdentifier   String?
+  usStateOfDestinationCode     String?
+  estimatedEntryDate           DateTime?
+  dateOfImportation            DateTime?
+  designatedNotifyPartyNumber  String?
+  grandTotalDutyAmount         Decimal?  @db.Decimal(16, 2)
+  grandTotalUserFeeAmount      Decimal?  @db.Decimal(16, 2)
+  grandTotalIrTaxAmount        Decimal?  @db.Decimal(16, 2)
+  grandTotalAdDutyAmount       Decimal?  @db.Decimal(16, 2)
+  grandTotalCvDutyAmount       Decimal?  @db.Decimal(16, 2)
+  grandTotalOtherRevenueAmount Decimal?  @db.Decimal(16, 2)
+
+  // Cargo Release (Chapter 4)
+  actionCode               String?
+  importerOfRecordType     String?
+  modeOfTransportationCode String?
+  estimatedEntryValue      Decimal? @db.Decimal(16, 2)
+  splitShipmentReleaseCode String?
 
   filingType    String
   filingStatus  String    @default("Draft") // Draft, Preparing, ValidationFailed, ReadyForBrokerReview, BrokerApproved, TransmissionPending, Transmitted, Accepted, Rejected, DocumentsRequested, CustomsHold, Released, Cancelled, Closed, Simulation
@@ -1279,12 +1388,126 @@ model CustomsFiling {
   auditTimelines              AuditTimeline[]
   snapshot                    FilingSnapshot?
   filingMessages              FilingMessage[]
+  censusWarningOverrides      CensusWarningOverride[]
+  filingFeeLines              FilingFeeLine[]
+  ftzDetails                  FtzDetail[]
+  cargoReleaseBills           CargoReleaseBillOfLading[]
 
   @@unique([accountId, entryNumber])
   @@index([shipmentId])
+  @@index([customsCaseId])
   @@index([accountId])
   @@index([filingStatus])
-  @@index([country, procedureCode])
+}
+
+// =============================================================================
+// SHARED SHIPMENT ARCHITECTURE & WORKSPACE MODELS
+// =============================================================================
+
+model AccountProductEntitlement {
+  id         String    @id @default(cuid())
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  product    String // TMS | CUSTOMS
+  status     String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED
+  enabledAt  DateTime  @default(now())
+  disabledAt DateTime?
+  plan       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([accountId, product])
+  @@index([accountId, product, status])
+}
+
+model ShipmentProductWorkspace {
+  id                String   @id @default(cuid())
+  accountId         String
+  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId        String
+  shipment          Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  product           String // TMS | CUSTOMS
+  status            String   @default("ACTIVE") // ACTIVE | INACTIVE | AVAILABLE_FROM_TMS
+  source            String   @default("SYSTEM") // TMS_INTAKE | CUSTOMS_INTAKE | HANDOFF | MIGRATION
+  activatedAt       DateTime @default(now())
+  activatedByUserId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([shipmentId, product])
+  @@index([accountId, product, status])
+  @@index([shipmentId])
+}
+
+model CustomsCase {
+  id                   String            @id @default(cuid())
+  accountId            String
+  account              Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  caseNumber           String // e.g. CC-2026-000001
+  status               String            @default("OPEN") // OPEN | READY_FOR_FILING | FILED | RELEASED | CLOSED
+  importerOfRecordId   String?
+  importerOfRecord     ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: SetNull)
+  assignedBrokerId     String?
+  assignedBroker       User?             @relation("CustomsCaseBroker", fields: [assignedBrokerId], references: [id], onDelete: SetNull)
+  entryType            String?
+  customsValue         Decimal?          @db.Decimal(12, 2)
+  countryOfOrigin      String?
+  destinationCountry   String?
+  copiedFromShipmentId String?
+  copiedAtVersion      Int?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  deletedAt            DateTime?
+
+  shipmentLinks CustomsCaseShipment[]
+  documents     CustomsCaseDocument[]
+  filings       CustomsFiling[]
+
+  @@unique([accountId, caseNumber])
+  @@index([accountId, status])
+  @@index([deletedAt])
+}
+
+model CustomsCaseShipment {
+  id            String      @id @default(cuid())
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customsCaseId String
+  customsCase   CustomsCase @relation(fields: [customsCaseId], references: [id], onDelete: Cascade)
+  shipmentId    String
+  shipment      Shipment    @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([customsCaseId, shipmentId])
+  @@index([accountId])
+  @@index([shipmentId])
+}
+
+model CustomsCaseDocument {
+  id                  String           @id @default(cuid())
+  accountId           String
+  account             Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customsCaseId       String
+  customsCase         CustomsCase      @relation(fields: [customsCaseId], references: [id], onDelete: Cascade)
+  documentId          String
+  document            ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status              String           @default("SUGGESTED") // SUGGESTED | INCLUDED | EXCLUDED | SUPERSEDED
+  documentRole        String?
+  relevanceReason     String?
+  relevanceConfidence Float?
+  includedAt          DateTime?
+  includedByUserId    String?
+  excludedAt          DateTime?
+  excludedByUserId    String?
+  sourceChecksum      String?
+  documentVersionId   String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([customsCaseId, documentId])
+  @@index([accountId])
+  @@index([customsCaseId, status])
 }
 
 model CustomsResponse {
@@ -1310,19 +1533,18 @@ model CustomsResponse {
 // =============================================================================
 
 model FilingCountryCustomsVersion {
-  id            String    @id @default(cuid())
-  country       String // Two-letter country code (e.g., NL, BE, FR)
-  procedureCode String // Procedure code (e.g., IMPORT, EXPORT, NCTS)
-  release       String // Version number (e.g., 1.0, 2.0)
-  validFrom     DateTime
-  validTo       DateTime?
-  description   String?
-  isActive      Boolean   @default(true)
-  createdBy     String?
-  updatedBy     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
+  id               String                         @id @default(cuid())
+  country          String // Two-letter country code (e.g., NL, BE, FR)
+  procedureCode    String // Procedure code (e.g., IMPORT, EXPORT, NCTS)
+  release          String // Version number (e.g., 1.0, 2.0)
+  validFrom        DateTime
+  validTo          DateTime?
+  description      String?
+  isActive         Boolean                        @default(true)
+  createdBy        String?
+  updatedBy        String?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
   customerMappings FilingCustomerCustomsVersion[]
 
   @@unique([country, procedureCode, release])
@@ -1427,6 +1649,8 @@ model AdcvdOrder {
   status              String   @default("ACTIVE") // ACTIVE | REVOKED
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  lineDetails AdcvdLineDetail[]
 
   @@index([status])
 }
@@ -1746,20 +1970,37 @@ model ExportLineItem {
 }
 
 model DrawbackClaim {
-  id                 String    @id @default(cuid())
-  accountId          String
-  account            Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  claimType          String    @default("unused_merchandise") // manufacturing | unused_merchandise | rejected_merchandise
-  status             String    @default("Draft") // Draft | Filed | Accepted | Paid
-  totalRefundClaimed Decimal
-  cbpClaimNumber     String?   @default("DBK-2026-9901")
-  version            Int       @default(1)
-  filedAt            DateTime?
-  paidAt             DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                                  String    @id @default(cuid())
+  accountId                           String
+  account                             Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  claimType                           String    @default("unused_merchandise") // manufacturing | unused_merchandise | rejected_merchandise
+  status                              String    @default("Draft") // Draft | Filed | Accepted | Paid
+  totalRefundClaimed                  Decimal
+  cbpClaimNumber                      String?   @default("DBK-2026-9901")
+  version                             Int       @default(1)
+  filedAt                             DateTime?
+  paidAt                              DateTime?
+  createdAt                           DateTime  @default(now())
+  updatedAt                           DateTime  @updatedAt
+  naftaDrawbackClaimIndicator         Boolean?  @default(false)
+  usmcaDrawbackClaimIndicator         Boolean?  @default(false)
+  oneTimeWaiverIndicator              Boolean?  @default(false)
+  bondWaiverIndicator                 Boolean?  @default(false)
+  bondWaiverReasonCode                String?
+  electronicPetroleumCertification    Boolean?  @default(false)
+  oilSpillTaxCertification            Boolean?  @default(false)
+  superfundTaxCertification           Boolean?  @default(false)
+  billOfMaterialsFormulaCertification Boolean?  @default(false)
+  retailSalesSubstitutionIndicator    Boolean?  @default(false)
+  designatedNotifyPartyNumber         String?
+  brokerReferenceNumber               String?
+  acceleratedPaymentRequestIndicator  Boolean?  @default(false)
 
-  matches DrawbackMatch[]
+  matches         DrawbackMatch[]
+  importLinks     DrawbackImportLink[]
+  exportDestroys  DrawbackExportDestroy[]
+  tfteaLines      DrawbackTfteaLine[]
+  naftaUsmcaLines DrawbackNaftaUsmcaLine[]
 
   @@index([accountId])
 }
@@ -1818,6 +2059,7 @@ model ImporterOfRecord {
 
   shipments        Shipment[]
   customsFilings   CustomsFiling[]
+  customsCases     CustomsCase[]
   powersOfAttorney PowerOfAttorney[]
 
   rateCards RateCard[]
@@ -1842,11 +2084,13 @@ model Client {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  shipments         Shipment[]
-  importersOfRecord ImporterOfRecord[]
-  legalEntities     LegalEntity[]
-  products          Product[]
-  parties           Party[]
+  shipments            Shipment[]
+  transportationOrders TransportationOrder[]
+  freightQuotes        FreightQuote[]
+  importersOfRecord    ImporterOfRecord[]
+  legalEntities        LegalEntity[]
+  products             Product[]
+  parties              Party[]
 
   rateCards         RateCard[]
   usageEvents       UsageEvent[]
@@ -1876,6 +2120,7 @@ model Bond {
 
   importersOfRecord ImporterOfRecord[]
   customsFilings    CustomsFiling[]
+  bondParties       BondParty[]
 
   @@index([accountId])
 }
@@ -1972,6 +2217,7 @@ model ShipmentParty {
   legalEntityId String
   legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
   role          String
+  partyTypeCode String? // e.g. M (Manufacturer), C (Consignee), S (Seller), E (Sold-To)
   source        String      @default("USER")
   confidence    Float?      @default(1.0)
   isVerified    Boolean     @default(true)
@@ -2339,7 +2585,20 @@ model PgaRequirement {
   requiredFiling     String // e.g. Form FCC 740 / Equipment Authorization
   missingPermits     String[]
   holdRisk           String           @default("Medium") // High | Medium | Low
-  createdAt          DateTime         @default(now())
+
+  // Cross-agency high-frequency PGA fields
+  lpcoNumber         String?
+  lpcoTypeCode       String?
+  issuerCode         String?
+  permitTypeCode     String? // PG13 / PG14
+  aocCode            String?
+  firmsCode          String?
+  inspectionLocation String?
+
+  /// Agency-specific JSON details (FDA prior notice, EPA vehicle/engine class, FWS species, NOAA vessel details, etc.)
+  agencyData Json?
+
+  createdAt DateTime @default(now())
 
   @@index([shipmentLineItemId])
 }
@@ -2754,28 +3013,43 @@ model ShipmentStateRecord {
 // ============================================================================
 
 model PipelineJob {
-  id           String    @id @default(cuid())
-  accountId    String
-  userId       String
-  shipmentId   String
-  status       String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
-  currentStep  Int       @default(1)
-  totalSteps   Int       @default(10)
-  priority     Int       @default(0) // Higher number = higher priority
-  state        Json      @default("{}") // The AgentState object
-  errorMessage String?
-  startedAt    DateTime?
-  completedAt  DateTime?
-  lockedAt     DateTime? // Used by worker to detect stalled jobs
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  accountId      String
+  userId         String
+  shipmentId     String
+  /// Namespaces jobs that share this durable queue. Existing Customs jobs use
+  /// CUSTOMS; TMS document workflows use TMS_DOCUMENT_PROCESSING.
+  workflowType   String    @default("CUSTOMS")
+  /// Stable trigger identity used to make enqueue idempotent. Nullable for
+  /// legacy jobs. TMS uses document id + checksum + workflow version.
+  idempotencyKey String?
+  correlationId  String?
+  status         String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  currentStep    Int       @default(1)
+  totalSteps     Int       @default(10)
+  priority       Int       @default(0) // Higher number = higher priority
+  state          Json      @default("{}") // The AgentState object
+  errorMessage   String?
+  attemptCount   Int       @default(0)
+  maxAttempts    Int       @default(3)
+  nextRetryAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  lockedAt       DateTime? // Used by worker to detect stalled jobs
+  heartbeatAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   stepExecutions PipelineStepExecution[]
   shipment       Shipment                @relation(fields: [shipmentId], references: [id])
   account        Account                 @relation(fields: [accountId], references: [id])
 
+  @@unique([accountId, idempotencyKey])
   @@index([status, priority, createdAt])
   @@index([shipmentId])
+  @@index([accountId, workflowType, shipmentId, createdAt])
+  @@index([status, nextRetryAt])
+  @@index([status, heartbeatAt])
 }
 
 model PipelineStepExecution {
@@ -2783,7 +3057,8 @@ model PipelineStepExecution {
   jobId        String
   stepNumber   Int
   agentName    String
-  status       String // SUCCESS, FAILED, SKIPPED, REVIEW_REQUIRED
+  status       String // RUNNING, SUCCESS, FAILED, SKIPPED, REVIEW_REQUIRED
+  attempt      Int       @default(1)
   startedAt    DateTime  @default(now())
   completedAt  DateTime?
   output       Json? // The output returned by the agent
@@ -2792,6 +3067,43 @@ model PipelineStepExecution {
   job PipelineJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId, stepNumber])
+  @@index([jobId, attempt])
+}
+
+enum WorkflowOutboxStatus {
+  PENDING
+  DISPATCHING
+  DISPATCHED
+  FAILED
+}
+
+/// Transactional hand-off between authoritative workflow state and the
+/// external executor. Producers insert this record in the same transaction as
+/// the PipelineJob; a dispatcher can safely retry publication by eventKey.
+model WorkflowOutboxEvent {
+  id            String               @id @default(cuid())
+  accountId     String
+  eventKey      String               @unique
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  correlationId String?
+  payload       Json
+  status        WorkflowOutboxStatus @default(PENDING)
+  attemptCount  Int                  @default(0)
+  maxAttempts   Int                  @default(12)
+  nextAttemptAt DateTime             @default(now())
+  lockedAt      DateTime?
+  dispatchedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([aggregateType, aggregateId])
+  @@index([accountId, createdAt])
 }
 
 // ============================================================================
@@ -3982,6 +4294,9 @@ enum PartyRoleType {
   CARRIER
   FREIGHT_FORWARDER
   CUSTOMS_BROKER
+  WAREHOUSE
+  TERMINAL
+  DRAYAGE_PROVIDER
   BUYER
   SELLER
   NOTIFY_PARTY
@@ -4079,6 +4394,11 @@ model Party {
   contacts          PartyContact[]
   roles             PartyRole[]
   sites             PartySite[]
+  carrierProfile    CarrierProfile?
+  movements         Movement[]              @relation("CarrierPartyMovements")
+  movementStops     MovementStop[]
+  carrierRates      CarrierRate[]           @relation("CarrierPartyRates")
+  freightQuotes     FreightQuote[]          @relation("CarrierPartyQuotes")
   evidence          PartyEvidence[]
   changeEvents      PartyChangeEvent[]
   revalidationFlags PartyRevalidationFlag[]
@@ -4687,7 +5007,8 @@ model FilingUIConfig {
   release       String?
 
   // Complete field configuration stored as JSON
-  configData Json
+  // Structure: { fields: [{ fieldPath, fieldLabel, fieldType, section, displayOrder, ... }] }
+  configData Json // All field configurations in one JSON object
 
   // Metadata
   version     Int     @default(1) // Increments on each publish
@@ -4883,23 +5204,32 @@ model ControlEvidence {
 }
 
 model DrawbackLot {
-  id                String   @id @default(cuid())
-  accountId         String
-  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  entryNumber       String
-  lineItemId        String?
-  htsCode           String
-  quantity          Decimal  @db.Decimal(18, 6)
-  availableQty      Decimal  @db.Decimal(18, 6)
-  reservedQty       Decimal  @default(0) @db.Decimal(18, 6)
-  claimedQty        Decimal  @default(0) @db.Decimal(18, 6)
-  unitPurchasePrice Decimal  @db.Decimal(18, 6)
-  dutyPaidPerUnit   Decimal  @db.Decimal(18, 6)
-  importDate        DateTime
-  exportDeadline    DateTime
-  hasSection301     Boolean  @default(false)
-  section301List    String?
-  createdAt         DateTime @default(now())
+  id                           String    @id @default(cuid())
+  accountId                    String
+  account                      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  entryNumber                  String
+  lineItemId                   String?
+  htsCode                      String
+  quantity                     Decimal   @db.Decimal(18, 6)
+  availableQty                 Decimal   @db.Decimal(18, 6)
+  reservedQty                  Decimal   @default(0) @db.Decimal(18, 6)
+  claimedQty                   Decimal   @default(0) @db.Decimal(18, 6)
+  unitPurchasePrice            Decimal   @db.Decimal(18, 6)
+  dutyPaidPerUnit              Decimal   @db.Decimal(18, 6)
+  importDate                   DateTime
+  exportDeadline               DateTime
+  hasSection301                Boolean   @default(false)
+  section301List               String?
+  manufDateReceived            DateTime?
+  manufDateUsed                DateTime?
+  manufactureRulingNumber      String?
+  basisOfClaim                 String?
+  drawbackEligibleIndicator    Boolean?  @default(true)
+  drawbackAccountingMethodCode String?
+  allowableQuantity            Decimal?  @db.Decimal(18, 6)
+  substitutedValuePerUnit      Decimal?  @db.Decimal(18, 6)
+  cbpEsLineNumber              Int?
+  createdAt                    DateTime  @default(now())
 
   @@index([accountId, htsCode])
   @@index([exportDeadline])
@@ -5862,7 +6192,19 @@ model InvoiceLine {
   quantity    Decimal   @db.Decimal(16, 4)
   unitPrice   Decimal   @db.Decimal(16, 4)
   amount      Decimal   @db.Decimal(16, 4)
-  createdAt   DateTime  @default(now())
+
+  // CATAIR Invoice Line References (Gap Closure)
+  lineRange1Begin Int?
+  lineRange1End   Int?
+  lineRange2Begin Int?
+  lineRange2End   Int?
+  lineRange3Begin Int?
+  lineRange3End   Int?
+  lineRange4Begin Int?
+  lineRange4End   Int?
+  supplierIdCode  String?
+
+  createdAt DateTime @default(now())
 
   charges ShipmentCharge[]
 
@@ -5919,6 +6261,11 @@ enum AccountMemoryType {
   PATTERN
 }
 
+enum AccountMemoryDomain {
+  CUSTOMS
+  TMS
+}
+
 enum AccountMemorySubjectType {
   PRODUCT
   SUPPLIER
@@ -5927,6 +6274,18 @@ enum AccountMemorySubjectType {
   VALUATION
   FILING
   SHIPMENT
+  CUSTOMER
+  CARRIER
+  LANE
+  FACILITY
+  MOVEMENT
+  APPOINTMENT
+  RATE
+  TENDER
+  TRACKING
+  ETA
+  ACCESSORIAL
+  INVOICE
 }
 
 enum AccountMemorySourceType {
@@ -5934,12 +6293,20 @@ enum AccountMemorySourceType {
   FILING_OUTCOME
   VERIFIED_DOCUMENT
   AGENT_INFERENCE
+  CUSTOMER_INSTRUCTION
+  TENDER_OUTCOME
+  CARRIER_PERFORMANCE
+  TRACKING_OUTCOME
+  INVOICE_AUDIT
 }
 
 model AccountMemory {
   id                 String                      @id @default(cuid())
   accountId          String
   account            Account                     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  domain             AccountMemoryDomain         @default(CUSTOMS)
+  task               String?
+  agentName          String?
   type               AccountMemoryType
   subjectType        AccountMemorySubjectType
   subjectId          String?
@@ -5949,6 +6316,9 @@ model AccountMemory {
   validUntil         DateTime?
   sourceType         AccountMemorySourceType
   sourceId           String?
+  /// Idempotency key for asynchronous memory projection. TMS events namespace
+  /// this by account; existing Customs rows remain null.
+  eventKey           String?                     @unique
   supersedesMemoryId String?
   supersedesMemory   AccountMemory?              @relation("MemorySupersession", fields: [supersedesMemoryId], references: [id], onDelete: SetNull)
   supersededBy       AccountMemory[]             @relation("MemorySupersession")
@@ -5958,6 +6328,12 @@ model AccountMemory {
   /// Superseded by contentTsv (real Postgres FTS). Kept only so old rows that
   /// predate the generated tsvector column still have a lowercase fallback.
   searchVector       String?
+  /// Structured retrieval hints only (entity ids, lane key, mode, equipment,
+  /// exception/charge codes). Canonical shipment, carrier, quote, and invoice
+  /// data remains in its domain tables.
+  scope              Json?
+  occurrenceCount    Int                         @default(1)
+  lastObservedAt     DateTime                    @default(now())
   /// pgvector column queried by findVectorMatches via the `<=>` operator.
   /// Unsupported because Prisma Client has no native vector type; written via
   /// raw SQL in MemoryRepository.createMemory, indexed with HNSW (see migration).
@@ -5974,6 +6350,7 @@ model AccountMemory {
   evidence           MemoryEvidence[]
 
   @@index([accountId])
+  @@index([accountId, domain, task])
   @@index([accountId, type])
   @@index([accountId, subjectType, subjectId])
   @@index([supersedesMemoryId])
@@ -5988,6 +6365,7 @@ model MemoryEvidence {
   memory     AccountMemory           @relation(fields: [memoryId], references: [id], onDelete: Cascade)
   sourceType AccountMemorySourceType
   sourceId   String?
+  eventKey   String?                 @unique
   excerpt    String
   confidence Float                   @default(1.0)
   createdAt  DateTime                @default(now())
@@ -6004,6 +6382,7 @@ enum IntegrationCategory {
   ERP
   ACCOUNTING
   SHIPMENT_TRACKING
+  CARRIER_RATING
 }
 
 enum IntegrationStatus {
@@ -6057,63 +6436,685 @@ model IntegrationPayload {
   @@index([integrationConfigId, fetchedAt])
 }
 
-// Added minimal models to satisfy tests (auto-generated patch)
+// =============================================================================
+// CATAIR GAP CLOSURE MODELS
+// =============================================================================
+
 model CensusWarningOverride {
-  id String @id @default(cuid())
+  id            String        @id @default(cuid())
+  filingId      String
+  filing        CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  sequence      Int // 1 to 7
+  conditionCode String
+  overrideCode  String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([filingId])
 }
 
 model FilingFeeLine {
-  id String @id @default(cuid())
+  id                  String        @id @default(cuid())
+  filingId            String
+  filing              CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  accountingClassCode String // e.g. 499 (HMF), 501 (MPF), 311 (Cotton)
+  amount              Decimal       @db.Decimal(16, 2)
+  sequence            Int
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([filingId])
 }
 
 model FtzDetail {
-  id String @id @default(cuid())
+  id                    String            @id @default(cuid())
+  filingId              String?
+  filing                CustomsFiling?    @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  shipmentLineItemId    String?
+  shipmentLineItem      ShipmentLineItem? @relation(fields: [shipmentLineItemId], references: [id], onDelete: Cascade)
+  ftzAdmissionNumber    String?
+  zoneId                String?
+  privilegedStatusDate  DateTime?
+  merchandiseStatusCode String?
+  lineItemQuantity      Decimal?          @db.Decimal(18, 6)
+  currentHtsNumber      String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([filingId])
+  @@index([shipmentLineItemId])
 }
 
 model AdcvdLineDetail {
-  id String @id @default(cuid())
+  id                                    String           @id @default(cuid())
+  shipmentLineItemId                    String
+  shipmentLineItem                      ShipmentLineItem @relation(fields: [shipmentLineItemId], references: [id], onDelete: Cascade)
+  adcvdOrderId                          String?
+  adcvdOrder                            AdcvdOrder?      @relation(fields: [adcvdOrderId], references: [id], onDelete: SetNull)
+  caseDepositRate                       Decimal?         @db.Decimal(12, 6)
+  rateTypeQualifierCode                 String?
+  bondCashClaimCode                     String?
+  valueOfGoodsAmount                    Decimal?         @db.Decimal(16, 2)
+  nonReimbursementDeclarationIdentifier String?
+  createdAt                             DateTime         @default(now())
+  updatedAt                             DateTime         @updatedAt
+
+  @@index([shipmentLineItemId])
+  @@index([adcvdOrderId])
 }
 
 model DrawbackImportLink {
-  id String @id @default(cuid())
+  id                     String        @id @default(cuid())
+  drawbackClaimId        String
+  drawbackClaim          DrawbackClaim @relation(fields: [drawbackClaimId], references: [id], onDelete: Cascade)
+  importTrackingIdNumber String
+  sequence               Int
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  @@index([drawbackClaimId])
 }
 
 model DrawbackExportDestroy {
-  id String @id @default(cuid())
+  id                                   String        @id @default(cuid())
+  drawbackClaimId                      String
+  drawbackClaim                        DrawbackClaim @relation(fields: [drawbackClaimId], references: [id], onDelete: Cascade)
+  noticeOfIntentIndicator              Boolean?      @default(false)
+  waiverToDrawbackClaimRightsIndicator Boolean?      @default(false)
+  countryOfUltimateDestination         String?
+  billOfLadingIndicator                String?
+  billOfLadingCarrierCode              String?
+  intendedPortOfExport                 String?
+  examinationWitnessIndicator          Boolean?      @default(false)
+  locationOfDestruction                String?
+  resultsOfExamination                 String?
+  examinerName                         String?
+  examinerBadgeNumber                  String?
+  examinerPhone                        String?
+  processingExaminationDate            DateTime?
+  createdAt                            DateTime      @default(now())
+  updatedAt                            DateTime      @updatedAt
+
+  @@index([drawbackClaimId])
 }
 
 model DrawbackTfteaLine {
-  id String @id @default(cuid())
+  id                           String        @id @default(cuid())
+  drawbackClaimId              String
+  drawbackClaim                DrawbackClaim @relation(fields: [drawbackClaimId], references: [id], onDelete: Cascade)
+  htsNumber                    String?
+  exportOrDestroyIndicator     String?
+  quantity                     Decimal?      @db.Decimal(18, 6)
+  unitOfMeasureCode            String?
+  date                         DateTime?
+  noticeOfIntentIndicator      Boolean?      @default(false)
+  waiverIndicator              Boolean?      @default(false)
+  exporterOrDestroyerName      String?
+  countryOfUltimateDestination String?
+  billOfLadingIndicator        String?
+  billOfLadingCarrierCode      String?
+  scheduleBCode                String?
+  createdAt                    DateTime      @default(now())
+  updatedAt                    DateTime      @updatedAt
+
+  @@index([drawbackClaimId])
 }
 
 model DrawbackNaftaUsmcaLine {
-  id String @id @default(cuid())
+  id                                 String        @id @default(cuid())
+  drawbackClaimId                    String
+  drawbackClaim                      DrawbackClaim @relation(fields: [drawbackClaimId], references: [id], onDelete: Cascade)
+  entryNumber                        String?
+  entryDate                          DateTime?
+  dutyPaidToForeignGovtLocalCurrency Decimal?      @db.Decimal(16, 2)
+  exchangeRate                       Decimal?      @db.Decimal(18, 8)
+  tariffNumber1                      String?
+  tariffNumber2                      String?
+  tariffNumber3                      String?
+  countryOfExport                    String?
+  createdAt                          DateTime      @default(now())
+  updatedAt                          DateTime      @updatedAt
+
+  @@index([drawbackClaimId])
 }
 
 model CargoReleaseBillOfLading {
-  id String @id @default(cuid())
+  id                 String        @id @default(cuid())
+  filingId           String
+  filing             CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  billTypeIndicator  String?
+  issuerCode         String?
+  billOfLadingNumber String
+  quantity           Decimal?      @db.Decimal(16, 4)
+  nonAmsIndicator    Boolean?      @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([filingId])
 }
 
 model BondParty {
-  id String @id @default(cuid())
+  id              String   @id @default(cuid())
+  bondId          String
+  bond            Bond     @relation(fields: [bondId], references: [id], onDelete: Cascade)
+  role            String // PRINCIPAL | CO_PRINCIPAL | SURETY | CO_SURETY | REINSURER
+  idNumberType    String?
+  idNumber        String?
+  name            String?
+  liabilityAmount Decimal? @db.Decimal(16, 2)
+  agentIdNumber   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([bondId])
+  @@index([bondId, role])
 }
 
 model InBondRecord {
-  id String @id @default(cuid())
+  id                     String   @id @default(cuid())
+  accountId              String
+  account                Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  inBondNumber           String   @unique
+  inBondEntryType        String
+  carrierCode            String?
+  bondedCarrierId        String?
+  usPortOfDest           String?
+  portOfForeignDest      String?
+  value                  Decimal? @db.Decimal(16, 2)
+  ftzWarehouseInd        String?
+  masterBOLNumber        String?
+  masterBOLIssuerCode    String?
+  houseBillNumber        String?
+  houseBillIssuerCode    String?
+  subHouseBillNumber     String?
+  subHouseBillIssuerCode String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  events InBondEvent[]
+
+  @@index([accountId])
 }
 
 model InBondEvent {
-  id String @id @default(cuid())
+  id               String       @id @default(cuid())
+  inBondRecordId   String
+  inBondRecord     InBondRecord @relation(fields: [inBondRecordId], references: [id], onDelete: Cascade)
+  eventDate        DateTime
+  eventTime        String?
+  portOfArrival    String?
+  carrierCode      String?
+  cityName         String?
+  stateCode        String?
+  exportMOT        String?
+  exportConveyance String?
+  createdAt        DateTime     @default(now())
+
+  @@index([inBondRecordId])
 }
 
 model ManifestRecord {
-  id String @id @default(cuid())
+  id                      String   @id @default(cuid())
+  accountId               String
+  account                 Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transportationIndicator String?
+  countryCode             String?
+  conveyanceName          String?
+  manifestSequenceNumber  String?
+  billOfLading            String?
+  foreignPortOfLading     String?
+  manifestQuantity        Decimal? @db.Decimal(16, 4)
+  manifestUnits           String?
+  weight                  Decimal? @db.Decimal(16, 4)
+  weightUnit              String?
+  houseBillNumber         String?
+  equipmentNumber         String?
+  sealNumbers             String[]
+  dimensions              String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([accountId])
 }
 
 model StatementRecord {
-  id String @id @default(cuid())
+  id              String    @id @default(cuid())
+  accountId       String
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  statementType   String // Q1-Q6, periodic, daily
+  statementNumber String
+  districtPort    String?
+  filerCode       String?
+  importerNumber  String?
+  printDate       DateTime?
+  dueDate         DateTime?
+  entryType       String?
+  totalDuty       Decimal?  @db.Decimal(16, 2)
+  totalTax        Decimal?  @db.Decimal(16, 2)
+  totalFee        Decimal?  @db.Decimal(16, 2)
+  totalAmount     Decimal?  @db.Decimal(16, 2)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  statementFeeLines StatementFeeLine[]
+
+  @@index([accountId])
+  @@index([statementNumber])
 }
 
 model StatementFeeLine {
-  id String @id @default(cuid())
+  id                  String          @id @default(cuid())
+  statementId         String
+  statement           StatementRecord @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  accountingClassCode String
+  amount              Decimal         @db.Decimal(16, 2)
+  sequence            Int
+  createdAt           DateTime        @default(now())
+
+  @@index([statementId])
+}
+
+enum FilerCredentialStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum AceEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+model AbiFilerCredential {
+  id          String                @id @default(cuid())
+  accountId   String                @unique
+  account     Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filerCode   String
+  secretRef   String
+  baseUrl     String                @default("https://ace.cbp.dhs.gov/abi")
+  environment AceEnvironment        @default(SANDBOX)
+  status      FilerCredentialStatus @default(ACTIVE)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([accountId])
+  @@index([filerCode])
+}
+
+// -----------------------------------------------------------------------------
+// AI FREIGHT EXECUTION WORKFLOW & TRANSPORTATION MANAGEMENT SYSTEM (TMS) MODELS
+// -----------------------------------------------------------------------------
+
+model TransportationOrder {
+  id                      String         @id @default(cuid())
+  accountId               String
+  account                 Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId                String?
+  client                  Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  externalReference       String?
+  customerReference       String?
+  poReferences            Json? // Array of PO references
+  source                  String         @default("EMAIL") // "EMAIL" | "MANUAL" | "API" | "EDI" | "DOCUMENT"
+  inboundEmailId          String? // FK -> InboundEmail
+  inboundEmail            InboundEmail?  @relation(fields: [inboundEmailId], references: [id], onDelete: SetNull)
+  rawRequestText          String? // verbatim source text
+  requestedBy             String?
+  requestedPickupWindow   Json? // { earliest, latest }
+  requestedDeliveryWindow Json?
+  requestedPickupDate     DateTime?
+  requestedDeliveryDate   DateTime?
+  incoterm                String?
+  originAddress           Json?
+  destinationAddress      Json?
+  origin                  Json?
+  destination             Json?
+  commodityDescription    String?
+  cargoSummary            String?
+  weight                  Decimal?       @db.Decimal(12, 2)
+  totalWeight             Decimal?       @db.Decimal(12, 2)
+  totalVolume             Decimal?       @db.Decimal(12, 2)
+  packageInfo             Json? // handling units, package count, dimensions
+  equipmentRequirements   Json? // e.g. ["40HC", "REEFER"]
+  specialRequirements     Json? // temp control, hazmat details
+  customsRequired         Boolean        @default(true)
+  confidence              Float? // 0.0 to 100.0
+  mode                    String? // OCEAN | AIR | TRUCK | RAIL | DRAYAGE
+  serviceLevel            String? // STANDARD | EXPEDITED | FCL | LCL | FTL | LTL
+  status                  String         @default("RECEIVED") // RECEIVED | UNDERSTOOD | NEEDS_REVIEW | SHIPMENT_CREATED | QUOTED | CANCELLED
+  agentDecisionId         String? // FK -> AgentDecision
+  agentDecision           AgentDecision? @relation(fields: [agentDecisionId], references: [id], onDelete: SetNull)
+  shipmentId              String? // set once promoted to a Shipment
+  shipment                Shipment?      @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  createdByUserId         String?
+  createdByUser           User?          @relation("OrderCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  events        TransportationEvent[]
+  freightQuotes FreightQuote[]
+
+  @@index([accountId])
+  @@index([clientId])
+  @@index([status])
+  @@index([inboundEmailId])
+  @@index([shipmentId])
+}
+
+model CarrierProfile {
+  id                    String   @id @default(cuid())
+  partyId               String   @unique
+  party                 Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  accountId             String
+  account               Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  scac                  String?
+  dot                   String?
+  mc                    String?
+  modes                 Json? // Array of modes e.g. ["OCEAN", "TRUCK"]
+  equipmentCapabilities Json?
+  insuranceStatus       String?  @default("ACTIVE") // ACTIVE | EXPIRED | PENDING
+  safetyStatus          String?  @default("SATISFACTORY") // SATISFACTORY | CONDITIONAL | UNSATISFACTORY
+  approvedStatus        String?  @default("APPROVED") // APPROVED | PENDING | REJECTED
+  preferredStatus       Boolean  @default(false)
+  serviceAreas          Json?
+  trackingCapabilities  Json?
+  performanceMetrics    Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([scac])
+  @@index([dot])
+  @@index([mc])
+}
+
+model Movement {
+  id                String    @id @default(cuid())
+  accountId         String
+  account           Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mode              String // OCEAN | AIR | TRUCK | DRAYAGE | RAIL
+  carrierPartyId    String?
+  carrierParty      Party?    @relation("CarrierPartyMovements", fields: [carrierPartyId], references: [id], onDelete: SetNull)
+  status            String    @default("PLANNED") // PLANNED | BOOKED | IN_TRANSIT | ARRIVED | DELIVERED | COMPLETED | CANCELLED | DELAYED
+  equipment         String?
+  vessel            String?
+  voyage            String?
+  flight            String?
+  train             String?
+  truckIdentifiers  String?
+  bookingNumber     String?
+  masterBillNumber  String?
+  houseBillNumber   String?
+  plannedStart      DateTime?
+  plannedEnd        DateTime?
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  currentETA        DateTime?
+  trackingProvider  String?
+  trackingReference String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  stops             MovementStop[]
+  shipmentMovements ShipmentMovement[]
+  events            TransportationEvent[]
+
+  @@index([accountId])
+  @@index([mode, status])
+  @@index([carrierPartyId])
+  @@index([bookingNumber])
+  @@index([masterBillNumber])
+}
+
+model ShipmentMovement {
+  id               String   @id @default(cuid())
+  accountId        String
+  account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId       String
+  shipment         Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  movementId       String
+  movement         Movement @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  sequence         Int      @default(1)
+  relationshipType String   @default("DIRECT") // DIRECT | CONSOLIDATED | FEEDER
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([shipmentId, movementId])
+  @@index([accountId, shipmentId])
+  @@index([accountId, movementId])
+}
+
+model MovementStop {
+  id               String    @id @default(cuid())
+  accountId        String
+  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  movementId       String
+  movement         Movement  @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  sequence         Int
+  type             String // ORIGIN | PICKUP | PORT | AIRPORT | TERMINAL | RAIL_TERMINAL | CROSS_DOCK | WAREHOUSE | DELIVERY | DESTINATION
+  partyId          String?
+  party            Party?    @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  siteId           String?
+  locationName     String?
+  address          Json?
+  unlocode         String?
+  appointmentStart DateTime?
+  appointmentEnd   DateTime?
+  plannedArrival   DateTime?
+  plannedDeparture DateTime?
+  actualArrival    DateTime?
+  actualDeparture  DateTime?
+  status           String    @default("PLANNED")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([accountId, movementId, sequence])
+  @@index([movementId, sequence])
+  @@index([unlocode])
+  @@index([partyId])
+}
+
+model TransportationEvent {
+  id                    String               @id @default(cuid())
+  accountId             String
+  account               Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  entityType            String // TRANSPORTATION_ORDER | SHIPMENT | MOVEMENT | FREIGHT_QUOTE | TENDER | CARRIER_INVOICE | CUSTOMS_FILING
+  entityId              String
+  shipmentId            String?
+  shipment              Shipment?            @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  movementId            String?
+  movement              Movement?            @relation(fields: [movementId], references: [id], onDelete: SetNull)
+  transportationOrderId String?
+  transportationOrder   TransportationOrder? @relation(fields: [transportationOrderId], references: [id], onDelete: SetNull)
+  eventType             String // ORDER_RECEIVED | ORDER_PARSED | SHIPMENT_CREATED | BOOKING_CONFIRMED | CUSTOMS_HOLD | CUSTOMS_RELEASED | ETA_CHANGED | DELIVERED etc.
+  source                String // EMAIL | EDI | API | SYSTEM | USER | CARRIER | TERMINAL | CBP | PARSER | AGENT
+  sourceReference       String?
+  occurredAt            DateTime
+  receivedAt            DateTime             @default(now())
+  location              Json?
+  payload               Json?
+  confidence            Float?
+  correlationId         String?
+  causationId           String?
+  createdAt             DateTime             @default(now())
+
+  @@index([accountId, entityType, entityId])
+  @@index([accountId, shipmentId, occurredAt])
+  @@index([accountId, movementId, occurredAt])
+  @@index([accountId, eventType])
+  @@index([occurredAt])
+}
+
+model Carrier {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  legalName       String
+  scac            String?
+  mcNumber        String?
+  dotNumber       String?
+  contactEmail    String?
+  contactPhone    String?
+  insuranceOnFile Boolean  @default(false)
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  freightQuotes   FreightQuote[]
+  tenders         Tender[]
+  carrierInvoices CarrierInvoice[]
+}
+
+model CarrierRate {
+  id                String    @id @default(cuid())
+  accountId         String
+  account           Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  carrierPartyId    String?
+  carrierParty      Party?    @relation("CarrierPartyRates", fields: [carrierPartyId], references: [id], onDelete: SetNull)
+  carrierName       String?
+  mode              String    @default("OCEAN") // OCEAN | AIR | TRUCK | DRAYAGE | RAIL
+  origin            Json // { city, country, unlocode, zone }
+  destination       Json // { city, country, unlocode, zone }
+  equipment         String    @default("40HC") // 40HC, 20GP, FTL, LTL, etc.
+  baseRate          Decimal   @db.Decimal(12, 2)
+  currency          String    @default("USD")
+  minimums          Decimal?  @db.Decimal(12, 2)
+  surcharges        Json? // { BAF: 250, ISPS: 50, Fuel: 120 }
+  accessorials      Json? // { Chassis: 150, Detention: 100 }
+  effectiveFrom     DateTime  @default(now())
+  effectiveTo       DateTime?
+  source            String    @default("MANUAL") // MANUAL | SPREADSHEET | EMAIL | API | CARRIER_QUOTE
+  contractReference String?
+  confidence        Float?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([mode, equipment])
+  @@index([carrierPartyId])
+}
+
+model FreightQuote {
+  id                    String               @id @default(cuid())
+  accountId             String
+  account               Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transportationOrderId String?
+  transportationOrder   TransportationOrder? @relation(fields: [transportationOrderId], references: [id], onDelete: SetNull)
+  shipmentId            String?
+  shipment              Shipment?            @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  clientId              String?
+  client                Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  carrierId             String?
+  carrier               Carrier?             @relation(fields: [carrierId], references: [id], onDelete: SetNull)
+  carrierPartyId        String?
+  carrierParty          Party?               @relation("CarrierPartyQuotes", fields: [carrierPartyId], references: [id], onDelete: SetNull)
+  carrierName           String?
+  mode                  String?              @default("OCEAN")
+  laneOrigin            Json?
+  laneDestination       Json?
+  equipment             String?
+  buyAmount             Decimal              @default(0.00) @db.Decimal(12, 2)
+  markupPercentage      Decimal              @default(15.00) @db.Decimal(5, 2)
+  sellAmount            Decimal              @default(0.00) @db.Decimal(12, 2)
+  margin                Decimal              @default(0.00) @db.Decimal(12, 2)
+  amount                Decimal              @db.Decimal(12, 2) // legacy alias for sellAmount
+  currency              String               @default("USD")
+  transitDays           Int?
+  validUntil            DateTime?
+  surcharges            Json?
+  accessorials          Json?
+  source                String               @default("MANUAL") // MANUAL | PROVIDER_API | RATE_ENGINE
+  providerName          String?
+  status                String               @default("PROPOSED") // DRAFT | PROPOSED | SENT | ACCEPTED | REJECTED | EXPIRED
+  approvalState         String               @default("AUTO_APPROVED") // AUTO_APPROVED | PENDING_APPROVAL | APPROVED | REJECTED
+  version               Int                  @default(1)
+  agentDecisionId       String? // FK -> AgentDecision
+  agentDecision         AgentDecision?       @relation(fields: [agentDecisionId], references: [id], onDelete: SetNull)
+  rawProviderResponse   Json?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  tenders Tender[]
+
+  @@index([accountId])
+  @@index([transportationOrderId])
+  @@index([shipmentId])
+  @@index([carrierId])
+  @@index([status])
+  @@index([approvalState])
+}
+
+model Tender {
+  id                String        @id @default(cuid())
+  accountId         String
+  account           Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId        String?
+  shipment          Shipment?     @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  carrierId         String?
+  carrier           Carrier?      @relation(fields: [carrierId], references: [id], onDelete: SetNull)
+  freightQuoteId    String?
+  freightQuote      FreightQuote? @relation(fields: [freightQuoteId], references: [id], onDelete: SetNull)
+  status            String // DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED | CANCELLED
+  history           Json // status-transition log, same shape as ExceptionItem.history
+  sentAt            DateTime?
+  respondedAt       DateTime?
+  expiresAt         DateTime?
+  sentByUserId      String?
+  agentDecisionId   String? // set if the tender was AI-initiated
+  idempotencyKey    String?
+  cascadeAttempt    Int           @default(0)
+  dispatchProvider  String?
+  providerReference String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([accountId, idempotencyKey])
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([freightQuoteId])
+  @@index([carrierId])
+}
+
+model ProofOfDelivery {
+  id             String    @id @default(cuid())
+  accountId      String
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId     String
+  documentId     String // FK -> ShipmentDocument
+  deliveredAt    DateTime?
+  receivedByName String?
+  exceptionNoted Boolean   @default(false)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model CarrierInvoice {
+  id            String               @id @default(cuid())
+  accountId     String
+  account       Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId    String
+  carrierId     String?
+  carrier       Carrier?             @relation(fields: [carrierId], references: [id], onDelete: SetNull)
+  documentId    String? // FK -> ShipmentDocument, source doc if ingested
+  invoiceNumber String?
+  invoiceDate   DateTime?
+  totalAmount   Decimal              @db.Decimal(12, 2)
+  currency      String               @default("USD")
+  matchStatus   String               @default("PENDING") // PENDING | MATCHED | DISPUTED | EXCEPTION
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  lines         CarrierInvoiceLine[]
+}
+
+model CarrierInvoiceLine {
+  id               String         @id @default(cuid())
+  accountId        String
+  account          Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  carrierInvoiceId String
+  carrierInvoice   CarrierInvoice @relation(fields: [carrierInvoiceId], references: [id], onDelete: Cascade)
+  chargeType       String // LINEHAUL | FUEL_SURCHARGE | ACCESSORIAL | DETENTION | OTHER
+  amount           Decimal        @db.Decimal(12, 2)
+  description      String?
+
+  @@index([accountId])
 }
