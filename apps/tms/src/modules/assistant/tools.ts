@@ -284,7 +284,7 @@ export const availableAssistantTools: Record<string, AssistantToolDefinition> = 
       },
     },
     access: {
-      permission: "carrierInvoices.match",
+      permission: "carrier_invoices.match",
       write: true,
       confirmationRequired: true,
     },
@@ -350,7 +350,7 @@ export const availableAssistantTools: Record<string, AssistantToolDefinition> = 
       required: ["transportationOrderId", "confirm"],
     },
     access: {
-      permission: "transportationOrders.write",
+      permission: "transportation_orders.write",
       write: true,
       confirmationRequired: true,
     },

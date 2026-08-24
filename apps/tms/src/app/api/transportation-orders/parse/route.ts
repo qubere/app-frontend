@@ -45,5 +45,5 @@ export const POST = withAuthenticatedRoute(
       return NextResponse.json({ error: error.message || "Failed to parse intake request" }, { status: 500 });
     }
   },
-  { permission: "transportationOrders.write", write: true }
+  { permission: "transportation_orders.write", write: true }
 );

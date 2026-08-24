@@ -15,6 +15,7 @@ const cookieStore = { get: vi.fn() };
 const dbMock = {
   user: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   account: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+  client: { findMany: vi.fn() },
   role: { findFirst: vi.fn(), create: vi.fn() },
 };
 
@@ -24,6 +25,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 vi.mock("next/headers", () => ({ cookies: async () => cookieStore }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+vi.mock("@qubere/db", () => ({ db: dbMock }));
 
 const { getAccountContext, hasPermission, ACTIVE_ACCOUNT_COOKIE } = await import("@/lib/auth");
 
@@ -84,6 +86,7 @@ beforeEach(() => {
     lastName: "Doe",
   });
   cookieStore.get.mockReturnValue(undefined);
+  dbMock.client.findMany.mockResolvedValue([]);
 });
 
 describe("getAccountContext membership resolution", () => {

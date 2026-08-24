@@ -69,5 +69,5 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       { status: 201 }
     );
   },
-  { permission: "transportationOrders.write", write: true }
+  { permission: "transportation_orders.write", write: true }
 );

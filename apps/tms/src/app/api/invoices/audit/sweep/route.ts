@@ -30,7 +30,7 @@ export const POST = withAuthenticatedRoute(async ({ ctx }) => {
       `Escalated: ${result.escalated}, ` +
       `Errors: ${result.errors}.`,
   });
-}, { permission: "carrierInvoices.match", write: true });
+}, { permission: "carrier_invoices.match", write: true });
 
 const auditSingleSchema = z.object({
   carrierInvoiceId: z.string().min(1),
@@ -55,4 +55,4 @@ export const PUT = withAuthenticatedRoute(async ({ req, ctx }) => {
 
   const result = await runFreightAuditAgent(ctx, parsed.data.carrierInvoiceId);
   return NextResponse.json(result);
-}, { permission: "carrierInvoices.match", write: true });
+}, { permission: "carrier_invoices.match", write: true });

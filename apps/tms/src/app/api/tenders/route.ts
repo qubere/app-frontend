@@ -27,7 +27,7 @@ export const GET = withAuthenticatedRoute(
       return NextResponse.json({ error: "Failed to fetch tenders" }, { status: 500 });
     }
   },
-  { permission: "transportationOrders.read" }
+  { permission: "transportation_orders.read" }
 );
 
 export const POST = withAuthenticatedRoute(

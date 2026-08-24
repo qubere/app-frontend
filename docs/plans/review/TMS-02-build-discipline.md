@@ -10,7 +10,7 @@ Audited against `docs/plans/AI-FREIGHT-EXECUTION-WORKFLOW.md` Sections 3 & 4. Al
 
 ### P0-1. `tms.access` gate does not exist anywhere
 Section 0/Phase 0/checklist all require a server-side `tms.access` permission check before any freight data renders, with a real access-denied page for users without it.
-- `packages/auth/src/permissions.ts` — grep for `tms.access` across the catalogue: **zero matches**. Only `transportationOrders.read/write`, `carriers.manage`, `tenders.send`, `carrierInvoices.match/override` were added (these six are correctly declarative, matching the existing `PermissionDefinition` shape — no issue there).
+- `packages/auth/src/permissions.ts` — grep for `tms.access` across the catalogue: **zero matches**. Only `transportation_orders.read/write`, `carriers.manage`, `tenders.send`, `carrier_invoices.match/override` were added (these six are correctly declarative, matching the existing `PermissionDefinition` shape — no issue there).
 - `apps/tms/src/app/layout.tsx:10-24` — root layout is `<ClerkProvider><html><body>{children}</body></html></ClerkProvider>`. No auth call, no permission check, nothing.
 - `apps/tms/src/proxy.ts:1-16` — `clerkMiddleware(async () => {})`, comment claims "this skeleton only has a single Clerk-gated home page, which performs its own auth() check" — stale; the app now has 15+ pages and most do not check auth at all (see P0-2/P0-3).
 - **Impact:** any authenticated Qubere user — including the customs-brokerage-only users the spec explicitly says should *not* see freight data by default — can open every page in `apps/tms` and hit every API route.
@@ -90,7 +90,7 @@ These call `withAuthenticatedRoute` with **no `permission` option**, so `authori
 - `apps/tms/src/app/api/tenders/auto-dispatch/route.ts:20` — dispatches a real tender to a carrier.
 - `apps/tms/src/app/api/quotes/rfq/route.ts:19` — generates a `FreightQuote` with real buy/sell $ amounts.
 - `apps/tms/src/app/api/invoices/ingest/route.ts:39` — ingests a `CarrierInvoice` (financial record).
-- **Fix:** add explicit `{ permission: "...", write: true }` to each, matching the six permissions added to the catalogue (e.g. `transportationOrders.write`, `tenders.send`, `carrierInvoices.match`).
+- **Fix:** add explicit `{ permission: "...", write: true }` to each, matching the six permissions added to the catalogue (e.g. `transportation_orders.write`, `tenders.send`, `carrier_invoices.match`).
 
 ### P1-2. Missing `createAuditLog` on real mutations
 - `apps/tms/src/app/api/work-items/[id]/resolve/route.ts` — no `createAuditLog` call anywhere in the file, despite approving/rejecting decisions and resolving exceptions.
@@ -135,6 +135,6 @@ Spec Phase 2: *"extend the existing `POST /api/shipments`... don't fork a second
 
 - **Cross-app import boundary (checklist item):** zero imports of `apps/custom/src/*` anywhere in `apps/tms/src`, `packages/auth/src`, `packages/decisions/src`, `packages/assistant/src`. Confirmed by repo-wide grep — the only match was a code comment in `apps/tms/src/proxy.ts:5` referencing the pattern, not an import.
 - **`defineTool`/`CopilotTool` avoidance:** zero real call sites in any new file (see P2-1 for the one naming false-positive, which is not an actual violation).
-- **Permission catalogue additions:** `transportationOrders.read/write`, `carriers.manage`, `tenders.send`, `carrierInvoices.match/override` in `packages/auth/src/permissions.ts:151-186` are correctly declarative (`name`/`description`/`category`/`defaultRoles`), matching the existing pattern exactly. (`tms.access` is the missing one — see P0-1.)
+- **Permission catalogue additions:** `transportation_orders.read/write`, `carriers.manage`, `tenders.send`, `carrier_invoices.match/override` in `packages/auth/src/permissions.ts:151-186` are correctly declarative (`name`/`description`/`category`/`defaultRoles`), matching the existing pattern exactly. (`tms.access` is the missing one — see P0-1.)
 - **`AuditSource`/`WorkItemKind` extensions:** `packages/decisions/src/audit.ts:4` correctly adds `"EMAIL" | "AGENT"` to the TS union and the header allowlist; `packages/decisions/src/workTypes.ts` correctly adds `"tender" | "carrier_invoice"` to `WorkItemKind`. Both are zero-migration, as specified.
 - **Some AgentDecision evidence is genuinely well-built:** `recommendCarrierTool.ts` and `planMovementStopsTool.ts` (P0-6 notwithstanding — they're unreachable) and `quoteService.ts`'s `evaluateRFQ` (P1-4 notwithstanding) construct real `evidenceItems` from actual computed comparisons, not stubs. This is proof the correct pattern was understood — it just isn't what's wired up to the live routes.

@@ -230,7 +230,13 @@ describe("syncing the catalogue", () => {
       store({ listSystemRoles: async () => [{ id: "role_owner", name: "OWNER" }] })
     );
 
-    expect(result.rolesMissing).toEqual(["ADMIN", "BROKER", "MEMBER", "SPECIALIST", "VIEWER"]);
+    const expectedMissingRoles = Array.from(
+      new Set(PERMISSION_CATALOGUE.flatMap((permission) => [...permission.defaultRoles]))
+    )
+      .filter((roleName) => roleName !== "OWNER")
+      .sort();
+
+    expect(result.rolesMissing).toEqual(expectedMissingRoles);
   });
 
   it("leaves custom account roles alone, because a sync must not widen them", async () => {

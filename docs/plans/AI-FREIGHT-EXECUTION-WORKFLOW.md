@@ -180,7 +180,7 @@ model CarrierInvoiceLine {
 - `AuditSource` TS union (`apps/custom/src/lib/audit.ts:7`, and now also wherever it's re-exported into `packages/decisions` per Phase 0): add `"EMAIL"`, `"AGENT"`. Also add `"EMAIL"`/`"AGENT"` to the header allowlist at `audit.ts:72`.
 - `WorkItemKind` union (`workQueue.ts:11`): add `"tender"`, `"carrier_invoice"`.
 - `IntegrationCategory` enum (`schema.prisma:6072-6076`, currently `ERP | ACCOUNTING | SHIPMENT_TRACKING`): add `CARRIER_RATING` — config-stub only in this build (see Non-goals), for a future real rate-shopping/EDI integration to plug into without another migration.
-- Permission catalog (`apps/custom/src/lib/permissions.ts`): add `transportationOrders.read`, `transportationOrders.write`, `carriers.manage`, `tenders.send`, `carrierInvoices.match`, `carrierInvoices.override` (this last one is the risk-acceptance tier, mirroring `exceptions.waive` — overriding a flagged invoice mismatch is a financial risk acceptance, gate it the same way).
+- Permission catalog (`apps/custom/src/lib/permissions.ts`): add `transportation_orders.read`, `transportation_orders.write`, `carriers.manage`, `tenders.send`, `carrier_invoices.match`, `carrier_invoices.override` (this last one is the risk-acceptance tier, mirroring `exceptions.waive` — overriding a flagged invoice mismatch is a financial risk acceptance, gate it the same way).
 
 **Delivery (step 14) gets no new model.** It's `ShipmentStop.actualArrival` set on the stop where `type` indicates final delivery. Do not build a separate `DeliveryEvent` model — that would just be a second source of truth for a fact `ShipmentStop` already owns.
 

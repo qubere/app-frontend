@@ -29,12 +29,12 @@ describe("Phase 0 — Extraction & Schema Verification", () => {
 
   it("includes all new freight permissions in @qubere/auth catalogue", () => {
     const newFreightPermissions = [
-      "transportationOrders.read",
-      "transportationOrders.write",
+      "transportation_orders.read",
+      "transportation_orders.write",
       "carriers.manage",
       "tenders.send",
-      "carrierInvoices.match",
-      "carrierInvoices.override",
+      "carrier_invoices.match",
+      "carrier_invoices.override",
     ];
 
     for (const permName of newFreightPermissions) {
@@ -50,18 +50,18 @@ describe("Phase 0 — Extraction & Schema Verification", () => {
     const memberPerms = defaultPermissionsForRole("MEMBER");
     const viewerPerms = defaultPermissionsForRole("VIEWER");
 
-    // Admin should hold carriers.manage & carrierInvoices.override
+    // Admin should hold carriers.manage & carrier_invoices.override
     expect(adminPerms).toContain("carriers.manage");
-    expect(adminPerms).toContain("carrierInvoices.override");
+    expect(adminPerms).toContain("carrier_invoices.override");
 
     // Member should hold operational permissions but not admin risk overrides
-    expect(memberPerms).toContain("transportationOrders.write");
+    expect(memberPerms).toContain("transportation_orders.write");
     expect(memberPerms).toContain("tenders.send");
     expect(memberPerms).not.toContain("carriers.manage");
 
     // Viewer should hold read permission only
-    expect(viewerPerms).toContain("transportationOrders.read");
-    expect(viewerPerms).not.toContain("transportationOrders.write");
+    expect(viewerPerms).toContain("transportation_orders.read");
+    expect(viewerPerms).not.toContain("transportation_orders.write");
   });
 
   it("normalizes decision and exception states cleanly via @qubere/decisions", () => {
@@ -79,7 +79,7 @@ describe("Phase 0 — Extraction & Schema Verification", () => {
       declaration: { name: "mutating_tool", description: "Test mutating tool" },
       schema: z.object({ recordId: z.string().min(1) }),
       access: {
-        permission: "transportationOrders.write",
+        permission: "transportation_orders.write",
         write: true,
         confirmationRequired: true,
       },
@@ -98,14 +98,14 @@ describe("Phase 0 — Extraction & Schema Verification", () => {
     await expect(
       registry.execute(
         "mutating_tool",
-        { ...baseContext, roleNames: ["VIEWER"], permissions: ["transportationOrders.write"] },
+        { ...baseContext, roleNames: ["VIEWER"], permissions: ["transportation_orders.write"] },
         { recordId: "order_1", confirm: true }
       )
     ).rejects.toThrow("read-only");
     await expect(
       registry.execute(
         "mutating_tool",
-        { ...baseContext, permissions: ["transportationOrders.write"] },
+        { ...baseContext, permissions: ["transportation_orders.write"] },
         { recordId: "order_1" }
       )
     ).rejects.toThrow("explicit confirmation");
@@ -113,7 +113,7 @@ describe("Phase 0 — Extraction & Schema Verification", () => {
     await expect(
       registry.execute(
         "mutating_tool",
-        { ...baseContext, permissions: ["transportationOrders.write"] },
+        { ...baseContext, permissions: ["transportation_orders.write"] },
         { recordId: "order_1", confirm: true }
       )
     ).resolves.toEqual({ ok: true });
