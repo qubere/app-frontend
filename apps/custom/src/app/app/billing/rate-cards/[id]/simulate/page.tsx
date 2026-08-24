@@ -10,7 +10,7 @@ export const revalidate = 0;
 export default async function RateCardSimulatePage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  const canView = await hasPermission("billing.ratecard.manage") || await hasPermission("billing.ratecard.view");
+  const canView = await hasPermission("billing.ratecard.view");
   if (!canView) redirect("/app/billing/rate-cards");
 
   const { id } = await params;

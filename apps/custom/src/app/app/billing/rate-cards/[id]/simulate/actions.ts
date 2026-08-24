@@ -10,7 +10,7 @@ export async function runRateSimulationAction(
 ): Promise<SimulationSummary> {
   const ctx = await getAccountContext();
   if (!ctx) throw new Error("Unauthorized");
-  const canManage = await hasPermission("billing.ratecard.manage") || await hasPermission("billing.ratecard.view");
+  const canManage = await hasPermission("billing.ratecard.view");
   if (!canManage) throw new Error("Forbidden: billing.ratecard.view permission required");
 
   if (!Number.isInteger(months) || months < 1 || months > 24) {

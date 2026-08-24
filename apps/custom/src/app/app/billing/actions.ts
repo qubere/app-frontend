@@ -6,7 +6,6 @@ import { createAuditLog } from "@/lib/audit";
 import { createInvoiceFromCharges } from "@/lib/billing/invoicing";
 import { seedBillingEventDefinitions } from "@/lib/billing/telemetry";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 async function requireBillingPermission(permission: string | string[]) {
   const context = await getAccountContext();
@@ -25,6 +24,7 @@ export interface CreateRateCardInput {
   clientId?: string;
   importerId?: string;
   description?: string;
+  productLine?: "CUSTOMS" | "TMS" | "WMS";
   lineItems: Array<{
     lineItemName: string;
     serviceCode: string;
@@ -36,12 +36,13 @@ export interface CreateRateCardInput {
 }
 
 export async function createRateCardAction(input: CreateRateCardInput) {
-  const context = await requireBillingPermission(["billing.ratecard.create", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.create");
   if (!input.name.trim()) throw new Error("Rate card name is required");
   if (!input.lineItems.length) throw new Error("At least one rate-card line item is required");
   if (input.lineItems.some((item) => !Number.isFinite(item.rate) || item.rate < 0)) throw new Error("Rate-card rates must be valid non-negative numbers");
 
   return runWithAccountId(context.accountId, async () => {
+    const productLine = input.productLine ?? "CUSTOMS";
     const rateCard = await db.$transaction(async (tx) => tx.rateCard.create({
       data: {
         accountId: context.accountId,
@@ -54,16 +55,20 @@ export async function createRateCardAction(input: CreateRateCardInput) {
         isDefault: input.isDefault ?? false,
         currentVersion: 1,
         status: "DRAFT",
+        productLine,
+        createdById: context.userId,
         versions: {
           create: [{
             version: 1,
             effectiveDate: new Date(),
             status: "DRAFT",
+            createdById: context.userId,
             rules: {
               create: input.lineItems.map((item) => ({
                 lineItemName: item.lineItemName,
                 serviceCode: item.serviceCode,
                 pricingModel: item.pricingModel as any,
+                productLine,
                 unit: item.unit,
                 rate: item.rate,
                 currency: input.currency || "USD",
@@ -90,13 +95,13 @@ export async function createRateCardAction(input: CreateRateCardInput) {
 }
 
 export async function saveRateRuleMappingsAction(ruleId: string, eventCodes: string[]) {
-  const context = await requireBillingPermission(["billing.mapping.edit", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.mapping.edit");
   const uniqueCodes = [...new Set(eventCodes.filter(Boolean))];
 
   return withAccountIdContext(context.accountId, async () => {
     const rule = await db.rateRule.findFirst({
       where: { id: ruleId, rateCardVersion: { rateCard: { accountId: context.accountId } } },
-      select: { id: true, lineItemName: true },
+      select: { id: true, lineItemName: true, productLine: true },
     });
     if (!rule) throw new Error("Rate rule not found");
 
@@ -105,7 +110,7 @@ export async function saveRateRuleMappingsAction(ruleId: string, eventCodes: str
     await seedBillingEventDefinitions(context.accountId);
     const definitions = uniqueCodes.length
       ? await db.billingEventDefinition.findMany({
-          where: { eventCode: { in: uniqueCodes } },
+          where: { eventCode: { in: uniqueCodes }, productLine: rule.productLine },
           select: { id: true, eventCode: true },
         })
       : [];
@@ -135,7 +140,7 @@ export async function saveRateRuleMappingsAction(ruleId: string, eventCodes: str
 }
 
 export async function activateRateCardAction(rateCardId: string) {
-  const context = await requireBillingPermission(["billing.ratecard.activate", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.activate");
 
   return withAccountIdContext(context.accountId, async () => {
     const card = await db.rateCard.findFirst({
@@ -144,6 +149,7 @@ export async function activateRateCardAction(rateCardId: string) {
     });
     if (!card || !card.versions[0]) throw new Error("Rate card not found");
     const version = card.versions[0];
+    if ((card.createdById && card.createdById === context.userId) || (version.createdById && version.createdById === context.userId)) throw new Error("Maker-checker control: the rate-card or version creator cannot activate the same rate card");
     if (version.status === "ACTIVE" && card.status === "ACTIVE") return { success: true };
 
     const mappedRuleCount = await db.rateRule.count({ where: { rateCardVersionId: version.id, capabilityMappings: { some: {} } } });
@@ -157,6 +163,10 @@ export async function activateRateCardAction(rateCardId: string) {
           data: { isDefault: false },
         });
       }
+      await tx.rateCardVersion.updateMany({
+        where: { rateCardId: card.id, status: "ACTIVE", id: { not: version.id } },
+        data: { expirationDate: version.effectiveDate },
+      });
       await tx.rateCardVersion.update({
         where: { id: version.id },
         data: { status: "ACTIVE", activatedAt: new Date(), activatedById: context.userId },
@@ -185,7 +195,7 @@ export async function activateRateCardAction(rateCardId: string) {
  * must have its effectiveDate set before it can be activated.
  */
 export async function createNewRateCardVersionAction(rateCardId: string, effectiveDate?: string) {
-  const context = await requireBillingPermission(["billing.ratecard.create", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.create");
 
   return withAccountIdContext(context.accountId, async () => {
     const card = await db.rateCard.findFirst({
@@ -218,12 +228,14 @@ export async function createNewRateCardVersionAction(rateCardId: string, effecti
           version: newVersionNumber,
           effectiveDate: effective,
           status: "DRAFT",
+          createdById: context.userId,
           notes: `Cloned from v${latestVersion.version}`,
           rules: {
             create: latestVersion.rules.map((rule) => ({
               lineItemName: rule.lineItemName,
               serviceCode: rule.serviceCode,
               pricingModel: rule.pricingModel,
+              productLine: rule.productLine,
               unit: rule.unit,
               rate: rule.rate,
               currency: rule.currency,
@@ -283,7 +295,7 @@ export async function updateDraftRateRuleAction(
     maxCharge?: number | null;
   }
 ) {
-  const context = await requireBillingPermission(["billing.ratecard.edit", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.edit");
 
   return withAccountIdContext(context.accountId, async () => {
     const rule = await db.rateRule.findFirst({
@@ -323,7 +335,7 @@ export async function updateDraftRateRuleAction(
 
 /** Deletes a line-item rule — only allowed while the version is DRAFT. */
 export async function deleteDraftRateRuleAction(ruleId: string) {
-  const context = await requireBillingPermission(["billing.ratecard.edit", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.edit");
 
   return withAccountIdContext(context.accountId, async () => {
     const rule = await db.rateRule.findFirst({
@@ -361,14 +373,14 @@ export async function addDraftRateRuleAction(
     currency?: string;
   }
 ) {
-  const context = await requireBillingPermission(["billing.ratecard.edit", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.edit");
   if (!data.lineItemName.trim()) throw new Error("Line item name is required");
   if (!Number.isFinite(data.rate) || data.rate < 0) throw new Error("Rate must be a valid non-negative number");
 
   return withAccountIdContext(context.accountId, async () => {
     const version = await db.rateCardVersion.findFirst({
       where: { id: rateCardVersionId, rateCard: { accountId: context.accountId } },
-      include: { rateCard: { select: { id: true, currency: true } } },
+      include: { rateCard: { select: { id: true, currency: true, productLine: true } } },
     });
     if (!version) throw new Error("Rate card version not found");
     if (version.status !== "DRAFT") throw new Error("Only DRAFT rate card versions can be edited");
@@ -379,6 +391,7 @@ export async function addDraftRateRuleAction(
         lineItemName: data.lineItemName.trim(),
         serviceCode: data.serviceCode.trim(),
         pricingModel: data.pricingModel as any,
+        productLine: version.rateCard.productLine,
         unit: data.unit,
         rate: data.rate,
         currency: data.currency ?? version.rateCard.currency,
@@ -402,7 +415,7 @@ export async function addDraftRateRuleAction(
 
 /** Retires a rate card — safe by construction; resolveActiveRateCardVersion filters on status: "ACTIVE". */
 export async function retireRateCardAction(rateCardId: string) {
-  const context = await requireBillingPermission(["billing.ratecard.retire", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.retire");
 
   return withAccountIdContext(context.accountId, async () => {
     const card = await db.rateCard.findFirst({
@@ -436,7 +449,7 @@ export async function duplicateRateCardAction(
   rateCardId: string,
   opts: { targetClientId?: string; targetImporterId?: string; newName?: string } = {}
 ) {
-  const context = await requireBillingPermission(["billing.ratecard.create", "billing.ratecard.manage"]);
+  const context = await requireBillingPermission("billing.ratecard.duplicate");
 
   return withAccountIdContext(context.accountId, async () => {
     const source = await db.rateCard.findFirst({
@@ -467,17 +480,21 @@ export async function duplicateRateCardAction(
           isDefault: false,
           currentVersion: 1,
           status: "DRAFT",
+          productLine: source.productLine,
+          createdById: context.userId,
           versions: {
             create: [{
               version: 1,
               effectiveDate: new Date(),
               status: "DRAFT",
+              createdById: context.userId,
               notes: `Duplicated from "${source.name}" v${sourceVersion.version}`,
               rules: {
                 create: sourceVersion.rules.map((rule) => ({
                   lineItemName: rule.lineItemName,
                   serviceCode: rule.serviceCode,
                   pricingModel: rule.pricingModel,
+                  productLine: rule.productLine,
                   unit: rule.unit,
                   rate: rule.rate,
                   currency: rule.currency,
@@ -525,14 +542,17 @@ export async function duplicateRateCardAction(
 }
 
 export async function createInvoiceAction(formData: FormData) {
-  const context = await requireBillingPermission(["billing.invoice.create", "billing.invoice.manage"]);
+  const context = await requireBillingPermission("billing.invoice.create");
   const chargeIds = formData.getAll("chargeIds").map(String).filter(Boolean);
   if (!chargeIds.length) throw new Error("Select at least one charge");
 
-  await withAccountIdContext(context.accountId, async () => {
+  return withAccountIdContext(context.accountId, async () => {
     const charges = await db.shipmentCharge.findMany({
       where: { id: { in: chargeIds }, accountId: context.accountId, status: "RATED", invoiceLineId: null },
-      include: { shipment: { select: { clientId: true, importerOfRecordId: true } } },
+      include: {
+        shipment: { select: { clientId: true, importerOfRecordId: true } },
+        usageEvent: { select: { productLine: true } },
+      },
     });
     if (charges.length !== new Set(chargeIds).size) throw new Error("One or more selected charges are unavailable or already invoiced");
 
@@ -540,9 +560,17 @@ export async function createInvoiceAction(formData: FormData) {
     if (clientIds.length !== 1) throw new Error("An invoice must contain charges for exactly one client");
     const importerIds = [...new Set(charges.map((c) => c.shipment.importerOfRecordId).filter((v): v is string => Boolean(v)))];
     if (importerIds.length > 1) throw new Error("Selected charges span multiple importer accounts; create separate invoices");
+    const productLines = [...new Set(charges.map((charge) => charge.usageEvent?.productLine ?? "CUSTOMS"))];
+    if (productLines.length !== 1) throw new Error("Selected charges span product modules; create separate invoices per module");
+
+    const client = await db.client.findFirst({
+      where: { id: clientIds[0], accountId: context.accountId },
+      select: { paymentTermsDays: true },
+    });
+    if (!client) throw new Error("Billing client not found");
 
     const dueDateRaw = String(formData.get("dueDate") || "");
-    const dueDate = dueDateRaw ? new Date(`${dueDateRaw}T12:00:00`) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const dueDate = dueDateRaw ? new Date(`${dueDateRaw}T12:00:00`) : new Date(Date.now() + client.paymentTermsDays * 24 * 60 * 60 * 1000);
     if (Number.isNaN(dueDate.getTime())) throw new Error("Invalid invoice due date");
 
     const invoice = await createInvoiceFromCharges({
@@ -552,6 +580,8 @@ export async function createInvoiceAction(formData: FormData) {
       dueDate,
       chargeIds,
       notes: String(formData.get("notes") || "") || undefined,
+      productLine: productLines[0],
+      createdById: context.userId,
     });
 
     await createAuditLog({
@@ -563,6 +593,6 @@ export async function createInvoiceAction(formData: FormData) {
       metadata: { invoiceNumber: invoice.invoiceNumber, chargeCount: chargeIds.length },
     });
     revalidatePath("/app/billing/invoices");
+    return { success: true, invoiceId: invoice.id };
   });
-  redirect("/app/billing/invoices");
 }

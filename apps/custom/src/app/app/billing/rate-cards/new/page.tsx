@@ -23,6 +23,7 @@ export default function CreateRateCardPage() {
   const [currency, setCurrency] = useState("USD");
   const [isDefault, setIsDefault] = useState(false);
   const [description, setDescription] = useState("");
+  const [productLine, setProductLine] = useState<"CUSTOMS" | "TMS" | "WMS">("CUSTOMS");
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -92,6 +93,7 @@ export default function CreateRateCardPage() {
         currency,
         isDefault,
         description,
+        productLine,
         lineItems: lineItems.map((item) => ({
           lineItemName: item.lineItemName,
           serviceCode: item.serviceCode,
@@ -141,6 +143,18 @@ export default function CreateRateCardPage() {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-ink uppercase tracking-wider">Product module</label>
+            <select
+              value={productLine}
+              onChange={(event) => setProductLine(event.target.value as "CUSTOMS" | "TMS" | "WMS")}
+              className="w-full px-4 py-2.5 rounded-lg border border-[#D1D1D6] text-sm text-ink bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
+            >
+              <option value="CUSTOMS">Customs</option>
+              <option value="TMS">Transportation</option>
+              <option value="WMS">Warehouse</option>
+            </select>
+          </div>
           <div className="space-y-2">
             <label className="text-xs font-semibold text-ink uppercase tracking-wider">
               Rate Card Name *

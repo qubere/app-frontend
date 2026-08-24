@@ -85,7 +85,7 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
             sourceApi: `/api/exceptions/${id}`,
             success: true,
             automated: false,
-            idempotencyKey: `billing:exception-resolved:${id}`,
+            idempotencyKey: `billing:exception-resolved:${id}:${updated.version}`,
             metadata: {
               exceptionId: id,
               resolutionReason: bodyVal.data.resolutionReason,

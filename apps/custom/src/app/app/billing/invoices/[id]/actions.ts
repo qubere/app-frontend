@@ -50,12 +50,12 @@ export async function recordPaymentAction(invoiceId: string, formData: FormData)
 }
 
 export async function submitInvoiceForApprovalAction(invoiceId: string) {
-  const context = await requirePermission("billing.invoice.create", "billing.invoice.manage");
+  const context = await requirePermission("billing.invoice.create");
 
   return withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
       where: { id: invoiceId, accountId: context.accountId },
-      select: { id: true, status: true, invoiceNumber: true },
+      select: { id: true, status: true, invoiceNumber: true, createdById: true },
     });
     if (!invoice) throw new Error("Invoice not found");
     if (invoice.status !== "DRAFT") throw new Error("Only DRAFT invoices can be submitted for approval");
@@ -77,17 +77,18 @@ export async function submitInvoiceForApprovalAction(invoiceId: string) {
 }
 
 export async function approveInvoiceAction(invoiceId: string) {
-  const context = await requirePermission("billing.invoice.approve", "billing.invoice.manage");
+  const context = await requirePermission("billing.invoice.approve");
 
   return withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
       where: { id: invoiceId, accountId: context.accountId },
-      select: { id: true, status: true, invoiceNumber: true },
+      select: { id: true, status: true, invoiceNumber: true, createdById: true },
     });
     if (!invoice) throw new Error("Invoice not found");
     if (invoice.status !== "PENDING_APPROVAL") throw new Error("Only PENDING_APPROVAL invoices can be approved");
+    if (invoice.createdById && invoice.createdById === context.userId) throw new Error("Maker-checker control: the invoice creator cannot approve the same invoice");
 
-    await db.invoice.update({ where: { id: invoiceId }, data: { status: "APPROVED" } });
+    await db.invoice.update({ where: { id: invoiceId }, data: { status: "APPROVED", approvedById: context.userId } });
 
     await createAuditLog({
       accountId: context.accountId,
@@ -104,7 +105,7 @@ export async function approveInvoiceAction(invoiceId: string) {
 }
 
 export async function sendInvoiceAction(invoiceId: string) {
-  const context = await requirePermission("billing.invoice.send", "billing.invoice.manage");
+  const context = await requirePermission("billing.invoice.send");
 
   return withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
@@ -115,7 +116,7 @@ export async function sendInvoiceAction(invoiceId: string) {
     if (invoice.status !== "APPROVED" && invoice.status !== "SENT") throw new Error("Only APPROVED invoices can be marked as sent");
     if (invoice.status === "SENT") return { success: true }; // idempotent
 
-    await db.invoice.update({ where: { id: invoiceId }, data: { status: "SENT" } });
+    await db.invoice.update({ where: { id: invoiceId }, data: { status: "SENT", sentById: context.userId } });
 
     await createAuditLog({
       accountId: context.accountId,
@@ -132,7 +133,7 @@ export async function sendInvoiceAction(invoiceId: string) {
 }
 
 export async function voidInvoiceAction(invoiceId: string, reason: string) {
-  const context = await requirePermission("billing.invoice.void", "billing.invoice.manage");
+  const context = await requirePermission("billing.invoice.void");
   if (!reason.trim()) throw new Error("A reason is required to void an invoice");
 
   return withAccountIdContext(context.accountId, async () => {
@@ -149,7 +150,7 @@ export async function voidInvoiceAction(invoiceId: string, reason: string) {
     await db.$transaction(async (tx) => {
       await tx.invoice.update({
         where: { id: invoiceId },
-        data: { status: "VOID" },
+        data: { status: "VOID", voidedById: context.userId },
       });
 
       const chargeIds = invoice.lines.flatMap((line) => line.charges.map((c) => c.id));

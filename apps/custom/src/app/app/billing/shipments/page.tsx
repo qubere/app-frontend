@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
@@ -9,6 +10,7 @@ export const revalidate = 0;
 export default async function ShipmentEconomicsPage() {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
+  if (!(await hasPermission("billing.charge.view"))) redirect("/app/billing");
   const [canViewCost, canViewMargin] = await Promise.all([
     hasPermission("billing.cost.view"),
     hasPermission("billing.margin.view"),
@@ -61,7 +63,7 @@ export default async function ShipmentEconomicsPage() {
                 const isNegativeMargin = summary.grossProfit < 0;
                 return (
                   <tr key={shipment.id} className="hover:bg-[#F9F9FB] transition-colors">
-                    <td className="px-5 py-4 font-bold text-ink font-sans">{shipment.shipmentNumber}</td>
+                    <td className="px-5 py-4 font-bold text-ink font-sans"><Link href={`/app/billing/shipments/${shipment.id}`} className="text-brand hover:underline">{shipment.shipmentNumber}</Link></td>
                     <td className="px-5 py-4 font-sans text-ink"><div>{shipment.client?.name ?? shipment.importerName}</div></td>
                     <td className="px-5 py-4 text-emerald-600 font-semibold">${summary.netRevenue.toFixed(2)}</td>
                     {canViewCost && <td className="px-5 py-4 text-ink-muted">${summary.totalCost.toFixed(2)}</td>}

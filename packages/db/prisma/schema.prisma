@@ -2100,16 +2100,19 @@ model ImporterOfRecord {
 // shipments are tagged with a Client rather than each customer being its
 // own separate tenant Account.
 model Client {
-  id           String   @id @default(cuid())
-  accountId    String
-  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name         String
-  contactName  String?
-  contactEmail String?
-  contactPhone String?
-  status       String   @default("ACTIVE") // ACTIVE, INACTIVE
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  accountId           String
+  account             Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                String
+  contactName         String?
+  contactEmail        String?
+  contactPhone        String?
+  billingContactName  String?
+  billingContactEmail String?
+  paymentTermsDays    Int      @default(30)
+  status              String   @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   shipments            Shipment[]
   transportationOrders TransportationOrder[]
@@ -5981,6 +5984,14 @@ enum BillingEventCategory {
   FILING_READINESS
 }
 
+/// Product module that owns the revenue event. Customer billing remains one
+/// account-scoped AR ledger while each operational product emits independently.
+enum BillingProductLine {
+  CUSTOMS
+  TMS
+  WMS
+}
+
 enum PricingModel {
   PER_TRANSACTION
   PER_UNIT
@@ -6019,10 +6030,10 @@ enum InvoiceStatus {
   SENT
   PARTIALLY_PAID
   PAID
+  /// Derived from SENT/PARTIALLY_PAID + dueDate by invoice queries/jobs. New
+  /// workflow code must not use this as the only source of overdue truth.
   OVERDUE
   VOID
-  DISPUTED
-  CREDITED
 }
 
 enum RateCardStatus {
@@ -6035,7 +6046,8 @@ model BillingEventDefinition {
   id          String               @id @default(cuid())
   accountId   String
   account     Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  eventCode   String               @unique
+  eventCode   String
+  productLine BillingProductLine   @default(CUSTOMS)
   name        String
   description String?
   category    BillingEventCategory
@@ -6047,33 +6059,38 @@ model BillingEventDefinition {
   usageEvents           UsageEvent[]
   rateRuleCapabilityMap RateRuleCapabilityMapping[]
 
+  @@unique([accountId, eventCode, productLine])
   @@index([accountId])
   @@index([eventCode])
+  @@index([productLine])
 }
 
 model RateCard {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   accountId      String
-  account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   clientId       String?
-  client         Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client         Client?            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   importerId     String?
-  importer       ImporterOfRecord? @relation(fields: [importerId], references: [id], onDelete: Cascade)
+  importer       ImporterOfRecord?  @relation(fields: [importerId], references: [id], onDelete: Cascade)
   name           String
   code           String?
   description    String?
-  currency       String            @default("USD")
-  isDefault      Boolean           @default(false)
-  currentVersion Int               @default(1)
-  status         RateCardStatus    @default(DRAFT)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  currency       String             @default("USD")
+  isDefault      Boolean            @default(false)
+  currentVersion Int                @default(1)
+  status         RateCardStatus     @default(DRAFT)
+  productLine    BillingProductLine @default(CUSTOMS)
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   versions RateCardVersion[]
 
   @@index([accountId])
   @@index([clientId])
   @@index([importerId])
+  @@index([accountId, productLine])
 }
 
 model RateCardVersion {
@@ -6086,6 +6103,7 @@ model RateCardVersion {
   status         RateCardStatus @default(DRAFT)
   activatedAt    DateTime?
   activatedById  String?
+  createdById    String?
   notes          String?
   createdAt      DateTime       @default(now())
 
@@ -6097,28 +6115,30 @@ model RateCardVersion {
 }
 
 model RateRule {
-  id                String          @id @default(cuid())
+  id                String             @id @default(cuid())
   rateCardVersionId String
-  rateCardVersion   RateCardVersion @relation(fields: [rateCardVersionId], references: [id], onDelete: Cascade)
+  rateCardVersion   RateCardVersion    @relation(fields: [rateCardVersionId], references: [id], onDelete: Cascade)
   lineItemName      String
   serviceCode       String
   pricingModel      PricingModel
-  unit              String          @default("unit")
-  rate              Decimal         @db.Decimal(16, 4)
-  currency          String          @default("USD")
-  minCharge         Decimal?        @db.Decimal(16, 4)
-  maxCharge         Decimal?        @db.Decimal(16, 4)
-  includedQuantity  Int             @default(0)
+  productLine       BillingProductLine @default(CUSTOMS)
+  unit              String             @default("unit")
+  rate              Decimal            @db.Decimal(16, 4)
+  currency          String             @default("USD")
+  minCharge         Decimal?           @db.Decimal(16, 4)
+  maxCharge         Decimal?           @db.Decimal(16, 4)
+  includedQuantity  Int                @default(0)
   tieredConfig      Json?
   conditions        Json?
-  isBillable        Boolean         @default(true)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  isBillable        Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   capabilityMappings RateRuleCapabilityMapping[]
   charges            ShipmentCharge[]
 
   @@index([rateCardVersionId])
+  @@index([productLine])
 }
 
 model RateRuleCapabilityMapping {
@@ -6152,7 +6172,8 @@ model UsageEvent {
   accountId          String
   account            Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
   eventCode          String
-  eventDefinition    BillingEventDefinition @relation(fields: [eventCode], references: [eventCode])
+  productLine        BillingProductLine     @default(CUSTOMS)
+  eventDefinition    BillingEventDefinition @relation(fields: [accountId, eventCode, productLine], references: [accountId, eventCode, productLine])
   occurredAt         DateTime               @default(now())
   clientId           String?
   client             Client?                @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -6173,14 +6194,16 @@ model UsageEvent {
   metadata           Json?
   createdAt          DateTime               @default(now())
 
-  charges ShipmentCharge[]
-  costs   ShipmentCost[]
+  charges           ShipmentCharge[]
+  costs             ShipmentCost[]
+  billingExceptions BillingException[]
 
   @@index([accountId])
   @@index([shipmentId])
   @@index([clientId])
   @@index([occurredAt])
   @@index([eventCode])
+  @@index([accountId, productLine, occurredAt])
 }
 
 model ShipmentCharge {
@@ -6189,7 +6212,7 @@ model ShipmentCharge {
   account           Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId        String
   shipment          Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  usageEventId      String?
+  usageEventId      String?          @unique
   usageEvent        UsageEvent?      @relation(fields: [usageEventId], references: [id], onDelete: SetNull)
   rateCardVersionId String?
   rateCardVersion   RateCardVersion? @relation(fields: [rateCardVersionId], references: [id], onDelete: SetNull)
@@ -6233,6 +6256,9 @@ model ShipmentCost {
   durationSec  Int?
   createdAt    DateTime    @default(now())
 
+  // A single event can produce one cost row per cost type (for example LABOR
+  // and TECH), but retries cannot duplicate the same component.
+  @@unique([usageEventId, costType])
   @@index([accountId])
   @@index([shipmentId])
   @@index([costType])
@@ -6256,28 +6282,33 @@ model ChargeAdjustment {
 }
 
 model Invoice {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   accountId      String
-  account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   clientId       String
-  client         Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client         Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
   importerId     String?
-  importer       ImporterOfRecord? @relation(fields: [importerId], references: [id], onDelete: SetNull)
-  invoiceNumber  String            @unique
-  status         InvoiceStatus     @default(DRAFT)
-  issueDate      DateTime          @default(now())
+  importer       ImporterOfRecord?  @relation(fields: [importerId], references: [id], onDelete: SetNull)
+  invoiceNumber  String             @unique
+  status         InvoiceStatus      @default(DRAFT)
+  productLine    BillingProductLine @default(CUSTOMS)
+  createdById    String?
+  approvedById   String?
+  sentById       String?
+  voidedById     String?
+  issueDate      DateTime           @default(now())
   dueDate        DateTime
-  currency       String            @default("USD")
-  subtotal       Decimal           @db.Decimal(16, 4)
-  totalDiscounts Decimal           @default(0.0000) @db.Decimal(16, 4)
-  totalTax       Decimal           @default(0.0000) @db.Decimal(16, 4)
-  totalAmount    Decimal           @db.Decimal(16, 4)
-  paidAmount     Decimal           @default(0.0000) @db.Decimal(16, 4)
-  balanceDue     Decimal           @db.Decimal(16, 4)
+  currency       String             @default("USD")
+  subtotal       Decimal            @db.Decimal(16, 4)
+  totalDiscounts Decimal            @default(0.0000) @db.Decimal(16, 4)
+  totalTax       Decimal            @default(0.0000) @db.Decimal(16, 4)
+  totalAmount    Decimal            @db.Decimal(16, 4)
+  paidAmount     Decimal            @default(0.0000) @db.Decimal(16, 4)
+  balanceDue     Decimal            @db.Decimal(16, 4)
   notes          String?
   pdfUrl         String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   lines    InvoiceLine[]
   payments Payment[]
@@ -6286,6 +6317,7 @@ model Invoice {
   @@index([clientId])
   @@index([status])
   @@index([invoiceNumber])
+  @@index([accountId, productLine, status])
 }
 
 model InvoiceLine {
@@ -6336,26 +6368,28 @@ model Payment {
 }
 
 model BillingException {
-  id             String    @id @default(cuid())
+  id             String      @id @default(cuid())
   accountId      String
-  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   type           String
-  severity       String    @default("MEDIUM")
-  status         String    @default("OPEN")
+  severity       String      @default("MEDIUM")
+  status         String      @default("OPEN")
   description    String
   shipmentId     String?
-  shipment       Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  shipment       Shipment?   @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   clientId       String?
-  client         Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client         Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
   usageEventId   String?
+  usageEvent     UsageEvent? @relation(fields: [usageEventId], references: [id], onDelete: SetNull)
   assignedToId   String?
   resolutionNote String?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime    @default(now())
   resolvedAt     DateTime?
 
   @@index([accountId])
   @@index([status])
   @@index([type])
+  @@index([usageEventId])
 }
 
 enum AccountMemoryType {
@@ -7213,24 +7247,24 @@ model ProofOfDelivery {
 }
 
 model CarrierInvoice {
-  id               String               @id @default(cuid())
+  id               String                @id @default(cuid())
   accountId        String
-  account          Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account          Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId       String
-  shipment         Shipment             @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipment         Shipment              @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   carrierId        String?
-  carrier          Carrier?             @relation(fields: [carrierId], references: [id], onDelete: SetNull)
+  carrier          Carrier?              @relation(fields: [carrierId], references: [id], onDelete: SetNull)
   documentId       String? // FK -> ShipmentDocument, source doc if ingested
-  document         ShipmentDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  document         ShipmentDocument?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
   invoiceNumber    String?
   invoiceDate      DateTime?
-  totalAmount      Decimal              @db.Decimal(12, 2)
-  currency         String               @default("USD")
-  matchStatus      String               @default("PENDING") // PENDING | MATCHED | DISPUTED | EXCEPTION
-  settlementStatus String               @default("PENDING") // PENDING | SCHEDULED | PAID
+  totalAmount      Decimal               @db.Decimal(12, 2)
+  currency         String                @default("USD")
+  matchStatus      String                @default("PENDING") // PENDING | MATCHED | DISPUTED | EXCEPTION
+  settlementStatus String                @default("PENDING") // PENDING | SCHEDULED | PAID
   settledAt        DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   lines            CarrierInvoiceLine[]
   events           TransportationEvent[]
 

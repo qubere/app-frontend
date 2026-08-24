@@ -38,7 +38,7 @@ export async function adjustShipmentChargeAction(chargeId: string, formData: For
     const discountPct = gross > 0 ? (adjustmentAmount / gross) * 100 : 0;
     const requiresAdminApproval = adjustmentType === "WAIVER" || discountPct > 10;
     if (requiresAdminApproval) {
-      const canApprove = await hasPermission("billing.charge.waive") || await hasPermission("billing.discount.approve") || await hasPermission("billing.ratecard.manage");
+      const canApprove = await hasPermission("billing.charge.waive") || await hasPermission("billing.discount.approve");
       if (!canApprove) throw new Error("Billing Admin approval is required for waivers or discounts greater than 10%");
     }
 

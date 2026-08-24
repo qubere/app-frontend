@@ -44,7 +44,8 @@ function describePermission(requirement: PermissionRequirement): string {
 }
 
 export async function authorizeRequest(
-  requiredPermission?: PermissionRequirement
+  requiredPermission?: PermissionRequirement,
+  requiredProduct?: string
 ): Promise<{ ctx: AccountContext | null; errorResponse: ReturnType<typeof buildErrorResponse> | null }> {
   const ctx = await getAccountContext();
   if (!ctx) {
@@ -67,20 +68,18 @@ export async function authorizeRequest(
       };
     }
 
-    const permStr = describePermission(requiredPermission);
-    if (permStr.includes("customs.handoff") || permStr.includes("customs.create")) {
-      const entitled = await hasProductEntitlement(ctx.accountId, "CUSTOMS");
-      if (!entitled) {
-        return {
-          ctx: null,
-          errorResponse: buildErrorResponse(
-            403,
-            "NOT_ENTITLED",
-            "Account is not entitled to CUSTOMS product"
-          ),
-        };
-      }
-    }
+  }
+
+  const inferredProduct = requiredPermission && (() => {
+    const permission = describePermission(requiredPermission);
+    return permission.includes("customs.") ? "CUSTOMS" : permission.includes("tms.") ? "TMS" : undefined;
+  })();
+  const product = requiredProduct ?? inferredProduct;
+  if (product && !(await hasProductEntitlement(ctx.accountId, product))) {
+    return {
+      ctx: null,
+      errorResponse: buildErrorResponse(403, "NOT_ENTITLED", `Account is not entitled to ${product} product`),
+    };
   }
 
   return { ctx, errorResponse: null };
@@ -128,9 +127,10 @@ export async function authorizeResourceRequest(params: {
 }
 
 export async function authorizeWrite(
-  requiredPermission?: PermissionRequirement
+  requiredPermission?: PermissionRequirement,
+  requiredProduct?: string
 ): Promise<{ ctx: AccountContext | null; errorResponse: ReturnType<typeof buildErrorResponse> | null }> {
-  const result = await authorizeRequest(requiredPermission);
+  const result = await authorizeRequest(requiredPermission, requiredProduct);
   if (result.errorResponse || !result.ctx) return result;
 
   if (!canWrite(result.ctx)) {
@@ -156,13 +156,13 @@ type NextRouteContext<TParams> = { params: Promise<TParams> };
 
 export function withAuthenticatedRoute<TParams = Record<string, never>>(
   handler: (args: RouteHandlerArgs<TParams>) => Promise<Response>,
-  options?: { permission?: PermissionRequirement; write?: boolean }
+  options?: { permission?: PermissionRequirement; write?: boolean; product?: string }
 ) {
   return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
     const { ctx, errorResponse } = options?.write
-      ? await authorizeWrite(options?.permission)
-      : await authorizeRequest(options?.permission);
+      ? await authorizeWrite(options?.permission, options?.product)
+      : await authorizeRequest(options?.permission, options?.product);
     if (errorResponse) return errorResponse;
 
     try {

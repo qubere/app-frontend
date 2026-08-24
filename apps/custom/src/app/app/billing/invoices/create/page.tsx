@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createInvoiceAction } from "../../actions";
+import { BillingActionForm } from "../../BillingActionForm";
 
 export const revalidate = 0;
 
@@ -14,7 +15,8 @@ export default async function CreateInvoicePage({
 }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  if (!(await hasPermission("billing.invoice.manage"))) redirect("/app/billing/invoices");
+  const canCreate = await hasPermission("billing.invoice.create");
+  if (!canCreate) redirect("/app/billing/invoices");
 
   const params = await searchParams;
   const allEligibleCharges = await db.shipmentCharge.findMany({
@@ -93,7 +95,7 @@ export default async function CreateInvoicePage({
         </button>
       </form>
 
-      <form action={createInvoiceAction} className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-6">
+      <BillingActionForm action={createInvoiceAction} successHref="/app/billing/invoices" className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 border-b border-[#E5E5EA] pb-4">
           <div>
             <h3 className="text-base font-bold text-ink">
@@ -175,7 +177,7 @@ export default async function CreateInvoicePage({
             Generate Draft Invoice →
           </button>
         </div>
-      </form>
+      </BillingActionForm>
     </div>
   );
 }

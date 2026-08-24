@@ -14,6 +14,8 @@ interface RuleItem {
   lineItemName: string;
   pricingModel: string;
   rate: number;
+  unit: string;
+  includedQuantity: number;
   mappedEvents: string[];
 }
 
@@ -55,8 +57,8 @@ export function RateRuleEditor({ versionId, rateCardId: _rateCardId, currency, r
       lineItemName: rule.lineItemName,
       pricingModel: rule.pricingModel,
       rate: String(rule.rate),
-      unit: "unit",
-      includedQuantity: "0",
+      unit: rule.unit,
+      includedQuantity: String(rule.includedQuantity),
     });
     setError(null);
   };
@@ -75,7 +77,14 @@ export function RateRuleEditor({ versionId, rateCardId: _rateCardId, currency, r
         setLocalRules((prev) =>
           prev.map((r) =>
             r.id === ruleId
-              ? { ...r, lineItemName: editState.lineItemName, pricingModel: editState.pricingModel, rate: parseFloat(editState.rate) }
+              ? {
+                  ...r,
+                  lineItemName: editState.lineItemName,
+                  pricingModel: editState.pricingModel,
+                  rate: parseFloat(editState.rate),
+                  unit: editState.unit,
+                  includedQuantity: parseInt(editState.includedQuantity, 10) || 0,
+                }
               : r
           )
         );
@@ -119,6 +128,8 @@ export function RateRuleEditor({ versionId, rateCardId: _rateCardId, currency, r
             lineItemName: addState.lineItemName,
             pricingModel: addState.pricingModel,
             rate: parseFloat(addState.rate),
+            unit: addState.unit,
+            includedQuantity: parseInt(addState.includedQuantity, 10) || 0,
             mappedEvents: [],
           },
         ]);

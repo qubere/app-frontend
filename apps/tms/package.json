@@ -15,6 +15,7 @@
     "@google/genai": "^2.16.0",
     "@qubere/assistant": "*",
     "@qubere/auth": "*",
+    "@qubere/billing": "*",
     "@qubere/db": "*",
     "@qubere/decisions": "*",
     "@vercel/blob": "^2.6.1",

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { AccountContext, getAccountContext, hasPermission } from "@/lib/auth";
+import { AccountContext, getAccountContext, hasPermission, hasProductEntitlement } from "@/lib/auth";
 import { runWithAccountId, runWithDataMode } from "@/lib/db";
 import { buildErrorResponse, generateRequestId, handleApiError } from "./error";
 import { canWrite, READ_ONLY_MESSAGE } from "./write-access";
@@ -48,7 +48,8 @@ function describePermission(requirement: PermissionRequirement): string {
 }
 
 export async function authorizeRequest(
-  requiredPermission?: PermissionRequirement
+  requiredPermission?: PermissionRequirement,
+  requiredProduct?: string
 ): Promise<{ ctx: AccountContext | null; errorResponse: ReturnType<typeof buildErrorResponse> | null }> {
   const ctx = await getAccountContext();
   if (!ctx) {
@@ -56,6 +57,12 @@ export async function authorizeRequest(
       ctx: null,
       errorResponse: buildErrorResponse(401, "UNAUTHENTICATED", "Authentication required"),
     };
+  }
+
+  const inferredProduct = requiredPermission && describePermission(requiredPermission).includes("customs.") ? "CUSTOMS" : undefined;
+  const product = requiredProduct ?? inferredProduct;
+  if (product && !(await hasProductEntitlement(ctx.accountId, product))) {
+    return { ctx: null, errorResponse: buildErrorResponse(403, "NOT_ENTITLED", `Account is not entitled to ${product} product`) };
   }
 
   if (requiredPermission) {
@@ -77,9 +84,10 @@ export async function authorizeRequest(
 
 /** authorizeRequest plus the read-only role check every mutating route needs. */
 export async function authorizeWrite(
-  requiredPermission?: PermissionRequirement
+  requiredPermission?: PermissionRequirement,
+  requiredProduct?: string
 ): Promise<{ ctx: AccountContext | null; errorResponse: ReturnType<typeof buildErrorResponse> | null }> {
-  const result = await authorizeRequest(requiredPermission);
+  const result = await authorizeRequest(requiredPermission, requiredProduct);
   if (result.errorResponse || !result.ctx) return result;
 
   if (!canWrite(result.ctx)) {
@@ -119,13 +127,13 @@ type NextRouteContext<TParams> = { params: Promise<TParams> };
  */
 export function withAuthenticatedRoute<TParams = Record<string, never>>(
   handler: (args: RouteHandlerArgs<TParams>) => Promise<Response>,
-  options?: { permission?: PermissionRequirement; write?: boolean }
+  options?: { permission?: PermissionRequirement; write?: boolean; product?: string }
 ) {
   return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
     const { ctx, errorResponse } = options?.write
-      ? await authorizeWrite(options?.permission)
-      : await authorizeRequest(options?.permission);
+      ? await authorizeWrite(options?.permission, options?.product)
+      : await authorizeRequest(options?.permission, options?.product);
     if (errorResponse) return errorResponse;
 
     try {

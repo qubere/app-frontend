@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { saveCostProfileAction } from "./actions";
+import { BillingActionForm } from "../BillingActionForm";
 
 export const revalidate = 0;
 
@@ -10,7 +11,7 @@ export default async function BillingSettingsPage() {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
   if (!(await hasPermission("billing.cost.view"))) redirect("/app/billing");
-  const canManageCosts = await hasPermission("billing.ratecard.manage");
+  const canManageCosts = await hasPermission("billing.cost_profile.create") || await hasPermission("billing.settings.manage");
 
   const profile = await db.costProfile.findFirst({
     where: { accountId: ctx.accountId },
@@ -35,7 +36,7 @@ export default async function BillingSettingsPage() {
         </div>
       )}
 
-      <form action={saveCostProfileAction} className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-6">
+      <BillingActionForm action={saveCostProfileAction} successMessage="Cost profile saved." className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-6">
         <h3 className="text-base font-bold text-ink border-b border-[#E5E5EA] pb-3">Brokerage Loaded Labor & Technology Cost Parameters</h3>
 
         <div>
@@ -54,7 +55,7 @@ export default async function BillingSettingsPage() {
           <div className="text-xs text-ink-muted">Current effective profile: {profile ? `${profile.name} • ${new Date(profile.effectiveDate).toLocaleDateString()}` : "No saved profile"}</div>
           {canManageCosts && <button type="submit" className="px-4 py-2 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-white transition-colors shadow-sm">Save New Cost Profile</button>}
         </div>
-      </form>
+      </BillingActionForm>
     </div>
   );
 }

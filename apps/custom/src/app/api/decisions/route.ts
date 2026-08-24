@@ -263,7 +263,7 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
-  const { decisionId, action, humanNotes, expectedVersion } = body;
+  const { decisionId, action, humanNotes, expectedVersion, processingDurationMs } = body;
 
   const headerSource = req.headers?.get?.("x-qubere-source");
   const auditSource: "CHAT" | "UI" =
@@ -287,6 +287,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   // Prisma drops an undefined filter, so a missing id would match an arbitrary decision.
   if (typeof decisionId !== "string" || decisionId.trim() === "") {
     return NextResponse.json({ error: "decisionId is required" }, { status: 400 });
+  }
+  if (processingDurationMs !== undefined && (!Number.isFinite(processingDurationMs) || processingDurationMs < 0 || processingDurationMs > 86_400_000)) {
+    return NextResponse.json({ error: "processingDurationMs must be between 0 and 86400000" }, { status: 400 });
   }
 
   // The base permission is checked before the decision is read, so a caller
@@ -492,6 +495,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
           quantity: 1,
           success: action === "APPROVE",
           automated: false,
+          processingDuration: typeof processingDurationMs === "number" ? Math.round(processingDurationMs) : undefined,
           idempotencyKey: `billing:decision:${decisionId}:${action}`,
           metadata: { overridesClassification, action },
         })
