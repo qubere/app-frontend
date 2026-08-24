@@ -53,9 +53,9 @@ export interface RecordUsageEventInput {
 export { DEFAULT_BILLING_EVENT_DEFINITIONS };
 
 /**
- * Ensure the shared platform billing-capability catalog exists and reflects
- * the current code definitions. accountId remains a legacy ownership field in
- * the schema; eventCode is globally unique and is the stable mapping contract.
+ * Ensure the account-scoped platform billing-capability catalog exists and
+ * reflects the current code definitions. eventCode remains stable inside a
+ * product line, while the composite identity enforces tenant isolation.
  */
 export async function seedBillingEventDefinitions(accountId: string): Promise<void> {
   for (const def of DEFAULT_BILLING_EVENT_DEFINITIONS) {

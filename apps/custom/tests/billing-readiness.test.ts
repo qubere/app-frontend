@@ -67,6 +67,7 @@ describe("billing readiness contracts", () => {
   const permissions = readFileSync(join(repoRoot, "packages/auth/src/permissions.ts"), "utf8");
   const schema = readFileSync(join(repoRoot, "packages/db/prisma/schema.prisma"), "utf8");
   const migration = readFileSync(join(repoRoot, "packages/db/prisma/migrations/20260824150000_billing_broker_readiness/migration.sql"), "utf8");
+  const billingDefinitionRepair = readFileSync(join(repoRoot, "packages/db/prisma/scripts/repair-billing-event-definitions.sql"), "utf8");
   const actions = readFileSync(join(process.cwd(), "src/app/app/billing/actions.ts"), "utf8");
   const pipeline = readFileSync(join(process.cwd(), "src/modules/agents/pipelineOrchestrator.ts"), "utf8");
 
@@ -88,6 +89,19 @@ describe("billing readiness contracts", () => {
     expect(migration).toContain("ShipmentCharge_nonnegative_amounts_check");
     expect(migration).toContain("Invoice_nonnegative_amounts_check");
     expect(migration).toContain("BillingException_usageEventId_fkey");
+  });
+
+  it("backfills account-scoped billing definitions before enforcing the usage-event FK", () => {
+    const backfill = migration.indexOf('INSERT INTO "BillingEventDefinition"');
+    const mappingRepair = migration.indexOf('UPDATE "RateRuleCapabilityMapping"');
+    const foreignKey = migration.indexOf('ADD CONSTRAINT "UsageEvent_accountId_eventCode_productLine_fkey"');
+
+    expect(backfill).toBeGreaterThan(-1);
+    expect(mappingRepair).toBeGreaterThan(backfill);
+    expect(foreignKey).toBeGreaterThan(mappingRepair);
+    expect(migration).toContain('ON CONFLICT ("accountId", "eventCode", "productLine") DO NOTHING');
+    expect(billingDefinitionRepair).toContain('VALIDATE CONSTRAINT "UsageEvent_accountId_eventCode_productLine_fkey"');
+    expect(billingDefinitionRepair).not.toMatch(/DELETE FROM|TRUNCATE TABLE/i);
   });
 
   it("rate activation expires the prior active version", () => {

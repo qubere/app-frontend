@@ -303,6 +303,20 @@ Before production deploy:
 4. Run the permission catalogue sync so the new role grants exist before enabling the new UI.
 5. Confirm active `CUSTOMS`/`TMS` entitlements for accounts that should see each module.
 
+The populated-database migration clones each legacy global event definition into every account/product pair referenced by existing usage events or rate-rule mappings, remaps those mappings, and only then creates the composite usage-event foreign key. This preserves historical financial data while making the catalog tenant-local.
+
+If `prisma db push` was run before this backfill was added and stopped on `UsageEvent_accountId_eventCode_productLine_fkey`, repair the partial schema without deleting data, then complete the push:
+
+```bash
+npx prisma db execute \
+  --file packages/db/prisma/scripts/repair-billing-event-definitions.sql \
+  --schema packages/db/prisma/schema.prisma
+npx prisma db push --schema=packages/db/prisma/schema.prisma
+npx prisma generate --schema=packages/db/prisma/schema.prisma
+```
+
+For shared/staging/production environments, use `npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma`; `db push` is only appropriate for disposable/local development databases.
+
 ### 3.6 Verification executed
 
 The implementation was verified with:
@@ -323,6 +337,7 @@ The implementation was verified with:
 - `packages/billing/**`
 - `packages/db/prisma/schema.prisma`
 - `packages/db/prisma/migrations/20260824150000_billing_broker_readiness/migration.sql`
+- `packages/db/prisma/scripts/repair-billing-event-definitions.sql`
 - `packages/auth/src/permissions.ts`
 - `packages/auth/src/auth-guards.ts`
 - `apps/custom/src/app/app/billing/**`
