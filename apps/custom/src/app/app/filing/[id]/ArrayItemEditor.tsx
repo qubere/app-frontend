@@ -26,6 +26,7 @@ interface ArrayItemEditorProps {
   readOnly?: boolean;
   resolveRef: (ref: string) => any;
   ArrayGridView: any; // Pass the grid component to avoid circular deps
+  visibleFieldKeys?: string[];
 }
 
 export default function ArrayItemEditor({
@@ -41,6 +42,7 @@ export default function ArrayItemEditor({
   readOnly = false,
   resolveRef,
   ArrayGridView,
+  visibleFieldKeys,
 }: ArrayItemEditorProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["root"]));
   const [localData, setLocalData] = useState(itemData);
@@ -456,6 +458,8 @@ export default function ArrayItemEditor({
     const complexFields: Array<[string, any]> = [];
 
     Object.entries(resolved.properties).forEach(([fieldKey, fieldSchema]: [string, any]) => {
+      if (visibleFieldKeys?.length && !visibleFieldKeys.includes(fieldKey)) return;
+
       const resolvedFieldSchema = getResolvedSchema(fieldSchema);
       const isObject = resolvedFieldSchema.properties && Object.keys(resolvedFieldSchema.properties).length > 0;
       const isArray = resolvedFieldSchema.type === "array";

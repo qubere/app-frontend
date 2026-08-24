@@ -343,6 +343,12 @@ function LayoutHintsRenderer({ config, formData, onChange, errors = {}, schema }
   const renderRepeater = (arrayPath: string) => {
     const arraySchema = getSchemaAtPath(arrayPath);
     const arrayName = arrayPath.split(".").pop() ?? arrayPath;
+    const selectedChildKeys = Array.from(new Set(
+      visibleFields
+        .filter((field) => field.fieldPath.startsWith(`${arrayPath}.`))
+        .map((field) => field.fieldPath.slice(arrayPath.length + 1).split(".")[0])
+        .filter(Boolean)
+    ));
     const arrayData: any[] = Array.isArray(getNestedValue(formData, arrayPath))
       ? getNestedValue(formData, arrayPath)
       : [];
@@ -365,6 +371,7 @@ function LayoutHintsRenderer({ config, formData, onChange, errors = {}, schema }
           parentOnChange={onChange}
           resolveRef={resolveRef}
           readOnly={false}
+          visibleFieldKeys={selectedChildKeys.length > 0 ? selectedChildKeys : undefined}
         />
       </div>
     );
@@ -381,25 +388,7 @@ function LayoutHintsRenderer({ config, formData, onChange, errors = {}, schema }
       (rp) => rp.startsWith(`${tabPath}.`) || rp === tabPath
     );
 
-    // Auto-detect schema arrays inside this tab that have NO layout hint yet
-    // so they still render as a table even if the user hasn't set a hint on ChargeDeduction etc.
-    const autoRepeaters: string[] = [];
-    if (schema) {
-      const tabSchema = getSchemaAtPath(tabPath);
-      const tabProps = tabSchema?.properties ?? {};
-      Object.entries(tabProps).forEach(([propName, propSchema]: [string, any]) => {
-        let resolved = propSchema;
-        if (resolved?.$ref) resolved = resolveRef(resolved.$ref) ?? resolved;
-        const fullPath = `${tabPath}.${propName}`;
-        const isArray = resolved?.type === "array" || !!resolved?.items;
-        const alreadyHinted = !!layoutHints[fullPath];
-        if (isArray && !alreadyHinted && !tabRepeaters.includes(fullPath)) {
-          autoRepeaters.push(fullPath);
-        }
-      });
-    }
-
-    const allRepeaters = [...tabRepeaters, ...autoRepeaters];
+    const allRepeaters = tabRepeaters;
     const hasContent = fields.length > 0 || subPanels.length > 0 || allRepeaters.length > 0;
 
     if (!hasContent) {
@@ -468,22 +457,8 @@ function LayoutHintsRenderer({ config, formData, onChange, errors = {}, schema }
         !myTabPaths.some((tp) => rp.startsWith(`${tp}.`) || rp === tp)
     );
 
-    // Auto-detect schema arrays that are direct children of this tabsheet
-    // (not inside any tab/panel) — renders without an explicit repeater hint
-    const autoTabsheetRepeaters: string[] = [];
-    if (schema) {
-      const tsSchema = getSchemaAtPath(tabsheetPath);
-      Object.entries(tsSchema?.properties ?? {}).forEach(([propName, propSchema]: [string, any]) => {
-        let resolved = propSchema;
-        if (resolved && resolved['$ref']) resolved = resolveRef(resolved['$ref']) ?? resolved;
-        const fp = tabsheetPath + '.' + propName;
-        const isArr = resolved?.type === 'array' || !!resolved?.items;
-        if (isArr && !layoutHints[fp] && !myTabPaths.some(tp => fp.startsWith(tp + '.') || fp === tp) && !nestedRepeaters.includes(fp)) {
-          autoTabsheetRepeaters.push(fp);
-        }
-      });
-    }
-    const allNestedRepeaters = [...nestedRepeaters, ...autoTabsheetRepeaters];
+    // Repeaters inside this tabsheet render only when explicitly configured.
+    const allNestedRepeaters = nestedRepeaters;
     const renderNestedPanel = (pp: string) => {
       const pFields = standalonePanelFields[pp] ?? [];
       if (pFields.length === 0) return null;

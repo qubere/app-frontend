@@ -17,5 +17,5 @@ export const POST = withAuthenticatedRoute(
       return NextResponse.json({ error: err.message || "ERP order ingestion failed" }, { status: 500 });
     }
   },
-  { permission: "transportationOrders.write", write: true }
+  { permission: "transportation_orders.write", write: true }
 );

@@ -15,7 +15,7 @@ export type RecommendCarrierInput = z.infer<typeof recommendCarrierSchema>;
 
 export const recommendCarrierTool: AssistantTool = {
   access: {
-    permission: "transportationOrders.write",
+    permission: "transportation_orders.write",
     write: true,
     confirmationRequired: true,
   },

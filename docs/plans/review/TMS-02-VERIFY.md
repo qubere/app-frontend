@@ -54,10 +54,10 @@ in Wave 2 (not marked COMPLETED).
 ### P0-2. Unauthenticated mutation routes — **FIXED**
 All six flagged routes now wrap their handler in `withAuthenticatedRoute` **with an explicit
 `permission`** (not just auth-only):
-- `apps/tms/src/app/api/tenders/route.ts:6-23` (GET, `transportationOrders.read`) and `:25-81`
+- `apps/tms/src/app/api/tenders/route.ts:6-23` (GET, `transportation_orders.read`) and `:25-81`
   (POST, `tenders.send`, `write: true`).
 - `apps/tms/src/app/api/documents/upload/route.ts:6-53` (`documents.create`, `write: true`).
-- `apps/tms/src/app/api/orders/ingest/route.ts:5-21` (`transportationOrders.write`, `write: true`).
+- `apps/tms/src/app/api/orders/ingest/route.ts:5-21` (`transportation_orders.write`, `write: true`).
 - `apps/tms/src/app/api/documents/[id]/parse/route.ts:6-51` (`documents.create`, `write: true`).
 - `apps/tms/src/app/api/documents/[id]/attach/route.ts:6-53` (`documents.create`, `write: true`).
 - `apps/tms/src/app/api/assistant/chat/route.ts:5-39` (`tms.access`).

@@ -50,6 +50,7 @@ beforeEach(() => {
   authMock.mockResolvedValue({ userId: CLERK_USER_ID });
   dbMock.user.findUnique.mockResolvedValue({
     id: "u_1",
+    platformRoles: [],
     memberships: [{ accountId: HOME_ACCOUNT }],
   });
 });
@@ -68,7 +69,7 @@ describe("POST /api/auth/switch-account", () => {
     // The membership include is itself filtered to the target account, so a
     // caller with no ACTIVE membership there comes back with an empty array
     // rather than another tenant's membership row.
-    dbMock.user.findUnique.mockResolvedValue({ id: "u_1", memberships: [] });
+    dbMock.user.findUnique.mockResolvedValue({ id: "u_1", platformRoles: [], memberships: [] });
 
     const res = await call(FOREIGN_ACCOUNT);
 
@@ -83,6 +84,7 @@ describe("POST /api/auth/switch-account", () => {
     // alongside a request for a foreign account.
     dbMock.user.findUnique.mockResolvedValue({
       id: "u_1",
+      platformRoles: [],
       memberships: [{ accountId: HOME_ACCOUNT }],
     });
 

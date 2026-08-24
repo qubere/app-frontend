@@ -2,7 +2,7 @@
  * API endpoint for updating/deleting a specific UI configuration row
  *
  * GET    /api/filing-config/ui-configuration/[id] - Get specific config
- * PUT    /api/filing-config/ui-configuration/[id] - Update a draft config (guards against editing active rows)
+ * PUT    /api/filing-config/ui-configuration/[id] - Update this config row in place
  * DELETE /api/filing-config/ui-configuration/[id] - Delete a config (active row requires confirmation flag)
  */
 
@@ -95,21 +95,11 @@ export async function PUT(
       return NextResponse.json(config);
     }
 
-    // Only drafts are editable via PUT. To edit an active config, create a new draft first.
-    if (!existing.isDraft) {
-      return NextResponse.json(
-        {
-          error: "Cannot edit an active (published) configuration directly. Create a new draft instead.",
-          hint: "POST /api/filing-config/ui-configuration to create a draft for this combination.",
-        },
-        { status: 409 }
-      );
-    }
-
     const config = await db.filingUIConfig.update({
       where: { id },
       data: {
         configData: body.configData,
+        release: body.release ?? existing.release,
         description: body.description,
         updatedAt: new Date(),
         updatedBy: userIdentifier,

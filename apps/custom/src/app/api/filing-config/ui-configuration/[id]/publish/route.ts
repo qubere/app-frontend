@@ -14,11 +14,10 @@ export async function POST(
     if (!accountContext) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await params;
-    const draft = await db.filingUIConfig.findUnique({ where: { id } });
-    if (!draft) return NextResponse.json({ error: "Configuration not found" }, { status: 404 });
-    if (!draft.isDraft) return NextResponse.json({ error: "Only draft configurations can be published." }, { status: 409 });
+    const config = await db.filingUIConfig.findUnique({ where: { id } });
+    if (!config) return NextResponse.json({ error: "Configuration not found" }, { status: 404 });
 
-    const validation = validateConfig(draft.configData as unknown as FilingUIConfigData);
+    const validation = validateConfig(config.configData as unknown as FilingUIConfigData);
     if (!validation.valid) {
       return NextResponse.json(
         {
@@ -35,12 +34,13 @@ export async function POST(
     const published = await db.$transaction(async (tx) => {
       await tx.filingUIConfig.updateMany({
         where: {
-          country: draft.country,
-          procedureCode: draft.procedureCode,
-          messageName: draft.messageName,
-          messageType: draft.messageType,
-          release: draft.release,
+          country: config.country,
+          procedureCode: config.procedureCode,
+          messageName: config.messageName,
+          messageType: config.messageType,
+          release: config.release,
           isActive: true,
+          id: { not: id },
         },
         data: { isActive: false },
       });

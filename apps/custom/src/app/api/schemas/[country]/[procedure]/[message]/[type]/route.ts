@@ -12,7 +12,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile, readdir } from "fs/promises";
 import { join } from "path";
-import { db } from "@/lib/db";
 
 /** Normalise "1.0" → "1.0.0", "2" → "2.0.0", "1.0.0" stays */
 function normalizeVersion(raw: string): string {
@@ -22,13 +21,27 @@ function normalizeVersion(raw: string): string {
   return raw;
 }
 
-/** Map transactionType to the directory and schema file on disk.
- * Only IMPORT and EXPORT are supported. */
-function resolveSchemaFile(transactionType: string | null): { folder: string; file: string } {
-  if ((transactionType ?? "").toUpperCase() === "EXPORT") {
-    return { folder: "export", file: "ExportDeclaration.schema.json" };
+/** Map selected procedure to the directory and canonical schema file on disk. */
+function resolveSchemaFile(procedure: string): { folder: string; file: string; transactionType: string } {
+  const folder = procedure.trim().toLowerCase();
+
+  if (folder === "export") {
+    return { folder, file: "ExportDeclaration.schema.json", transactionType: "EXPORT" };
   }
-  return { folder: "import", file: "ImportDeclaration.schema.json" };
+
+  if (folder === "import") {
+    return { folder, file: "ImportDeclaration.schema.json", transactionType: "IMPORT" };
+  }
+
+  if (folder.includes("export")) {
+    return { folder, file: "ExportDeclaration.schema.json", transactionType: "EXPORT" };
+  }
+
+  if (folder.includes("import")) {
+    return { folder, file: "ImportDeclaration.schema.json", transactionType: "IMPORT" };
+  }
+
+  return { folder, file: `${procedure.trim()}Declaration.schema.json`, transactionType: procedure.trim().toUpperCase() };
 }
 
 /** List available version folders for a given transaction type folder */
@@ -55,16 +68,8 @@ export async function GET(
     const version = normalizeVersion(searchParams.get("version") || "1.0.0");
 
     // ── 1. Look up transactionType from FilingProcedureConfig ─────────────────
-    const procConfig = await db.filingProcedureConfig.findFirst({
-      where: { country, procedureCode: procedure, messageName: message, isActive: true },
-      select: { transactionType: true },
-    });
-
-    const rawTransactionType = procConfig?.transactionType
-      ?? (procedure.toUpperCase().startsWith("H") ? "IMPORT" : "EXPORT");
-
-    const schemaSource = procConfig?.transactionType ? "db" : "fallback";
-    const { folder, file: schemaFileName } = resolveSchemaFile(rawTransactionType);
+    const { folder, file: schemaFileName, transactionType: rawTransactionType } = resolveSchemaFile(procedure);
+    const schemaSource = "procedure";
 
     // ── 2. Build paths ─────────────────────────────────────────────────────────
     const schemasBase = join(process.cwd(), "public", "schemas", "customs-filing", "filing-schemas", folder);
@@ -80,18 +85,19 @@ export async function GET(
       if (fileErr.code === "ENOENT") {
         // Version folder or file not found — list what IS available
         const available = await getAvailableVersions(schemasBase);
-        const txLabel = rawTransactionType.toUpperCase(); // "IMPORT" or "EXPORT"
+        const procedureLabel = procedure.toUpperCase();
 
         return NextResponse.json(
           {
             error: "SCHEMA_VERSION_NOT_FOUND",
             message:
               available.length > 0
-                ? `Schema version "${version}" is not available for ${txLabel}. Available versions: ${available.join(", ")}.`
-                : `No schema versions found for ${txLabel}. Please add schema files to public/schemas/customs-filing/filing-schemas/${folder}/.`,
+                ? `Schema version "${version}" is not available for procedure ${procedureLabel}. Available versions: ${available.join(", ")}.`
+                : `No canonical schema found for procedure ${procedureLabel}. Please add ${schemaFileName} under public/schemas/customs-filing/filing-schemas/${folder}/${version}/.`,
             details: {
               requested: version,
-              transactionType: txLabel,
+              procedure: procedureLabel,
+              transactionType: rawTransactionType,
               schemaFile: schemaFileName,
               availableVersions: available,
             },

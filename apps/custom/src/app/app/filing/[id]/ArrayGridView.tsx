@@ -22,6 +22,7 @@ interface ArrayGridViewProps {
   readOnly?: boolean;
   resolveRef: (ref: string) => any;
   parentOnChange?: (path: string, value: any) => void; // Parent's direct onChange for nested edits
+  visibleFieldKeys?: string[]; // Optional allow-list for configured fields inside this array item
 }
 
 export default function ArrayGridView({
@@ -33,6 +34,7 @@ export default function ArrayGridView({
   readOnly = false,
   resolveRef,
   parentOnChange,
+  visibleFieldKeys,
 }: ArrayGridViewProps) {
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,6 +68,8 @@ export default function ArrayGridView({
   const getDisplayColumns = (): string[] => {
     if (!resolvedItemSchema?.properties) return [];
     const allFields = Object.keys(resolvedItemSchema.properties);
+    const allowed = visibleFieldKeys?.filter((key) => allFields.includes(key));
+    if (allowed?.length) return allowed.slice(0, Math.min(5, allowed.length));
     // Show first 4-5 fields in grid, or all if fewer
     return allFields.slice(0, Math.min(5, allFields.length));
   };
@@ -86,7 +90,9 @@ export default function ArrayGridView({
     
     if (resolved.properties && Object.keys(resolved.properties).length > 0) {
       const obj: any = {};
-      Object.keys(resolved.properties).forEach(key => {
+      const propertyKeys = Object.keys(resolved.properties);
+      const keysToCreate = visibleFieldKeys?.filter((key) => propertyKeys.includes(key)) ?? propertyKeys;
+      keysToCreate.forEach(key => {
         obj[key] = createDefaultValue(resolved.properties[key]);
       });
       return obj;
@@ -297,6 +303,7 @@ export default function ArrayGridView({
           readOnly={readOnly}
           resolveRef={resolveRef}
           ArrayGridView={ArrayGridView} // Pass self for recursive rendering
+          visibleFieldKeys={visibleFieldKeys}
         />
       )}
     </div>

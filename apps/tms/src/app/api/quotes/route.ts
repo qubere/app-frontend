@@ -31,7 +31,7 @@ export const GET = withAuthenticatedRoute(
 
     return NextResponse.json({ quotes });
   },
-  { permission: "transportationOrders.read" }
+  { permission: "transportation_orders.read" }
 );
 
 export const POST = withAuthenticatedRoute(
@@ -69,5 +69,5 @@ export const POST = withAuthenticatedRoute(
 
     return NextResponse.json({ quote }, { status: 201 });
   },
-  { permission: "transportationOrders.write", write: true }
+  { permission: "transportation_orders.write", write: true }
 );

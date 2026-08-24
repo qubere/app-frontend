@@ -78,7 +78,7 @@ Still a hardcoded fallback and a hardcoded threshold, not `AgentPolicyConfig.aut
 also unchanged.
 
 The auth on the route improved (`apps/tms/src/app/api/transportation-orders/parse/route.ts` now
-uses `withAuthenticatedRoute` with `{ permission: "transportationOrders.write" }` — see item 4),
+uses `withAuthenticatedRoute` with `{ permission: "transportation_orders.write" }` — see item 4),
 but the UI form at `apps/tms/src/app/orders/page.tsx` (the "Inbound Email & Document Intake
 Parser" card, lines 65-97) is still a plain `<form action="/api/transportation-orders/parse"
 method="POST">` with a single `<textarea name="text">` and no JS/fetch — it still never supplies
@@ -93,7 +93,7 @@ none of that.
   `withAuthenticatedRoute(..., { permission: "shipments.read" })` and the Prisma `where` clause
   includes `accountId: ctx.accountId` (line 12). No longer a cross-tenant leak.
 - **`/api/transportation-orders/parse` — FIXED.** `apps/tms/src/app/api/transportation-orders/parse/route.ts`
-  now uses `withAuthenticatedRoute(..., { permission: "transportationOrders.write" })`; `accountId`
+  now uses `withAuthenticatedRoute(..., { permission: "transportation_orders.write" })`; `accountId`
   is no longer read from the request body at all — `parseIntakeRequest(ctx, {...})` uses the
   server-resolved `ctx.accountId`. The old `mockCtx: any = { userId, accountId: body.accountId ?? "acc_default" }`
   pattern is gone from this file.

@@ -221,8 +221,8 @@ code doesn't have — that's a demo-honesty problem independent of whether real 
 - The tenant-isolation middleware itself (`packages/db/src/index.ts`) is correctly DMMF-driven
   and will auto-pick-up every new model with a required `accountId` — the leaks above are about
   code paths that never invoke it, not a flaw in the mechanism itself.
-- The permission-catalog additions (`transportationOrders.*`, `carriers.manage`, `tenders.send`,
-  `carrierInvoices.*`) are correctly declarative and match the existing pattern exactly — only
+- The permission-catalog additions (`transportation_orders.*`, `carriers.manage`, `tenders.send`,
+  `carrier_invoices.*`) are correctly declarative and match the existing pattern exactly — only
   `tms.access` itself is missing.
 - `AuditSource`/`WorkItemKind` extensions, the `DocumentType`/`IntegrationCategory` enum
   additions, and every new model's use of `Decimal` (not `Float`) for money are all done exactly

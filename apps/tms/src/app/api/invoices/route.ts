@@ -40,7 +40,7 @@ export const GET = withAuthenticatedRoute(
 
     return NextResponse.json({ invoices });
   },
-  { permission: "carrierInvoices.match" }
+  { permission: "carrier_invoices.match" }
 );
 
 export const POST = withAuthenticatedRoute(
@@ -91,5 +91,5 @@ export const POST = withAuthenticatedRoute(
 
     return NextResponse.json({ invoice, matchResult }, { status: 201 });
   },
-  { permission: "carrierInvoices.match", write: true }
+  { permission: "carrier_invoices.match", write: true }
 );

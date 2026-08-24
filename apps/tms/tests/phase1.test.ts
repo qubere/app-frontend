@@ -36,7 +36,7 @@ const mockContext: any = {
   membershipId: "mem_123",
   roleIds: ["role_1"],
   roleNames: ["ADMIN"],
-  permissions: ["transportationOrders.read", "transportationOrders.write"],
+  permissions: ["transportation_orders.read", "transportation_orders.write"],
   memberships: [],
   account: {
     id: "acc_999",

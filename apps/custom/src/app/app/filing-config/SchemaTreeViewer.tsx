@@ -276,16 +276,6 @@ export default function SchemaTreeViewer({
     });
   };
 
-  const collapseAll = () => setExpandedPaths(new Set());
-
-  const expandAll = () => {
-    const all = new Set<string>();
-    const collect = (nodes: SchemaTreeNode[]) =>
-      nodes.forEach((n) => { all.add(n.path); if (n.children) collect(n.children); });
-    collect(tree);
-    setExpandedPaths(all);
-  };
-
   // -------------------------------------------------------------------------
   // Node renderer
   // -------------------------------------------------------------------------
@@ -434,26 +424,12 @@ export default function SchemaTreeViewer({
       {/* ── Sticky Header ── */}
       <div className="sticky top-0 bg-surface-muted border-b border-border px-4 py-3 z-10 space-y-2">
         {/* Title row */}
-        <div className="flex items-center justify-between">
+        <div>
           <div>
             <h3 className="text-xs font-bold text-ink uppercase tracking-wider">Schema Structure</h3>
             <p className="text-[10px] text-ink-muted mt-0.5">
               📁 Complex → layout &nbsp;|&nbsp; 📄 Field → configure
             </p>
-          </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={collapseAll}
-              className="text-[10px] px-2 py-1 bg-white border border-border rounded hover:bg-surface-hover transition-colors"
-            >
-              Collapse All
-            </button>
-            <button
-              onClick={expandAll}
-              className="text-[10px] px-2 py-1 bg-white border border-border rounded hover:bg-surface-hover transition-colors"
-            >
-              Expand All
-            </button>
           </div>
         </div>
 

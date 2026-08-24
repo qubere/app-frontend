@@ -41,7 +41,7 @@ export type PlanMovementStopsInput = z.infer<typeof planMovementStopsSchema>;
 
 export const planMovementStopsTool: AssistantTool = {
   access: {
-    permission: "transportationOrders.write",
+    permission: "transportation_orders.write",
     write: true,
     confirmationRequired: true,
   },
