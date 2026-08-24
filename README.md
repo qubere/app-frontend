@@ -262,6 +262,30 @@ graphs, corporate registry ingestion, autonomous approval, and any fuzzy
 matching beyond the Double Metaphone shortlist — see `docs/party-master.md`
 and Section K of the implementation report for the full list of known gaps.
 
+### 13. Qubere Autonomous Freight Execution TMS (`apps/tms`)
+
+**Qubere TMS** (`apps/tms`, running on **`http://localhost:3001`**) is an autonomous freight execution application built for logistics operators, freight forwarders, and dispatchers.
+
+#### 🤖 6 Autonomous Pipeline Agents
+1. **Document Intake Agent**: Classifies incoming trade and logistics PDFs (`BILL_OF_LADING`, `AIR_WAYBILL`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `PROOF_OF_DELIVERY`, `CARRIER_INVOICE`, `BOOKING_REQUEST`, `BOOKING_CONFIRMATION`) and extracts 100% of visible freight facts with evidence provenance.
+2. **Shipment Enrichment Agent**: Synchronizes extracted document facts with the operational `Shipment` record and `TransportationOrder` DB rows, promoting route details (`countryOfExport`, `destinationCountry`, `transportMode`, `portOfEntry`), tracking references (`MBL`, `HBL`, `BOOKING`, `CONTAINER`), equipment requirements, and cargo line items.
+3. **Document Readiness Agent**: Evaluates mode- and customs-dependent document completeness (e.g. `BILL_OF_LADING` + `PACKING_LIST` + `COMMERCIAL_INVOICE`) using RAG account memory, raising/resolving `ExceptionItem` records.
+4. **Movement Readiness Agent**: Verifies positioning, stops, equipment requirements, and carrier tracking references to ensure execution readiness.
+5. **Cost & Carrier Readiness Agent**: Audits linehaul and drayage freight quotes, tenders, and buy/sell margins against approved target margins.
+6. **Operational Risk Agent**: Evaluates tracking freshness, customer promise buffers, last free day (LFD) detention risks, and open exceptions to assign real-time health status (`Healthy`, `At Risk`, `Critical`).
+
+#### 🔒 Zero Data Loss & Additive Intelligence Mandate
+Every agent operates under a strict **Additive Intelligence Mandate**:
+- Raw key-value pairs, contact details, dates (`CutOff`, `ETD`, `ETA`), move types (`FCL/FCL`), vessel/voyage details, line items, and unmapped fields are captured in `rawMetadataJson` and `extractedJson`.
+- No agent step filters out or discards facts from prior agents. Downstream agents build upon the accumulated state stored in `pipelineJob.state.accumulatedData`.
+
+#### 🔑 Credentials & Access
+- **App URL**: `http://localhost:3001`
+- **Default Password**: `QuberePass2026!`
+- **Primary Dispatcher / Admin**: `admin@qubere.ai`
+- **Target Enterprise Planner**: `sarah@target.com`
+- **Acme Enterprise Owner**: `owner.acme@qubere.ai`
+
 ---
 
 ## 💰 AI Cost Controls
@@ -678,6 +702,7 @@ Default password for all seeded test users: **`QuberePass2026!`**
 | `viewer.acme@qubere.ai` | Acme Corporation (`ENTERPRISE`) | `VIEWER` | Read-only Viewer |
 | `owner.global@qubere.ai` | Global Trade Logistics (`ENTERPRISE`) | `OWNER` | Enterprise Owner |
 | `multirole@qubere.ai` | Acme Corp & Global Trade | Multi-Account | Member @ Acme + Admin @ Global Trade |
+| `admin@target.com` | Target (`ENTERPRISE`) | `ADMIN` | Account Admin (Views all Target data) |
 | `joe@target.com` | Target (`ENTERPRISE`) | `ADMIN` | Account Admin (Views all Target data) |
 | `anna@target.com` | Target (`ENTERPRISE`) | `ADMIN` | Account Admin (Views all Target data) |
 | `sarah@target.com` | Target (`ENTERPRISE`) | `PLANNER` | Planner (Uploads docs; restricted to own data) |

@@ -61,6 +61,7 @@ export type PermissionCategory =
   | "Invoice"
   | "Freight"
   | "Integration"
+  | "Freight"
   | "System";
 
 export interface PermissionDefinition {
@@ -264,6 +265,17 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   // TMS Integration Testing & Extra
   { name: "integration.test", description: "Execute test payload against EDI/API integration", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
   { name: "integration.disable", description: "Disable API integration stream", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
+
+  // TMS Access & General
+  { name: "tms.access", description: "Access Qubere TMS Freight Execution System", category: "System", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE", "INTERNAL_ADMIN", "OWNER", "ADMIN", "MEMBER", "BROKER_ADMIN", "BROKER_MANAGER"] },
+
+  // Freight Execution
+  { name: "transportationOrders.read", description: "View transportation orders", category: "Freight", defaultRoles: ["ADMIN", "MEMBER", "VIEWER", "OWNER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_VIEWER", "SUPER_ADMIN_READ"] },
+  { name: "transportationOrders.write", description: "Create and update transportation orders", category: "Freight", defaultRoles: ["ADMIN", "MEMBER", "OWNER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS"] },
+  { name: "carriers.manage", description: "Manage carriers and profiles", category: "Freight", defaultRoles: ["ADMIN", "OWNER", "TMS_ADMIN", "TMS_MANAGER"] },
+  { name: "tenders.send", description: "Send load tenders to carriers", category: "Freight", defaultRoles: ["ADMIN", "MEMBER", "OWNER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER"] },
+  { name: "carrierInvoices.match", description: "Perform freight audit and invoice matching", category: "Freight", defaultRoles: ["ADMIN", "MEMBER", "OWNER", "TMS_ADMIN", "TMS_BILLING"] },
+  { name: "carrierInvoices.override", description: "Override invoice audit mismatch warnings", category: "Freight", defaultRoles: ["ADMIN", "OWNER", "TMS_ADMIN"] },
 
   // ─── QUBERE ADMIN / PLATFORM PERMISSIONS ─────────────────────────────────
 

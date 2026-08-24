@@ -45,6 +45,8 @@ export function DocumentWorkspacePanel({
           fileName={primaryDoc?.fileName ?? "CommercialInvoice_1 2.pdf"}
           docType={primaryDoc?.docType ?? "Commercial Invoice"}
           shipmentNumber={shipmentNumber}
+          fileUrl={primaryDoc?.fileUrl ?? undefined}
+          extractedJson={primaryDoc?.extractedJson}
         />
       </div>
     </div>

@@ -43,7 +43,7 @@ export const GET = withAuthenticatedRoute(
       return NextResponse.json({ count: 0, shipments: [] });
     }
   },
-  { permission: "shipments.read" }
+  { permission: "shipment.read" }
 );
 
 export const POST = withAuthenticatedRoute(
@@ -105,5 +105,5 @@ export const POST = withAuthenticatedRoute(
       );
     }
   },
-  { permission: "shipments.write", write: true }
+  { permission: "shipment.create", write: true }
 );

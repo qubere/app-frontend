@@ -36,6 +36,8 @@ export interface PageAnalysisResult {
   headerTextExcerpt: string;
 }
 
+export type AppOrigin = "CUSTOMS" | "TMS" | "CLEAR" | "MOVE" | (string & {});
+
 export interface DocumentIntakeAgentInput {
   accountId: string;
   userId: string;
@@ -45,9 +47,11 @@ export interface DocumentIntakeAgentInput {
   fileBuffer?: Buffer;
   mimeType?: string;
   docTypeOverride?: string;
+  sourceApp?: AppOrigin;
 }
 
 export interface DocumentIntakeAgentOutput {
+  sourceApp: AppOrigin;
   fileName?: string;
   fileUrl?: string;
   mimeType?: string;
@@ -441,6 +445,7 @@ Target File Name: "${input.fileName}"`;
     }
 
     const agentOutput: DocumentIntakeAgentOutput = {
+      sourceApp: input.sourceApp || "CUSTOMS",
       packetId,
       shipmentId: input.shipmentId,
       status,

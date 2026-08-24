@@ -8,6 +8,7 @@ const createQuoteSchema = z.object({
   shipmentId: z.string(),
   carrierId: z.string(),
   amount: z.number().positive(),
+  sellAmount: z.number().positive().optional(),
   currency: z.string().default("USD"),
   transitDays: z.number().int().positive().optional().nullable(),
   validUntil: z.string().optional().nullable(),
@@ -25,7 +26,7 @@ export const GET = withAuthenticatedRoute(
         accountId: ctx.accountId,
         ...(shipmentId ? { shipmentId } : {}),
       },
-      orderBy: { amount: "asc" },
+      orderBy: { sellAmount: "asc" },
     });
 
     return NextResponse.json({ quotes });
@@ -38,12 +39,16 @@ export const POST = withAuthenticatedRoute(
     const body = await req.json();
     const parsed = createQuoteSchema.parse(body);
 
+    const quoteAmount = parsed.amount;
+    const sellAmt = parsed.sellAmount ?? quoteAmount;
+
     const quote = await db.freightQuote.create({
       data: {
         accountId: ctx.accountId,
         shipmentId: parsed.shipmentId,
         carrierId: parsed.carrierId,
-        amount: parsed.amount,
+        amount: quoteAmount,
+        sellAmount: sellAmt,
         currency: parsed.currency,
         transitDays: parsed.transitDays ?? null,
         validUntil: parsed.validUntil ? new Date(parsed.validUntil) : null,

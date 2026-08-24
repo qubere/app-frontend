@@ -75,7 +75,13 @@ function timestamp(value?: string | null) {
   return new Date(value).toLocaleString();
 }
 
-export function TmsPipelineProgressRibbon({ shipmentId }: { shipmentId: string }) {
+export function TmsPipelineProgressRibbon({
+  shipmentId,
+  onNavigateToActivity,
+}: {
+  shipmentId: string;
+  onNavigateToActivity?: () => void;
+}) {
   const router = useRouter();
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,12 +166,7 @@ export function TmsPipelineProgressRibbon({ shipmentId }: { shipmentId: string }
   };
 
   if (loading) {
-    return (
-      <div className="rounded-2xl border border-border bg-white p-4 flex items-center gap-3 text-xs text-ink-muted">
-        <Loader2 className="w-4 h-4 animate-spin text-brand" />
-        Loading TMS processing status…
-      </div>
-    );
+    return null;
   }
 
   if (!status) {
@@ -183,7 +184,7 @@ export function TmsPipelineProgressRibbon({ shipmentId }: { shipmentId: string }
             type="button"
             disabled={starting}
             onClick={() => void callPipeline("pipeline-trigger", "start")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
           >
             <Play className="w-3.5 h-3.5" /> {starting ? "Starting…" : "Start processing"}
           </button>
@@ -198,123 +199,91 @@ export function TmsPipelineProgressRibbon({ shipmentId }: { shipmentId: string }
   const reviewCount = status.steps.filter((step) => step.status === "REVIEW_REQUIRED").length;
   const completedCount = status.steps.filter((step) => ["SUCCESS", "REVIEW_REQUIRED"].includes(step.status)).length;
 
+  if (status.status === "COMPLETED" && !failed && !active && !starting && !retrying) {
+    return null;
+  }
+
   return (
-    <section className={`rounded-2xl border p-4 space-y-3 shadow-2xs ${failed ? "border-red-200 bg-red-50" : active ? "border-blue-200 bg-blue-50" : "border-emerald-200 bg-emerald-50"}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3 min-w-0">
-          {failed ? <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" /> : active ? <RefreshCw className="w-5 h-5 text-brand animate-spin shrink-0 mt-0.5" /> : <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+    <div
+      onClick={() => onNavigateToActivity?.()}
+      className={`rounded-2xl border p-4 space-y-3 shadow-2xs transition-all ${
+        onNavigateToActivity ? "cursor-pointer hover:shadow-xs" : ""
+      } ${failed ? "border-red-200 bg-red-50 hover:bg-red-100/60" : active ? "border-blue-200 bg-blue-50 hover:bg-blue-100/60" : "border-emerald-200 bg-emerald-50 hover:bg-emerald-100/60"}`}
+    >
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          {failed ? (
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+          ) : active ? (
+            <RefreshCw className="w-5 h-5 text-brand animate-spin shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          )}
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-sm font-extrabold text-ink">
                 {failed
-                  ? status.stalled ? "TMS processing stalled" : "TMS processing failed"
+                  ? status.stalled
+                    ? "TMS processing stalled"
+                    : "TMS processing failed"
                   : active
-                    ? status.status === "PENDING" ? "TMS processing queued" : `Running: ${status.activeAgent ?? "agent workflow"}`
-                    : reviewCount > 0 ? `Processing complete — ${reviewCount} review item(s)` : "TMS processing complete"}
+                  ? `Processing Status: ${status.progressPercent}% Done (${completedCount}/${status.totalSteps} steps completed)`
+                  : reviewCount > 0
+                  ? `Processing Complete — ${reviewCount} review item(s)`
+                  : "TMS processing complete"}
               </p>
               <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold ${streamConnected ? "text-emerald-700" : "text-amber-700"}`}>
                 <Radio className="w-3 h-3" /> {streamConnected ? "LIVE" : "RECONNECTING"}
               </span>
             </div>
-            <p className="text-xs text-ink-muted mt-0.5">
+            <p className="text-xs text-ink-muted mt-0.5 font-medium">
               {failed
-                ? status.stallReason || status.errorMessage || "The run can be safely resumed from its last durable step."
-                : `${completedCount} of ${status.totalSteps} agents finished · Attempt ${status.attemptCount || 1} of ${status.maxAttempts}`}
-            </p>
-            <p className="text-[10px] text-ink-muted mt-1 font-mono">
-              Dispatch {status.dispatch?.status ?? "UNKNOWN"} · Heartbeat {timestamp(status.lastHeartbeatAt)}
-              {status.nextRetryAt ? ` · Pipeline retry ${timestamp(status.nextRetryAt)}` : ""}
-              {status.dispatch?.nextAttemptAt && status.dispatch.status !== "DISPATCHED" ? ` · Dispatch retry ${timestamp(status.dispatch.nextAttemptAt)}` : ""}
+                ? status.stallReason || status.errorMessage || "Processing halted; click to view Agent Executions & Audit Log."
+                : active
+                ? `Running: ${status.activeAgent ?? "Autonomous Workflow"} · Click to view Agent Executions & Audit Log`
+                : "All pipeline steps finished · Click to view Agent Executions & Audit Log"}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="font-mono text-sm font-black text-ink">{status.progressPercent}%</span>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="font-mono text-sm font-black text-ink">{status.progressPercent}% ({completedCount}/{status.totalSteps} done)</span>
           {failed && status.attemptCount < status.maxAttempts ? (
             <button
               type="button"
               disabled={retrying}
-              onClick={() => void callPipeline("pipeline-retry", "retry")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold disabled:opacity-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                void callPipeline("pipeline-retry", "retry");
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
             >
               <RotateCcw className={`w-3.5 h-3.5 ${retrying ? "animate-spin" : ""}`} />
               {retrying ? "Retrying…" : "Resume"}
             </button>
-          ) : !active ? (
+          ) : (
             <button
               type="button"
-              disabled={starting}
-              onClick={() => void callPipeline("pipeline-trigger", "start")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ink text-white text-xs font-bold disabled:opacity-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigateToActivity?.();
+              }}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 text-brand text-xs font-extrabold border border-border hover:bg-white cursor-pointer shadow-2xs"
             >
-              <Play className="w-3.5 h-3.5" /> {starting ? "Starting…" : "Run again"}
+              View Audit Log →
             </button>
-          ) : null}
+          )}
         </div>
       </div>
 
-      <div className="h-1.5 rounded-full bg-white/80 overflow-hidden border border-black/5">
-        <div className={`h-full transition-all duration-500 ${failed ? "bg-red-500" : active ? "bg-brand" : "bg-emerald-500"}`} style={{ width: `${status.progressPercent}%` }} />
+      <div className="h-2 rounded-full bg-white/80 overflow-hidden border border-black/5">
+        <div
+          className={`h-full transition-all duration-500 ${failed ? "bg-red-500" : active ? "bg-brand animate-pulse" : "bg-emerald-500"}`}
+          style={{ width: `${status.progressPercent}%` }}
+        />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-        {status.steps.map((step) => {
-          const running = step.status === "RUNNING";
-          const done = step.status === "SUCCESS";
-          const review = step.status === "REVIEW_REQUIRED";
-          const stepFailed = step.status === "FAILED";
-          const memories = step.output?.memories ?? [];
-          return (
-            <details key={step.stepNumber} className={`rounded-xl border px-3 py-2 bg-white/80 ${stepFailed ? "border-red-300" : running ? "border-brand" : review ? "border-amber-300" : done ? "border-emerald-300" : "border-border"}`}>
-              <summary className="cursor-pointer list-none">
-                <div className="flex items-center gap-1.5">
-                  {running ? <Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> : done ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : review ? <AlertCircle className="w-3.5 h-3.5 text-amber-600" /> : stepFailed ? <AlertCircle className="w-3.5 h-3.5 text-red-600" /> : <Clock3 className="w-3.5 h-3.5 text-ink-muted" />}
-                  <span className="text-[10px] font-mono font-bold text-ink-muted">STEP {step.stepNumber}</span>
-                </div>
-                <p className="text-[11px] font-bold text-ink leading-tight mt-1.5">{step.agentName.replace(" Agent", "")}</p>
-                <div className="flex items-center justify-between mt-1">
-                  <p className={`text-[9px] font-mono font-bold ${review ? "text-amber-700" : stepFailed ? "text-red-700" : done ? "text-emerald-700" : running ? "text-brand" : "text-ink-muted"}`}>{step.status.replace("_", " ")}</p>
-                  {memories.length > 0 && <span className="inline-flex items-center gap-1 text-[9px] font-bold text-violet-700"><Brain className="w-3 h-3" />{memories.length}</span>}
-                </div>
-              </summary>
-              {(step.output?.summary || step.errorMessage) && <p className="text-[10px] text-ink mt-2 pt-2 border-t border-border leading-relaxed">{step.errorMessage || step.output?.summary}</p>}
-              {step.output?.memoryRetrievalStatus && <p className="text-[9px] font-mono text-ink-muted mt-2">MEMORY {Array.isArray(step.output.memoryRetrievalStatus) ? step.output.memoryRetrievalStatus.join(" / ") : step.output.memoryRetrievalStatus}</p>}
-              {memories.map((memory) => (
-                <div key={memory.memoryId} className="mt-2 rounded-lg bg-violet-50 border border-violet-100 p-2">
-                  <p className="text-[9px] font-bold text-violet-900">{memory.sourceType.replaceAll("_", " ")} · {Math.round(memory.confidence * 100)}%</p>
-                  <p className="text-[9px] text-violet-800 mt-0.5 leading-relaxed">{memory.content}</p>
-                  <p className="text-[8px] font-mono text-violet-600 mt-1">{memory.memoryId} · score {memory.score.toFixed(4)}</p>
-                </div>
-              ))}
-            </details>
-          );
-        })}
-      </div>
-
-      {status.runs.length > 1 && (
-        <details className="rounded-xl border border-border bg-white/70 px-3 py-2">
-          <summary className="cursor-pointer list-none flex items-center gap-2 text-xs font-bold text-ink"><History className="w-3.5 h-3.5" /> Previous runs ({status.runs.length - 1})</summary>
-          <div className="mt-2 divide-y divide-border">
-            {status.runs.slice(1).map((run) => (
-              <details key={run.jobId} className="py-2 text-[10px]">
-                <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
-                  <div><span className="font-mono font-bold text-ink">{run.jobId}</span><span className="text-ink-muted"> · {timestamp(run.createdAt)}</span></div>
-                  <span className="font-mono font-bold text-ink-muted">{run.status} · {run.progressPercent}% · attempt {run.attemptCount}</span>
-                </summary>
-                <div className="mt-2 grid md:grid-cols-2 gap-1.5">
-                  {run.steps.map((step) => (
-                    <div key={step.stepNumber} className="rounded-lg border border-border bg-white px-2 py-1.5">
-                      <p className="font-bold text-ink">{step.stepNumber}. {step.agentName} · {step.status}</p>
-                      {step.output?.summary && <p className="text-ink-muted mt-0.5">{step.output.summary}</p>}
-                    </div>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
-        </details>
-      )}
       {error && <p className="text-xs font-semibold text-red-700">{error}</p>}
-    </section>
+    </div>
   );
 }

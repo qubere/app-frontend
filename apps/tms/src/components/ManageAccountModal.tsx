@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Building, Users, ShieldCheck, Settings2, Plug, Mail, Shield } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { X, Building, Users, ShieldCheck, Settings2, Plug, Mail, Shield, Check, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type PanelItemId = "account" | "users" | "roles" | "settings" | "documentEmail" | "integrations";
@@ -46,7 +47,58 @@ export function ManageAccountModal({
   items = DEFAULT_ITEMS,
   externalItems = [{ name: "Qubere Freight Console", href: "/platform-admin", icon: Shield, description: "Cross-tenant administration" }],
 }: ManageAccountModalProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<PanelItemId>("account");
+
+  // Account Profile Form State
+  const [companyName, setCompanyName] = useState(accountName);
+  const [scac, setScac] = useState("QBR-FREIGHT-8821");
+  const [autoTenderProtocol, setAutoTenderProtocol] = useState("Lowest Rate First (Waterfall Routing)");
+  const [contactEmail, setContactEmail] = useState("dispatch@qubere.ai");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"success" | "error" | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    setCompanyName(accountName);
+  }, [accountName]);
+
+  async function handleSaveAccountProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setIsSaving(true);
+    setSaveStatus(null);
+    setErrorMessage("");
+
+    try {
+      const res = await fetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: companyName,
+          scac,
+          autoTenderProtocol,
+          contactEmail,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update account profile");
+      }
+
+      setSaveStatus("success");
+      router.refresh();
+      setTimeout(() => {
+        setSaveStatus(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error("Save Account Profile error:", err);
+      setSaveStatus("error");
+      setErrorMessage(err?.message || "An unexpected error occurred while saving account profile.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (!isOpen || typeof document === "undefined") return null;
 
@@ -57,11 +109,11 @@ export function ManageAccountModal({
         <div className="h-16 px-6 border-b border-border flex items-center justify-between bg-surface-muted/50">
           <div>
             <h2 className="text-base font-bold text-ink">Account & Governance Settings</h2>
-            <p className="text-xs text-ink-muted">{accountName} — Freight OS</p>
+            <p className="text-xs text-ink-muted">{companyName || accountName} — Freight OS</p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-ink-muted hover:text-ink hover:bg-white border border-border/40 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-ink-muted hover:text-ink hover:bg-white border border-border/40 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -130,35 +182,77 @@ export function ManageAccountModal({
                   <h3 className="text-lg font-bold text-ink">Account Profile</h3>
                   <p className="text-xs text-ink-muted">Organization identity and TMS dispatch preferences</p>
                 </div>
-                <div className="space-y-4 max-w-lg">
+
+                <form onSubmit={handleSaveAccountProfile} className="space-y-4 max-w-lg">
                   <div>
                     <label className="block text-xs font-semibold text-ink mb-1">Company Name</label>
                     <input
                       type="text"
-                      defaultValue={accountName}
-                      className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand font-medium text-ink"
                     />
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-ink mb-1">SCAC / DOT Carrier Number</label>
                     <input
                       type="text"
-                      defaultValue="QBR-FREIGHT-8821"
-                      className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand"
+                      value={scac}
+                      onChange={(e) => setScac(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand font-medium text-ink"
                     />
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-ink mb-1">Default Auto-Tender Protocol</label>
-                    <select className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand">
-                      <option>Lowest Rate First (Waterfall Routing)</option>
-                      <option>Highest On-Time Performance (KPI Routing)</option>
-                      <option>Broadcast to All Contracted Carriers</option>
+                    <select
+                      value={autoTenderProtocol}
+                      onChange={(e) => setAutoTenderProtocol(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand font-medium text-ink"
+                    >
+                      <option value="Lowest Rate First (Waterfall Routing)">Lowest Rate First (Waterfall Routing)</option>
+                      <option value="Highest On-Time Performance (KPI Routing)">Highest On-Time Performance (KPI Routing)</option>
+                      <option value="Broadcast to All Contracted Carriers">Broadcast to All Contracted Carriers</option>
                     </select>
                   </div>
-                  <button className="px-4 py-2 bg-brand text-white rounded-xl text-xs font-bold shadow-xs hover:bg-brand-hover transition-colors">
-                    Save Account Profile
-                  </button>
-                </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-ink mb-1">Dispatch Contact Email</label>
+                    <input
+                      type="email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-border text-xs bg-white focus:outline-none focus:border-brand font-medium text-ink"
+                    />
+                  </div>
+
+                  {saveStatus === "success" && (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center space-x-2 font-medium">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Account profile saved successfully!</span>
+                    </div>
+                  )}
+
+                  {saveStatus === "error" && (
+                    <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-center space-x-2 font-medium">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>{errorMessage || "Failed to save account profile."}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="px-5 py-2.5 bg-brand text-white rounded-xl text-xs font-bold shadow-xs hover:bg-brand-hover transition-colors flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                      <span>{isSaving ? "Saving Changes..." : "Save Account Profile"}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
 

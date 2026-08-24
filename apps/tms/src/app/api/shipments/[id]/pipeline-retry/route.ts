@@ -18,5 +18,5 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       );
     }
   },
-  { permission: "shipments.write", write: true }
+  { permission: "shipment.update", write: true }
 );

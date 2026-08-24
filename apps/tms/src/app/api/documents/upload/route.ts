@@ -7,7 +7,11 @@ import { db } from "@qubere/db";
 import { createAuditLog } from "@qubere/decisions";
 import { NextResponse } from "next/server";
 import { enqueueTmsDocumentPipeline } from "@/lib/tmsPipelineEngine";
-import { scheduleTmsPipelineDispatch } from "@/lib/tmsPipelineOutbox";
+import {
+  scheduleTmsPipelineDispatch,
+  dispatchTmsPipelineOutboxEvent,
+  type TmsDispatchMode,
+} from "@/lib/tmsPipelineOutbox";
 
 export const maxDuration = 60;
 
@@ -169,5 +173,5 @@ export const POST = withAuthenticatedRoute(
       { status: 202 }
     );
   },
-  { permission: "documents.create", write: true }
+  { permission: "document.upload", write: true }
 );

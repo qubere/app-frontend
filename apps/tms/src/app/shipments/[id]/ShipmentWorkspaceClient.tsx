@@ -13,7 +13,9 @@ import { Card, Badge, Button } from "@/components/ui";
 import { DocumentWorkspacePanel } from "@/components/DocumentWorkspacePanel";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
+import { ShipmentLifecycleRibbon } from "@/components/ShipmentLifecycleRibbon";
 import { CustomsHandoffCard } from "@/components/CustomsHandoffCard";
+import { AgentExecutionsAuditLog } from "@/components/AgentExecutionsAuditLog";
 
 const TMS_PIPELINE_STAGES = [
   { id: "document-intake", name: "1. Intake", surface: "document-intake", icon: FileText, agentName: "Document Intake Agent" },
@@ -31,6 +33,15 @@ function formatOperationalDate(value: string | Date | null | undefined): string 
   return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function cleanFieldValue(...values: Array<string | null | undefined>): string {
+  for (const v of values) {
+    if (v && typeof v === "string" && v.trim() !== "" && v.trim() !== "-" && v.trim() !== "Not provided") {
+      return v.trim();
+    }
+  }
+  return "-";
+}
+
 function locationLabel(value: any): string | null {
   if (!value || typeof value !== "object") return null;
   return value.unlocode || value.name || value.city || value.country || null;
@@ -42,25 +53,49 @@ export function ShipmentWorkspaceClient({
   crossDomainRisks: _crossDomainRisks,
   healthSnapshot,
   financials,
+  lifecycleStatus,
 }: {
   shipment: any;
   journey: any[];
   crossDomainRisks: any[];
   healthSnapshot: any;
   financials: any;
+  lifecycleStatus?: any;
 }) {
-  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "DOCUMENTS" | "CARGO" | "FINANCIALS" | "ACTIVITY">("OVERVIEW");
+  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "CUSTOMS" | "DOCUMENTS" | "CARGO" | "FINANCIALS" | "ACTIVITY">("OVERVIEW");
   const [activityCategoryFilter, setActivityCategoryFilter] = useState<string>("ALL");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
   const [renderedAt] = useState(() => Date.now());
 
+  const customsCaseId = shipment.customsCaseLinks?.[0]?.customsCaseId;
+  const customsCaseNumber = shipment.customsCaseLinks?.[0]?.customsCase?.caseNumber;
+  const workspaceStatus = shipment.productWorkspaces?.find((pw: any) => pw.product === "CUSTOMS")?.status;
+  const customsRequired = Boolean(shipment.customsRequired);
+  const isHandoffComplete = Boolean(customsCaseId || workspaceStatus === "ACTIVE");
+
+
+
+  const docExtractions = (shipment.documents ?? []).map((d: any) => {
+    if (!d.extractedJson) return null;
+    try {
+      return typeof d.extractedJson === "string" ? JSON.parse(d.extractedJson) : d.extractedJson;
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+
+  const docOrigin = docExtractions.map((e: any) => e.originName || e.originCountry || e.originUnlocode).find(Boolean);
+  const docMode = docExtractions.map((e: any) => e.mode).find(Boolean);
+  const docDischarge = docExtractions.map((e: any) => e.destinationUnlocode || e.destinationName).find(Boolean);
+  const docDestination = docExtractions.map((e: any) => e.destinationCountry || e.destinationName).find(Boolean);
+
   const latestOrder = shipment.transportationOrders?.[0];
   const route = {
-    origin: shipment.countryOfExport ?? locationLabel(latestOrder?.origin) ?? "Origin not provided",
-    portOfDischarge: shipment.portOfEntry ?? locationLabel(latestOrder?.destination) ?? "Destination port not provided",
-    finalDestination: shipment.destinationCountry ?? locationLabel(latestOrder?.destination) ?? "Final destination not provided",
-    modes: shipment.transportMode ?? latestOrder?.mode ?? "Mode not provided",
+    origin: cleanFieldValue(shipment.countryOfExport, locationLabel(latestOrder?.origin), docOrigin),
+    portOfDischarge: cleanFieldValue(shipment.portOfEntry, locationLabel(latestOrder?.destination), docDischarge),
+    finalDestination: cleanFieldValue(shipment.destinationCountry, locationLabel(latestOrder?.destination), docDestination),
+    modes: cleanFieldValue(shipment.transportMode, latestOrder?.mode, docMode),
   };
 
   const qubere = healthSnapshot?.qubereAi ?? {
@@ -93,6 +128,13 @@ export function ShipmentWorkspaceClient({
   const handleApproveRecommendation = () => {
     setActionSuccessMsg("AI Recommendation approved.");
     setTimeout(() => setActionSuccessMsg(null), 4000);
+  };
+
+  const handleActionRequiredClick = () => {
+    setActiveTab("OVERVIEW");
+    setTimeout(() => {
+      document.getElementById("action-required-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
   };
 
   const agentDecisions = shipment.agentDecisions ?? [];
@@ -189,31 +231,74 @@ export function ShipmentWorkspaceClient({
 
         <main className="flex-1 p-8 overflow-y-auto space-y-6">
           {/* Section 1: Operational Shipment Header */}
-          <div className="bg-white rounded-2xl border border-border p-6 shadow-2xs space-y-5">
-            <div className="flex items-center justify-between border-b border-border/60 pb-4">
-              <div className="flex items-center space-x-4">
+          <div className="bg-white rounded-2xl border border-border p-4 shadow-2xs">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center space-x-3 flex-wrap gap-y-2">
                 <Link href="/shipments" className="p-2 rounded-xl bg-surface-muted border border-border text-ink-muted hover:text-ink transition-colors cursor-pointer">
                   <ArrowLeft className="w-4 h-4" />
                 </Link>
-                <div>
-                  <div className="flex items-center space-x-3">
-                    <h1 className="text-2xl font-black text-ink font-mono tracking-tight">{shipment.shipmentNumber}</h1>
-                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${
-                      healthSnapshot?.overallHealth === "ON_TRACK"
-                        ? "bg-emerald-100 text-emerald-900 border-emerald-300"
-                        : healthSnapshot?.overallHealth === "UNKNOWN"
-                          ? "bg-slate-100 text-slate-700 border-slate-300"
-                          : "bg-amber-100 text-amber-900 border-amber-300"
-                    }`}>
-                      {healthSnapshot?.overallHealth === "ON_TRACK"
-                        ? "✓ ON TRACK"
-                        : healthSnapshot?.overallHealth === "UNKNOWN"
-                          ? "STATUS PENDING"
-                          : "⚠️ ACTION REQUIRED"}
+                
+                <div className="flex items-center space-x-2.5 flex-wrap gap-y-2">
+                  <h1 className="text-xl font-black text-ink font-mono tracking-tight">{shipment.shipmentNumber}</h1>
+                  
+                  {healthSnapshot?.overallHealth === "ON_TRACK" ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase border bg-emerald-100 text-emerald-900 border-emerald-300">
+                      ✓ ON TRACK
                     </span>
-                    <span className="text-xs font-bold text-ink-muted bg-surface-muted px-3 py-1 rounded-full border border-border">
-                      {clientName}
+                  ) : healthSnapshot?.overallHealth === "UNKNOWN" ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase border bg-slate-100 text-slate-700 border-slate-300">
+                      STATUS PENDING
                     </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleActionRequiredClick}
+                      title="Action required — Click to view details"
+                      className="px-2 py-0.5 rounded-full text-[11px] font-black border bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-2xs"
+                    >
+                      <TriangleAlert className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                    </button>
+                  )}
+
+                  <span className="text-[11px] font-bold text-ink-muted bg-surface-muted px-2.5 py-0.5 rounded-full border border-border">
+                    {clientName}
+                  </span>
+
+                  {/* Inline Compact Route Info on Same Line */}
+                  <div className="flex items-center gap-2 pl-2 border-l border-border text-[11px] flex-wrap">
+                    <div className="flex items-center gap-1">
+                      <span className="text-ink-muted font-bold text-[10px] uppercase tracking-wider">Origin:</span>
+                      <span className="font-bold text-ink bg-surface-muted px-2 py-0.5 rounded border border-border">
+                        {route.origin}
+                      </span>
+                    </div>
+
+                    <span className="text-ink-muted/30 font-light">•</span>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-ink-muted font-bold text-[10px] uppercase tracking-wider">Mode:</span>
+                      <span className="font-bold text-brand bg-blue-50 text-blue-900 px-2 py-0.5 rounded border border-blue-200 font-mono">
+                        {route.modes}
+                      </span>
+                    </div>
+
+                    <span className="text-ink-muted/30 font-light">•</span>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-ink-muted font-bold text-[10px] uppercase tracking-wider">Discharge:</span>
+                      <span className="font-bold text-ink bg-surface-muted px-2 py-0.5 rounded border border-border">
+                        {route.portOfDischarge}
+                      </span>
+                    </div>
+
+                    <span className="text-ink-muted/30 font-light">•</span>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-ink-muted font-bold text-[10px] uppercase tracking-wider">Destination:</span>
+                      <span className="font-extrabold text-brand bg-brand/5 px-2 py-0.5 rounded border border-brand/20">
+                        {route.finalDestination}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -223,37 +308,7 @@ export function ShipmentWorkspaceClient({
                   <Upload className="w-3.5 h-3.5 text-brand" />
                   <span>Upload Document</span>
                 </Button>
-                <Button size="sm" variant="primary" className="cursor-pointer shadow-xs">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Ask Qubere AI</span>
-                </Button>
               </div>
-            </div>
-
-            {/* End-to-End Route Banner */}
-            <div className="p-4 rounded-xl bg-surface-muted/60 border border-border flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center space-x-4 text-xs font-semibold text-ink">
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-bold text-ink text-sm">{route.origin}</span>
-                </div>
-                <div className="flex items-center space-x-1 text-brand text-[11px] font-mono bg-white px-2.5 py-1 rounded-lg border border-border">
-                  <Anchor className="w-3.5 h-3.5 text-blue-600" />
-                  <span>↓ {route.modes}</span>
-                </div>
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-bold text-ink text-sm">{route.portOfDischarge}</span>
-                </div>
-                <div className="flex items-center space-x-1 text-amber-700 text-[11px] font-mono bg-white px-2.5 py-1 rounded-lg border border-border">
-                  <Truck className="w-3.5 h-3.5 text-amber-600" />
-                  <span>↓ Delivery</span>
-                </div>
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-extrabold text-brand text-sm">{route.finalDestination}</span>
-                </div>
-              </div>
-              <span className="text-xs font-mono font-bold text-ink-muted">
-                Mode: {route.modes}
-              </span>
             </div>
           </div>
 
@@ -265,7 +320,19 @@ export function ShipmentWorkspaceClient({
             </div>
           )}
 
-          <TmsPipelineProgressRibbon shipmentId={shipment.id} />
+          <ShipmentLifecycleRibbon
+            status={lifecycleStatus}
+            shipmentId={shipment.id}
+            carrierInvoiceId={shipment.carrierInvoices?.[0]?.id}
+            onStageSelect={(i) => {
+              if (i === 3) setActiveTab("CUSTOMS");
+            }}
+          />
+
+          <TmsPipelineProgressRibbon
+            shipmentId={shipment.id}
+            onNavigateToActivity={() => setActiveTab("ACTIVITY")}
+          />
 
           {/* Navigation Tabs */}
           <div className="flex bg-white p-1 rounded-2xl border border-border text-xs w-fit shadow-2xs">
@@ -274,7 +341,8 @@ export function ShipmentWorkspaceClient({
               { key: "DOCUMENTS", label: `Documents (${shipment.documents?.length ?? 0})` },
               { key: "CARGO", label: `Cargo (${shipment.lineItems?.length ?? 0})` },
               { key: "FINANCIALS", label: `Financials ($${safeFinancials.totalSellAmount.toLocaleString()})` },
-              { key: "ACTIVITY", label: `Activity Timeline (${auditEntries.length})` },
+              { key: "CUSTOMS", label: "Customs" },
+              { key: "ACTIVITY", label: `Agent Executions & Audit Log (${auditEntries.length})` },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -294,7 +362,7 @@ export function ShipmentWorkspaceClient({
           {activeTab === "OVERVIEW" && (
             <div className="space-y-6">
               {qubere.needsHumanAction ? (
-                <Card className="p-6 border-amber-300 bg-gradient-to-r from-white via-amber-50/20 to-amber-50/40 space-y-4 shadow-2xs">
+                <Card id="action-required-card" className="p-6 border-amber-300 bg-gradient-to-r from-white via-amber-50/20 to-amber-50/40 space-y-4 shadow-2xs">
                   <div className="flex items-center justify-between border-b border-amber-200 pb-3">
                     <div className="flex items-center space-x-2">
                       <TriangleAlert className="w-5 h-5 text-amber-600" />
@@ -323,16 +391,6 @@ export function ShipmentWorkspaceClient({
                   </span>
                 </Card>
               )}
-
-              <CustomsHandoffCard
-                shipmentId={shipment.id}
-                shipmentNumber={shipment.shipmentNumber}
-                customsRequired={Boolean(shipment.customsRequired)}
-                customsCaseId={shipment.customsCaseLinks?.[0]?.customsCaseId}
-                customsCaseNumber={shipment.customsCaseLinks?.[0]?.customsCase?.caseNumber}
-                workspaceStatus={shipment.productWorkspaces?.find((pw: any) => pw.product === "CUSTOMS")?.status}
-                filingStatus={latestFiling?.filingStatus}
-              />
 
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <Card className="p-5 bg-white border border-border space-y-3">
@@ -385,14 +443,26 @@ export function ShipmentWorkspaceClient({
                 </Card>
 
                 <Card className="p-5 bg-white border border-border space-y-3">
-                  <div className="flex items-center gap-2 border-b border-border/60 pb-2">
-                    <Shield className="w-4 h-4 text-brand" />
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Customs & Exceptions</h3>
+                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-brand" />
+                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-ink">Customs & Exceptions</h3>
+                    </div>
                   </div>
                   <div className="space-y-2 text-xs">
-                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Customs</span><span className="font-bold text-ink text-right">{latestFiling?.filingStatus ?? "No filing linked"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Handoff</span><span className="font-bold text-ink text-right">{isHandoffComplete ? `Case Active (${customsCaseNumber || customsCaseId || "Active"})` : customsRequired ? "Not sent" : "Not required"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-ink-muted">Filing Status</span><span className="font-bold text-ink text-right">{latestFiling?.filingStatus ?? "No filing linked"}</span></div>
                     <div className="flex justify-between gap-3"><span className="text-ink-muted">Open Exceptions</span><span className="font-bold text-ink text-right">{(shipment.exceptionItems ?? []).filter((item: any) => ["Open", "OPEN"].includes(item.status)).length}</span></div>
                     <div className="flex justify-between gap-3"><span className="text-ink-muted">Documents</span><span className="font-bold text-ink text-right">{shipment.documents?.length ?? 0} on file</span></div>
+                  </div>
+                  <div className="pt-2 border-t border-border/60 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("CUSTOMS")}
+                      className="text-xs font-bold text-brand hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      View Customs →
+                    </button>
                   </div>
                 </Card>
 
@@ -411,215 +481,29 @@ export function ShipmentWorkspaceClient({
             </div>
           )}
 
-          {/* TAB: ACTIVITY TIMELINE (CONTAINS WATERFALL TRACKER, AGENT EXECUTION RUNS, & AUDIT LOG TABLE) */}
-          {activeTab === "ACTIVITY" && (
+          {/* TAB 2: CUSTOMS */}
+          {activeTab === "CUSTOMS" && (
             <div className="space-y-6">
-              {/* 1. TMS AUTONOMOUS AGENT EXECUTION WATERFALL TRACKER BAR */}
-              <div className="p-5 rounded-2xl border border-border bg-white shadow-2xs space-y-4">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
-                      <Bot className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-xs uppercase tracking-wider text-ink">TMS Autonomous Agent Execution Waterfall</h3>
-                      <p className="text-[11px] text-ink-muted font-medium">Durable execution status across six freight document agents.</p>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full font-mono text-[10px] font-bold bg-brand/10 text-brand border border-brand/20">
-                    {agentDecisions.length} Decisions Logged
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                  {TMS_PIPELINE_STAGES.map((stage) => {
-                    const info = stageStatusMap.get(stage.id);
-                    const isDone = info?.status === "COMPLETED";
-                    const IconComp = stage.icon;
-                    return (
-                      <div
-                        key={stage.id}
-                        className={`p-3 rounded-xl border transition-all flex flex-col justify-between space-y-2 ${
-                          isDone
-                            ? "bg-brand/5 border-brand/30 text-ink"
-                            : "bg-surface-muted/60 border-border text-ink-muted"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${isDone ? "bg-brand/10 text-brand" : "bg-white text-ink-muted border border-border"}`}>
-                            <IconComp className="w-3.5 h-3.5" />
-                          </div>
-                          {isDone ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          ) : (
-                            <Clock className="w-3.5 h-3.5 text-ink-muted shrink-0" />
-                          )}
-                        </div>
-                        <div>
-                          <span className="font-bold text-xs text-ink block leading-tight">{stage.name}</span>
-                          <span className={`text-[10px] font-mono font-bold block mt-1 ${isDone ? "text-emerald-700" : "text-ink-muted"}`}>
-                            {isDone ? "EXECUTED" : "PENDING"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 2. AGENT EXECUTION RUNS WATERFALL TIMELINE */}
-              <Card className="p-6 bg-white border border-border space-y-6 shadow-2xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
-                      <Cpu className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-black text-ink">Agent Execution Runs & Waterfall Logs</h2>
-                      <p className="text-xs text-ink-muted font-medium">
-                        Detailed decision summaries, model versions, and policy verification logs written by background AI agents.
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant="success" className="font-mono text-xs font-bold self-start sm:self-auto">
-                    {agentDecisions.length} Agent Runs
-                  </Badge>
-                </div>
-
-                {agentDecisions.length > 0 ? (
-                  <div className="relative border-l-2 border-brand/20 ml-4 pl-6 space-y-6">
-                    {agentDecisions.map((decision: any, index: number) => (
-                      <div key={decision.id ?? index} className="relative group">
-                        <div className="absolute -left-[33px] top-1.5 w-4 h-4 rounded-full bg-brand border-2 border-white ring-4 ring-brand/10 flex items-center justify-center text-white">
-                          <CheckCircle2 className="w-3 h-3" />
-                        </div>
-
-                        <div className="p-5 rounded-2xl bg-surface-muted/60 border border-border hover:border-brand/40 hover:bg-white transition-all space-y-3 shadow-2xs">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
-                            <div className="flex items-center space-x-2.5">
-                              <span className="w-7 h-7 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs">
-                                #{index + 1}
-                              </span>
-                              <div>
-                                <h3 className="text-sm font-extrabold text-ink">{decision.agentName ?? "Autonomous Agent"}</h3>
-                                <span className="text-[10px] font-mono text-ink-muted">
-                                  Model: {decision.modelVersion ?? "gemini-2.5-flash"} • {decision.createdAt ? new Date(decision.createdAt).toLocaleString() : "Just now"}
-                                </span>
-                              </div>
-                            </div>
-
-                            <span className="px-2.5 py-1 rounded-full font-mono text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
-                              {decision.status ?? "AUTO_VERIFIED"}
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="text-xs font-bold text-ink leading-snug">{decision.decisionSummary}</p>
-                            {decision.purpose && (
-                              <p className="text-xs text-ink-muted leading-relaxed font-medium">{decision.purpose}</p>
-                            )}
-                          </div>
-
-                          {(decision.dataSources?.length > 0 || decision.regulations?.length > 0) && (
-                            <div className="pt-2 border-t border-border/40 flex flex-wrap items-center gap-2 text-[10px] font-mono">
-                              {decision.regulations?.map((reg: string, idx: number) => (
-                                <span key={idx} className="px-2 py-0.5 rounded bg-white border border-border text-ink-muted font-bold">
-                                  📜 {reg}
-                                </span>
-                              ))}
-                              {decision.dataSources?.map((src: string, idx: number) => (
-                                <span key={idx} className="px-2 py-0.5 rounded bg-brand/5 border border-brand/20 text-brand font-semibold">
-                                  📊 {src}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-8 text-center bg-surface-muted/40 rounded-2xl border border-border space-y-2">
-                    <Bot className="w-8 h-8 text-ink-muted mx-auto" />
-                    <p className="text-xs font-bold text-ink">No Agent Decision Runs Logged Yet</p>
-                    <p className="text-[11px] text-ink-muted font-medium">As autonomous freight intake, routing, and tendering agents execute, their waterfall decision logs will stream here.</p>
-                  </div>
-                )}
-              </Card>
-
-              {/* 3. AUDIT LOG & EVENT TABLE (MATCHING CUSTOMS APP AUDIT TRAIL LAYOUT) */}
-              <Card className="p-6 bg-white border border-border space-y-4 shadow-2xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
-                      <Activity className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-black text-ink">Audit Log & Event Table</h2>
-                      <p className="text-xs text-ink-muted font-medium">
-                        System event log tracking user mutations, agent invocations, tracking updates, and API webhooks.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-1.5 bg-surface-muted p-1 rounded-xl border border-border text-xs">
-                    {["ALL", "AGENT_EXECUTION", "TRACKING_EVENT", "SYSTEM_AUDIT"].map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setActivityCategoryFilter(cat)}
-                        className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                          activityCategoryFilter === cat
-                            ? "bg-white text-brand shadow-3xs"
-                            : "text-ink-muted hover:text-ink"
-                        }`}
-                      >
-                        {cat === "ALL" ? "All Events" : cat.replace("_", " ")}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-ink-muted font-mono uppercase text-[10px] tracking-wider">
-                        <th className="pb-3 font-bold">Event Title & Details</th>
-                        <th className="pb-3 font-bold">Category</th>
-                        <th className="pb-3 font-bold">Source</th>
-                        <th className="pb-3 font-bold">Actor / User</th>
-                        <th className="pb-3 font-bold text-right">Timestamp</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {filteredAuditEntries.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-surface-muted/40 transition-colors">
-                          <td className="py-3">
-                            <span className="font-bold text-ink block">{entry.title}</span>
-                            <span className="text-[11px] text-ink-muted leading-tight block mt-0.5">{entry.description}</span>
-                          </td>
-                          <td className="py-3">
-                            <span className="px-2 py-0.5 rounded font-mono text-[9px] font-bold bg-surface-muted border border-border text-ink">
-                              {entry.category}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            <span className="px-2 py-0.5 rounded-full font-mono text-[9px] font-bold bg-brand/10 text-brand border border-brand/20">
-                              {entry.source}
-                            </span>
-                          </td>
-                          <td className="py-3 font-medium text-ink flex items-center space-x-1.5">
-                            <UserIcon className="w-3.5 h-3.5 text-ink-muted" />
-                            <span>{entry.user.name}</span>
-                          </td>
-                          <td className="py-3 font-mono text-right text-ink-muted text-[11px]">{entry.timestamp}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+              <CustomsHandoffCard
+                shipmentId={shipment.id}
+                shipmentNumber={shipment.shipmentNumber}
+                customsRequired={customsRequired}
+                customsCaseId={customsCaseId}
+                customsCaseNumber={customsCaseNumber}
+                workspaceStatus={workspaceStatus}
+                filingStatus={latestFiling?.filingStatus}
+              />
             </div>
+          )}
+
+          {/* TAB: AGENT EXECUTIONS & AUDIT LOG */}
+          {activeTab === "ACTIVITY" && (
+            <AgentExecutionsAuditLog
+              shipmentId={shipment.id}
+              auditEntries={auditEntries}
+              pipelineJobs={shipment.pipelineJobs}
+              agentDecisions={shipment.agentDecisions}
+            />
           )}
 
           {/* TAB 3: DOCUMENTS */}

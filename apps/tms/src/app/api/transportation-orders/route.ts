@@ -14,6 +14,8 @@ const createOrderSchema = z.object({
   mode: z.string().optional().nullable(),
   originAddress: z.record(z.string(), z.unknown()).optional().nullable(),
   destinationAddress: z.record(z.string(), z.unknown()).optional().nullable(),
+  origin: z.record(z.string(), z.unknown()).optional().nullable(),
+  destination: z.record(z.string(), z.unknown()).optional().nullable(),
   requestedPickupWindow: z.record(z.string(), z.unknown()).optional().nullable(),
   requestedDeliveryWindow: z.record(z.string(), z.unknown()).optional().nullable(),
 });
@@ -34,6 +36,11 @@ export const POST = withAuthenticatedRoute(
     const body = await req.json();
     const parsed = createOrderSchema.parse(body);
 
+    const canonicalOrigin = parsed.origin ?? parsed.originAddress ?? null;
+    const canonicalOriginAddr = parsed.originAddress ?? parsed.origin ?? null;
+    const canonicalDest = parsed.destination ?? parsed.destinationAddress ?? null;
+    const canonicalDestAddr = parsed.destinationAddress ?? parsed.destination ?? null;
+
     const order = await db.transportationOrder.create({
       data: {
         accountId: ctx.accountId,
@@ -44,8 +51,10 @@ export const POST = withAuthenticatedRoute(
         commodityDescription: parsed.commodityDescription ?? null,
         weight: parsed.weight ?? null,
         mode: parsed.mode ?? null,
-        originAddress: parsed.originAddress ? (parsed.originAddress as any) : undefined,
-        destinationAddress: parsed.destinationAddress ? (parsed.destinationAddress as any) : undefined,
+        originAddress: canonicalOriginAddr ? (canonicalOriginAddr as any) : undefined,
+        destinationAddress: canonicalDestAddr ? (canonicalDestAddr as any) : undefined,
+        origin: canonicalOrigin ? (canonicalOrigin as any) : undefined,
+        destination: canonicalDest ? (canonicalDest as any) : undefined,
         requestedPickupWindow: parsed.requestedPickupWindow ? (parsed.requestedPickupWindow as any) : undefined,
         requestedDeliveryWindow: parsed.requestedDeliveryWindow ? (parsed.requestedDeliveryWindow as any) : undefined,
         status: "RECEIVED",

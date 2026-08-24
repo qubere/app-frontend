@@ -283,7 +283,14 @@ export function AgenticDecisionCard({
             </span>
           </div>
 
-          <button className="flex items-center space-x-1 text-xs text-brand font-bold">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEvidence(!showEvidence);
+            }}
+            className="flex items-center space-x-1 text-xs text-brand font-bold cursor-pointer hover:underline"
+          >
             <span>{showEvidence ? "Hide Evidence" : "View Evidence & Sources"}</span>
             {showEvidence ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>

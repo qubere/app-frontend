@@ -210,7 +210,20 @@ export function ExceptionsGroupedClient({ initialGroups }: { initialGroups: Ship
           )}
 
           {/* TWO-COLUMN WORKSPACE LAYOUT */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {initialGroups.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-border shadow-2xs text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div className="space-y-1 max-w-sm">
+                <h3 className="text-base font-extrabold text-ink">All Clear! No Open Exceptions</h3>
+                <p className="text-xs text-ink-muted leading-relaxed">
+                  Your workspace has 0 open exceptions or dispatch blocks. Create a new order or tender a load to get started.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             {/* LEFT COLUMN: Shipments List Selector (4 cols) */}
             <div className="lg:col-span-4 space-y-3">
               <div className="bg-white p-4 rounded-2xl border border-border shadow-2xs space-y-3">
@@ -407,6 +420,7 @@ export function ExceptionsGroupedClient({ initialGroups }: { initialGroups: Ship
               )}
             </div>
           </div>
+        )}
 
           {/* Slide-Over Drawer */}
           {activeSlideOver && (

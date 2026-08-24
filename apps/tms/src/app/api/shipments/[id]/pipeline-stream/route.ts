@@ -56,5 +56,5 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
       },
     });
   },
-  { permission: "shipments.read" }
+  { permission: "shipment.read" }
 );

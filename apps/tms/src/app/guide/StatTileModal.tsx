@@ -160,14 +160,14 @@ export function StatTileModal({ type, onClose }: StatTileModalProps) {
           {type === "agents" && (
             <div className="space-y-3">
               {[
-                { name: "Document Intake Agent", role: "Extracts line items, stops, and rates from PDF rate confirmations." },
-                { name: "Waterfall Tender Dispatch Agent", role: "Manages carrier tender sequences with 60-minute SLA timeouts." },
-                { name: "Demurrage Shield Agent", role: "Monitors ocean container Last Free Day (LFD) at port terminals." },
-                { name: "Telematics Tracking Agent", role: "Streams GPS events and recalculates estimated time of arrival (ETA)." },
-                { name: "3-Way Invoice Audit Agent", role: "Cross-checks linehaul, FSC, and POD signatures before payment." },
-                { name: "HOS Safety Compliance Agent", role: "Enforces 49 CFR § 395.3 hours-of-service rules on load dispatch." },
-                { name: "AI Supervisor Copilot", role: "Natural language assistant executing shipment and carrier queries." },
-                { name: "Metered AI Telemetry Agent", role: "Tracks token burn, LLM call latency, and copilot query health." },
+                { name: "Document Intake Agent", role: "Classifies trade/logistics PDFs and extracts 100% of visible freight facts into rawMetadataJson and lineItems with Zero Data Loss." },
+                { name: "Shipment Enrichment Agent", role: "Synchronizes extracted facts with Shipment DB columns (Origin, Destination, Mode, Port) and TransportationOrder DB rows." },
+                { name: "Document Readiness Agent", role: "Checks mode- and customs-dependent document completeness using RAG account memory, raising/resolving ExceptionItems." },
+                { name: "Movement Readiness Agent", role: "Validates positioning, stops, equipment requirements, and carrier tracking references to ensure execution readiness." },
+                { name: "Cost & Carrier Readiness Agent", role: "Audits linehaul/drayage rate quotes, tenders, and buy/sell margins against approved target margins." },
+                { name: "Operational Risk Agent", role: "Assesses tracking freshness, customer promise buffers, LFD detention risk, and open exceptions to assign real-time health status." },
+                { name: "AI Supervisor Copilot", role: "Natural language assistant executing shipment, carrier, and exception queries across the TMS workspace." },
+                { name: "Metered AI Telemetry Agent", role: "Tracks token burn, LLM call latency, and copilot query health across 4 telemetry scopes." },
               ].map((agent, idx) => (
                 <div key={idx} className="p-3.5 rounded-xl bg-surface-muted/60 border border-border flex items-start space-x-3">
                   <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-mono font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">

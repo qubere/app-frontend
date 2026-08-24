@@ -231,7 +231,7 @@ export function TmsAdminWorkbenchClient({
       method: "POST",
       description: "Create shipment aggregate root & draft CBP entry summary",
       authType: "AUTH_REQUIRED",
-      permission: "shipments.write",
+      permission: "shipment.create",
       category: "Shipments & Freight",
     },
     {
@@ -327,7 +327,7 @@ export function TmsAdminWorkbenchClient({
       method: "POST",
       description: "Attach trade document to shipment record",
       authType: "AUTH_REQUIRED",
-      permission: "documents.write",
+      permission: "document.upload",
       category: "AI & Intake",
     },
     {
@@ -335,7 +335,7 @@ export function TmsAdminWorkbenchClient({
       method: "POST",
       description: "OCR document intelligence parsing engine",
       authType: "AUTH_REQUIRED",
-      permission: "documents.read",
+      permission: "document.read",
       category: "AI & Intake",
     },
     {

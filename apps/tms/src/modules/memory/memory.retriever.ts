@@ -25,19 +25,18 @@ export class TmsHybridMemoryRetriever {
     if (this.aiClient) {
       try {
         const response = await this.aiClient.models.embedContent({
-          model: "gemini-embedding-001",
+          model: process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004",
           contents: text,
           config: { outputDimensionality: EMBEDDING_DIMENSIONS },
         });
         const payload = response as any;
         const values = payload.embedding?.values ?? payload.embeddings?.[0]?.values;
         if (Array.isArray(values) && values.length === EMBEDDING_DIMENSIONS) return values;
-      } catch (error) {
-        console.warn("[TmsHybridMemoryRetriever] Gemini embedding failed; using lexical retrieval only", error);
+      } catch {
+        // Fallback to lexical retrieval gracefully without console stack trace noise
+        return [];
       }
     }
-    // The deterministic helper remains exported for repeatable unit tests, but
-    // it is not a semantic embedding and must not influence production ranking.
     return [];
   }
 

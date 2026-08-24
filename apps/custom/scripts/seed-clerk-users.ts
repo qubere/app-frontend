@@ -25,6 +25,7 @@ const usersToCreate = [
   { email: "rachit@qubere.ai", firstName: "Rachit", lastName: "Lohani" },
   { email: "sarah@qubere.ai", firstName: "Sarah", lastName: "Jones" },
   { email: "mike@qubere.ai", firstName: "Mike", lastName: "Brown" },
+  { email: "admin@target.com", firstName: "Target", lastName: "Admin" },
   { email: "joe@target.com", firstName: "Joe", lastName: "TargetAdmin" },
   { email: "anna@target.com", firstName: "Anna", lastName: "TargetAdmin" },
   { email: "sarah@target.com", firstName: "Sarah", lastName: "TargetPlanner" },

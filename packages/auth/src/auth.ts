@@ -2,6 +2,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { db } from "@qubere/db";
+import { defaultPermissionsForRole, PERMISSION_NAMES } from "./permissions";
 
 export interface AccountContext {
   userId: string; // Effective user ID
@@ -221,6 +222,14 @@ async function loadAccountContext(): Promise<AccountContext | null> {
         activeMembership = actorUser.memberships.find(
           (m) => m.status === "ACTIVE" && m.account.deletedAt === null
         );
+        if (activeMembership) {
+          try {
+            const cookieStore = await cookies();
+            cookieStore.set(ACTIVE_ACCOUNT_COOKIE, activeMembership.account.id, { path: "/" });
+          } catch {
+            // Ignore in read-only server component contexts
+          }
+        }
       }
     }
 
@@ -233,12 +242,19 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       return null;
     }
 
+    const explicitPermissions = activeMembership.roles.flatMap((mr: any) =>
+      mr.role.rolePermissions ? mr.role.rolePermissions.map((rp: any) => rp.permission.name) : []
+    );
+    const defaultRolePermissions = activeMembership.roles.flatMap((mr: any) =>
+      defaultPermissionsForRole(mr.role.name)
+    );
+
     const permissions = Array.from(
-      new Set<string>(
-        activeMembership.roles.flatMap((mr: any) =>
-          mr.role.rolePermissions ? mr.role.rolePermissions.map((rp: any) => rp.permission.name) : []
-        )
-      )
+      new Set<string>([
+        ...explicitPermissions,
+        ...defaultRolePermissions,
+        ...(isPlatformAdmin ? (PERMISSION_NAMES as readonly string[]) : []),
+      ])
     );
     const roleIds = activeMembership.roles.map((mr: any) => mr.roleId);
     const roleNames = activeMembership.roles.map((mr: any) => mr.role.name);
@@ -341,5 +357,11 @@ export async function hasPermission(requiredPermission: string): Promise<boolean
   if (!context) return false;
   if (context.isPlatformAdmin) return true;
   if (context.roleNames.includes("OWNER")) return true;
+  if (requiredPermission === "tms.access") {
+    const hasTmsAccessRole = context.roleNames.some((r) =>
+      ["ADMIN", "MEMBER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "BROKER_ADMIN", "BROKER_MANAGER"].includes(r.toUpperCase())
+    );
+    if (hasTmsAccessRole) return true;
+  }
   return context.permissions.includes(requiredPermission);
 }
