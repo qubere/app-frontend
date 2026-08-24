@@ -36,14 +36,11 @@ export const POST = withPublicRoute(async ({ req }) => {
       },
     });
 
-    const platformRoles = user?.platformRoles ?? [];
-    const memberships = user?.memberships ?? [];
-
-    const isPlatformAdmin = platformRoles.some((pr) =>
+    const isPlatformAdmin = user?.platformRoles.some((pr) =>
       ["PLATFORM_ADMIN", "SUPER_ADMIN_READWRITE", "SUPER_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_SETTINGS"].includes(pr.platformRole.name)
     );
 
-    if (!user || (!isPlatformAdmin && memberships.length === 0)) {
+    if (!user || (!isPlatformAdmin && user.memberships.length === 0)) {
       return NextResponse.json({ error: "No active membership in specified account" }, { status: 403 });
     }
 

@@ -59,7 +59,6 @@ export type PermissionCategory =
   | "Tender"
   | "Tracking"
   | "Invoice"
-  | "Freight"
   | "Integration"
   | "Freight"
   | "System";
@@ -289,33 +288,16 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "system.impersonate.write", description: "Impersonate customer user for troubleshooting", category: "System", defaultRoles: ["SUPER_ADMIN_WRITE"] },
 ] as const;
 
-const PERMISSION_ALIASES: readonly PermissionDefinition[] = [
-  // Compatibility names used by shared TMS services/routes. Keep these out of
-  // PERMISSION_CATALOGUE so the canonical catalogue remains lowercase/atomic,
-  // while legacy gates can still be looked up and granted.
-  { name: "transportationOrders.read", description: "View transportation orders in freight workflows.", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "MEMBER", "VIEWER"] },
-  { name: "transportationOrders.write", description: "Create and update transportation orders in freight workflows.", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "OWNER", "ADMIN", "MEMBER"] },
-  { name: "carriers.manage", description: "Manage carrier master data and approval controls.", category: "Freight", defaultRoles: ["TMS_ADMIN", "OWNER", "ADMIN"] },
-  { name: "tenders.send", description: "Send freight tenders to carriers.", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "OWNER", "ADMIN", "MEMBER"] },
-  { name: "carrierInvoices.match", description: "Match carrier invoices to shipments, tenders, and rate agreements.", category: "Freight", defaultRoles: ["TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN", "MEMBER"] },
-  { name: "carrierInvoices.override", description: "Override carrier invoice match exceptions and approval controls.", category: "Freight", defaultRoles: ["TMS_ADMIN", "OWNER", "ADMIN"] },
-];
-
-export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
-  ...PERMISSION_CATALOGUE,
-  ...PERMISSION_ALIASES,
-];
-
-export const PERMISSION_NAMES = PERMISSION_DEFINITIONS.map((p) => p.name);
+export const PERMISSION_NAMES = PERMISSION_CATALOGUE.map((p) => p.name);
 export type PermissionName = (typeof PERMISSION_NAMES)[number];
 
 export function findPermission(name: string): PermissionDefinition | null {
-  return PERMISSION_DEFINITIONS.find((p) => p.name === name) ?? null;
+  return PERMISSION_CATALOGUE.find((p) => p.name === name) ?? null;
 }
 
 export function defaultPermissionsForRole(roleName: string): string[] {
   const role = roleName.toUpperCase() as SystemRole;
-  return PERMISSION_DEFINITIONS.filter((p) =>
+  return PERMISSION_CATALOGUE.filter((p) =>
     (p.defaultRoles as readonly string[]).includes(role)
   ).map((p) => p.name);
 }
