@@ -1001,6 +1001,8 @@ model ShipmentDocument {
   partyEvidence      PartyEvidence[]
   shipmentCandidates DocumentShipmentCandidate[]
   customsCaseLinks   CustomsCaseDocument[]
+  proofsOfDelivery   ProofOfDelivery[]
+  carrierInvoices    CarrierInvoice[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -7029,6 +7031,12 @@ model TransportationEvent {
   movement              Movement?            @relation(fields: [movementId], references: [id], onDelete: SetNull)
   transportationOrderId String?
   transportationOrder   TransportationOrder? @relation(fields: [transportationOrderId], references: [id], onDelete: SetNull)
+  freightQuoteId        String?
+  freightQuote          FreightQuote?        @relation(fields: [freightQuoteId], references: [id], onDelete: SetNull)
+  tenderId              String?
+  tender                Tender?              @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  carrierInvoiceId      String?
+  carrierInvoice        CarrierInvoice?      @relation(fields: [carrierInvoiceId], references: [id], onDelete: SetNull)
   eventType             String // ORDER_RECEIVED | ORDER_PARSED | SHIPMENT_CREATED | BOOKING_CONFIRMED | CUSTOMS_HOLD | CUSTOMS_RELEASED | ETA_CHANGED | DELIVERED etc.
   source                String // EMAIL | EDI | API | SYSTEM | USER | CARRIER | TERMINAL | CBP | PARSER | AGENT
   sourceReference       String?
@@ -7044,6 +7052,9 @@ model TransportationEvent {
   @@index([accountId, entityType, entityId])
   @@index([accountId, shipmentId, occurredAt])
   @@index([accountId, movementId, occurredAt])
+  @@index([accountId, freightQuoteId])
+  @@index([accountId, tenderId])
+  @@index([accountId, carrierInvoiceId])
   @@index([accountId, eventType])
   @@index([occurredAt])
 }
@@ -7138,6 +7149,7 @@ model FreightQuote {
   updatedAt             DateTime             @updatedAt
 
   tenders Tender[]
+  events  TransportationEvent[]
 
   @@index([accountId])
   @@index([transportationOrderId])
@@ -7171,6 +7183,8 @@ model Tender {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
+  events TransportationEvent[]
+
   @@unique([accountId, idempotencyKey])
   @@index([accountId])
   @@index([shipmentId])
@@ -7179,18 +7193,23 @@ model Tender {
 }
 
 model ProofOfDelivery {
-  id             String    @id @default(cuid())
+  id             String            @id @default(cuid())
   accountId      String
-  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId     String
-  shipment       Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  documentId     String // FK -> ShipmentDocument
+  shipment       Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  documentId     String?
+  document       ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
   deliveredAt    DateTime?
   receivedByName String?
-  exceptionNoted Boolean   @default(false)
+  exceptionNoted Boolean           @default(false)
   notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([documentId])
 }
 
 model CarrierInvoice {
@@ -7202,6 +7221,7 @@ model CarrierInvoice {
   carrierId        String?
   carrier          Carrier?             @relation(fields: [carrierId], references: [id], onDelete: SetNull)
   documentId       String? // FK -> ShipmentDocument, source doc if ingested
+  document         ShipmentDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
   invoiceNumber    String?
   invoiceDate      DateTime?
   totalAmount      Decimal              @db.Decimal(12, 2)
@@ -7212,6 +7232,12 @@ model CarrierInvoice {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   lines            CarrierInvoiceLine[]
+  events           TransportationEvent[]
+
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([carrierId])
+  @@index([documentId])
 }
 
 model CarrierInvoiceLine {

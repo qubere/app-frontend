@@ -95,6 +95,8 @@ export const parseFreightEmailTool: AssistantTool = {
         confidence: input.confidence,
         originAddress: input.originAddress ? (input.originAddress as any) : undefined,
         destinationAddress: input.destinationAddress ? (input.destinationAddress as any) : undefined,
+        origin: input.originAddress ? (input.originAddress as any) : undefined,
+        destination: input.destinationAddress ? (input.destinationAddress as any) : undefined,
         requestedPickupWindow: input.requestedPickupWindow ? (input.requestedPickupWindow as any) : undefined,
         requestedDeliveryWindow: input.requestedDeliveryWindow ? (input.requestedDeliveryWindow as any) : undefined,
         status: orderStatus,

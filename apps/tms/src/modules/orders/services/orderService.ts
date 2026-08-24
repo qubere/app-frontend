@@ -44,6 +44,11 @@ export async function createTransportationOrder(
   const isHighConfidence = confidence >= 80;
   const status = input.status ?? (isHighConfidence ? "UNDERSTOOD" : "NEEDS_REVIEW");
 
+  const canonicalOrigin = input.origin ?? input.originAddress ?? null;
+  const canonicalOriginAddr = input.originAddress ?? input.origin ?? null;
+  const canonicalDest = input.destination ?? input.destinationAddress ?? null;
+  const canonicalDestAddr = input.destinationAddress ?? input.destination ?? null;
+
   const order = await db.transportationOrder.create({
     data: {
       accountId: ctx.accountId,
@@ -60,10 +65,10 @@ export async function createTransportationOrder(
       requestedPickupWindow: input.requestedPickupWindow ? (input.requestedPickupWindow as any) : undefined,
       requestedDeliveryWindow: input.requestedDeliveryWindow ? (input.requestedDeliveryWindow as any) : undefined,
       incoterm: input.incoterm ?? null,
-      originAddress: input.originAddress ? (input.originAddress as any) : undefined,
-      destinationAddress: input.destinationAddress ? (input.destinationAddress as any) : undefined,
-      origin: input.origin ? (input.origin as any) : undefined,
-      destination: input.destination ? (input.destination as any) : undefined,
+      originAddress: canonicalOriginAddr ? (canonicalOriginAddr as any) : undefined,
+      destinationAddress: canonicalDestAddr ? (canonicalDestAddr as any) : undefined,
+      origin: canonicalOrigin ? (canonicalOrigin as any) : undefined,
+      destination: canonicalDest ? (canonicalDest as any) : undefined,
       commodityDescription: input.commodityDescription ?? null,
       cargoSummary: input.cargoSummary ?? null,
       weight: input.weight ?? null,

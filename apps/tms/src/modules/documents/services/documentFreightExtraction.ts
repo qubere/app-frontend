@@ -375,7 +375,45 @@ export function parseStoredFreightExtraction(raw: string | null): TmsDocumentExt
   if (!raw) return null;
   try {
     const parsed = extractionSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+    const data = parsed.data;
+    const hasAnyContent = Boolean(
+      data.customerReference ||
+      data.poReference ||
+      data.shipperName ||
+      data.consigneeName ||
+      data.carrierName ||
+      data.carrierCode ||
+      data.mode ||
+      data.serviceLevel ||
+      data.incoterm ||
+      data.originName ||
+      data.originCountry ||
+      data.originUnlocode ||
+      data.destinationName ||
+      data.destinationCountry ||
+      data.destinationUnlocode ||
+      data.estimatedArrival ||
+      data.customerPromiseDate ||
+      data.lastFreeDay ||
+      data.bookingNumber ||
+      data.masterBillNumber ||
+      data.houseBillNumber ||
+      data.airWaybillNumber ||
+      data.proNumber ||
+      data.commodityDescription ||
+      data.packageCount !== null ||
+      data.totalWeight !== null ||
+      data.totalVolume !== null ||
+      data.hazmat !== null ||
+      data.temperatureRequirement ||
+      data.rawMetadataJson ||
+      data.containerNumbers.length > 0 ||
+      data.equipmentTypes.length > 0 ||
+      data.lineItems.length > 0 ||
+      data.additionalFields.length > 0
+    );
+    return hasAnyContent ? data : null;
   } catch {
     return null;
   }
