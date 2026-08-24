@@ -26,11 +26,15 @@ interface Props {
     paymentDate: string;
   }>;
   canRecordPayment: boolean;
+  canSubmit: boolean;
+  canApprove: boolean;
+  canSend: boolean;
+  canVoid: boolean;
 }
 
 const PAYMENT_METHODS = ["ACH", "Wire", "Check", "Credit Card", "Other"];
 
-export function InvoiceDetailClient({ invoice, payments, canRecordPayment }: Props) {
+export function InvoiceDetailClient({ invoice, payments, canRecordPayment, canSubmit, canApprove, canSend, canVoid }: Props) {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showVoidForm, setShowVoidForm] = useState(false);
   const [voidReason, setVoidReason] = useState("");
@@ -86,19 +90,19 @@ export function InvoiceDetailClient({ invoice, payments, canRecordPayment }: Pro
       <div className="p-5 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-4">
         <h3 className="text-base font-bold text-ink">Invoice Actions</h3>
         <div className="flex flex-wrap gap-2">
-          {status === "DRAFT" && (
+          {canSubmit && status === "DRAFT" && (
             <button onClick={() => handleLifecycle(() => submitInvoiceForApprovalAction(invoice.id))} disabled={isPending}
               className="px-4 py-2 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-white transition-colors shadow-sm disabled:opacity-50">
               Submit for Approval
             </button>
           )}
-          {status === "PENDING_APPROVAL" && (
+          {canApprove && status === "PENDING_APPROVAL" && (
             <button onClick={() => handleLifecycle(() => approveInvoiceAction(invoice.id))} disabled={isPending}
               className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm disabled:opacity-50">
               Approve
             </button>
           )}
-          {status === "APPROVED" && (
+          {canSend && status === "APPROVED" && (
             <button onClick={() => handleLifecycle(() => sendInvoiceAction(invoice.id))} disabled={isPending}
               className="px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shadow-sm disabled:opacity-50">
               Mark as Sent
@@ -110,7 +114,7 @@ export function InvoiceDetailClient({ invoice, payments, canRecordPayment }: Pro
               Record Payment
             </button>
           )}
-          {status !== "VOID" && status !== "PAID" && (
+          {canVoid && status !== "VOID" && status !== "PAID" && (
             <button onClick={() => setShowVoidForm((v) => !v)}
               className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">
               Void Invoice

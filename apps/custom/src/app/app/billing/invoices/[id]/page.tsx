@@ -16,8 +16,6 @@ const STATUS_COLORS: Record<string, string> = {
   PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
   OVERDUE: "bg-rose-50 text-rose-700 border-rose-200",
   VOID: "bg-slate-100 text-slate-400 border-slate-200",
-  DISPUTED: "bg-orange-50 text-orange-700 border-orange-200",
-  CREDITED: "bg-purple-50 text-purple-700 border-purple-200",
 };
 
 function deriveStatus(inv: { status: string; dueDate: Date | string; balanceDue: unknown }) {
@@ -32,10 +30,17 @@ function deriveStatus(inv: { status: string; dueDate: Date | string; balanceDue:
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  if (!(await hasPermission("billing.invoice.manage"))) redirect("/app/billing");
+  if (!(await hasPermission("billing.invoice.view"))) redirect("/app/billing");
 
   const { id } = await params;
-  const canRecordPayment = await hasPermission("billing.payment.record");
+  const [canRecordPayment, canSubmit, canApprove, canSend, canVoid, canExport] = await Promise.all([
+    hasPermission("billing.payment.record"),
+    hasPermission("billing.invoice.create"),
+    hasPermission("billing.invoice.approve"),
+    hasPermission("billing.invoice.send"),
+    hasPermission("billing.invoice.void"),
+    hasPermission("billing.report.export"),
+  ]);
 
   const invoice = await db.invoice.findFirst({
     where: { id, accountId: ctx.accountId },
@@ -79,12 +84,12 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Export buttons */}
-          <a href={`/api/billing/invoices/${id}/export?format=pdf`} target="_blank" rel="noopener noreferrer"
+          {canExport && <><a href={`/api/billing/invoices/${id}/export?format=pdf`} target="_blank" rel="noopener noreferrer"
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">PDF</a>
           <a href={`/api/billing/invoices/${id}/export?format=csv`}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">CSV</a>
           <a href={`/api/billing/invoices/${id}/export?format=xlsx`}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">XLSX</a>
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">XLSX</a></>}
           <Link href="/app/billing/invoices" className="text-xs font-semibold text-ink-muted hover:text-ink transition-colors">← Back</Link>
         </div>
       </div>
@@ -184,7 +189,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           notes: p.notes,
           paymentDate: new Date(p.paymentDate).toLocaleDateString(),
         }))}
-        canRecordPayment={canRecordPayment}
+          canRecordPayment={canRecordPayment}
+          canSubmit={canSubmit}
+          canApprove={canApprove}
+          canSend={canSend}
+          canVoid={canVoid}
       />
     </div>
   );

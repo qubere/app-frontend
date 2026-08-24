@@ -187,7 +187,7 @@ export default async function BillingReportsPage() {
               ) : clientEconomics.map(({ client, rev, cost, profit, margin, shipmentCount }) => (
                 <tr key={client.id} className="hover:bg-[#F9F9FB] transition-colors">
                   <td className="px-5 py-4 font-bold text-ink font-sans">{client.name}</td><td className="px-5 py-4">{shipmentCount}</td><td className="px-5 py-4 text-emerald-600 font-semibold">${rev.toFixed(2)}</td>
-                  {canViewCost && <><td className="px-5 py-4 text-ink-muted">${cost.toFixed(2)}</td><td className="px-5 py-4 text-purple-700 font-semibold">${profit.toFixed(2)}</td><td className="px-5 py-4 font-sans"><span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">{margin.toFixed(1)}%</span></td></>}
+                  {canViewCost && <><td className="px-5 py-4 text-ink-muted">${cost.toFixed(2)}</td><td className="px-5 py-4 text-purple-700 font-semibold">${profit.toFixed(2)}</td><td className="px-5 py-4 font-sans"><span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${margin >= 50 ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : margin >= 20 ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>{margin.toFixed(1)}%</span></td></>}
                 </tr>
               ))}
             </tbody>

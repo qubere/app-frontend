@@ -10,10 +10,11 @@ export default async function BillingOverviewPage() {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
 
-  const [canViewCost, canManageRateCards, canManageInvoices, canViewReports] = await Promise.all([
+  const [canViewCost, canViewMargin, canManageRateCards, canCreateInvoices, canViewReports] = await Promise.all([
     hasPermission("billing.cost.view"),
-    hasPermission("billing.ratecard.manage"),
-    hasPermission("billing.invoice.manage"),
+    hasPermission("billing.margin.view"),
+    hasPermission("billing.ratecard.view"),
+    hasPermission("billing.invoice.create"),
     hasPermission("billing.reports.view"),
   ]);
 
@@ -35,7 +36,7 @@ export default async function BillingOverviewPage() {
     _count: { id: true },
   });
 
-  const costs = canViewCost
+  const costs = canViewCost || canViewMargin
     ? await db.shipmentCost.aggregate({ where: { accountId: ctx.accountId }, _sum: { amount: true } })
     : null;
 
@@ -94,13 +95,10 @@ export default async function BillingOverviewPage() {
 
         <div className="p-5 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-2">
           <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Gross Profit / Margin</span>
-          {canViewCost ? (
+          {canViewCost || canViewMargin ? (
             <>
-              <div className="text-2xl font-extrabold text-purple-900">
-                ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                <span className="text-sm font-semibold text-purple-600 ml-2">({grossMargin}%)</span>
-              </div>
-              <div className="text-xs text-ink-muted">Internal Cost: ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+              {canViewMargin && <div className="text-2xl font-extrabold text-purple-900">${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}<span className="text-sm font-semibold text-purple-600 ml-2">({grossMargin}%)</span></div>}
+              {canViewCost && <div className="text-xs text-ink-muted">Internal Cost: ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>}
             </>
           ) : (
             <div className="text-sm font-semibold text-ink-muted">Restricted by billing cost permissions</div>
@@ -125,7 +123,7 @@ export default async function BillingOverviewPage() {
           <p className="text-xs text-ink-muted">Convert unbilled charges into customer invoices and track receivables.</p>
           <div className="flex gap-2">
             <Link href="/app/billing/invoices" className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-ink border border-slate-200">View Invoices</Link>
-            {canManageInvoices && <Link href="/app/billing/invoices/create" className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-white">+ Create Invoice</Link>}
+            {canCreateInvoices && <Link href="/app/billing/invoices/create" className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-white">+ Create Invoice</Link>}
           </div>
         </div>
 

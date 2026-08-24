@@ -3,16 +3,20 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
+import { ProductLineFilter } from "../ProductLineFilter";
 
 export const revalidate = 0;
 
-export default async function UsageLedgerPage() {
+export default async function UsageLedgerPage({ searchParams }: { searchParams: Promise<{ productLine?: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
+  if (!(await hasPermission("billing.usage.view"))) redirect("/app/billing");
   const canViewCost = await hasPermission("billing.cost.view");
+  const requestedProductLine = (await searchParams).productLine;
+  const productLine = ["CUSTOMS", "TMS", "WMS"].includes(requestedProductLine ?? "") ? requestedProductLine as "CUSTOMS" | "TMS" | "WMS" : null;
 
   const events = await db.usageEvent.findMany({
-    where: { accountId: ctx.accountId },
+    where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
     take: 100,
     orderBy: { occurredAt: "desc" },
     include: {
@@ -31,6 +35,8 @@ export default async function UsageLedgerPage() {
         <p className="text-sm text-ink-muted">Immutable telemetry of economically meaningful operational work for this brokerage account.</p>
       </div>
 
+      <ProductLineFilter basePath="/app/billing/usage" active={productLine ?? "ALL"} />
+
       <div className="rounded-2xl bg-white border border-[#E5E5EA] overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-ink">
@@ -47,7 +53,7 @@ export default async function UsageLedgerPage() {
                 return (
                   <tr key={event.id} className="hover:bg-[#F9F9FB] transition-colors">
                     <td className="px-5 py-4 text-ink-muted">{new Date(event.occurredAt).toLocaleString()}</td>
-                    <td className="px-5 py-4"><div className="font-bold text-ink font-sans">{event.eventDefinition?.name ?? event.eventCode}</div><div className="text-[10px] text-ink-muted">{event.eventCode}</div></td>
+                    <td className="px-5 py-4"><div className="font-bold text-ink font-sans">{event.eventDefinition?.name ?? event.eventCode}</div><div className="text-[10px] text-ink-muted">{event.productLine} / {event.eventCode}</div></td>
                     <td className="px-5 py-4 text-ink font-sans"><div>{event.shipment?.shipmentNumber ?? "N/A"}</div><div className="text-xs text-ink-muted">{event.client?.name ?? "Brokerage"}</div></td>
                     <td className="px-5 py-4 text-ink">{Number(event.quantity)} {event.unit}</td>
                     <td className="px-5 py-4 text-ink-muted">{event.sourceFunction}</td>

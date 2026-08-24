@@ -3,16 +3,20 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
+import { ProductLineFilter } from "../ProductLineFilter";
 
 export const revalidate = 0;
 
-export default async function InvoicesPage() {
+export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ productLine?: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  const canManageInvoices = await hasPermission("billing.invoice.manage");
+  if (!(await hasPermission("billing.invoice.view"))) redirect("/app/billing");
+  const canCreateInvoices = await hasPermission("billing.invoice.create");
+  const requestedProductLine = (await searchParams).productLine;
+  const productLine = ["CUSTOMS", "TMS", "WMS"].includes(requestedProductLine ?? "") ? requestedProductLine as "CUSTOMS" | "TMS" | "WMS" : null;
 
   const invoices = await db.invoice.findMany({
-    where: { accountId: ctx.accountId },
+    where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
     orderBy: { createdAt: "desc" },
     include: {
       client: { select: { name: true } },
@@ -29,20 +33,22 @@ export default async function InvoicesPage() {
           <h2 className="text-xl font-bold text-ink">Invoices & Accounts Receivable</h2>
           <p className="text-sm text-ink-muted">Generate customer invoices and track incoming payments and balances.</p>
         </div>
-        {canManageInvoices && (
+        {canCreateInvoices && (
           <Link href="/app/billing/invoices/create" className="px-4 py-2 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-white transition-colors shadow-sm">+ Create New Invoice</Link>
         )}
       </div>
+
+      <ProductLineFilter basePath="/app/billing/invoices" active={productLine ?? "ALL"} />
 
       <div className="rounded-2xl bg-white border border-[#E5E5EA] overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-ink">
             <thead className="bg-[#F5F5F7] text-ink-muted uppercase text-xs tracking-wider border-b border-[#E5E5EA]">
-              <tr><th className="px-5 py-3">Invoice #</th><th className="px-5 py-3">Client</th><th className="px-5 py-3">Issue Date</th><th className="px-5 py-3">Due Date</th><th className="px-5 py-3">Total Amount</th><th className="px-5 py-3">Paid Amount</th><th className="px-5 py-3">Balance Due</th><th className="px-5 py-3">Status</th></tr>
+              <tr><th className="px-5 py-3">Invoice #</th><th className="px-5 py-3">Client</th><th className="px-5 py-3">Module</th><th className="px-5 py-3">Issue Date</th><th className="px-5 py-3">Due Date</th><th className="px-5 py-3">Total Amount</th><th className="px-5 py-3">Paid Amount</th><th className="px-5 py-3">Balance Due</th><th className="px-5 py-3">Status</th></tr>
             </thead>
             <tbody className="divide-y divide-[#E5E5EA] font-mono text-xs">
               {invoices.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-8 text-center text-ink-muted text-sm font-sans">No invoices generated yet.</td></tr>
+                <tr><td colSpan={9} className="px-5 py-8 text-center text-ink-muted text-sm font-sans">No invoices generated yet.</td></tr>
               ) : invoices.map((inv) => {
                 const isOverdue = (inv.status === "SENT" || inv.status === "PARTIALLY_PAID") && new Date(inv.dueDate) < new Date() && Number(inv.balanceDue) > 0;
                 const displayStatus = isOverdue ? "OVERDUE" : inv.status;
@@ -55,6 +61,7 @@ export default async function InvoicesPage() {
                   <tr key={inv.id} className="hover:bg-[#F9F9FB] transition-colors cursor-pointer">
                     <td className="px-5 py-4 font-bold text-ink font-sans"><Link href={`/app/billing/invoices/${inv.id}`} className="hover:text-brand">{inv.invoiceNumber}</Link></td>
                     <td className="px-5 py-4 font-sans text-ink">{inv.client?.name ?? "Client Account"}</td>
+                    <td className="px-5 py-4 font-sans font-semibold text-ink-muted">{inv.productLine}</td>
                     <td className="px-5 py-4 text-ink-muted">{new Date(inv.issueDate).toLocaleDateString()}</td>
                     <td className="px-5 py-4 text-ink-muted">{new Date(inv.dueDate).toLocaleDateString()}</td>
                     <td className="px-5 py-4 text-ink font-semibold">${Number(inv.totalAmount).toFixed(2)}</td>

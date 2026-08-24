@@ -5,6 +5,7 @@ import { evaluateAutonomyPolicy } from "../../autonomy/services/policyEngineServ
 import { evaluateCarriersForShipment } from "../../carriers/services/carrierSelectionService";
 import { publishTransportationEvent } from "../../events/services/eventService";
 import { queueTmsMemoryEvent } from "../../../lib/inngest/functions/tmsMemoryExtraction";
+import { emitTmsBillingEvent } from "../../../lib/billingTelemetry";
 
 const MAX_CASCADE_ATTEMPTS = 5;
 
@@ -201,6 +202,39 @@ export async function createTenderDraft(ctx: AccountContext, input: CreateTender
 
 /** @deprecated Use createTenderDraft. Kept as a compatibility adapter. */
 export const createAndSendTender = createTenderDraft;
+
+/** Provider callback boundary: only a confirmed carrier delivery can move a
+ * draft to SENT and create billable dispatch telemetry. */
+export async function markTenderDispatched(ctx: AccountContext, tenderId: string, providerMessageId: string) {
+  if (!providerMessageId.trim()) throw new Error("Provider message id is required");
+  const tender = await db.tender.findFirst({ where: { id: tenderId, accountId: ctx.accountId } });
+  if (!tender) throw new Error("Tender not found in this account.");
+  if (tender.status === "SENT") return tender;
+  if (tender.status !== "DRAFT") throw new Error(`Cannot dispatch tender in status '${tender.status}'.`);
+
+  const now = new Date();
+  const history = Array.isArray(tender.history) ? tender.history : [];
+  const updated = await db.tender.update({
+    where: { id: tender.id },
+    data: {
+      status: "SENT",
+      sentAt: now,
+      history: [...history, { status: "SENT", timestamp: now.toISOString(), providerMessageId }],
+    },
+  });
+  if (tender.shipmentId) {
+    await emitTmsBillingEvent({
+      accountId: ctx.accountId,
+      shipmentId: tender.shipmentId,
+      eventCode: "TMS_TENDER_DISPATCHED",
+      idempotencyKey: `billing:tms:tender:${tender.id}`,
+      sourceFunction: "markTenderDispatched",
+      sourceAgent: "Tender Dispatch Agent",
+      metadata: { tenderId: tender.id, carrierId: tender.carrierId, providerMessageId },
+    });
+  }
+  return updated;
+}
 
 export async function respondToTender(ctx: AccountContext, input: RespondTenderInput) {
   const tender = await db.tender.findFirst({

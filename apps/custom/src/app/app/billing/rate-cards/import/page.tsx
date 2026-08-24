@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEFAULT_BILLING_EVENT_DEFINITIONS } from "@/lib/billing/constants";
@@ -48,6 +48,7 @@ export default function ImportRateCardPage() {
   const [parsed, setParsed] = useState<ParsedUpload | null>(null);
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("USD");
+  const [productLine, setProductLine] = useState<"CUSTOMS" | "TMS" | "WMS">("CUSTOMS");
   const [descriptionColumn, setDescriptionColumn] = useState("");
   const [rateColumn, setRateColumn] = useState("");
   const [unitColumn, setUnitColumn] = useState("");
@@ -57,6 +58,13 @@ export default function ImportRateCardPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!parsed) return;
+    const first = DEFAULT_BILLING_EVENT_DEFINITIONS.find((definition) => (definition.productLine ?? "CUSTOMS") === productLine)?.eventCode;
+    if (!first) return;
+    setEventByRow(Object.fromEntries(parsed.rows.map((_, index) => [index, first])));
+  }, [parsed, productLine]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -122,6 +130,7 @@ export default function ImportRateCardPage() {
       const result = await createImportedRateCardAction({
         name: name.trim(),
         currency,
+        productLine,
         description: `Imported from ${parsed.fileName}`,
         lines: mappedRows.map((row) => ({
           lineItemName: row.description,
@@ -182,6 +191,7 @@ export default function ImportRateCardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="text-[11px] font-semibold text-ink-muted">Rate Card Name</label><input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E5E5EA] text-sm" /></div>
               <div><label className="text-[11px] font-semibold text-ink-muted">Currency</label><select value={currency} onChange={(e) => setCurrency(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E5E5EA] text-sm"><option>USD</option><option>CAD</option><option>EUR</option><option>GBP</option></select></div>
+              <div><label className="text-[11px] font-semibold text-ink-muted">Product module</label><select value={productLine} onChange={(e) => setProductLine(e.target.value as "CUSTOMS" | "TMS" | "WMS")} className="mt-1 w-full px-3 py-2 rounded-lg border border-[#E5E5EA] text-sm"><option value="CUSTOMS">Customs</option><option value="TMS">Transportation</option><option value="WMS">Warehouse</option></select></div>
               <ColumnSelect label="Customer Description *" headers={parsed.headers} value={descriptionColumn} onChange={setDescriptionColumn} />
               <ColumnSelect label="Rate / Amount *" headers={parsed.headers} value={rateColumn} onChange={setRateColumn} />
               <ColumnSelect label="Unit / Billing Basis" headers={parsed.headers} value={unitColumn} onChange={setUnitColumn} optional />
@@ -200,7 +210,7 @@ export default function ImportRateCardPage() {
                 <div key={row.index} className="grid grid-cols-1 lg:grid-cols-[1.4fr_.7fr_1fr_1fr] gap-3 p-4 rounded-xl bg-[#F5F5F7] border border-[#E5E5EA] items-end">
                   <div><div className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Customer Line</div><div className="text-sm font-bold text-ink mt-1">{row.description || "Missing description"}</div><div className={`text-xs font-mono mt-1 ${Number.isFinite(row.rate) && row.rate >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{row.rateText || "Missing rate"} {row.unit ? `/ ${row.unit}` : ""}</div></div>
                   <div><label className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Pricing</label><select value={pricingByRow[row.index] || "PER_UNIT"} onChange={(e) => setPricingByRow({ ...pricingByRow, [row.index]: e.target.value })} className="mt-1 w-full px-2 py-2 rounded-lg border border-[#E5E5EA] bg-white text-xs">{PRICING_MODELS.map((model) => <option key={model} value={model}>{model}</option>)}</select></div>
-                  <div className="lg:col-span-2"><label className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Qubere Billing Event</label><select value={eventByRow[row.index] || inferEvent(row.description)} onChange={(e) => setEventByRow({ ...eventByRow, [row.index]: e.target.value })} className="mt-1 w-full px-2 py-2 rounded-lg border border-[#E5E5EA] bg-white text-xs font-mono">{DEFAULT_BILLING_EVENT_DEFINITIONS.map((def) => <option key={def.eventCode} value={def.eventCode}>{def.name} — {def.eventCode}</option>)}</select></div>
+                  <div className="lg:col-span-2"><label className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Qubere Billing Event</label><select value={eventByRow[row.index] || inferEvent(row.description)} onChange={(e) => setEventByRow({ ...eventByRow, [row.index]: e.target.value })} className="mt-1 w-full px-2 py-2 rounded-lg border border-[#E5E5EA] bg-white text-xs font-mono">{DEFAULT_BILLING_EVENT_DEFINITIONS.filter((def) => (def.productLine ?? "CUSTOMS") === productLine).map((def) => <option key={def.eventCode} value={def.eventCode}>{def.name} — {def.eventCode}</option>)}</select></div>
                 </div>
               ))}
             </div>

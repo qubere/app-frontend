@@ -386,6 +386,7 @@ export interface DocumentReviewPanelProps {
   notesByDecision?: Record<string, string>;
   onNotesChange?: (decisionId: string, value: string) => void;
   onReviewAction?: (decisionId: string, action: ReviewAction) => void | Promise<void>;
+  onReviewStart?: (decisionId: string) => void;
   actionLoadingId?: string | null;
   // Rendered next to the header title, e.g. an "Approve All" button when
   // embedded on a page that has bulk actions.
@@ -417,6 +418,7 @@ export function DocumentReviewPanel({
   notesByDecision = {},
   onNotesChange,
   onReviewAction,
+  onReviewStart,
   actionLoadingId = null,
   headerRight,
   onClose,
@@ -436,6 +438,10 @@ export function DocumentReviewPanel({
   const reviewableDecisions = latestPerAgent(decisions.filter((dec) => reviewCategory(dec) !== "MECHANICAL")).sort(
     (a, b) => CATEGORY_PRIORITY[classifyDecision(a)] - CATEGORY_PRIORITY[classifyDecision(b)]
   );
+
+  useEffect(() => {
+    for (const decision of reviewableDecisions) onReviewStart?.(decision.id);
+  }, [onReviewStart, reviewableDecisions]);
 
   // Jumps to the first check card in the clicked rollup category. Mechanical
   // checks render in their own collapsed block with no per-card scroll

@@ -11,12 +11,18 @@ export const SYSTEM_ROLES = [
   "BROKER_SPECIALIST",
   "BROKER_VIEWER",
   "BROKER_BILLING",
+  "BROKER_BILLING_MANAGER",
+  "BROKER_BILLING_USER",
+  "BROKER_BILLING_VIEWER",
   // TMS Roles
   "TMS_ADMIN",
   "TMS_MANAGER",
   "TMS_OPERATIONS",
   "TMS_DISPATCHER",
   "TMS_BILLING",
+  "TMS_BILLING_MANAGER",
+  "TMS_BILLING_USER",
+  "TMS_BILLING_VIEWER",
   "TMS_VIEWER",
   // Qubere System Admin Roles
   "INTERNAL_ADMIN",
@@ -69,6 +75,11 @@ export interface PermissionDefinition {
   category: PermissionCategory;
   defaultRoles: readonly SystemRole[];
 }
+
+const BILLING_ADMINS: readonly SystemRole[] = ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"];
+const BILLING_MANAGERS: readonly SystemRole[] = [...BILLING_ADMINS, "BROKER_BILLING", "TMS_BILLING", "BROKER_BILLING_MANAGER", "TMS_BILLING_MANAGER"];
+const BILLING_USERS: readonly SystemRole[] = [...BILLING_ADMINS, "BROKER_BILLING_USER", "TMS_BILLING_USER"];
+const BILLING_VIEWERS: readonly SystemRole[] = [...BILLING_MANAGERS, ...BILLING_USERS, "BROKER_BILLING_VIEWER", "TMS_BILLING_VIEWER", "SUPER_ADMIN_READ"];
 
 export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   // ─── QUBERE CUSTOMS PERMISSIONS ──────────────────────────────────────────
@@ -163,25 +174,53 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "report.export", description: "Export report datasets to CSV/Excel.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_BILLING", "OWNER", "ADMIN"] },
   { name: "dashboard.read", description: "Access operational command center dashboard.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
 
-  // Billing
-  { name: "billing.view", description: "View the billing workspace overview and billing navigation.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },
-  { name: "billing.read", description: "View customs & freight invoices and rate cards.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },
-  { name: "billing.create", description: "Generate customer invoices.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.update", description: "Update invoice line items.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.approve", description: "Approve customer invoices for dispatch.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.export", description: "Export billing and financial ledger data.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.charge.adjust", description: "Adjust individual billing charge amounts and reasons.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.charge.waive", description: "Approve waivers for disputed billing charges.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"] },
-  { name: "billing.cost.view", description: "View shipment cost details and costing inputs.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },
-  { name: "billing.discount.approve", description: "Approve billing discounts outside normal rate rules.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"] },
-  { name: "billing.invoice.manage", description: "Create, update, approve, send, and void billing invoices.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.margin.view", description: "View shipment margin and profitability information.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },
-  { name: "billing.payment.record", description: "Record customer payment activity against invoices.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "OWNER", "ADMIN"] },
-  { name: "billing.ratecard.manage", description: "Manage billing rate cards, versions, and rate rules.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"] },
-  { name: "billing.ratecard.upload", description: "Upload imported billing rate card data files.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"] },
-  { name: "billing.ratecard.view", description: "View billing rate cards and simulation results.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },
-  { name: "billing.reports.view", description: "View billing reports, leakage analysis, and profitability dashboards.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "BROKER_BILLING", "TMS_ADMIN", "TMS_BILLING", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },
-  { name: "billing.settings.manage", description: "Manage billing settings and costing configuration.", category: "Billing", defaultRoles: ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"] },
+  // Billing. Legacy umbrella codes remain registered during rollout, but all
+  // financial mutations enforce the granular codes below.
+  { name: "billing.view", description: "View the billing workspace overview and billing navigation.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.read", description: "View customer billing records and rate cards.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.create", description: "Legacy umbrella for creating customer billing records.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.update", description: "Legacy umbrella for updating customer billing records.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.approve", description: "Legacy umbrella for approving customer billing records.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.export", description: "Legacy umbrella for exporting billing data.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.invoice.manage", description: "Legacy billing invoice administration umbrella.", category: "Billing", defaultRoles: BILLING_ADMINS },
+  { name: "billing.ratecard.manage", description: "Legacy billing rate-card administration umbrella.", category: "Billing", defaultRoles: BILLING_ADMINS },
+
+  { name: "billing.cost.view", description: "View internal shipment and platform costs.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.margin.view", description: "View gross profit, margin, and client profitability.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.ratecard.view", description: "View billing rate cards and simulation results.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.ratecard.create", description: "Create and duplicate draft rate cards and versions.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.ratecard.upload", description: "Upload imported billing rate-card files.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.ratecard.edit", description: "Edit draft rate cards and rate rules.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.ratecard.activate", description: "Approve and activate a draft rate-card version.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.ratecard.retire", description: "Retire an active rate card.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.ratecard.duplicate", description: "Duplicate a rate card into a new draft.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.mapping.view", description: "View rate-rule to billing-event mappings.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.mapping.edit", description: "Edit rate-rule to billing-event mappings.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.usage.view", description: "View the immutable billing usage ledger.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.charge.view", description: "View shipment charge detail and calculation traces.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.charge.adjust", description: "Request permitted charge adjustments.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.charge.waive", description: "Approve charge waivers.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.discount.create", description: "Create customer billing discounts.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.discount.approve", description: "Approve discounts above configured thresholds.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.credit.create", description: "Create customer billing credits.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.credit.approve", description: "Approve customer billing credits.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.invoice.view", description: "View customer invoices and their trace chains.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.invoice.create", description: "Create and submit draft customer invoices.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.invoice.edit", description: "Edit draft customer invoices.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.invoice.approve", description: "Approve a pending customer invoice.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.invoice.send", description: "Send an approved customer invoice.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.invoice.void", description: "Void an unpaid customer invoice.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.payment.view", description: "View customer payment records and balances.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.payment.record", description: "Record customer payment activity against invoices.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.exception.view", description: "View billing exceptions and revenue leakage alerts.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.exception.resolve", description: "Resolve a billing exception with a reason.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.exception.waive", description: "Waive a billing exception and accept the associated risk.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.reports.view", description: "View billing reports, leakage analysis, and profitability dashboards.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.report.export", description: "Export billing reports and ledgers.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.settings.manage", description: "Manage billing settings and costing configuration.", category: "Billing", defaultRoles: BILLING_ADMINS },
+  { name: "billing.cost_profile.create", description: "Create an effective-dated internal cost profile.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.permissions.manage", description: "Manage billing roles and permission grants.", category: "Billing", defaultRoles: BILLING_ADMINS },
+  { name: "billing.audit.view", description: "View complete billing audit history.", category: "Billing", defaultRoles: BILLING_MANAGERS },
 
   // Settings
   { name: "settings.read", description: "View organization configuration.", category: "Settings", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "TMS_ADMIN", "TMS_MANAGER", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },

@@ -14,7 +14,7 @@ const MAX_PREVIEW_ROWS = 250;
 async function requireRateCardAdmin() {
   const ctx = await getAccountContext();
   if (!ctx) throw new Error("Unauthorized: Account context required");
-  const canUpload = await hasPermission("billing.ratecard.upload") || await hasPermission("billing.ratecard.manage");
+  const canUpload = await hasPermission("billing.ratecard.upload");
   if (!canUpload) throw new Error("Forbidden: billing.ratecard.upload permission required");
   return ctx;
 }
@@ -114,6 +114,7 @@ export async function createImportedRateCardAction(input: {
   isDefault?: boolean;
   clientId?: string;
   importerId?: string;
+  productLine?: "CUSTOMS" | "TMS" | "WMS";
   lines: ImportedRateCardLine[];
 }) {
   const ctx = await requireRateCardAdmin();
@@ -123,10 +124,11 @@ export async function createImportedRateCardAction(input: {
   if (input.lines.some((line) => !Number.isFinite(line.rate) || line.rate < 0)) throw new Error("Imported rates must be valid non-negative numbers");
 
   return withAccountIdContext(ctx.accountId, async () => {
+    const productLine = input.productLine ?? "CUSTOMS";
     await seedBillingEventDefinitions(ctx.accountId);
     const eventCodes = [...new Set(input.lines.map((line) => line.eventCode))];
     const definitions = await db.billingEventDefinition.findMany({
-      where: { eventCode: { in: eventCodes } },
+      where: { eventCode: { in: eventCodes }, productLine },
       select: { id: true, eventCode: true },
     });
     const definitionByCode = new Map(definitions.map((definition) => [definition.eventCode, definition.id]));
@@ -144,16 +146,20 @@ export async function createImportedRateCardAction(input: {
         isDefault: input.isDefault ?? false,
         currentVersion: 1,
         status: "DRAFT",
+        productLine,
+        createdById: ctx.userId,
         versions: {
           create: [{
             version: 1,
             effectiveDate: new Date(),
             status: "DRAFT",
+            createdById: ctx.userId,
             rules: {
               create: input.lines.map((line) => ({
                 lineItemName: line.lineItemName.trim(),
                 serviceCode: line.serviceCode.trim() || line.eventCode,
                 pricingModel: line.pricingModel as any,
+                productLine,
                 unit: line.unit.trim() || "unit",
                 rate: line.rate,
                 currency: input.currency || "USD",

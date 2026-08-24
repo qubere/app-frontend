@@ -9,6 +9,7 @@ import {
 import { publishTransportationEvent } from "../../events/services/eventService";
 import { queueTmsMemoryEvent } from "../../../lib/inngest/functions/tmsMemoryExtraction";
 import { TmsAccountContextBuilder } from "../../memory/memory.context-builder";
+import { emitTmsBillingEvent } from "../../../lib/billingTelemetry";
 
 // ---------------------------------------------------------------------------
 // Freight Audit Agent
@@ -246,6 +247,16 @@ export async function runFreightAuditAgent(
         finalBuyCostUsd: auditResult.carrierInvoicedUsd,
       },
     });
+
+    await emitTmsBillingEvent({
+      accountId: ctx.accountId,
+      shipmentId: auditResult.shipmentId,
+      eventCode: "TMS_FREIGHT_AUDIT_APPROVED",
+      idempotencyKey: `billing:tms:freight-audit:${carrierInvoiceId}`,
+      sourceFunction: "runFreightAuditAgent",
+      sourceAgent: "Freight Audit Agent",
+      metadata: { carrierInvoiceId, auditStatus: auditResult.auditStatus, varianceUsd: auditResult.varianceUsd },
+    }).catch((error) => console.error("[TMS billing] Freight-audit telemetry failed", error));
   }
 
   return {

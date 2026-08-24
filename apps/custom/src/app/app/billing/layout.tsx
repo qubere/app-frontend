@@ -1,10 +1,9 @@
 import React from "react";
-import Link from "next/link";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DollarSign } from "lucide-react";
 import { PanelHeading } from "@/components/PanelHeading";
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasProductEntitlement } from "@/lib/auth";
+import { BillingTabs } from "./BillingTabs";
 
 export default async function BillingLayout({
   children,
@@ -13,22 +12,21 @@ export default async function BillingLayout({
 }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
+  if (!(await hasProductEntitlement(ctx.accountId, "CUSTOMS"))) redirect("/app?error=customs-not-entitled");
 
   const has = (permission: string) =>
     ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.permissions.includes(permission);
 
   if (!has("billing.view")) redirect("/app");
 
-  const headerList = await headers();
-  const pathname = headerList.get("x-pathname") || "/app/billing";
-
   const tabs = [
     { name: "Overview", href: "/app/billing", visible: true },
-    { name: "Rate Cards", href: "/app/billing/rate-cards", visible: has("billing.ratecard.manage") },
-    { name: "Usage Ledger", href: "/app/billing/usage", visible: true },
-    { name: "Shipment Economics", href: "/app/billing/shipments", visible: true },
-    { name: "Invoices & AR", href: "/app/billing/invoices", visible: true },
-    { name: "Exceptions & Leakage", href: "/app/billing/exceptions", visible: has("billing.reports.view") },
+    { name: "Clients", href: "/app/billing/clients", visible: has("billing.read") || has("billing.view") },
+    { name: "Rate Cards", href: "/app/billing/rate-cards", visible: has("billing.ratecard.view") },
+    { name: "Usage Ledger", href: "/app/billing/usage", visible: has("billing.usage.view") },
+    { name: "Shipment Economics", href: "/app/billing/shipments", visible: has("billing.charge.view") },
+    { name: "Invoices & AR", href: "/app/billing/invoices", visible: has("billing.invoice.view") },
+    { name: "Exceptions & Leakage", href: "/app/billing/exceptions", visible: has("billing.exception.view") },
     { name: "Profitability Reports", href: "/app/billing/reports", visible: has("billing.reports.view") },
     { name: "Settings & Costing", href: "/app/billing/settings", visible: has("billing.cost.view") },
   ].filter((tab) => tab.visible);
@@ -44,27 +42,7 @@ export default async function BillingLayout({
         />
       </div>
 
-      <div className="flex items-center gap-1.5 border-b border-[#E5E5EA] pb-3 overflow-x-auto scrollbar-none">
-        {tabs.map((tab) => {
-          const isActive =
-            tab.href === "/app/billing"
-              ? pathname === "/app/billing"
-              : pathname.startsWith(tab.href);
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
-                isActive
-                  ? "bg-white text-ink shadow-sm border border-[#E5E5EA]"
-                  : "text-ink-muted hover:text-ink hover:bg-slate-100/60"
-              }`}
-            >
-              {tab.name}
-            </Link>
-          );
-        })}
-      </div>
+      <BillingTabs tabs={tabs.map(({ name, href }) => ({ name, href }))} />
 
       <main className="space-y-6">{children}</main>
     </div>

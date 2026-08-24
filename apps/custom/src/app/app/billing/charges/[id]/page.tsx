@@ -4,12 +4,14 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { adjustShipmentChargeAction } from "./actions";
+import { BillingActionForm } from "../../BillingActionForm";
 
 export const revalidate = 0;
 
 export default async function BillingChargePage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
+  if (!(await hasPermission("billing.charge.view"))) redirect("/app/billing");
   const canAdjust = await hasPermission("billing.charge.adjust");
   const { id } = await params;
 
@@ -66,7 +68,7 @@ export default async function BillingChargePage({ params }: { params: Promise<{ 
       </div>
 
       {canAdjust && (
-        <form action={adjustShipmentChargeAction.bind(null, charge.id)} className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-4">
+        <BillingActionForm action={adjustShipmentChargeAction.bind(null, charge.id)} successMessage="Charge adjustment recorded." className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-4">
           <div>
             <h3 className="text-base font-bold text-ink">Add Discount / Credit / Waiver</h3>
             <p className="text-xs text-ink-muted mt-1">Adjustments are append-only and audited. Invoiced charges are locked.</p>
@@ -82,7 +84,7 @@ export default async function BillingChargePage({ params }: { params: Promise<{ 
             </div>
           )}
           <p className="text-[11px] text-ink-muted">Waivers and discounts above 10% require Billing Admin authority.</p>
-        </form>
+        </BillingActionForm>
       )}
 
       <div className="p-6 rounded-2xl bg-white border border-[#E5E5EA] shadow-sm space-y-4">

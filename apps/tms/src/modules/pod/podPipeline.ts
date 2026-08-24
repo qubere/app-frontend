@@ -3,6 +3,7 @@ import { createAuditLog } from "@qubere/decisions";
 import type { AccountContext } from "@qubere/auth";
 import { publishTransportationEvent } from "../events/services/eventService";
 import { auditShipmentInvoices } from "../invoices/services/freightAuditAgent";
+import { emitTmsBillingEvent } from "../../lib/billingTelemetry";
 
 // ---------------------------------------------------------------------------
 // POD Pipeline
@@ -155,6 +156,27 @@ export async function processProofOfDelivery(input: IngestPodInput) {
       daysLate,
     },
   }).catch(() => null);
+
+  await Promise.all([
+    emitTmsBillingEvent({
+      accountId: input.accountId,
+      shipmentId: input.shipmentId,
+      eventCode: "TMS_POD_CONFIRMED",
+      idempotencyKey: `billing:tms:pod:${pod.id}`,
+      sourceFunction: "processProofOfDelivery",
+      sourceAgent: "POD Pipeline",
+      metadata: { podId: pod.id, exceptionNoted: input.exceptionNoted ?? false },
+    }),
+    emitTmsBillingEvent({
+      accountId: input.accountId,
+      shipmentId: input.shipmentId,
+      eventCode: "TMS_LOAD_DELIVERED",
+      idempotencyKey: `billing:tms:delivery:${pod.id}`,
+      sourceFunction: "processProofOfDelivery",
+      sourceAgent: "POD Pipeline",
+      metadata: { podId: pod.id, promiseOutcome: finalPromiseState, daysLate },
+    }),
+  ]).catch((error) => console.error("[TMS billing] POD telemetry failed", error));
 
   // 8. Trigger Freight Audit Agent now that delivery is confirmed
   //    Run asynchronously — don't block the POD response

@@ -173,5 +173,5 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
 
     return NextResponse.json({ error: "Unsupported format. Use ?format=pdf|csv|xlsx" }, { status: 400 });
   },
-  { permission: "billing.invoice.manage" }
+  { permission: "billing.report.export", product: "CUSTOMS" }
 );

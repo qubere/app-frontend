@@ -14,6 +14,7 @@ export const defaultDictionary = {
     tenders: "Tenders & Bids",
     quotes: "Rate Quotes",
     invoices: "Invoices & Audits",
+    customerBilling: "Customer Billing",
     exceptions: "Action",
     freightDocs: "Documents",
     integrations: "Integrations & APIs",

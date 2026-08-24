@@ -65,6 +65,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "carriers", labelKey: "carriers", href: "/carriers", icon: "carriers" },
       { id: "quotes", labelKey: "quotes", href: "/quotes", icon: "quotes" },
       { id: "invoices", labelKey: "invoices", href: "/invoices", icon: "invoices" },
+      { id: "billing", labelKey: "customerBilling", href: "/billing", icon: "billing", permission: "billing.view" },
       { id: "documents", labelKey: "freightDocs", href: "/documents", icon: "documents" },
       { id: "integrations", labelKey: "integrations", href: "/admin/integrations", icon: "integrations" },
       { id: "settings", labelKey: "systemSettings", href: "/admin/settings", icon: "settings" },

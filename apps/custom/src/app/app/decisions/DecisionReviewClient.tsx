@@ -95,7 +95,7 @@ export function DecisionReviewClient({
     }
   }, [filteredGroups, selectedGroupId]);
 
-  const { actionLoadingId, runDecisionAction } = useDecisionActions((decisionId, newStatus) => {
+  const { actionLoadingId, runDecisionAction, markDecisionOpened } = useDecisionActions((decisionId, newStatus) => {
     setLocalDecisions((prev) => prev.map((d) => (d.id === decisionId ? { ...d, status: newStatus } : d)));
   });
 
@@ -286,6 +286,7 @@ export function DecisionReviewClient({
                 notesByDecision={notesByDecision}
                 onNotesChange={(id, val) => setNotesByDecision((prev) => ({ ...prev, [id]: val }))}
                 onReviewAction={handleRowAction}
+                onReviewStart={markDecisionOpened}
                 actionLoadingId={actionLoadingId}
                 headerRight={
                   <button

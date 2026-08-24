@@ -6,14 +6,23 @@ import { getAccountContext, hasPermission } from "@/lib/auth";
 import { activateRateCardAction, createNewRateCardVersionAction, retireRateCardAction, duplicateRateCardAction } from "../../actions";
 import { MappingClient } from "./MappingClient";
 import { RateRuleEditor } from "./RateRuleEditor";
+import { BillingActionForm } from "../../BillingActionForm";
 
 export const revalidate = 0;
 
 export default async function RateCardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  const canView = await hasPermission("billing.ratecard.manage") || await hasPermission("billing.ratecard.view");
+  const canView = await hasPermission("billing.ratecard.view");
   if (!canView) redirect("/app/billing");
+  const [canEdit, canMap, canActivate, canCreateVersion, canRetire, canDuplicate] = await Promise.all([
+    hasPermission("billing.ratecard.edit"),
+    hasPermission("billing.mapping.edit"),
+    hasPermission("billing.ratecard.activate"),
+    hasPermission("billing.ratecard.create"),
+    hasPermission("billing.ratecard.retire"),
+    hasPermission("billing.ratecard.duplicate"),
+  ]);
 
   const { id } = await params;
   const rateCard = await db.rateCard.findFirst({
@@ -36,6 +45,8 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
     lineItemName: r.lineItemName,
     pricingModel: r.pricingModel,
     rate: Number(r.rate),
+    unit: r.unit,
+    includedQuantity: r.includedQuantity,
     mappedEvents: r.capabilityMappings.map((m) => m.eventDefinition.eventCode),
   }));
 
@@ -43,22 +54,22 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
   const isActive = rateCard.status === "ACTIVE";
   const isRetired = rateCard.status === "RETIRED";
 
-  async function activateCurrentRateCard() {
+  async function activateCurrentRateCard(_formData: FormData) {
     "use server";
     await activateRateCardAction(rateCardId);
   }
 
-  async function createNewVersion() {
+  async function createNewVersion(_formData: FormData) {
     "use server";
     await createNewRateCardVersionAction(rateCardId);
   }
 
-  async function retireCard() {
+  async function retireCard(_formData: FormData) {
     "use server";
     await retireRateCardAction(rateCardId);
   }
 
-  async function duplicateCard() {
+  async function duplicateCard(_formData: FormData) {
     "use server";
     const result = await duplicateRateCardAction(rateCardId);
     redirect(`/app/billing/rate-cards/${result.rateCardId}`);
@@ -87,20 +98,20 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
           <p className="text-sm text-ink-muted">Scope: {rateCard.client?.name ?? rateCard.importer?.name ?? "Brokerage Default"} | Currency: {rateCard.currency}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {isDraft && <form action={activateCurrentRateCard}><button type="submit" className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm">Activate Rate Card</button></form>}
-          {isActive && (
-            <form action={createNewVersion}>
+          {isDraft && canActivate && <BillingActionForm action={activateCurrentRateCard}><button type="submit" className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm">Activate Rate Card</button></BillingActionForm>}
+          {isActive && canCreateVersion && (
+            <BillingActionForm action={createNewVersion}>
               <button type="submit" className="px-4 py-2 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-white transition-colors shadow-sm">Create New Version</button>
-            </form>
+            </BillingActionForm>
           )}
-          {!isRetired && (
-            <form action={retireCard} onSubmit={(e) => { if (!confirm("Retire this rate card? It will no longer be used for new charges.")) e.preventDefault(); }}>
+          {!isRetired && canRetire && (
+            <BillingActionForm action={retireCard} confirmMessage="Retire this rate card? It will no longer be used for new charges.">
               <button type="submit" className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">Retire</button>
-            </form>
+            </BillingActionForm>
           )}
-          <form action={duplicateCard}>
+          {canDuplicate && <BillingActionForm action={duplicateCard}>
             <button type="submit" className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">Duplicate</button>
-          </form>
+          </BillingActionForm>}
           <Link href={`/app/billing/rate-cards/${rateCardId}/simulate`} className="px-4 py-2 rounded-lg text-xs font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition-colors">Simulate</Link>
           <Link href="/app/billing/rate-cards" className="text-xs font-semibold text-ink-muted hover:text-ink transition-colors">← Back</Link>
         </div>
@@ -118,7 +129,7 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
               : "Link commercial customer line items to stable Qubere platform billing event codes emitted by API endpoints, AI agents, and broker workflows."}
           </p>
         </div>
-        {isDraft && latestVersion ? (
+        {isDraft && latestVersion && canEdit ? (
           <RateRuleEditor
             versionId={latestVersion.id}
             rateCardId={rateCardId}
@@ -126,7 +137,7 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
             rules={formattedRules}
           />
         ) : (
-          <MappingClient rules={formattedRules} />
+          <MappingClient rules={formattedRules} readOnly={!canMap} />
         )}
       </div>
 

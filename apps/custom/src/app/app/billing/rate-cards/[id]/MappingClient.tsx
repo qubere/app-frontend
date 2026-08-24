@@ -12,7 +12,7 @@ interface RuleItem {
   mappedEvents: string[];
 }
 
-export function MappingClient({ rules }: { rules: RuleItem[] }) {
+export function MappingClient({ rules, readOnly = false }: { rules: RuleItem[]; readOnly?: boolean }) {
   const [ruleMappings, setRuleMappings] = useState<Record<string, string[]>>(() => {
     const initial: Record<string, string[]> = {};
     for (const r of rules) initial[r.id] = r.mappedEvents;
@@ -87,6 +87,7 @@ export function MappingClient({ rules }: { rules: RuleItem[] }) {
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => toggleEventMapping(rule.id, def.eventCode)}
+                        disabled={readOnly}
                         className="mt-0.5 rounded border-slate-300 text-brand focus:ring-brand"
                       />
                       <div className="space-y-0.5">
@@ -106,7 +107,7 @@ export function MappingClient({ rules }: { rules: RuleItem[] }) {
       {message && <div className="text-xs font-semibold text-emerald-700">{message}</div>}
       {error && <div className="text-xs font-semibold text-rose-700">{error}</div>}
 
-      <div className="pt-4 border-t border-[#E5E5EA] flex justify-end">
+      {!readOnly && <div className="pt-4 border-t border-[#E5E5EA] flex justify-end">
         <button
           type="button"
           onClick={saveMappings}
@@ -115,7 +116,7 @@ export function MappingClient({ rules }: { rules: RuleItem[] }) {
         >
           {saving ? "Saving..." : "Save Platform Capability Mappings"}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -14,7 +14,7 @@ function readNonNegative(formData: FormData, name: string) {
 export async function saveCostProfileAction(formData: FormData) {
   const ctx = await getAccountContext();
   if (!ctx) throw new Error("Unauthorized");
-  const canManage = await hasPermission("billing.settings.manage") || await hasPermission("billing.ratecard.manage");
+  const canManage = await hasPermission("billing.cost_profile.create") || await hasPermission("billing.settings.manage");
   if (!canManage) {
     throw new Error("Forbidden: billing.settings.manage permission required to edit cost settings");
   }

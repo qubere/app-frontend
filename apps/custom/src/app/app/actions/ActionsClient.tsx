@@ -168,7 +168,7 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
 
   const docLookup = new Map(documents.map((d) => [d.id, d]));
 
-  const { actionLoadingId, runDecisionAction } = useDecisionActions((decisionId, newStatus) => {
+  const { actionLoadingId, runDecisionAction, markDecisionOpened } = useDecisionActions((decisionId, newStatus) => {
     setLocalGroups((prev) =>
       prev.map((g) => ({
         ...g,
@@ -786,6 +786,7 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
                 onReviewAction={async (decisionId, action) => {
                   await handleDecisionAction(decisionId, action);
                 }}
+                onReviewStart={markDecisionOpened}
                 actionLoadingId={actionLoadingId}
                 onClose={() => setDocModal(null)}
               />
@@ -1565,5 +1566,4 @@ function FreightActionCard({
     </div>
   );
 }
-
 
