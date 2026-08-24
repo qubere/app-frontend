@@ -64,7 +64,7 @@ export function PlatformAdminConsole({
         body: JSON.stringify({ targetAccountId: accountId }),
       });
       if (res.ok) {
-        window.location.href = "/app/actions";
+        router.push("/app/actions");
       } else {
         const data = await res.json();
         alert(data.error || "Failed to impersonate account");
