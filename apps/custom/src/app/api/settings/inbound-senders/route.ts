@@ -9,7 +9,7 @@ import { normalizeSenderEmail } from "@/modules/inbound/emailNormalization";
 import { Prisma } from "@prisma/client";
 
 export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
-  const [routes, memberships] = await Promise.all([
+  const [routes, memberships, clients, enterpriseAccounts] = await Promise.all([
     db.inboundSenderRoute.findMany({
       where: { accountId: ctx.accountId },
       include: { defaultAssignedToUser: { select: { id: true, email: true, firstName: true, lastName: true } } },
@@ -19,7 +19,30 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
       where: { accountId: ctx.accountId, status: "ACTIVE" },
       include: { user: true },
     }),
+    db.client.findMany({
+      where: { accountId: ctx.accountId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.account.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, type: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
+
+  const testNameRegex = /(test|scratch|demo-test)/i;
+  const filteredEnterpriseWorkspaces = enterpriseAccounts
+    .filter((a) => !testNameRegex.test(a.name) && !a.id.startsWith("acc_test"))
+    .map((a) => ({ id: `account:${a.id}`, name: a.name, category: "Enterprise Workspace" }));
+
+  const clientWorkspaces = clients.map((c) => ({
+    id: `client:${c.id}`,
+    name: c.name,
+    category: "Client Workspace",
+  }));
+
+  const workspaces = [...filteredEnterpriseWorkspaces, ...clientWorkspaces];
 
   return NextResponse.json({
     requestId,
@@ -32,18 +55,21 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
       firstName: m.user.firstName,
       lastName: m.user.lastName,
     })),
+    workspaces,
   });
 });
 
 const createSchema = z.object({
   email: z.string().trim().email(),
-  defaultAssignedToUserId: z.string().min(1).optional(),
+  workspaceId: z.string().optional(),
+  defaultAssignedToUserId: z.string().optional(),
+  autoAttachAndProcess: z.boolean().optional(),
 });
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const bodyVal = await parseAndValidateBody(req, createSchema, requestId);
   if ("response" in bodyVal) return bodyVal.response;
-  const { email, defaultAssignedToUserId } = bodyVal.data;
+  const { email, workspaceId, defaultAssignedToUserId } = bodyVal.data;
 
   if (defaultAssignedToUserId) {
     const membership = await db.accountMembership.findFirst({

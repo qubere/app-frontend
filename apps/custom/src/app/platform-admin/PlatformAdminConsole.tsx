@@ -13,11 +13,13 @@ import { DataAdminPanel } from "./DataAdminPanel";
 import { RateReviewPanel } from "./RateReviewPanel";
 import { KeywordRuleReviewPanel } from "./KeywordRuleReviewPanel";
 import { AccountMemoryPanel } from "./AccountMemoryPanel";
+import { PlatformPermissionsPanel } from "./PlatformPermissionsPanel";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FormField } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import type { AiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import type { DocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
+import type { RolesPermissionsData } from "@/lib/admin/rolesData";
 
 interface AccountItem {
   id: string;
@@ -34,6 +36,7 @@ interface PlatformAdminConsoleProps {
   aiUsage: AiUsageAnalytics;
   documentProcessing: DocumentProcessingAnalytics;
   pendingKeywordRuleCount: number;
+  rolesPermissions?: RolesPermissionsData;
 }
 
 export function PlatformAdminConsole({
@@ -42,10 +45,11 @@ export function PlatformAdminConsole({
   aiUsage,
   documentProcessing,
   pendingKeywordRuleCount,
+  rolesPermissions,
 }: PlatformAdminConsoleProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
-    "accounts" | "hts" | "deployments" | "agents" | "api" | "cron" | "data" | "rate-review" | "keyword-rules" | "memory"
+    "accounts" | "permissions" | "hts" | "deployments" | "agents" | "api" | "cron" | "data" | "rate-review" | "keyword-rules" | "memory"
   >("accounts");
   const [companyName, setCompanyName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
@@ -183,6 +187,15 @@ export function PlatformAdminConsole({
         >
           <Shield className="w-3.5 h-3.5" />
           <span>Accounts</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("permissions")}
+          className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center space-x-2 ${
+            activeTab === "permissions" ? "bg-brand text-white" : "bg-white border border-border text-ink-muted hover:text-ink"
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>Permissions Catalogue & Roles</span>
         </button>
         <button
           onClick={() => setActiveTab("data")}
@@ -444,6 +457,14 @@ export function PlatformAdminConsole({
         </div>
       </div>
         </>
+      )}
+
+      {activeTab === "permissions" && rolesPermissions && (
+        <PlatformPermissionsPanel
+          coverage={rolesPermissions.coverage}
+          roles={rolesPermissions.roles}
+          permissionCatalogue={rolesPermissions.permissionCatalogue}
+        />
       )}
     </div>
   );

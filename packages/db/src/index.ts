@@ -268,7 +268,28 @@ export const db = (globalForPrisma.prisma ??
             const modelKey = model.charAt(0).toLowerCase() + model.slice(1);
             const delegate = (rawDb as any)[modelKey];
             if (delegate && typeof delegate.findFirst === "function") {
-              return delegate.findFirst(newArgs);
+              let finalArgs = newArgs;
+              if (newArgs && newArgs.where && typeof newArgs.where === "object") {
+                const flattenedWhere = { ...newArgs.where };
+                let modified = false;
+                for (const key of Object.keys(flattenedWhere)) {
+                  if (
+                    key.includes("_") &&
+                    typeof flattenedWhere[key] === "object" &&
+                    flattenedWhere[key] !== null &&
+                    !Array.isArray(flattenedWhere[key])
+                  ) {
+                    const compoundObj = flattenedWhere[key];
+                    delete flattenedWhere[key];
+                    Object.assign(flattenedWhere, compoundObj);
+                    modified = true;
+                  }
+                }
+                if (modified) {
+                  finalArgs = { ...newArgs, where: flattenedWhere };
+                }
+              }
+              return delegate.findFirst(finalArgs);
             }
           }
 

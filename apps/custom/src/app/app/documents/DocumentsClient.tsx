@@ -14,6 +14,8 @@ import {
   ChevronRight,
   AlertTriangle,
   ChevronDown,
+  Loader2,
+  Check,
 } from "lucide-react";
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
@@ -175,6 +177,25 @@ export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) 
       }
     } catch (err) {
       console.error("Error attaching document", err);
+    }
+  };
+
+  const handleAttachAndProcess = async (docId: string) => {
+    setReprocessingDocId(docId);
+    try {
+      const res = await fetch(`/api/documents/${docId}/auto-attach-process`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await fetchDocuments();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        alert(body?.error || "Failed to attach and process document.");
+      }
+    } catch (err) {
+      console.error("Error attaching and processing document", err);
+    } finally {
+      setReprocessingDocId(null);
     }
   };
 
@@ -758,35 +779,57 @@ export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) 
 
                     <td className="py-3.5 px-5 font-mono text-[11px]">
                       {doc.unattached ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setAttachingDocId(attachingDocId === doc.id ? null : doc.id)}
-                            className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
-                          >
-                            <AlertTriangle className="w-3 h-3" />
-                            <span>Unattached — Select Shipment</span>
-                          </button>
-                          {attachingDocId === doc.id && (
-                            <div className="absolute left-0 top-full mt-1.5 w-72 bg-white rounded-2xl border border-border shadow-xl z-20 p-2 text-xs">
-                              <p className="font-bold text-ink mb-1 text-[11px] px-2 pt-1">Attach to shipment</p>
-                              {shipments.length === 0 ? (
-                                <p className="text-ink-muted text-[11px] px-2 py-2">No active shipments found</p>
-                              ) : (
-                                <div className="max-h-48 overflow-y-auto space-y-1">
-                                  {shipments.map((s) => (
-                                    <button
-                                      key={s.id}
-                                      onClick={() => attachDocumentToShipment(doc.id, s.id)}
-                                      className="w-full text-left px-2 py-1.5 hover:bg-surface-muted rounded-xl transition-colors text-ink text-[11px] font-medium cursor-pointer"
-                                    >
-                                      {s.shipmentNumber || s.id}
-                                    </button>
-                                  ))}
-                                </div>
+                        <div className="space-y-1">
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setAttachingDocId(attachingDocId === doc.id ? null : doc.id)}
+                              className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Unattached — Select Shipment</span>
+                            </button>
+                            {attachingDocId === doc.id && (
+                              <div className="absolute left-0 top-full mt-1.5 w-72 bg-white rounded-2xl border border-border shadow-xl z-20 p-2 text-xs">
+                                <p className="font-bold text-ink mb-1 text-[11px] px-2 pt-1">Attach to shipment</p>
+                                {shipments.length === 0 ? (
+                                  <p className="text-ink-muted text-[11px] px-2 py-2">No active shipments found</p>
+                                ) : (
+                                  <div className="max-h-48 overflow-y-auto space-y-1">
+                                    {shipments.map((s) => (
+                                      <button
+                                        key={s.id}
+                                        onClick={() => attachDocumentToShipment(doc.id, s.id)}
+                                        className="w-full text-left px-2 py-1.5 hover:bg-surface-muted rounded-xl transition-colors text-ink text-[11px] font-medium cursor-pointer"
+                                      >
+                                        {s.shipmentNumber || s.id}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Checkmark: Attach and process */}
+                          <div>
+                            <label className="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors cursor-pointer">
+                              <input
+                                type="checkbox"
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    handleAttachAndProcess(doc.id);
+                                  }
+                                }}
+                                disabled={reprocessingDocId === doc.id}
+                                className="rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
+                              />
+                              <span>Attach and process</span>
+                              {reprocessingDocId === doc.id && (
+                                <Loader2 className="w-3 h-3 animate-spin text-purple-600 shrink-0" />
                               )}
-                            </div>
-                          )}
+                            </label>
+                          </div>
                         </div>
                       ) : (
                         <Link href={`/app/shipments/${doc.shipmentId}`} className="text-brand hover:underline">

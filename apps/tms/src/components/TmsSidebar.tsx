@@ -69,6 +69,10 @@ interface TmsSidebarProps {
     dataMode?: string;
     roleNames: string[];
   }>;
+  isImpersonating?: boolean;
+  actorUserName?: string;
+  effectiveUserName?: string;
+  effectiveEmail?: string;
 }
 
 export function TmsSidebar({
@@ -80,6 +84,10 @@ export function TmsSidebar({
   permissions = [],
   dataMode = "PRODUCTION",
   memberships = [],
+  isImpersonating = false,
+  actorUserName,
+  effectiveUserName,
+  effectiveEmail,
 }: TmsSidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
@@ -206,7 +214,18 @@ export function TmsSidebar({
         {/* Account Switcher */}
         {!collapsed && (
           <div className="px-3 my-4">
-            <AccountSwitcher currentAccountName={accountName} />
+            <AccountSwitcher
+              currentAccountId={currentAccountId}
+              currentAccountName={accountName}
+              currentAccountType={accountType}
+              currentDataMode={dataMode}
+              currentRoleNames={roleNames}
+              memberships={memberships}
+              isImpersonating={isImpersonating}
+              actorUserName={actorUserName}
+              effectiveUserName={effectiveUserName}
+              effectiveEmail={effectiveEmail}
+            />
           </div>
         )}
 

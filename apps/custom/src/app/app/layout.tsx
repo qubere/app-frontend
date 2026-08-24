@@ -41,6 +41,10 @@ export default async function AppLayout({
           roleNames={context.roleNames}
           isPlatformAdmin={context.isPlatformAdmin}
           memberships={context.memberships}
+          isImpersonating={context.isImpersonating}
+          actorUserName={context.actorUserName || "Frank Multiaccount"}
+          effectiveUserName={context.effectiveUserName || displayName}
+          effectiveEmail={context.email}
         />
 
         {/* Main Content Area */}

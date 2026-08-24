@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Users, UserPlus, Mail, CheckCircle2, ShieldCheck, X, Check, Loader2 } from "lucide-react";
+import { Users, UserPlus, Mail, CheckCircle2, ShieldCheck, X, Check, Loader2, UserCheck, Search, ChevronDown } from "lucide-react";
 import { Card, Button } from "@/components/ui";
 
 interface UserRecord {
@@ -34,6 +34,35 @@ export function UserManagementClient() {
   const [inviteRole, setInviteRole] = useState("DISPATCHER");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [impersonatingUserId, setImpersonatingUserId] = useState<string | null>(null);
+  const [openRolePickerUserId, setOpenRolePickerUserId] = useState<string | null>(null);
+  const [roleSearchQuery, setRoleSearchQuery] = useState("");
+
+  const handleImpersonateUser = async (userEmail: string, userId: string) => {
+    setImpersonatingUserId(userId);
+    try {
+      const res = await fetch("/api/platform-admin/impersonate/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetAccountId: "acc_tms_demo",
+          targetUserId: userId,
+          reason: `TMS Admin Troubleshooting as ${userEmail}`,
+        }),
+      });
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        setToastMessage(`Switching perspective to ${userEmail}...`);
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    } catch {
+      setToastMessage(`Switching perspective to ${userEmail}...`);
+      setTimeout(() => window.location.reload(), 1000);
+    } finally {
+      setImpersonatingUserId(null);
+    }
+  };
 
   const handleInviteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,9 +161,57 @@ export function UserManagementClient() {
                       </div>
                     </td>
                     <td className="p-4 font-mono font-semibold">
-                      <span className="px-2.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-[10px] font-extrabold">
-                        {u.role}
-                      </span>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setOpenRolePickerUserId(openRolePickerUserId === u.id ? null : u.id)}
+                          className="px-3 py-1 bg-surface-muted hover:bg-slate-100 border border-border rounded-xl flex items-center justify-between text-xs font-semibold text-ink transition-colors cursor-pointer"
+                        >
+                          <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-50 text-blue-700 rounded-full border border-blue-100">
+                            {u.role}
+                          </span>
+                          <ChevronDown className="w-3 h-3 text-ink-muted ml-1.5 shrink-0" />
+                        </button>
+
+                        {openRolePickerUserId === u.id && (
+                          <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-border rounded-2xl shadow-xl z-50 p-2 space-y-2">
+                            <div className="relative">
+                              <Search className="w-3 h-3 text-ink-muted absolute left-2.5 top-2.5" />
+                              <input
+                                type="text"
+                                placeholder="Search roles..."
+                                value={roleSearchQuery}
+                                onChange={(e) => setRoleSearchQuery(e.target.value)}
+                                className="w-full pl-7 pr-3 py-1 text-xs bg-surface-muted border border-border rounded-xl focus:outline-none focus:border-brand text-ink"
+                              />
+                            </div>
+
+                            <div className="max-h-40 overflow-y-auto space-y-0.5">
+                              {["OWNER", "ADMIN", "DISPATCHER", "LOGISTICS_SPECIALIST", "VIEWER"]
+                                .filter((r) => r.toLowerCase().includes(roleSearchQuery.toLowerCase()))
+                                .map((roleName) => (
+                                  <button
+                                    key={roleName}
+                                    type="button"
+                                    onClick={() => {
+                                      setUsers((prev) =>
+                                        prev.map((item) => (item.id === u.id ? { ...item, role: roleName } : item))
+                                      );
+                                      setOpenRolePickerUserId(null);
+                                      setToastMessage(`Updated ${u.name}'s role to ${roleName}`);
+                                    }}
+                                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                      u.role === roleName ? "bg-blue-50 text-brand font-bold" : "text-ink hover:bg-surface-muted"
+                                    }`}
+                                  >
+                                    <span>{roleName}</span>
+                                    {u.role === roleName && <Check className="w-3.5 h-3.5 text-brand shrink-0" />}
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4">
                       <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
@@ -144,12 +221,22 @@ export function UserManagementClient() {
                     </td>
                     <td className="p-4 text-ink-muted font-medium">{u.joined}</td>
                     <td className="p-4 text-right">
-                      <button
-                        onClick={() => setEditingUser(u)}
-                        className="text-xs font-bold text-brand hover:underline cursor-pointer"
-                      >
-                        Edit Role
-                      </button>
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => handleImpersonateUser(u.email, u.id)}
+                          disabled={impersonatingUserId === u.id}
+                          className="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                          <span>{impersonatingUserId === u.id ? "Entering..." : "Impersonate"}</span>
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(u)}
+                          className="text-xs font-bold text-brand hover:underline cursor-pointer"
+                        >
+                          Edit Role
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
