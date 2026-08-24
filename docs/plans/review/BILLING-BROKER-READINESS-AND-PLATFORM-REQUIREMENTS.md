@@ -315,6 +315,8 @@ The implementation was verified with:
 - Focused TMS billing/freight-audit tests: 2 files / 6 tests passing.
 - Full Customs suite: 271 files / 3,505 tests passing; five database-backed suites cannot initialize because this workspace has no `DATABASE_URL` (one reported failed test and 19 skipped tests are all in that environment-dependent group).
 - Full TMS suite: 16 files / 52 tests passing; one database-backed suite cannot initialize because this workspace has no `DATABASE_URL` (11 skipped tests).
+- GitHub CI run 306 — passing: Prisma Client generation, migrations from scratch, migration replay safety, schema-drift verification, repository TypeScript compile, lint, unit tests, OpenAPI generation, and production build.
+- Vercel preview checks for both Customs (`app-frontend`) and TMS (`app-frontend-tms`) — passing.
 
 ### 3.7 Key files added or materially changed
 
