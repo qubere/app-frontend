@@ -17,7 +17,16 @@ export default async function TmsCustomerBillingPage() {
     hasPermission("billing.view"),
     hasProductEntitlement(context.accountId, "TMS"),
   ]);
-  if (!canView || !entitled) return <AccessDenied />;
+  if (!canView || !entitled) {
+    return (
+      <AccessDenied
+        moduleName="Customer Billing & AR"
+        requiredPermission="billing.view"
+        adminEmail={context.adminEmail}
+        isUserAdmin={context.isPlatformAdmin || context.roleNames.includes("OWNER") || context.roleNames.includes("ADMIN")}
+      />
+    );
+  }
 
   const data = await runWithAccountId(context.accountId, async () => {
     const [rateCards, invoices, usageCount, carrierPayables] = await Promise.all([

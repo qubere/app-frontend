@@ -54,12 +54,44 @@ async function main() {
   });
 
   if (existing) {
-    console.log(`✓ User "${adminEmail}" is already a platform admin. No changes made.`);
+    console.log(`✓ User "${adminEmail}" is already a platform admin.`);
   } else {
     await db.platformUserRole.create({
       data: { userId: user.id, platformRoleId: platformAdminRole.id },
     });
     console.log(`✓ Successfully granted PLATFORM_ADMIN to "${adminEmail}" (userId: ${user.id}).`);
+  }
+
+  // Ensure owner role and product entitlements exist for all account memberships of this user
+  let ownerRole = await db.role.findFirst({ where: { isSystem: true, name: "OWNER" } });
+  if (!ownerRole) {
+    ownerRole = await db.role.create({
+      data: { name: "OWNER", description: "System Role OWNER", isSystem: true, accountId: null },
+    }).catch(() => null);
+  }
+
+  const memberships = await db.accountMembership.findMany({ where: { userId: user.id, deletedAt: null } });
+  for (const m of memberships) {
+    await db.account.update({
+      where: { id: m.accountId },
+      data: { ownerUserId: user.id },
+    }).catch(() => null);
+
+    if (ownerRole) {
+      await db.accountMembershipRole.upsert({
+        where: { accountMembershipId_roleId: { accountMembershipId: m.id, roleId: ownerRole.id } },
+        update: {},
+        create: { accountMembershipId: m.id, roleId: ownerRole.id },
+      }).catch(() => null);
+    }
+
+    for (const prod of ["CUSTOMS", "TMS"]) {
+      await db.accountProductEntitlement.upsert({
+        where: { accountId_product: { accountId: m.accountId, product: prod } },
+        update: { status: "ACTIVE" },
+        create: { accountId: m.accountId, product: prod, status: "ACTIVE" },
+      }).catch(() => null);
+    }
   }
 }
 

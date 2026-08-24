@@ -359,9 +359,12 @@ export function findPermission(name: string): PermissionDefinition | null {
 }
 
 export function defaultPermissionsForRole(roleName: string): string[] {
-  const role = roleName.toUpperCase() as SystemRole;
+  const role = roleName.toUpperCase();
+  if (role === "OWNER" || role === "PLATFORM_ADMIN" || role === "SUPER_ADMIN_WRITE") {
+    return [...PERMISSION_NAMES];
+  }
   return PERMISSION_CATALOGUE.filter((p) =>
-    (p.defaultRoles as readonly string[]).includes(role)
+    (p.defaultRoles as readonly string[]).includes(role as SystemRole)
   ).map((p) => p.name);
 }
 

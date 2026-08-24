@@ -74,6 +74,23 @@ async function seedUser(email: string, firstName: string, lastName: string, cler
 }
 
 async function attachOwner(accountId: string, userId: string, ownerRoleId: string) {
+  await db.account.update({
+    where: { id: accountId },
+    data: { ownerUserId: userId },
+  }).catch(() => null);
+
+  await db.accountProductEntitlement.upsert({
+    where: { accountId_product: { accountId, product: "CUSTOMS" } },
+    update: { status: "ACTIVE" },
+    create: { accountId, product: "CUSTOMS", status: "ACTIVE" },
+  }).catch(() => null);
+
+  await db.accountProductEntitlement.upsert({
+    where: { accountId_product: { accountId, product: "TMS" } },
+    update: { status: "ACTIVE" },
+    create: { accountId, product: "TMS", status: "ACTIVE" },
+  }).catch(() => null);
+
   await db.accountMembership.upsert({
     where: { accountId_userId: { accountId, userId } },
     update: { status: "ACTIVE" },

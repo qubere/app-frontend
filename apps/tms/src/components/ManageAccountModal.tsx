@@ -261,30 +261,50 @@ export function ManageAccountModal({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-ink">User & Member Management</h3>
-                    <p className="text-xs text-ink-muted">Manage active dispatchers, brokers, and access permissions</p>
+                    <p className="text-xs text-ink-muted">Manage team members, grant role privileges (e.g. Billing), and invite new users.</p>
                   </div>
-                  <a href="/admin/users" className="px-3 py-1.5 bg-brand text-white rounded-xl text-xs font-bold hover:bg-brand-hover">
+                  <a href="/admin/users" className="px-3 py-1.5 bg-brand text-white rounded-xl text-xs font-bold hover:bg-brand-hover shadow-xs transition-colors">
                     Full User Management Page →
                   </a>
                 </div>
-                <div className="border border-border rounded-xl overflow-hidden bg-white">
+
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs space-y-2">
+                  <p className="font-bold text-amber-900 flex items-center space-x-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Granting Module Privileges (e.g. Billing, Dispatch, Rate Cards)</span>
+                  </p>
+                  <p className="text-amber-800 leading-relaxed">
+                    To grant a team member access to Billing or special modules, assign them the <span className="font-bold">OWNER</span>, <span className="font-bold">ADMIN</span>, or <span className="font-bold">TMS_BILLING_MANAGER</span> role on the Full User Management Page.
+                  </p>
+                </div>
+
+                <div className="border border-border rounded-xl overflow-hidden bg-white shadow-2xs">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-surface-muted border-b border-border font-semibold text-ink">
                       <tr>
-                        <th className="p-3">User</th>
-                        <th className="p-3">Role</th>
+                        <th className="p-3">User & Email</th>
+                        <th className="p-3">Assigned Role</th>
+                        <th className="p-3">Module Access</th>
                         <th className="p-3">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       <tr>
-                        <td className="p-3 font-semibold text-ink">Operations Lead (You)</td>
-                        <td className="p-3 text-ink-muted">OWNER / DISPATCHER</td>
+                        <td className="p-3">
+                          <p className="font-bold text-ink">Platform Admin / Owner</p>
+                          <p className="text-[11px] text-ink-muted font-mono">admin@qubere.ai</p>
+                        </td>
+                        <td className="p-3 font-semibold text-brand">OWNER</td>
+                        <td className="p-3 text-emerald-700 font-medium">All Modules (Full Access)</td>
                         <td className="p-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">Active</span></td>
                       </tr>
                       <tr>
-                        <td className="p-3 font-semibold text-ink">Freight Finance Team</td>
-                        <td className="p-3 text-ink-muted">FINANCE_ADMIN</td>
+                        <td className="p-3">
+                          <p className="font-bold text-ink">Freight Finance Team</p>
+                          <p className="text-[11px] text-ink-muted font-mono">finance@qubere.ai</p>
+                        </td>
+                        <td className="p-3 font-semibold text-ink">TMS_BILLING_MANAGER</td>
+                        <td className="p-3 text-ink-muted">Billing, Invoices, Rate Cards</td>
                         <td className="p-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">Active</span></td>
                       </tr>
                     </tbody>

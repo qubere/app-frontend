@@ -4,6 +4,7 @@ import { DollarSign } from "lucide-react";
 import { PanelHeading } from "@/components/PanelHeading";
 import { getAccountContext, hasProductEntitlement } from "@/lib/auth";
 import { BillingTabs } from "./BillingTabs";
+import { UnauthorizedModuleState } from "@/components/UnauthorizedModuleState";
 
 export default async function BillingLayout({
   children,
@@ -12,12 +13,30 @@ export default async function BillingLayout({
 }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  if (!(await hasProductEntitlement(ctx.accountId, "CUSTOMS"))) redirect("/app?error=customs-not-entitled");
+  if (!(await hasProductEntitlement(ctx.accountId, "CUSTOMS"))) {
+    return (
+      <UnauthorizedModuleState
+        moduleName="Customs Product Line"
+        requiredPermission="product.entitlement.customs"
+        adminEmail={ctx.adminEmail}
+        isUserAdmin={ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN")}
+      />
+    );
+  }
 
   const has = (permission: string) =>
     ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.permissions.includes(permission);
 
-  if (!has("billing.view")) redirect("/app");
+  if (!has("billing.view")) {
+    return (
+      <UnauthorizedModuleState
+        moduleName="Billing & Costing"
+        requiredPermission="billing.view"
+        adminEmail={ctx.adminEmail}
+        isUserAdmin={ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN")}
+      />
+    );
+  }
 
   const tabs = [
     { name: "Overview", href: "/app/billing", visible: true },

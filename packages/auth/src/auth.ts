@@ -103,7 +103,9 @@ async function loadAccountContext(): Promise<AccountContext | null> {
           memberships: {
             where: { deletedAt: null },
             include: {
-              account: true,
+              account: {
+                include: { ownerUser: { select: { email: true, firstName: true, lastName: true } } },
+              },
               roles: {
                 include: {
                   role: {
@@ -127,7 +129,9 @@ async function loadAccountContext(): Promise<AccountContext | null> {
             memberships: {
               where: { deletedAt: null },
               include: {
-                account: true,
+                account: {
+                include: { ownerUser: { select: { email: true, firstName: true, lastName: true } } },
+              },
                 roles: {
                   include: {
                     role: {
@@ -305,12 +309,17 @@ async function loadAccountContext(): Promise<AccountContext | null> {
     const actorUserName = [actorUser.firstName, actorUser.lastName].filter(Boolean).join(" ") || actorUser.email;
     const effectiveUserName = [effectiveUser.firstName, effectiveUser.lastName].filter(Boolean).join(" ") || effectiveUser.email;
 
+    const adminEmail =
+      (activeMembership.account as any)?.ownerUser?.email ||
+      (actorUser.email ? actorUser.email : "admin@qubere.ai");
+
     return {
       userId: effectiveUser.id,
       actorUserId: actorUser.id,
       effectiveUserId: effectiveUser.id,
       clerkUserId: actorUser.clerkUserId,
       email: effectiveUser.email,
+      adminEmail,
       firstName: effectiveUser.firstName,
       lastName: effectiveUser.lastName,
       isImpersonating,

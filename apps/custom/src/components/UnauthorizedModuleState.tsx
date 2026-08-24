@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
-import { Card, Button } from "@/components/ui";
-import { ShieldAlert, Mail, Copy, Check, ArrowLeft, Settings2 } from "lucide-react";
+import { useState } from "react";
 import Link from "next/link";
+import { ShieldAlert, Mail, Copy, Check, ArrowLeft, Settings2 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
-interface AccessDeniedProps {
-  message?: string;
+interface UnauthorizedModuleStateProps {
   moduleName?: string;
   requiredPermission?: string;
   adminEmail?: string;
@@ -14,14 +13,13 @@ interface AccessDeniedProps {
   onOpenManageAccount?: () => void;
 }
 
-export function AccessDenied({
-  message,
+export function UnauthorizedModuleState({
   moduleName = "Requested Module",
   requiredPermission,
   adminEmail = "admin@qubere.ai",
   isUserAdmin = false,
   onOpenManageAccount,
-}: AccessDeniedProps) {
+}: UnauthorizedModuleStateProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyEmail = () => {
@@ -32,36 +30,40 @@ export function AccessDenied({
     }
   };
 
-  const mailtoSubject = encodeURIComponent(`Access Request for ${moduleName}`);
+  const mailtoSubject = encodeURIComponent(`Request Access to ${moduleName}`);
   const mailtoBody = encodeURIComponent(
-    `Hello,\n\nI am attempting to access the "${moduleName}" module in Qubere TMS. Could you please grant my user account the required role/permission (${requiredPermission || "access privileges"})?\n\nThank you!`
+    `Hello,\n\nI am attempting to access the "${moduleName}" module in Qubere. Could you please grant my account the required role/permission (${requiredPermission || "access privileges"})?\n\nThank you!`
   );
 
   return (
-    <div className="min-h-[75vh] bg-surface-muted flex items-center justify-center p-4 sm:p-8">
-      <Card className="p-6 sm:p-8 text-center max-w-lg w-full space-y-6 shadow-md border-border bg-white rounded-3xl">
+    <div className="min-h-[70vh] flex items-center justify-center p-4 sm:p-6 bg-surface-muted/50 rounded-3xl border border-border/80 my-4">
+      <div className="max-w-lg w-full bg-white rounded-3xl p-6 sm:p-8 border border-border shadow-sm text-center space-y-6">
+        {/* Shield Alert Header */}
         <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto shadow-2xs">
           <ShieldAlert className="w-7 h-7" />
         </div>
 
         <div>
-          <h2 className="text-xl font-black text-ink">Access Restricted</h2>
+          <h2 className="text-xl font-black tracking-tight text-ink">Access Restricted</h2>
           <p className="text-sm font-semibold text-amber-700 mt-1">
             Please talk to your admin for privileges.
           </p>
         </div>
 
-        <p className="text-xs text-ink-muted font-medium leading-relaxed">
-          {message ?? `Your user account does not currently hold permission to access the ${moduleName} module.`}
-        </p>
-
-        {requiredPermission && (
-          <div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-surface-muted border border-border text-ink-muted">
-              Required permission: {requiredPermission}
-            </span>
-          </div>
-        )}
+        {/* Informational Box */}
+        <div className="p-4 rounded-2xl bg-surface-muted border border-border/70 text-left space-y-2">
+          <p className="text-xs text-ink-muted leading-relaxed">
+            Your user account does not currently hold permission to view or manage the{" "}
+            <span className="font-bold text-ink">{moduleName}</span> module.
+          </p>
+          {requiredPermission && (
+            <div className="pt-1">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-white border border-border text-ink-muted">
+                Required: {requiredPermission}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Organization Admin Contact Section */}
         <div className="p-4 rounded-2xl bg-brand/5 border border-brand/15 text-left space-y-3">
@@ -82,7 +84,11 @@ export function AccessDenied({
               className="p-1.5 rounded-lg hover:bg-surface-muted text-ink-muted hover:text-ink transition-colors cursor-pointer shrink-0"
               title="Copy Email"
             >
-              {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              {copied ? (
+                <Check className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
             </button>
           </div>
 
@@ -115,15 +121,16 @@ export function AccessDenied({
           </div>
         )}
 
-        <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
-          <Link href="/">
-            <Button variant="outline" size="sm" className="w-full sm:w-auto flex items-center justify-center space-x-2">
+        {/* Back Action */}
+        <div className="pt-2">
+          <Link href="/app">
+            <Button variant="outline" size="sm" className="w-full flex items-center justify-center space-x-2">
               <ArrowLeft className="w-4 h-4" />
-              <span>Return to Operations</span>
+              <span>Return to Dashboard</span>
             </Button>
           </Link>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate, cn } from "@/lib/utils";
-import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck } from "lucide-react";
+import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck, ShieldCheck } from "lucide-react";
 import { HtsAdminPanel, HtsAdminData } from "./HtsAdminPanel";
 import { DeploymentsPanel } from "./DeploymentsPanel";
 import { AgentsAnalyticsPanel } from "./AgentsAnalyticsPanel";
@@ -293,9 +293,19 @@ export function PlatformAdminConsole({
           <Building2 className="w-5 h-5 text-amber-600" />
           <span>Provision Enterprise Customer Account</span>
         </h2>
-        <p className="text-xs text-ink-muted mb-6">
+        <p className="text-xs text-ink-muted mb-4">
           Controlled administrative creation of customer company environments and Tenant Owner invitations.
         </p>
+
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+          <p className="font-bold flex items-center space-x-1.5 text-amber-900">
+            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Tenant Owner Permission Guarantee</span>
+          </p>
+          <p className="text-amber-800 leading-relaxed">
+            The assigned <span className="font-bold">Tenant Owner</span> is granted full <span className="font-bold">OWNER</span> privileges with 100% of all module permissions (Billing, Invoicing, Customs, Dispatching, Rate Cards, and User Administration). Tenant Owners can manage privileges for their organization in <span className="font-bold">Manage Account</span>.
+          </p>
+        </div>
 
         <form onSubmit={handleCreateEnterpriseAccount} className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField>
