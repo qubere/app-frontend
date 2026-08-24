@@ -19,7 +19,11 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@qubere/billing": ["../../packages/billing/src/index.ts"],
+      "@qubere/billing/*": ["../../packages/billing/src/*"],
+      "@qubere/auth": ["../../packages/auth/src/index.ts"],
+      "@qubere/auth/*": ["../../packages/auth/src/*"]
     }
   },
   "include": [

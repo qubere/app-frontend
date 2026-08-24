@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, ChevronDown, Check, User } from "lucide-react";
+import { Building2, ChevronDown, Check, User, UserCheck, LogOut, Loader2 } from "lucide-react";
 
 interface AccountSwitcherProps {
   currentAccountId: string;
@@ -17,6 +17,10 @@ interface AccountSwitcherProps {
     dataMode?: string;
     roleNames: string[];
   }>;
+  isImpersonating?: boolean;
+  actorUserName?: string;
+  effectiveUserName?: string;
+  effectiveEmail?: string;
 }
 
 const DATA_MODE_BADGE: Record<string, { label: string; cls: string }> = {
@@ -31,10 +35,34 @@ export function AccountSwitcher({
   currentDataMode,
   currentRoleNames,
   memberships,
+  isImpersonating = false,
+  actorUserName = "Frank Multiaccount",
+  effectiveUserName,
+  effectiveEmail,
 }: AccountSwitcherProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [loadingAccountId, setLoadingAccountId] = useState<string | null>(null);
+  const [isEndingImpersonation, setIsEndingImpersonation] = useState(false);
+
+  // Filter out test-suite / test accounts so the list shows real enterprise companies
+  const filteredMemberships = memberships.filter((m) => {
+    const name = m.accountName.toLowerCase();
+    return (
+      !name.startsWith("acc_test") &&
+      !name.startsWith("acc_cpe") &&
+      !name.startsWith("acc_cta") &&
+      !name.includes("test account") &&
+      !name.includes("ssa test") &&
+      !name.includes("cpe test") &&
+      !name.includes("response tab") &&
+      !name.includes("filing test") &&
+      !name.includes("tenant a") &&
+      !name.includes("tenant b")
+    );
+  });
+
+  const displayMemberships = filteredMemberships.length > 0 ? filteredMemberships : memberships;
 
   const handleSwitchAccount = async (targetAccountId: string) => {
     if (targetAccountId === currentAccountId) {
@@ -62,11 +90,30 @@ export function AccountSwitcher({
     }
   };
 
+  const handleEndImpersonation = async () => {
+    setIsEndingImpersonation(true);
+    try {
+      const res = await fetch("/api/platform-admin/impersonate/end", { method: "POST" });
+      if (res.ok) {
+        setIsOpen(false);
+        router.refresh();
+        window.location.reload();
+      } else {
+        // Fallback switch back
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error("Failed to end impersonation session:", err);
+    } finally {
+      setIsEndingImpersonation(false);
+    }
+  };
+
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2.5 bg-white border border-border rounded-2xl flex items-center justify-between hover:border-brand/50 shadow-2xs transition-all text-left"
+        className="w-full px-3 py-2.5 bg-white border border-border rounded-2xl flex items-center justify-between hover:border-brand/50 shadow-2xs transition-all text-left cursor-pointer"
       >
         <div className="flex items-center space-x-3 overflow-hidden">
           <div
@@ -85,9 +132,9 @@ export function AccountSwitcher({
               <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-50 text-brand font-semibold border border-blue-100">
                 {currentRoleNames.join(", ")}
               </span>
-              {currentDataMode && DATA_MODE_BADGE[currentDataMode] && (
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${DATA_MODE_BADGE[currentDataMode].cls}`}>
-                  {DATA_MODE_BADGE[currentDataMode].label}
+              {isImpersonating && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse">
+                  Impersonating
                 </span>
               )}
             </div>
@@ -97,38 +144,83 @@ export function AccountSwitcher({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 w-full mt-2 bg-white border border-border rounded-2xl shadow-xl z-50 p-2 space-y-1">
-          <p className="px-2 py-1 text-[11px] font-bold text-ink-muted uppercase tracking-wider">
-            Your Accounts ({memberships.length})
-          </p>
-          {memberships.map((m) => {
-            const isSelected = m.accountId === currentAccountId;
-            return (
+        <div className="absolute top-full left-0 w-80 mt-2 bg-white border border-border rounded-2xl shadow-xl z-50 p-2.5 space-y-2">
+          {/* Active Impersonation Option */}
+          {isImpersonating && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center space-x-1">
+                  <UserCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Impersonation Session Active</span>
+                </span>
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+              </div>
+
+              <div>
+                <p className="text-xs font-black text-ink">
+                  {effectiveUserName || "Impersonated User"}
+                </p>
+                {effectiveEmail && (
+                  <p className="text-[11px] font-mono text-ink-muted">{effectiveEmail}</p>
+                )}
+              </div>
+
               <button
-                key={m.accountId}
-                onClick={() => handleSwitchAccount(m.accountId)}
-                disabled={loadingAccountId === m.accountId}
-                className={`w-full px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
-                  isSelected ? "bg-blue-50 text-brand font-bold" : "text-ink hover:bg-slate-50"
-                }`}
+                type="button"
+                onClick={handleEndImpersonation}
+                disabled={isEndingImpersonation}
+                className="w-full mt-1 px-3 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 transition-colors flex items-center justify-center space-x-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
               >
-                <div className="truncate flex items-center space-x-2 min-w-0">
-                  {m.accountType === "ENTERPRISE" ? (
-                    <Building2 className="w-3.5 h-3.5 text-brand shrink-0" />
-                  ) : (
-                    <User className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                  )}
-                  <span className="truncate">{m.accountName}</span>
-                  {m.dataMode && DATA_MODE_BADGE[m.dataMode] && (
-                    <span className={`text-[8px] px-1 py-0.5 rounded font-bold border shrink-0 ${DATA_MODE_BADGE[m.dataMode].cls}`}>
-                      {DATA_MODE_BADGE[m.dataMode].label}
-                    </span>
-                  )}
-                </div>
-                {isSelected && <Check className="w-3.5 h-3.5 text-brand shrink-0" />}
+                {isEndingImpersonation ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="w-3.5 h-3.5" />
+                )}
+                <span>Switch Back to {actorUserName || "Frank Multiaccount"}</span>
               </button>
-            );
-          })}
+            </div>
+          )}
+
+          {/* Accounts List Section */}
+          <div className="space-y-1">
+            <p className="px-2 py-1 text-[11px] font-bold text-ink-muted uppercase tracking-wider flex items-center justify-between">
+              <span>Your Enterprise Accounts</span>
+              <span className="text-[10px] font-mono text-brand font-bold bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100">
+                {displayMemberships.length} Workspaces
+              </span>
+            </p>
+
+            <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
+              {displayMemberships.map((m) => {
+                const isSelected = m.accountId === currentAccountId;
+                return (
+                  <button
+                    key={m.accountId}
+                    onClick={() => handleSwitchAccount(m.accountId)}
+                    disabled={loadingAccountId === m.accountId}
+                    className={`w-full px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                      isSelected ? "bg-blue-50 text-brand font-bold border border-blue-100" : "text-ink hover:bg-surface-muted"
+                    }`}
+                  >
+                    <div className="truncate flex items-center space-x-2 min-w-0">
+                      {m.accountType === "ENTERPRISE" ? (
+                        <Building2 className="w-3.5 h-3.5 text-brand shrink-0" />
+                      ) : (
+                        <User className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                      )}
+                      <span className="truncate font-semibold">{m.accountName}</span>
+                      {m.dataMode && DATA_MODE_BADGE[m.dataMode] && (
+                        <span className={`text-[8px] px-1 py-0.5 rounded font-bold border shrink-0 ${DATA_MODE_BADGE[m.dataMode].cls}`}>
+                          {DATA_MODE_BADGE[m.dataMode].label}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-brand shrink-0 ml-1" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>

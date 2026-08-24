@@ -32,6 +32,7 @@ export interface AccountContext {
   roleIds: string[];
   roleNames: string[];
   permissions: string[];
+  adminEmail?: string;
   authorizedClientIds: string[];
   isAllClients: boolean;
   memberships: Array<{

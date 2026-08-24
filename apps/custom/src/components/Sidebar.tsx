@@ -87,6 +87,10 @@ interface SidebarProps {
     dataMode?: string;
     roleNames: string[];
   }>;
+  isImpersonating?: boolean;
+  actorUserName?: string;
+  effectiveUserName?: string;
+  effectiveEmail?: string;
 }
 
 export function Sidebar({
@@ -98,6 +102,10 @@ export function Sidebar({
   permissions = [],
   dataMode = "PRODUCTION",
   memberships = [],
+  isImpersonating = false,
+  actorUserName,
+  effectiveUserName,
+  effectiveEmail,
 }: SidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
@@ -225,6 +233,10 @@ export function Sidebar({
                   ? memberships
                   : [{ accountId: currentAccountId, accountName, accountType, dataMode, roleNames }]
               }
+              isImpersonating={isImpersonating}
+              actorUserName={actorUserName}
+              effectiveUserName={effectiveUserName}
+              effectiveEmail={effectiveEmail}
             />
           </div>
         )}

@@ -46,6 +46,7 @@ interface DocumentEmailApiResponse {
   publicDocumentAddress: string;
   routes: InboundSenderRouteRow[];
   teamMembers: TeamMemberOption[];
+  workspaces?: { id: string; name: string; category?: string }[];
 }
 
 interface ClientsApiResponse {
@@ -237,7 +238,7 @@ export function ManageAccountModal({ isOpen, onClose, accountName, items, extern
           <DocumentEmailPanel
             publicDocumentAddress={data.publicDocumentAddress}
             initialRoutes={data.routes}
-            teamMembers={data.teamMembers}
+            workspaces={data.workspaces}
             compact
           />
         );

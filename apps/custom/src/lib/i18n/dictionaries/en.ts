@@ -23,7 +23,7 @@ export const en = {
     apiDocs: "API",
     accountProfile: "Account Profile",
     userManagement: "User Management",
-    rolesPermissions: "Roles & Permissions",
+    rolesPermissions: "Permissions",
     settingsAudit: "Settings & Audit",
     documentEmail: "Document Email",
     mainOperations: "Main Operations",

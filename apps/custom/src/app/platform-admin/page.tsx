@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getAiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import { getDocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
 import { listPendingKeywordRuleReviews } from "@/modules/complianceKeywordRules/keywordRuleReviewService";
+import { getRolesPermissionsData } from "@/lib/admin/rolesData";
 
 export default async function PlatformAdminPage() {
   const context = await getAccountContext();
@@ -103,6 +104,7 @@ export default async function PlatformAdminPage() {
   const documentProcessing = await getDocumentProcessingAnalytics(30);
   const pendingKeywordRules = await listPendingKeywordRuleReviews();
   const pendingKeywordRuleCount = pendingKeywordRules.length;
+  const rolesPermissions = await getRolesPermissionsData(context);
 
   return (
     <div className="min-h-screen bg-surface-muted text-ink p-8 selection:bg-brand/20 selection:text-brand">
@@ -137,6 +139,7 @@ export default async function PlatformAdminPage() {
           aiUsage={aiUsage}
           documentProcessing={documentProcessing}
           pendingKeywordRuleCount={pendingKeywordRuleCount}
+          rolesPermissions={rolesPermissions}
         />
       </div>
     </div>
