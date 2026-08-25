@@ -3,7 +3,8 @@
 Status: implementation complete (code, schema, tests, UI). One operational
 step (permission-catalogue sync) is deliberately left for a human admin —
 see Section K. Results now surface in the Compliance Workspace's Party
-Screening sub-tab — see Section L.
+Screening sub-tab — see Section L. Dow Jones ingestion and a legacy-schema
+gap-closure pass were added 2026-08-24/25 — see Section N.
 
 ## A. Scope and objective
 
@@ -29,7 +30,8 @@ house `types.ts` + `xRepository.ts` + `xScreening.ts` layout used by
 | `types.ts` | Shared input/output/status types, `DEFAULT_NAME_THRESHOLD` (80), `REVIEW_FLOOR_SCORE` (50) |
 | `normalize.ts` | Uppercase/diacritic-strip/punctuation-strip normalization, tokenize, hardcoded `COMMON_WORDS` stop-list |
 | `phoneticMatch.ts` | Self-contained Double Metaphone (public-domain algorithm port, no dependency) |
-| `candidateGeneration.ts` | Pure shortlisting: EXACT / RAW_WORD / DOUBLE_METAPHONE candidate reasons |
+| `metaphone2.ts` | Self-contained classic single-code Metaphone2 port, selectable per account via `AccountScreeningConfig.phoneticAlgorithm` |
+| `candidateGeneration.ts` | Pure shortlisting: EXACT / RAW_WORD / DOUBLE_METAPHONE / METAPHONE2 / ALTERNATE_WHOLE_WORD candidate reasons |
 | `scoring.ts` | Wraps `scoreDpsMatch` (`src/lib/screening/dpsScreening.ts`) with an address-score gate and country-match gate |
 | `redFlagCheck.ts` | Independent keyword scan via `screenText` (`src/lib/screening/keywordMatch.ts`) |
 | `suppression.ts` | Flags (never deletes) matches suppressed by a prior approved/false-positive disposition |
@@ -303,3 +305,58 @@ fully defined in code (`PERMISSION_CATALOGUE`) and every route/tool already
 checks them correctly; they simply will not be grantable to any role via the
 admin UI until an admin explicitly triggers that sync. This is the one
 remaining step required before the feature is reachable by end users.
+
+## N. Dow Jones ingestion & legacy Oracle schema gap closure (2026-08-24/25)
+
+### N.1 Dow Jones full-feed ingestion
+
+A new reference-data source was added at `src/modules/screening/dowJones/`:
+
+| File | Responsibility |
+| --- | --- |
+| `dictionaryParser.ts` | Streams just the `<SanctionsReferencesLists>` header dictionary out of the multi-hundred-MB feed (never buffers the full file) into a `Map<code, {name, status}>` |
+| `sourceListMapper.ts` | Deterministic, rule-based mapping from a Dow Jones list name to `{authority, sourceList, category}` — an explicit map for ~19 well-known lists, pattern-rule fallback for others, and a generic fallback that never collapses an unrecognized list into `SDN`/`CONSOLIDATED_NON_SDN` |
+| `entityTransformer.ts` | Pure `transformEntity()` converting one parsed `<Entity>` into the DB-ready shape: provider lineage, all aliases, all addresses (primary-flagged), all identifiers, all regulatory references (resolved via the dictionary + mapper) |
+| `fullFeedIngestionService.ts` | `ingestDowJonesFullFeed()` — streaming XML parse, hard completeness check against an independently supplied expected count (aborts with nothing written on mismatch), batched upserts (batch size 8, tuned to the Supabase pgbouncer pool limit) with transient-error retry, idempotent delete-then-recreate of child rows per entity, and a local resume-cursor file for interrupted runs |
+
+Unlike OFAC/BIS/UFLPA (one denial-order-per-row, deduplicated by
+`entityHash(sourceList, name, country)`), Dow Jones profiles are deduplicated
+by `(provider, providerRecordId)` and can carry **multiple** regulatory
+references per entity — the schema (`ScreeningEntityAlias`/`Address`/
+`Identifier`/`Reference`, all cascade-FK'd to `ScreeningEntity`) was designed
+around that, not around the legacy one-record-per-denial-order assumption.
+
+### N.2 Legacy Oracle schema gap analysis
+
+Per `Qubere_RPS_Legacy_Oracle_Schema_Gap_Analysis_Claude_Code_Prompt.md`, the
+current Prisma schema was compared field-by-field against the legacy Oracle
+RPS DDL (`PartyScreening_Tables.sql`: `tables_of_denial_orders`,
+`denied_words`, `common_words`, `citation_text`, `citations`,
+`SUBSCRIBER_PARTY_LIST`, `TRADING_PARTNER`). Most of the target architecture
+the legacy schema implies was already present (provider lineage,
+`ScreeningEntityReference`/`Alias`/`Address`/`Identifier`,
+`AccountScreeningConfig`, red-flag terms via `ComplianceKeywordRule`). The
+confirmed gap was five fields on `ScreeningEntityReference`, added via
+migration `20260825010000_rps_reference_regulatory_action_fields` (additive,
+nullable, unbackfilled):
+
+| Field | Legacy source | Purpose |
+| --- | --- | --- |
+| `restrictionType` | `TDO_TYPE_OF_DENIAL` | provider-neutral restriction/denial classification |
+| `orderNumber` | `TDO_NO_TDO` | denial/action/order number |
+| `orderDate` | `TDO_DT_TDO` | denial/action/order date (distinct from effective/publication date) |
+| `publicationDate` | `TDO_DT_FR_CIT` | citation/Federal-Register publication date |
+| `citationUrl` | `CIT_URL` | link to the regulatory citation |
+
+None of these are populated by any current ingestion source (OFAC/BIS/UFLPA/
+Dow Jones) — wiring them into ingestion or the matcher was deliberately
+deferred rather than fabricating values, consistent with this module's
+existing "no invented data" discipline. Explicitly **not** recreated, per the
+legacy-artifact classification in the gap-analysis prompt: the fixed
+`TDO_NAME_WORD1..15`/`TDO_ADDR_WORD1..15`/Soundex columns, the `DENIED_WORDS`
+word-index table, `SUBSCRIBER_PARTY_LIST`, and `TRADING_PARTNER` duplication
+onto `Party` (screening state there is already covered by
+`PartyScreeningSummary`). `TDO_TYPE`'s mapping to `ScreeningEntity.entityType`
+was left unresolved — its actual value semantics can't be verified without
+the legacy data itself, and the prompt explicitly forbids guessing enum
+mappings.

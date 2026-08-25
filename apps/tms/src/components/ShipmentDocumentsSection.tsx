@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { CheckCircle2, AlertCircle, Plus, Unlink, Loader2, X, Files, GripVertical, FileText } from "lucide-react";
+import { CheckCircle2, AlertCircle, Plus, Unlink, Loader2, Files, GripVertical, FileText } from "lucide-react";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { useRouter } from "next/navigation";
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";

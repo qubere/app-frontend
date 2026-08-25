@@ -27,7 +27,7 @@ export function AccountSwitcher({
   currentAccountId = "",
   currentAccountName = "Enterprise Freight",
   currentAccountType = "ENTERPRISE",
-  currentDataMode = "PRODUCTION",
+  currentDataMode: _currentDataMode = "PRODUCTION",
   currentRoleNames = ["MEMBER"],
   memberships = [],
   isImpersonating = false,

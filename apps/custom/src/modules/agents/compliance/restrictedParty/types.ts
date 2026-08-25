@@ -13,7 +13,15 @@ export type RestrictedPartyScreeningStatus = "CLEAR" | "HIT" | "REVIEW_REQUIRED"
 
 export type RestrictedPartyPassType = "PARTY_NAME" | "CONTACT_NAME";
 
-export type RestrictedPartyMatchMethod = "EXACT" | "RAW_WORD" | "METAPHONE" | "DOUBLE_METAPHONE" | "COMBINED";
+export type RestrictedPartyMatchMethod =
+  | "EXACT"
+  | "RAW_WORD"
+  | "METAPHONE"
+  | "DOUBLE_METAPHONE"
+  | "ALTERNATE_WHOLE_WORD"
+  | "COMBINED";
+
+export type RestrictedPartyPhoneticAlgorithm = "DOUBLE_METAPHONE" | "METAPHONE2";
 
 export type RestrictedPartyScreeningSource = "PARTY_MASTER" | "SHIPMENT" | "LINE" | "PUBLIC_API" | "COPILOT" | "MANUAL";
 
@@ -35,6 +43,24 @@ export interface RestrictedPartyScreeningOptions {
   countryMatchRequired?: boolean;
   /** When false, the red-flag word scan is skipped entirely for this screening. Default true. */
   redFlagCheckEnabled?: boolean;
+  /** When true, the phonetic candidate-generation reason is skipped entirely; EXACT/RAW_WORD/ALTERNATE_WHOLE_WORD are unaffected. Default false. */
+  excludeMetaphone?: boolean;
+  /** Which phonetic algorithm generates the phonetic candidate reason, when not excluded. Default DOUBLE_METAPHONE. */
+  phoneticAlgorithm?: RestrictedPartyPhoneticAlgorithm;
+  /**
+   * When an exact match is found: false (default) keeps only the exact
+   * evidence and stops further fuzzy/phonetic/alternate expansion for that
+   * candidate name; true keeps the exact evidence AND continues expansion so
+   * additional non-exact candidates can still surface alongside it.
+   */
+  continueOnExactMatch?: boolean;
+  /**
+   * Enables the legacy alternate whole-word screening path (spec: sbsAltScreeningInd).
+   * Only takes effect when the pass-specific eligibility rule in candidateGeneration.ts
+   * also holds (multi-word raw name, exactly one meaningful token after common-word
+   * stripping, effective nameThreshold > 50). Default false.
+   */
+  alternateScreeningEnabled?: boolean;
 }
 
 export interface RestrictedPartyScreeningInput extends RestrictedPartyScreeningOptions {
@@ -86,6 +112,15 @@ export interface RestrictedPartyPassOutcome {
   addressThreshold: number | null;
   countryMatchRequired: boolean;
   redFlagCheckEnabled: boolean;
+  excludeMetaphone: boolean;
+  phoneticAlgorithm: RestrictedPartyPhoneticAlgorithm;
+  continueOnExactMatch: boolean;
+  exactMatchFound: boolean;
+  alternateScreeningEnabled: boolean;
+  alternateScreeningRan: boolean;
+  alternateScreeningReason: string | null;
+  /** True when the scored candidate set exceeded MAX_PERSISTED_MATCHES and was truncated to the top-scoring matches -- a caller/reviewer must be able to tell this apart from a genuinely small result. */
+  matchesTruncated: boolean;
   status: RestrictedPartyScreeningStatus;
   matches: RestrictedPartyMatchCandidate[];
   redFlagHits: RestrictedPartyRedFlagHitCandidate[];
@@ -103,3 +138,5 @@ export interface RestrictedPartyScreeningRunResult {
 export const DEFAULT_NAME_THRESHOLD = 80;
 /** Fixed floor below which a candidate is not worth surfacing at all, regardless of nameThreshold. */
 export const REVIEW_FLOOR_SCORE = 50;
+/** Hard cap on scored matches persisted per pass -- with reference sets now spanning OFAC+BIS+Dow Jones (tens of thousands of rows), an unbounded result set is a real risk, not a theoretical one. Truncation is always flagged via matchesTruncated, never silent. */
+export const MAX_PERSISTED_MATCHES = 100;

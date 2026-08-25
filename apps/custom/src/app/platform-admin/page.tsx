@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getAiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import { getDocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
 import { listPendingKeywordRuleReviews } from "@/modules/complianceKeywordRules/keywordRuleReviewService";
+import { listQuarantinedInboundEmails } from "@/modules/inbound/quarantineReview";
 import { getRolesPermissionsData } from "@/lib/admin/rolesData";
 
 export default async function PlatformAdminPage() {
@@ -104,6 +105,7 @@ export default async function PlatformAdminPage() {
   const documentProcessing = await getDocumentProcessingAnalytics(30);
   const pendingKeywordRules = await listPendingKeywordRuleReviews();
   const pendingKeywordRuleCount = pendingKeywordRules.length;
+  const pendingQuarantineCount = (await listQuarantinedInboundEmails()).length;
   const rolesPermissions = await getRolesPermissionsData(context);
 
   return (
@@ -139,6 +141,7 @@ export default async function PlatformAdminPage() {
           aiUsage={aiUsage}
           documentProcessing={documentProcessing}
           pendingKeywordRuleCount={pendingKeywordRuleCount}
+          pendingQuarantineCount={pendingQuarantineCount}
           rolesPermissions={rolesPermissions}
         />
       </div>

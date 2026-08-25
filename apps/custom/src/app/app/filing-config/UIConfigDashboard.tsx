@@ -18,7 +18,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Settings2, Plus, Pencil, Trash2, Search, Copy, History,
-  ChevronLeft, ChevronRight, X, AlertCircle, Eye,
+  ChevronLeft, ChevronRight, X, AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";

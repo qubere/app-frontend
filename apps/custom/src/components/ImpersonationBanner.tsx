@@ -30,6 +30,10 @@ export function ImpersonationBanner({
       } else {
         const res = await fetch("/api/platform-admin/impersonate/end", { method: "POST" });
         if (res.ok) {
+          // Full reload (not router.push) is required: the end-impersonation API just
+          // changed the server-set session cookie, and a client-side navigation would
+          // keep the stale session state cached in the app's providers/layouts.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
           window.location.href = "/platform-admin";
         } else {
           alert("Failed to exit impersonation session");

@@ -32,7 +32,7 @@ export function AccountSwitcher({
   currentAccountId,
   currentAccountName,
   currentAccountType,
-  currentDataMode,
+  currentDataMode: _currentDataMode,
   currentRoleNames,
   memberships,
   isImpersonating = false,

@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
-import { activateProductWorkspace } from "@/modules/shipments/services/shipmentProductWorkspaceService";
 
 export const GET = withAuthenticatedRoute(
   async ({ req, ctx }: any) => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { computeShipmentLifecycleStatus } from "../src/modules/shipments/services/shipmentLifecycleStatus";
 
 describe("Customs Tab & Ribbon Deep Link Logic", () => {

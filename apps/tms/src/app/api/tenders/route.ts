@@ -12,7 +12,7 @@ const createTenderSchema = z.object({
 });
 
 export const GET = withAuthenticatedRoute(
-  async ({ req, ctx }: any) => {
+  async ({ ctx }: any) => {
     try {
       const tenders = await db.tender.findMany({
         where: { accountId: ctx.accountId },
@@ -23,7 +23,7 @@ export const GET = withAuthenticatedRoute(
         },
       });
       return NextResponse.json({ tenders });
-    } catch (err) {
+    } catch {
       return NextResponse.json({ error: "Failed to fetch tenders" }, { status: 500 });
     }
   },

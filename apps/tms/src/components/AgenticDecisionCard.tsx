@@ -4,10 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   Bot, AlertTriangle, ArrowUpRight, CheckCircle2, Sparkles, Clock,
-  ChevronDown, ChevronUp, ShieldAlert, ArrowRight, Building2, MapPin,
-  Check, FileText, Scale, HelpCircle, Layers, AlertCircle
+  ChevronDown, ChevronUp, ShieldAlert, Building2, MapPin,
+  Check
 } from "lucide-react";
-import { Card, Button, Badge } from "@/components/ui";
+import { Card, Button } from "@/components/ui";
 import type { WorkQueueItem } from "@/modules/operations/services/operationsSummaryService";
 
 interface AgenticDecisionCardProps {

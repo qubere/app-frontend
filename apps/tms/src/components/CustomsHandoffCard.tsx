@@ -24,7 +24,7 @@ export function CustomsHandoffCard({
   customsCaseNumber: initialCaseNumber,
   workspaceStatus: initialWorkspaceStatus,
   filingStatus: initialFilingStatus,
-  documentReadiness: initialDocReadiness,
+  documentReadiness: _initialDocReadiness,
   holdReleaseStatus: initialHoldReleaseStatus,
 }: CustomsHandoffCardProps) {
   const [loading, setLoading] = useState(false);

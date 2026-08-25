@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { parseFreightEmailTool } from "../src/modules/orders/tools/parseFreightEmailTool";
-import { createTransportationOrder, promoteOrderToShipment } from "../src/modules/orders/services/orderService";
-import { createMovement, getMovementWithStops } from "../src/modules/movement/services/movementService";
+import { promoteOrderToShipment } from "../src/modules/orders/services/orderService";
+import { createMovement } from "../src/modules/movement/services/movementService";
 import { createCarrierProfile } from "../src/modules/carriers/services/carrierService";
-import { publishTransportationEvent } from "../src/modules/events/services/eventService";
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: {
@@ -182,7 +181,7 @@ describe("Phase 1 — TMS Foundation, AI Order Intake, Movement Graph & Events",
   });
 
   it("creates a Movement with stops and attaches to Shipment via ShipmentMovement", async () => {
-    const movement = await createMovement(mockContext, {
+    await createMovement(mockContext, {
       shipmentId: "shp_100",
       mode: "OCEAN",
       vessel: "MSC OSCAR",
@@ -213,7 +212,7 @@ describe("Phase 1 — TMS Foundation, AI Order Intake, Movement Graph & Events",
   });
 
   it("creates a CarrierProfile and extends Party with CARRIER role", async () => {
-    const profile = await createCarrierProfile(mockContext, {
+    await createCarrierProfile(mockContext, {
       legalName: "Ocean Network Express",
       scac: "ONEY",
       modes: ["OCEAN"],

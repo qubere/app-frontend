@@ -5,7 +5,7 @@ import { db, runWithAccountId } from "@qubere/db";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
 import { AccessDenied } from "@/components/AccessDenied";
-import { Truck, Search, ShieldCheck, ShieldAlert, Star, CheckCircle2, Building2 } from "lucide-react";
+import { Truck, Search, Star } from "lucide-react";
 
 export default async function CarriersPage() {
   const { userId } = await auth();

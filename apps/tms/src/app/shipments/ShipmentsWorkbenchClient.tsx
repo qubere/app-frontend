@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  Search, Upload, Plus, Filter, ArrowUpRight, Anchor, Plane, Truck,
-  CheckCircle2, TriangleAlert, FileText, Sparkles, Layers, Sliders, ChevronRight, X
+  Search, Upload, Plus, Anchor, Plane, Truck,
+  TriangleAlert, Sparkles, Layers, X
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
@@ -33,6 +34,7 @@ function getModeIcon(mode: string) {
 }
 
 export function ShipmentsWorkbenchClient({ initialShipments }: { initialShipments: ShipmentListItem[] }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"ALL" | "ATTENTION" | "TRANSIT" | "HOLD" | "COMPLETED">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMode, setSelectedMode] = useState<string>("all");
@@ -75,7 +77,7 @@ export function ShipmentsWorkbenchClient({ initialShipments }: { initialShipment
       setNewDestinationPort("");
 
       if (data.shipmentId) {
-        window.location.href = `/shipments/${data.shipmentId}`;
+        router.push(`/shipments/${data.shipmentId}`);
       } else {
         window.location.reload();
       }
@@ -114,18 +116,6 @@ export function ShipmentsWorkbenchClient({ initialShipments }: { initialShipment
       return true;
     });
   }, [shipments, activeTab, selectedMode, searchQuery]);
-
-  const toggleSelectAll = () => {
-    if (selectedIds.length === filtered.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filtered.map((s) => s.id));
-    }
-  };
-
-  const toggleSelectOne = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
 
   return (
     <div className="min-h-screen bg-surface-muted text-ink flex w-full">

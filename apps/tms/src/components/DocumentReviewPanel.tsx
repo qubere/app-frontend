@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Copy, Check, FileText, Sparkles, MapPin, Eye, Code, ExternalLink } from "lucide-react";
+import { X, Copy, Check, FileText, Sparkles, MapPin, Eye } from "lucide-react";
 import { PdfCanvas, type PdfCanvasBbox } from "./PdfCanvas";
 
 export interface ProvenanceField {
@@ -73,16 +73,6 @@ export function DocumentReviewPanel({
               page: 1,
             })))
     : [];
-
-  const jsonToDisplay = parsedJson ?? {
-    documentId,
-    fileName,
-    docType,
-    shipmentNumber,
-    status: "PARSED",
-    confidenceScore: 0.98,
-    extractedFields,
-  };
 
   const handleCopyJson = () => {
     setCopiedJson(true);

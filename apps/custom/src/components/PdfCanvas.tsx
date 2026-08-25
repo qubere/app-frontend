@@ -31,7 +31,7 @@ export function PdfCanvas({ url, page = 1, bbox, className }: PdfCanvasProps) {
   const highlightRef = useRef<HTMLCanvasElement>(null);
   const pageDims = useRef<{ width: number; height: number } | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "fallback">("idle");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [_errorMsg, setErrorMsg] = useState<string | null>(null);
 
   function paintHighlight(
     dims: { width: number; height: number } | null,
@@ -155,6 +155,11 @@ export function PdfCanvas({ url, page = 1, bbox, className }: PdfCanvasProps) {
       cancelled = true;
       renderTask?.cancel();
     };
+    // `bbox` is intentionally excluded: this effect does the expensive PDF
+    // page fetch/render, while the effect below repaints just the highlight
+    // canvas whenever `bbox` changes. Depending on `bbox` here would force a
+    // full PDF re-render on every bbox update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, page]);
 
   useEffect(() => {

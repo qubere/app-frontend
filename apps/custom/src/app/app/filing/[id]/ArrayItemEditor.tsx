@@ -75,35 +75,6 @@ export default function ArrayItemEditor({
     return schema;
   };
 
-  // Check if object has any meaningful data (non-empty values)
-  const hasAnyData = (obj: any): boolean => {
-    if (!obj || typeof obj !== 'object') return false;
-    
-    for (const key in obj) {
-      const value = obj[key];
-      
-      // Skip undefined, null, empty strings
-      if (value === undefined || value === null || value === '') continue;
-      
-      // Check arrays
-      if (Array.isArray(value)) {
-        if (value.length > 0) return true;
-        continue;
-      }
-      
-      // Check nested objects
-      if (typeof value === 'object') {
-        if (hasAnyData(value)) return true;
-        continue;
-      }
-      
-      // Any other truthy value (numbers, booleans, non-empty strings)
-      return true;
-    }
-    
-    return false;
-  };
-
   // Toggle section expansion
   const toggleSection = (path: string) => {
     const newExpanded = new Set(expandedSections);

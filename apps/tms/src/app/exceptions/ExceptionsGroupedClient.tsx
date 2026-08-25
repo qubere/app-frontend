@@ -3,13 +3,12 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
-  TriangleAlert, ArrowUpRight, CheckCircle2, Sparkles, Search,
-  Mail, ShieldAlert, Layers, CheckSquare, Clock, AlertCircle, FileText,
-  ChevronRight, X, Scale, User, Filter
+  TriangleAlert, ArrowUpRight, CheckCircle2, Search,
+  CheckSquare, Clock, Scale
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card, Button } from "@/components/ui";
 import { ExceptionSlideOver } from "./ExceptionSlideOver";
 import { AgenticDecisionCard } from "@/components/AgenticDecisionCard";
 import { ModifyDecisionModal } from "@/components/ModifyDecisionModal";
@@ -404,7 +403,7 @@ export function ExceptionsGroupedClient({ initialGroups }: { initialGroups: Ship
                           <AgenticDecisionCard
                             key={item.id}
                             item={workItem}
-                            onExecuteAction={async (itemId, action, itemType, note) => {
+                            onExecuteAction={async (itemId, _action, _itemType, _note) => {
                               handleResolveItem(itemId);
                             }}
                             onOpenModify={(wItem) => {
@@ -452,7 +451,7 @@ export function ExceptionsGroupedClient({ initialGroups }: { initialGroups: Ship
               setIsModifyOpen(false);
               setModifyingWorkItem(null);
             }}
-            onApproveModified={async (itemId, note) => {
+            onApproveModified={async (itemId, _note) => {
               handleResolveItem(itemId);
             }}
           />

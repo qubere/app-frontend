@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 export const GET = withAuthenticatedRoute(
-  async ({ req, ctx }: any) => {
+  async ({ ctx }: any) => {
     try {
       const memberships = await db.accountMembership.findMany({
         where: { accountId: ctx.accountId },
@@ -23,7 +23,7 @@ export const GET = withAuthenticatedRoute(
         accountName: ctx.accountName,
         members,
       });
-    } catch (err) {
+    } catch {
       return NextResponse.json({ error: "Failed to fetch workspace members" }, { status: 500 });
     }
   },

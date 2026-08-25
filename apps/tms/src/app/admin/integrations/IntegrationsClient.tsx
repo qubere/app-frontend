@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Plug, CheckCircle2, Key, ExternalLink, X, Check, Loader2, RefreshCw } from "lucide-react";
+import { Plug, CheckCircle2, Key, ExternalLink, X, Check } from "lucide-react";
 import { Card, Button } from "@/components/ui";
 
 interface IntegrationItem {
@@ -28,7 +28,7 @@ export function IntegrationsClient() {
   const [integrations, setIntegrations] = useState<IntegrationItem[]>(INITIAL_INTEGRATIONS);
   const [selectedIntegration, setSelectedIntegration] = useState<IntegrationItem | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [_isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState("");
 

@@ -15,33 +15,70 @@ import { generateCandidates } from "./candidateGeneration";
 import { scoreCandidate } from "./scoring";
 import { checkRedFlags } from "./redFlagCheck";
 import { applySuppressions, type ApprovedDispositionMap } from "./suppression";
-import { getApprovedDispositions, getRedFlagRules, getRestrictedPartyReferenceList } from "./restrictedPartyRepository";
-import { DEFAULT_NAME_THRESHOLD } from "./types";
+import { getAccountScreeningConfig, getApprovedDispositions, getRedFlagRules, getRestrictedPartyReferenceList } from "./restrictedPartyRepository";
+import type { ScreeningEntityWithAddresses } from "./restrictedPartyRepository";
+import { DEFAULT_NAME_THRESHOLD, MAX_PERSISTED_MATCHES } from "./types";
 import type {
   RestrictedPartyIdentity,
   RestrictedPartyMatchCandidate,
   RestrictedPartyPassOutcome,
   RestrictedPartyPassType,
+  RestrictedPartyPhoneticAlgorithm,
   RestrictedPartyScreeningInput,
   RestrictedPartyScreeningRunResult,
 } from "./types";
-import type { ScreeningEntity, ComplianceKeywordRule } from "@prisma/client";
+import type { ComplianceKeywordRule, AccountScreeningConfig } from "@prisma/client";
 
-function computeInputHash(passType: RestrictedPartyPassType, name: string, address: string | null, country: string | null, nameThreshold: number, addressThreshold: number | null, countryMatchRequired: boolean): string {
+interface EffectiveScreeningOptions {
+  nameThreshold: number;
+  addressThreshold: number | null;
+  countryMatchRequired: boolean;
+  redFlagCheckEnabled: boolean;
+  excludeMetaphone: boolean;
+  phoneticAlgorithm: RestrictedPartyPhoneticAlgorithm;
+  continueOnExactMatch: boolean;
+  alternateScreeningEnabled: boolean;
+}
+
+/** Resolves effective matcher config: request override > tenant AccountScreeningConfig row > module system default. A request override never mutates the stored account config. */
+function resolveEffectiveOptions(input: RestrictedPartyScreeningInput, accountConfig: AccountScreeningConfig | null): EffectiveScreeningOptions {
+  return {
+    nameThreshold: input.nameThreshold ?? accountConfig?.nameThreshold ?? DEFAULT_NAME_THRESHOLD,
+    addressThreshold: input.addressThreshold ?? accountConfig?.addressThreshold ?? null,
+    countryMatchRequired: input.countryMatchRequired ?? accountConfig?.countryMatchRequired ?? false,
+    redFlagCheckEnabled: input.redFlagCheckEnabled ?? accountConfig?.redFlagCheckEnabled ?? true,
+    excludeMetaphone: input.excludeMetaphone ?? accountConfig?.excludeMetaphone ?? false,
+    phoneticAlgorithm: input.phoneticAlgorithm ?? accountConfig?.phoneticAlgorithm ?? "DOUBLE_METAPHONE",
+    continueOnExactMatch: input.continueOnExactMatch ?? accountConfig?.continueOnExactMatch ?? false,
+    alternateScreeningEnabled: input.alternateScreeningEnabled ?? accountConfig?.alternateScreeningEnabled ?? false,
+  };
+}
+
+function computeInputHash(
+  passType: RestrictedPartyPassType,
+  name: string,
+  address: string | null,
+  country: string | null,
+  options: EffectiveScreeningOptions
+): string {
   const normalized = [
     passType,
     name.trim().toLowerCase(),
     (address || "").trim().toLowerCase(),
     (country || "").trim().toLowerCase(),
-    nameThreshold,
-    addressThreshold ?? "",
-    countryMatchRequired,
+    options.nameThreshold,
+    options.addressThreshold ?? "",
+    options.countryMatchRequired,
+    options.excludeMetaphone,
+    options.phoneticAlgorithm,
+    options.continueOnExactMatch,
+    options.alternateScreeningEnabled,
   ].join("|");
   return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 interface PassContext {
-  referenceList: ScreeningEntity[] | null;
+  referenceList: ScreeningEntityWithAddresses[] | null;
   referenceError: string | null;
   redFlagRules: ComplianceKeywordRule[] | null;
   redFlagError: string | null;
@@ -54,16 +91,13 @@ function runOnePass(
   address: string | null,
   city: string | null,
   country: string | null,
-  options: { nameThreshold?: number; addressThreshold?: number; countryMatchRequired?: boolean; redFlagCheckEnabled?: boolean },
+  options: EffectiveScreeningOptions,
   ctx: PassContext
 ): RestrictedPartyPassOutcome {
   const started = Date.now();
-  const nameThreshold = options.nameThreshold ?? DEFAULT_NAME_THRESHOLD;
-  const addressThreshold = options.addressThreshold ?? null;
-  const countryMatchRequired = options.countryMatchRequired ?? false;
-  const redFlagCheckEnabled = options.redFlagCheckEnabled ?? true;
+  const { nameThreshold, addressThreshold, countryMatchRequired, redFlagCheckEnabled, excludeMetaphone, phoneticAlgorithm, continueOnExactMatch, alternateScreeningEnabled } = options;
 
-  const screeningInputHash = computeInputHash(passType, name, address, country, nameThreshold, addressThreshold, countryMatchRequired);
+  const screeningInputHash = computeInputHash(passType, name, address, country, options);
 
   const base = {
     passType,
@@ -75,6 +109,14 @@ function runOnePass(
     addressThreshold,
     countryMatchRequired,
     redFlagCheckEnabled,
+    excludeMetaphone,
+    phoneticAlgorithm,
+    continueOnExactMatch,
+    alternateScreeningEnabled,
+    exactMatchFound: false,
+    alternateScreeningRan: false,
+    alternateScreeningReason: null as string | null,
+    matchesTruncated: false,
     screeningInputHash,
   };
 
@@ -91,19 +133,32 @@ function runOnePass(
   const errors: string[] = [];
   let matches: RestrictedPartyMatchCandidate[] = [];
   let ranDenialOrderCheck = false;
+  let exactMatchFound = false;
+  let alternateScreeningRan = false;
+  let alternateScreeningReason: string | null = null;
+  let matchesTruncated = false;
 
   if (ctx.referenceError) {
     errors.push(ctx.referenceError);
   } else if (ctx.referenceList && ctx.referenceList.length > 0) {
     ranDenialOrderCheck = true;
-    const candidates = generateCandidates(name, ctx.referenceList);
-    const scored = candidates
+    const generated = generateCandidates(name, ctx.referenceList, {
+      nameThreshold,
+      excludeMetaphone,
+      phoneticAlgorithm,
+      continueOnExactMatch,
+      alternateScreeningEnabled,
+    });
+    exactMatchFound = generated.exactMatchFound;
+    alternateScreeningRan = generated.alternateScreeningRan;
+    alternateScreeningReason = generated.alternateScreeningReason;
+    const scored = generated.candidates
       .map((c) => scoreCandidate(c, { targetName: name, targetAddress: address, targetCountry: country, nameThreshold, addressThreshold, countryMatchRequired }))
       .filter((m): m is NonNullable<typeof m> => m !== null);
     const suppressed = applySuppressions(scored, ctx.approvedDispositions);
-    matches = suppressed
-      .sort((a, b) => b.nameScore - a.nameScore)
-      .map((m, idx) => ({ ...m, sequence: idx + 1 }));
+    const ordered = suppressed.sort((a, b) => b.nameScore - a.nameScore);
+    matchesTruncated = ordered.length > MAX_PERSISTED_MATCHES;
+    matches = ordered.slice(0, MAX_PERSISTED_MATCHES).map((m, idx) => ({ ...m, sequence: idx + 1 }));
   }
 
   let redFlagHits: RestrictedPartyPassOutcome["redFlagHits"] = [];
@@ -136,6 +191,10 @@ function runOnePass(
     status,
     matches,
     redFlagHits,
+    exactMatchFound,
+    alternateScreeningRan,
+    alternateScreeningReason,
+    matchesTruncated,
     errorCode: hasErrors ? "REPOSITORY_ERROR" : null,
     errorMessage: hasErrors ? errors.join("; ") : null,
     screeningDurationMs: Date.now() - started,
@@ -145,7 +204,7 @@ function runOnePass(
 export async function runRestrictedPartyScreening(input: RestrictedPartyScreeningInput): Promise<RestrictedPartyScreeningRunResult> {
   const correlationId = input.correlationId ?? crypto.randomUUID();
 
-  let referenceList: ScreeningEntity[] | null = null;
+  let referenceList: ScreeningEntityWithAddresses[] | null = null;
   let referenceError: string | null = null;
   try {
     referenceList = await getRestrictedPartyReferenceList();
@@ -170,13 +229,15 @@ export async function runRestrictedPartyScreening(input: RestrictedPartyScreenin
     }
   }
 
+  let accountConfig: AccountScreeningConfig | null = null;
+  try {
+    accountConfig = await getAccountScreeningConfig(input.accountId);
+  } catch {
+    // No stored config is indistinguishable from a lookup failure here -- both fall back to module defaults, never to a hard error.
+  }
+
   const ctx: PassContext = { referenceList, referenceError, redFlagRules, redFlagError, approvedDispositions };
-  const options = {
-    nameThreshold: input.nameThreshold,
-    addressThreshold: input.addressThreshold,
-    countryMatchRequired: input.countryMatchRequired,
-    redFlagCheckEnabled: input.redFlagCheckEnabled,
-  };
+  const options = resolveEffectiveOptions(input, accountConfig);
 
   const passes: RestrictedPartyPassOutcome[] = [
     runOnePass("PARTY_NAME", input.identity.name, input.identity.address ?? null, input.identity.city ?? null, input.identity.country ?? null, options, ctx),

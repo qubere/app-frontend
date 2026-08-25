@@ -5,8 +5,7 @@ import { db, runWithAccountId } from "@qubere/db";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
 import { AccessDenied } from "@/components/AccessDenied";
-import Link from "next/link";
-import { FileCheck2, Search, DollarSign, Bot, ArrowUpRight, CheckCircle2, Clock, ShieldCheck, Zap } from "lucide-react";
+import { FileCheck2, Search } from "lucide-react";
 
 export default async function QuotesPage() {
   const { userId } = await auth();

@@ -17,8 +17,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "@/components/ui/Modal";
-import { Input } from "@/components/ui/Input";
-import { ArrowLeft, Plus, Save, X, Eye, AlertCircle, AlertTriangle, CheckCircle, Layout, Layers, Send, FileCheck } from "lucide-react";
+import { ArrowLeft, Plus, Save, Eye, AlertCircle, AlertTriangle, CheckCircle, Layout, Layers, Send, FileCheck } from "lucide-react";
 import SchemaTreeViewer from "./SchemaTreeViewer";
 import FieldConfigPanel from "./FieldConfigPanel";
 import ComplexObjectConfigPanel from "./ComplexObjectConfigPanel";
@@ -138,13 +137,13 @@ function ConfigSelectorModal({ isOpen, onClose, onSelect }: ConfigSelectorModalP
   // Auto-select first option when list resolves
   useEffect(() => {
     if (procedureCodes.length === 1 && !procedureCode) setProcedureCode(procedureCodes[0]);
-  }, [procedureCodes]);
+  }, [procedureCodes, procedureCode]);
   useEffect(() => {
     if (messageNames.length === 1 && !messageName) setMessageName(messageNames[0]);
-  }, [messageNames]);
+  }, [messageNames, messageName]);
   useEffect(() => {
     if (releases.length === 1 && !release) setRelease(releases[0].release);
-  }, [releases]);
+  }, [releases, release]);
 
   // Description shown below the fields
   const description = country && procedureCode && release
@@ -323,7 +322,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
   // UI Config data state (NEW: FilingUIConfigData structure)
   const [config, setConfig] = useState<FilingUIConfigData | null>(null);
   const [originalConfig, setOriginalConfig] = useState<FilingUIConfigData | null>(null);
-  const [isActive, setIsActive] = useState(true);
+  const [_isActive, setIsActive] = useState(true);
 
   // Lifecycle: Draft → Validated → Published
   const [lifecycleStatus, setLifecycleStatus] = useState<LifecycleStatus>('draft');
@@ -335,7 +334,6 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
   // Validation state (NEW)
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<ValidationError[]>([]);
-  const [showValidation, setShowValidation] = useState(false);
   const [showWarningsPanel, setShowWarningsPanel] = useState(false);
   
   // Schema state
@@ -773,9 +771,6 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
       setIsPublishing(false);
     }
   };
-
-  // ── Legacy alias (used by some existing inline Reset calls) ─────────────────
-  const handleSaveAll = handleSaveDraft;
 
   const handleCancel = () => {
     setSelectedPath(null);

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { db } from "@qubere/db";
 import { sendToCustoms } from "../src/modules/shipments/services/customsHandoffService";
-import { activateProductWorkspace } from "../src/modules/shipments/services/shipmentProductWorkspaceService";
 
 describe("Shared Shipment Architecture — Data Model & Service Requirements (Tests 1-17)", () => {
   const testAccountId = `acc_test_ssa_${Date.now()}`;

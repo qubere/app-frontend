@@ -3,13 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  Bot, UserCheck, CheckCircle2, AlertTriangle, ArrowUpRight, TrendingDown,
-  Clock, DollarSign, ShieldAlert, ArrowRight, Sparkles, Layers, Filter,
-  CheckSquare, Scale, AlertCircle, ChevronDown, Check
+  Bot, UserCheck, CheckCircle2, TrendingDown,
+  Sparkles, Layers,
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card, Button } from "@/components/ui";
 import { AgenticDecisionCard } from "@/components/AgenticDecisionCard";
 import { ModifyDecisionModal } from "@/components/ModifyDecisionModal";
 import type { OperationsSummary, WorkQueueItem } from "@/modules/operations/services/operationsSummaryService";
@@ -19,7 +18,7 @@ export function OperationsDashboardClient({ summary }: { summary: OperationsSumm
   const [activeTaskFilter, setActiveTaskFilter] = useState<"all" | "mine" | "ai_waiting">("all");
   const [resolvedIds, setResolvedIds] = useState<string[]>([]);
   const [executingId, setExecutingId] = useState<string | null>(null);
-  const [actionFeedbackMap, setActionFeedbackMap] = useState<Record<string, string>>({});
+  const [_actionFeedbackMap, setActionFeedbackMap] = useState<Record<string, string>>({});
   const [modifyingItem, setModifyingItem] = useState<WorkQueueItem | null>(null);
   const [isModifyOpen, setIsModifyOpen] = useState(false);
 

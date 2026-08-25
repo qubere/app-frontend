@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { ReceiptText, Search, CheckCircle2, AlertTriangle, FileCheck2, X, Check, Loader2, DollarSign } from "lucide-react";
-import { Card, Button } from "@/components/ui";
+import { ReceiptText, Search, FileCheck2, X, Check, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui";
 
 interface InvoiceItem {
   id: string;

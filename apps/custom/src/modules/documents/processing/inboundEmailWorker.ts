@@ -9,10 +9,16 @@
  *
  * No parsing happens here -- attachments are stored, then handed to the
  * existing `enqueueDocumentParse` pipeline, exactly like a manual upload.
+ *
+ * An email from a sender nobody has registered still gets its attachments
+ * downloaded, scanned, and stored (under a `quarantine/` prefix) -- it just
+ * isn't attributed to any account yet. A platform admin releases it later via
+ * `modules/inbound/quarantineReview.ts`, which is what actually creates the
+ * `ShipmentDocument` rows and runs the audit/duplicate/parse pipeline.
  */
 
 import { randomUUID } from "crypto";
-import { db, runWithAccountId } from "@/lib/db";
+import { db, runWithAccountId, withDataModeContext } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { storeDocumentFile, StorageValidationError } from "@/lib/storage";
 import { screenUploadForMalware } from "./malwarePolicy";
@@ -42,11 +48,26 @@ function log(event: string, fields: Record<string, string | number | boolean | n
 }
 
 export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResult> {
+  // InboundEmail has an optional `account` relation, and the shared `db`
+  // client auto-filters every read through that relation by dataMode unless
+  // told otherwise (see packages/db/src/index.ts, buildIsolatedQueryArgs) --
+  // with no context at all (the default for both call sites here: the
+  // webhook's after() and the cron tick), that default silently excludes
+  // every row that doesn't have an account yet, i.e. every freshly RECEIVED
+  // email, before routing has even had a chance to run. This worker is
+  // explicitly cross-tenant/pre-attribution by design, so it has to opt out
+  // of that filter itself rather than rely on a caller to.
+  return withDataModeContext(null, () => runTickWithBypass());
+}
+
+async function runTickWithBypass(): Promise<InboundEmailTickResult> {
   const dueEmails = await db.inboundEmail.findMany({
     where: { routingStatus: { in: ["RECEIVED", "ROUTED"] } },
     orderBy: { createdAt: "asc" },
     take: MAX_EMAILS_PER_TICK,
   });
+
+  log("tick.started", { claimed: dueEmails.length, inboundEmailIds: dueEmails.map((e) => e.id).join(", ") || null });
 
   const result: InboundEmailTickResult = { claimed: dueEmails.length, quarantined: 0, accepted: 0, failed: 0 };
 
@@ -63,41 +84,49 @@ export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResul
     }
   }
 
+  log("tick.finished", { ...result });
   return result;
 }
 
 async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | "ACCEPTED"> {
   let email = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
+  log("email.processing_started", {
+    inboundEmailId: email.id,
+    routingStatus: email.routingStatus,
+    normalizedFromAddress: email.normalizedFromAddress,
+  });
 
+  let route: Awaited<ReturnType<typeof resolveInboundRoute>> = null;
   if (email.routingStatus === "RECEIVED") {
-    const route = await resolveInboundRoute(email.normalizedFromAddress);
-    if (!route) {
-      await db.inboundEmail.update({
+    route = await resolveInboundRoute(email.normalizedFromAddress);
+    if (route) {
+      email = await db.inboundEmail.update({
         where: { id: email.id },
-        data: { routingStatus: "QUARANTINED", quarantineReason: "unknown_sender" },
+        data: { accountId: route.accountId, routingStatus: "ROUTED" },
       });
-      // createAuditLog requires a real accountId (it's a NOT NULL FK to
-      // Account) and an unrouted email was never attributed to a tenant --
-      // this log line, plus the InboundEmail row itself, is the durable
-      // record for this case. A tenant-agnostic quarantine audit trail is
-      // out of scope for this slice; see the plan's deferred-scope notes.
-      log("email.quarantined", { inboundEmailId: email.id, reason: "unknown_sender" });
-      return "QUARANTINED";
+      log("email.routed", { inboundEmailId: email.id, accountId: route.accountId });
+    } else {
+      log("email.no_sender_route", { inboundEmailId: email.id, normalizedFromAddress: email.normalizedFromAddress });
     }
-
-    email = await db.inboundEmail.update({
-      where: { id: email.id },
-      data: { accountId: route.accountId, routingStatus: "ROUTED" },
-    });
+    // No route: fall through instead of bailing out here. The attachments
+    // still get downloaded and stored below (into quarantine, since
+    // accountId stays null) -- an unrecognized sender should leave something
+    // a platform admin can see and release, not a dead-end DB row with no
+    // trace of what was actually sent.
+  } else if (email.accountId) {
+    route = await resolveInboundRoute(email.normalizedFromAddress);
   }
 
-  if (!email.accountId) {
-    // Should be unreachable: ROUTED always has accountId set above.
-    throw new Error(`InboundEmail ${email.id} is ROUTED but has no accountId.`);
-  }
   const accountId = email.accountId;
+  const defaultAssigneeId = route?.defaultAssignedToUserId ?? null;
 
   const remote = await getReceivedEmail(email.providerEmailId);
+  log("email.fetched_from_provider", {
+    inboundEmailId: email.id,
+    providerEmailId: email.providerEmailId,
+    attachmentCount: remote.attachments.length,
+    attachmentFilenames: remote.attachments.map((a) => a.filename ?? a.id).join(", ") || null,
+  });
   if (email.authHeaders === null) {
     await db.inboundEmail.update({
       where: { id: email.id },
@@ -105,15 +134,32 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
     });
   }
 
-  const route = await resolveInboundRoute(email.normalizedFromAddress);
-  const defaultAssigneeId = route?.defaultAssignedToUserId ?? null;
-
   let storedCount = 0;
   let duplicateCount = 0;
   for (const attachment of remote.attachments) {
     const outcome = await processOneAttachment({ accountId, email, attachment, defaultAssigneeId });
     if (outcome.stored) storedCount += 1;
     duplicateCount += outcome.crossShipmentDuplicateCount;
+  }
+
+  if (!accountId) {
+    // createAuditLog requires a real accountId (it's a NOT NULL FK to
+    // Account) and an unrouted email was never attributed to a tenant --
+    // this log line, plus the InboundEmail/InboundAttachment rows themselves,
+    // is the durable record for this case. A tenant-agnostic quarantine audit
+    // trail is out of scope for this slice; see the plan's deferred-scope
+    // notes.
+    await db.inboundEmail.update({
+      where: { id: email.id },
+      data: { routingStatus: "QUARANTINED", quarantineReason: "unknown_sender" },
+    });
+    log("email.quarantined", {
+      inboundEmailId: email.id,
+      reason: "unknown_sender",
+      attachmentCount: remote.attachments.length,
+      storedCount,
+    });
+    return "QUARANTINED";
   }
 
   if (storedCount > 0 && defaultAssigneeId) {
@@ -155,15 +201,13 @@ interface AttachmentOutcome {
 const NOT_STORED: AttachmentOutcome = { stored: false, crossShipmentDuplicateCount: 0 };
 
 async function processOneAttachment(params: {
-  accountId: string;
+  accountId: string | null;
   email: { id: string; providerEmailId: string };
   attachment: ReceivedEmailAttachmentMeta;
   defaultAssigneeId: string | null;
 }): Promise<AttachmentOutcome> {
   const { accountId, email, attachment, defaultAssigneeId } = params;
 
-<<<<<<< Updated upstream
-=======
   const attachmentLabel = attachment.filename ?? attachment.id;
   log("attachment.processing_started", {
     inboundEmailId: email.id,
@@ -173,17 +217,25 @@ async function processOneAttachment(params: {
     hasAccount: !!accountId,
   });
 
->>>>>>> Stashed changes
   const existing = await db.inboundAttachment.findUnique({
     where: { inboundEmailId_providerAttachmentId: { inboundEmailId: email.id, providerAttachmentId: attachment.id } },
   });
   // Already processed (or explicitly skipped) in a prior tick -- do not redo work.
   if (existing && existing.processingStatus !== "PENDING") {
-    return existing.processingStatus === "STORED" ? { stored: true, crossShipmentDuplicateCount: 0 } : NOT_STORED;
+    log("attachment.already_processed", {
+      inboundEmailId: email.id,
+      providerAttachmentId: attachment.id,
+      filename: attachmentLabel,
+      processingStatus: existing.processingStatus,
+    });
+    return existing.processingStatus === "STORED" || existing.processingStatus === "QUARANTINED"
+      ? { stored: true, crossShipmentDuplicateCount: 0 }
+      : NOT_STORED;
   }
 
   const isInline = attachment.contentDisposition === "inline";
   if (isInline) {
+    log("attachment.skipped_inline", { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
     await db.inboundAttachment.upsert({
       where: { inboundEmailId_providerAttachmentId: { inboundEmailId: email.id, providerAttachmentId: attachment.id } },
       create: {
@@ -216,6 +268,10 @@ async function processOneAttachment(params: {
 
   const correlationId = randomUUID();
   const filename = attachment.filename ?? `attachment-${attachment.id}`;
+  // Unrecognized senders still get their files downloaded, scanned, and
+  // stored -- just under a separate blob prefix, since nothing here is
+  // attributed to a tenant yet.
+  const folder = accountId ? "documents" : "quarantine";
 
   try {
     const download = await getAttachmentDownloadInfo(email.providerEmailId, attachment.id);
@@ -244,19 +300,6 @@ async function processOneAttachment(params: {
       reason: scan.reason ?? null,
     });
     if (scan.verdict === "QUARANTINE") {
-<<<<<<< Updated upstream
-      await rejectAttachment(attachmentRow.id, scan.reason);
-      await createAuditLog({
-        accountId,
-        action: "inbound_email.attachment_quarantined",
-        entity: "InboundAttachment",
-        entityId: attachmentRow.id,
-        source: "SYSTEM",
-        metadata: { fileName: filename, reason: scan.reason },
-        correlationId,
-        success: false,
-      });
-=======
       await rejectAttachment(attachmentRow.id, scan.reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       if (accountId) {
         await createAuditLog({
@@ -270,7 +313,6 @@ async function processOneAttachment(params: {
           success: false,
         });
       }
->>>>>>> Stashed changes
       return NOT_STORED;
     }
 
@@ -281,27 +323,20 @@ async function processOneAttachment(params: {
     });
     let storageResult;
     try {
-<<<<<<< Updated upstream
-      storageResult = await storeDocumentFile(file, filename);
-=======
       storageResult = await storeDocumentFile(file, filename, folder);
       log("attachment.stored_to_blob", {
         inboundEmailId: email.id,
         providerAttachmentId: attachment.id,
         filename: attachmentLabel,
         folder,
-        url: storageResult.url,
         provider: storageResult.provider,
       });
->>>>>>> Stashed changes
     } catch (error) {
       const reason = error instanceof StorageValidationError ? error.message : "Storage failed.";
       await rejectAttachment(attachmentRow.id, reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       return NOT_STORED;
     }
 
-<<<<<<< Updated upstream
-=======
     if (!accountId) {
       // Sender not recognized: keep the stored file referenced only from
       // InboundAttachment. A platform admin releases it later via
@@ -321,12 +356,10 @@ async function processOneAttachment(params: {
         inboundEmailId: email.id,
         providerAttachmentId: attachment.id,
         filename: attachmentLabel,
-        quarantinedFileUrl: storageResult.url,
       });
       return { stored: true, crossShipmentDuplicateCount: 0 };
     }
 
->>>>>>> Stashed changes
     const { DocumentTypeCatalog } = await import("@/modules/intake/documentTypeCatalog");
     const docType = DocumentTypeCatalog.matchDocumentType(filename).name;
 

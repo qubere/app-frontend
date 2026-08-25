@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { getTmsAiAnalytics, TmsAiAnalyticsScope } from "@/lib/tmsAiAnalytics";
 
@@ -8,8 +8,6 @@ export const GET = withAuthenticatedRoute(
       const { searchParams } = new URL(req.url);
       const level = (searchParams.get("level") as any) || "OVERALL";
       const accountId = searchParams.get("accountId") || undefined;
-      const clientId = searchParams.get("clientId") || undefined;
-      const userId = searchParams.get("userId") || undefined;
       const rangeDays = parseInt(searchParams.get("rangeDays") || "30", 10);
 
       const scope: TmsAiAnalyticsScope = {

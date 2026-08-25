@@ -20,7 +20,7 @@ export async function parseAndValidateBody<T>(req: Request, schema: ZodSchema<T>
       };
     }
     return { data: result.data };
-  } catch (err) {
+  } catch {
     return {
       response: buildErrorResponse(400, "MALFORMED_JSON", "Failed to parse JSON body", undefined, requestId),
     };

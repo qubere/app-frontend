@@ -2,8 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Settings, ShieldAlert, History, Mail, Sliders } from "lucide-react";
-import { Card, Button, Badge } from "@/components/ui";
+import { Settings, History, Mail, Sliders } from "lucide-react";
+import { Card } from "@/components/ui";
 
 export default async function AdminSettingsPage() {
   const { userId } = await auth();

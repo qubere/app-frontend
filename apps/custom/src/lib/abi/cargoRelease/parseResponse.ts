@@ -41,11 +41,6 @@ import type {
   OutputDispositionInput,
   CargoReleaseResponseScenario,
   ParsedSeRecord,
-  ParsedBillOfLadingGroup,
-  ParsedHeaderEntityGroup,
-  ParsedLineEntityGroup,
-  ParsedHtsLineGroup,
-  ParsedLineItemGroup,
   ParsedCargoReleaseHeaderGroup,
   ParsedCargoReleaseResponse,
 } from "./types";

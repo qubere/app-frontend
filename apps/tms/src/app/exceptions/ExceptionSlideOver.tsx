@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Mail, CheckCircle2, ShieldAlert, User, Clock, Send, Sparkles, AlertCircle } from "lucide-react";
+import { X, Mail, CheckCircle2, ShieldAlert, Send, Sparkles } from "lucide-react";
 
 export interface ExceptionSlideOverProps {
   isOpen: boolean;

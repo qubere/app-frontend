@@ -6,7 +6,7 @@ import {
   Send, Loader2, Sparkles, Plus, Trash2,
   LayoutDashboard, Package, Truck, TriangleAlert, ReceiptText,
   Layers, Files, MessageSquare, ChevronRight,
-  ChevronsLeft, ChevronsRight, Moon, Sun, Paperclip, X, CheckCircle2, ShieldAlert
+  ChevronsLeft, ChevronsRight, Moon, Sun, Paperclip, X
 } from "lucide-react";
 import { Badge, Card, Button } from "@/components/ui";
 
@@ -1186,7 +1186,6 @@ function ToolCard({ tc }: { tc: ToolCallDisplay }) {
 function UploadDocumentCard({ tc }: { tc: ToolCallDisplay }) {
   const th = useTh();
   const r = (tc.result ?? {}) as any;
-  const phase = r.phase;
 
   if (tc.status === "running") {
     return (

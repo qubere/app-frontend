@@ -9,7 +9,6 @@ import {
   Q5_PERIODIC_SPEC,
   Q6_PERIODIC_SPEC,
   QJ_STATEMENT_FEE_SPEC,
-  Q7_STATEMENT_DELETED_SPEC,
 } from "./recordSpecs";
 import { classifyStatementLine } from "./parse";
 import type {

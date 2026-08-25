@@ -4,9 +4,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse } from "@/lib/api/error";
 import { parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
-import { createAuditLog } from "@/lib/audit";
-import { normalizeSenderEmail } from "@/modules/inbound/emailNormalization";
-import { Prisma } from "@prisma/client";
+import { createInboundSenderRoute, InboundSenderAlreadyRoutedError } from "@/modules/inbound/senderRouting";
 
 export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
   const [routes, memberships, clients, enterpriseAccounts] = await Promise.all([
@@ -69,7 +67,7 @@ const createSchema = z.object({
 export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const bodyVal = await parseAndValidateBody(req, createSchema, requestId);
   if ("response" in bodyVal) return bodyVal.response;
-  const { email, workspaceId, defaultAssignedToUserId } = bodyVal.data;
+  const { email, workspaceId: _workspaceId, defaultAssignedToUserId } = bodyVal.data;
 
   if (defaultAssignedToUserId) {
     const membership = await db.accountMembership.findFirst({
@@ -86,43 +84,22 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     }
   }
 
-  const normalizedSenderEmail = normalizeSenderEmail(email);
-
   try {
-    const route = await db.inboundSenderRoute.create({
-      data: {
-        accountId: ctx.accountId,
-        normalizedSenderEmail,
-        displaySenderEmail: email.trim(),
-        defaultAssignedToUserId: defaultAssignedToUserId ?? null,
-        createdByUserId: ctx.userId,
-      },
-    });
-
-    await createAuditLog({
+    const route = await createInboundSenderRoute({
       accountId: ctx.accountId,
-      userId: ctx.userId,
-      action: "inbound_sender_route.created",
-      entity: "InboundSenderRoute",
-      entityId: route.id,
-      source: "UI",
-      metadata: { normalizedSenderEmail, defaultAssignedToUserId: defaultAssignedToUserId ?? null },
+      email,
+      defaultAssignedToUserId,
+      createdByUserId: ctx.userId,
+      auditSource: "UI",
       requestId,
     });
 
     return NextResponse.json({ route, requestId });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    if (error instanceof InboundSenderAlreadyRoutedError) {
       // Never reveal which other account already claimed this sender.
-      return buildErrorResponse(
-        409,
-        "SENDER_ALREADY_ROUTED",
-        "This email address is already authorized elsewhere and cannot be added here.",
-        undefined,
-        requestId
-      );
+      return buildErrorResponse(409, "SENDER_ALREADY_ROUTED", error.message, undefined, requestId);
     }
     throw error;
   }
-
 }, { permission: "settings.manage", write: true });
