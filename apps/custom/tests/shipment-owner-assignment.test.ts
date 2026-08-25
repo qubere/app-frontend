@@ -80,7 +80,7 @@ describe("PATCH /api/shipments/[id] -- owner assignment", () => {
       expect.objectContaining({
         where: { id: SHIPMENT_ID, accountId: ACCOUNT, version: 1 },
         data: expect.objectContaining({
-          assignedBroker: { connect: { id: "u_broker" } },
+          assignedBrokerId: "u_broker",
         }),
       })
     );
@@ -107,7 +107,7 @@ describe("PATCH /api/shipments/[id] -- owner assignment", () => {
     expect(res.status).toBe(200);
     expect(dbMock.shipment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ assignedBroker: { disconnect: true } }),
+        data: expect.objectContaining({ assignedBrokerId: null }),
       })
     );
     expect(dbMock.accountMembership.findFirst).not.toHaveBeenCalled();

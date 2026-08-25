@@ -75,7 +75,13 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
   }
 
   let currentVersion = shipment.version;
-  async function applyVersionedShipmentUpdate(data: Prisma.ShipmentUpdateInput): Promise<boolean> {
+  // updateMany's data type is ShipmentUncheckedUpdateManyInput, not
+  // ShipmentUpdateInput -- Prisma never supports nested relation writes
+  // (connect/disconnect) in an updateMany, since it targets a where-matched
+  // set rather than a single record graph, and the "checked" variant used by
+  // update() drops FK scalars entirely in favor of the relation object. FK
+  // fields like assignedBrokerId must be written as plain scalars here.
+  async function applyVersionedShipmentUpdate(data: Prisma.ShipmentUncheckedUpdateManyInput): Promise<boolean> {
     const result = await db.shipment.updateMany({
       where: { id, accountId: ctx.accountId, version: currentVersion },
       data: { ...data, version: { increment: 1 } },
@@ -363,11 +369,7 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
       reason: "User manual reassignment",
     });
 
-    if (
-      !(await applyVersionedShipmentUpdate({
-        assignedBroker: assignedBrokerId ? { connect: { id: assignedBrokerId } } : { disconnect: true },
-      }))
-    ) {
+    if (!(await applyVersionedShipmentUpdate({ assignedBrokerId: assignedBrokerId || null }))) {
       return staleShipmentResponse();
     }
   }
