@@ -7,7 +7,31 @@ export * from "./environment";
 export * from "./caseNumber";
 export * from "../prisma/seeds/authorizationSeed";
 
-const dataModeStorage = new AsyncLocalStorage<{ mode: DataMode | null }>();
+// Cached on globalThis, same reasoning as the PrismaClient singleton further
+// down this file: Turbopack/webpack HMR re-evaluates this module on
+// unrelated file changes during `next dev`, which would otherwise mint a
+// fresh AsyncLocalStorage instance on every reload. The cached `db` client
+// (also globalThis-cached, so it survives those same reloads) closes over
+// whichever dataModeStorage/accountIdStorage instance existed the moment it
+// was first built -- so once the two drift apart, every later
+// withDataModeContext/runWithAccountId call sets context on an instance the
+// middleware never reads. getDataModeContext()/getAccountIdContext() then
+// see no context at all (`undefined`, not the caller's explicit `null`
+// bypass), and buildIsolatedQueryArgs's `contextMode ?? "PRODUCTION"`
+// fallback quietly re-applies the dataMode filter a platform-admin query
+// had explicitly opted out of. Confirmed empirically: a fresh process
+// returns the right rows, but the same query against a dev server that had
+// been hot-reloading for a while silently dropped them.
+const globalForDbContext = globalThis as unknown as {
+  __qubereDataModeStorage?: AsyncLocalStorage<{ mode: DataMode | null }>;
+  __qubereAccountIdStorage?: AsyncLocalStorage<{ accountId: string | null }>;
+};
+
+const dataModeStorage =
+  globalForDbContext.__qubereDataModeStorage ?? new AsyncLocalStorage<{ mode: DataMode | null }>();
+if (process.env.NODE_ENV !== "production") {
+  globalForDbContext.__qubereDataModeStorage = dataModeStorage;
+}
 
 /**
  * Execute a function within an explicit DataMode context.
@@ -37,7 +61,11 @@ export function getDataModeContext(): DataMode | null | undefined {
   return dataModeStorage.getStore()?.mode;
 }
 
-const accountIdStorage = new AsyncLocalStorage<{ accountId: string | null }>();
+const accountIdStorage =
+  globalForDbContext.__qubereAccountIdStorage ?? new AsyncLocalStorage<{ accountId: string | null }>();
+if (process.env.NODE_ENV !== "production") {
+  globalForDbContext.__qubereAccountIdStorage = accountIdStorage;
+}
 
 /**
  * Execute a function within an explicit tenant (accountId) context. Unlike DataMode,

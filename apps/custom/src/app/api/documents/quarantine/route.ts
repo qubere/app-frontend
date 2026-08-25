@@ -13,14 +13,6 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
   // can safely see this queue -- showing it to a tenant would leak another
   // tenant's inbound mail (subject, sender, attachments) before it has been
   // attributed to anyone.
-  console.log("[QuarantineRoute] GET", {
-    requestId,
-    userId: ctx.userId,
-    accountId: ctx.accountId,
-    isPlatformAdmin: ctx.isPlatformAdmin,
-    platformRoles: ctx.platformRoles,
-  });
-
   const [items, accounts] = await Promise.all([
     ctx.isPlatformAdmin ? listQuarantinedInboundEmails() : Promise.resolve([]),
     ctx.isPlatformAdmin
