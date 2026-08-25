@@ -67,6 +67,8 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
     take: MAX_EMAILS_PER_TICK,
   });
 
+  log("tick.started", { claimed: dueEmails.length, inboundEmailIds: dueEmails.map((e) => e.id).join(", ") || null });
+
   const result: InboundEmailTickResult = { claimed: dueEmails.length, quarantined: 0, accepted: 0, failed: 0 };
 
   for (const email of dueEmails) {
@@ -82,11 +84,17 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
     }
   }
 
+  log("tick.finished", { ...result });
   return result;
 }
 
 async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | "ACCEPTED"> {
   let email = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
+  log("email.processing_started", {
+    inboundEmailId: email.id,
+    routingStatus: email.routingStatus,
+    normalizedFromAddress: email.normalizedFromAddress,
+  });
 
   let route: Awaited<ReturnType<typeof resolveInboundRoute>> = null;
   if (email.routingStatus === "RECEIVED") {
@@ -96,6 +104,9 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
         where: { id: email.id },
         data: { accountId: route.accountId, routingStatus: "ROUTED" },
       });
+      log("email.routed", { inboundEmailId: email.id, accountId: route.accountId });
+    } else {
+      log("email.no_sender_route", { inboundEmailId: email.id, normalizedFromAddress: email.normalizedFromAddress });
     }
     // No route: fall through instead of bailing out here. The attachments
     // still get downloaded and stored below (into quarantine, since
@@ -110,6 +121,12 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
   const defaultAssigneeId = route?.defaultAssignedToUserId ?? null;
 
   const remote = await getReceivedEmail(email.providerEmailId);
+  log("email.fetched_from_provider", {
+    inboundEmailId: email.id,
+    providerEmailId: email.providerEmailId,
+    attachmentCount: remote.attachments.length,
+    attachmentFilenames: remote.attachments.map((a) => a.filename ?? a.id).join(", ") || null,
+  });
   if (email.authHeaders === null) {
     await db.inboundEmail.update({
       where: { id: email.id },
@@ -191,11 +208,26 @@ async function processOneAttachment(params: {
 }): Promise<AttachmentOutcome> {
   const { accountId, email, attachment, defaultAssigneeId } = params;
 
+const attachmentLabel = attachment.filename ?? attachment.id;
+  log("attachment.processing_started", {
+    inboundEmailId: email.id,
+    providerAttachmentId: attachment.id,
+    filename: attachmentLabel,
+    contentDisposition: attachment.contentDisposition,
+    hasAccount: !!accountId,
+  });
+
   const existing = await db.inboundAttachment.findUnique({
     where: { inboundEmailId_providerAttachmentId: { inboundEmailId: email.id, providerAttachmentId: attachment.id } },
   });
   // Already processed (or explicitly skipped) in a prior tick -- do not redo work.
   if (existing && existing.processingStatus !== "PENDING") {
+    log("attachment.already_processed", {
+      inboundEmailId: email.id,
+      providerAttachmentId: attachment.id,
+      filename: attachmentLabel,
+      processingStatus: existing.processingStatus,
+    });
     return existing.processingStatus === "STORED" || existing.processingStatus === "QUARANTINED"
       ? { stored: true, crossShipmentDuplicateCount: 0 }
       : NOT_STORED;
@@ -203,6 +235,7 @@ async function processOneAttachment(params: {
 
   const isInline = attachment.contentDisposition === "inline";
   if (isInline) {
+    log("attachment.skipped_inline", { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
     await db.inboundAttachment.upsert({
       where: { inboundEmailId_providerAttachmentId: { inboundEmailId: email.id, providerAttachmentId: attachment.id } },
       create: {

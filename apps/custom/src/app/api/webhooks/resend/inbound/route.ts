@@ -26,13 +26,24 @@ function allowedRecipients(): string[] {
   return raw.split(",").map((addr) => normalizeSenderEmail(addr)).filter(Boolean);
 }
 
+function log(requestId: string, event: string, fields: Record<string, string | number | boolean | null> = {}): void {
+  console.log(`[ResendWebhook] ${event}`, { requestId, ...fields });
+}
+
 export const POST = withPublicRoute(async ({ req, requestId }) => {
+  log(requestId, "webhook.received");
+
   const rawBody = await req.text();
   const svixId = req.headers.get("svix-id");
   const svixTimestamp = req.headers.get("svix-timestamp");
   const svixSignature = req.headers.get("svix-signature");
 
   if (!svixId || !svixTimestamp || !svixSignature) {
+    log(requestId, "webhook.missing_signature_headers", {
+      hasSvixId: !!svixId,
+      hasSvixTimestamp: !!svixTimestamp,
+      hasSvixSignature: !!svixSignature,
+    });
     return NextResponse.json({ error: "MISSING_SIGNATURE_HEADERS", requestId }, { status: 400 });
   }
 
@@ -43,12 +54,15 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
       timestamp: svixTimestamp,
       signature: svixSignature,
     });
+    log(requestId, "webhook.signature_verified", { svixId, eventType: payload.type });
   } catch (error) {
     if (error instanceof ResendConfigError) {
       console.error("[ResendWebhook] Not configured:", error.message);
+      log(requestId, "webhook.not_configured", { svixId, error: error.message });
       return NextResponse.json({ error: "NOT_CONFIGURED", requestId }, { status: 503 });
     }
     if (error instanceof ResendWebhookVerificationError) {
+      log(requestId, "webhook.invalid_signature", { svixId, error: error.message });
       return NextResponse.json({ error: "INVALID_SIGNATURE", requestId }, { status: 400 });
     }
     throw error;
@@ -58,6 +72,7 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
   // (delivery/open/click events, if ever misconfigured onto this endpoint)
   // is acknowledged and ignored.
   if (payload.type !== "email.received") {
+    log(requestId, "webhook.ignored_event_type", { svixId, eventType: payload.type });
     return NextResponse.json({ status: "IGNORED", requestId });
   }
 
@@ -70,8 +85,17 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
 
   const normalizedFrom = normalizeSenderEmail(data.from);
 
+  log(requestId, "webhook.recipient_check", {
+    svixId,
+    from: data.from,
+    candidateRecipients: candidateRecipients.join(", "),
+    allowedRecipients: allowed.join(", "),
+    isAddressedToUs,
+  });
+
+  let inboundEmailId: string;
   try {
-    await db.inboundEmail.create({
+    const created = await db.inboundEmail.create({
       data: {
         provider: "resend",
         providerEventId: svixId,
@@ -85,13 +109,22 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
         quarantineReason: isAddressedToUs ? null : "recipient_not_allowed",
       },
     });
+    inboundEmailId = created.id;
+    log(requestId, "webhook.inbound_email_created", {
+      svixId,
+      inboundEmailId,
+      routingStatus: created.routingStatus,
+      quarantineReason: created.quarantineReason,
+    });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       // Duplicate webhook delivery for an event we've already recorded.
       // Idempotent no-op: the original delivery (or the cron backstop) owns
       // processing this email.
+      log(requestId, "webhook.duplicate_delivery", { svixId });
       return NextResponse.json({ status: "DUPLICATE", requestId }, { status: 200 });
     }
+    log(requestId, "webhook.create_failed", { svixId, error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 
@@ -100,14 +133,22 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
     // does the slow work (attachment fetch, storage, extraction). The
     // `inbound-email-processing` cron tick is the retry path if this doesn't
     // finish (cold start, timeout, crash).
+    log(requestId, "webhook.dispatching_immediate_tick", { svixId, inboundEmailId });
     after(async () => {
       try {
-        await runInboundEmailWorkerTick();
+        const result = await runInboundEmailWorkerTick();
+        log(requestId, "webhook.immediate_tick_finished", { svixId, inboundEmailId, ...result });
       } catch (err) {
         console.error("[ResendWebhook] Immediate processing tick failed:", err);
+        log(requestId, "webhook.immediate_tick_failed", {
+          svixId,
+          inboundEmailId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     });
   }
 
+  log(requestId, "webhook.responding_accepted", { svixId, inboundEmailId });
   return NextResponse.json({ status: "ACCEPTED", requestId }, { status: 202 });
 });
