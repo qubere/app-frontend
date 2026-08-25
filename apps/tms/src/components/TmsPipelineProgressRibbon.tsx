@@ -4,11 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
-  Brain,
   CheckCircle2,
   Clock3,
-  History,
-  Loader2,
   Play,
   Radio,
   RefreshCw,
@@ -69,11 +66,6 @@ type PipelineRun = {
 };
 
 type PipelineStatus = PipelineRun & { runs: PipelineRun[] };
-
-function timestamp(value?: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
-}
 
 export function TmsPipelineProgressRibbon({
   shipmentId,

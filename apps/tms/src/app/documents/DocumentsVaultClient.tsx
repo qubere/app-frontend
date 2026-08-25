@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Search, Upload, Eye, ArrowUpRight, Sparkles, CheckCircle2 } from "lucide-react";
+import { FileText, Search, Upload, Eye, CheckCircle2 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card, Button } from "@/components/ui";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 

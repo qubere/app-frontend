@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Users, UserPlus, Mail, CheckCircle2, ShieldCheck, X, Check, Loader2, UserCheck, Search, ChevronDown } from "lucide-react";
+import { Users, UserPlus, CheckCircle2, ShieldCheck, X, Check, Loader2, UserCheck, Search, ChevronDown } from "lucide-react";
 import { Card, Button } from "@/components/ui";
 
 interface UserRecord {

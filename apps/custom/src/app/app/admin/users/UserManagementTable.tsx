@@ -8,15 +8,10 @@ import {
   UserPlus,
   UserX,
   UserCheck,
-  Eye,
   Loader2,
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
-  Calendar,
-  Mail,
-  User,
-  X,
   Search,
   ChevronDown,
   Filter,
@@ -75,6 +70,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
   const [roleSearchQueries, setRoleSearchQueries] = useState<Record<string, string>>({});
   const [selectedMember, setSelectedMember] = useState<MemberItem | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     if ((!inviteRole || !availableRoles.includes(inviteRole)) && availableRoles.length > 0) {
@@ -115,8 +111,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
 
   const filteredMembers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const now = Date.now();
-    const today = new Date();
+    const today = new Date(now);
     return visibleMembers.filter((m) => {
       const name = [m.firstName, m.lastName].filter(Boolean).join(" ");
 
@@ -139,7 +134,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
       }
       return true;
     });
-  }, [visibleMembers, searchQuery, dateFilter]);
+  }, [visibleMembers, searchQuery, dateFilter, now]);
 
   const handleInviteUser = async (e: React.FormEvent) => {
     e.preventDefault();

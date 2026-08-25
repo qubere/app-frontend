@@ -31,7 +31,7 @@ export function PdfCanvas({ url, page = 1, bbox, className }: PdfCanvasProps) {
   const highlightRef = useRef<HTMLCanvasElement>(null);
   const pageDims = useRef<{ width: number; height: number } | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "fallback">("idle");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [_errorMsg, setErrorMsg] = useState<string | null>(null);
 
   function paintHighlight(
     dims: { width: number; height: number } | null,
@@ -155,6 +155,7 @@ export function PdfCanvas({ url, page = 1, bbox, className }: PdfCanvasProps) {
       cancelled = true;
       renderTask?.cancel();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bbox is intentionally excluded: it's only used for the initial paint here, and the effect below already repaints the highlight on bbox changes without re-fetching/re-rendering the PDF.
   }, [url, page]);
 
   useEffect(() => {

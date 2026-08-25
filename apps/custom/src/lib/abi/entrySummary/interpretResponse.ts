@@ -1,7 +1,6 @@
 import { getAllAbiErrors, type ErrorDictionaryEntry } from "@/lib/abi/errorDictionary";
 import type {
   ParsedEntrySummaryResponse,
-  EntrySummaryCondition,
   E1Record,
   E0Record,
 } from "./types";

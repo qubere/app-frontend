@@ -3,13 +3,13 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
-  BookOpen, Search, ArrowRight, ExternalLink, Bot, Truck, FileText, Receipt,
-  ShieldCheck, ArrowUpRight, Cpu, Layers, Sparkles, CheckCircle2, HelpCircle,
-  BarChart3, Scale, Clock, AlertTriangle, Zap, Terminal, Command, Globe, Check, Eye
+  BookOpen, Search, Bot, Truck, FileText, Receipt,
+  ArrowUpRight, Layers, Sparkles, CheckCircle2,
+  BarChart3, AlertTriangle, Zap, Command, Eye
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { FeatureDetailModal } from "./FeatureDetailModal";
 import { StatTileModal } from "./StatTileModal";
 

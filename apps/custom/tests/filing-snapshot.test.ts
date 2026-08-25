@@ -11,7 +11,7 @@ describe("CBP Filing Immutable Snapshot Integration Suite", () => {
   const DB_TIMEOUT = 60_000;
   const TEST_HTS_CODE = "8481.80.5090";
   const TEST_HTS_NORMALIZED = "8481805090";
-  let seededReleaseId: string | null = null;
+  const seededReleaseId: string | null = null;
   let dbAvailable = false;
 
   beforeAll(async () => {

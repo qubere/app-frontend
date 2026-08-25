@@ -1,6 +1,6 @@
 "use client";
 
-import { X, ArrowRight, ExternalLink, CheckCircle2, Zap, Sparkles, Shield, Terminal, BookOpen, Layers } from "lucide-react";
+import { X, ArrowRight, CheckCircle2, Zap, Sparkles, Layers } from "lucide-react";
 import Link from "next/link";
 
 interface FeatureDetailModalProps {

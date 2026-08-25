@@ -84,8 +84,6 @@ interface TableDef<TRow> {
   updateSchema: z.ZodTypeAny;
 }
 
-const wildcardHelp = '"*" matches any value (wildcard fallback) when no more specific row exists.';
-
 // ============================================================================
 // NEW MULTI-COUNTRY SCHEMAS
 // ============================================================================

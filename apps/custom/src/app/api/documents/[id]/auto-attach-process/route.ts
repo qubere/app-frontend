@@ -11,7 +11,7 @@ const paramsSchema = z.object({ id: z.string().min(1) });
  * Auto-attaches an unattached inbound document to its mapped client workspace shipment
  * and processes it immediately through extraction and classification.
  */
-export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, requestId, params }) => {
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req: _req, ctx, requestId, params }) => {
   const paramsVal = validatePathParams(params, paramsSchema, requestId);
   if ("response" in paramsVal) return paramsVal.response;
   const { id } = paramsVal.data;

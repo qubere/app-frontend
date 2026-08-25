@@ -151,13 +151,6 @@ function exceptionSeverity(sev: string): WorkQueueItem["severity"] {
   return "INFO";
 }
 
-function routeText(shipment: { origin?: string | null; destination?: string | null; portOfLoading?: string | null; portOfUnlading?: string | null } | null): string {
-  if (!shipment) return "Unknown → Unknown";
-  const o = (shipment as any).portOfLoading || shipment.origin || "Origin";
-  const d = (shipment as any).portOfUnlading || shipment.destination || "Destination";
-  return `${o} → ${d}`;
-}
-
 // ---------------------------------------------------------------------------
 // Main service
 // ---------------------------------------------------------------------------

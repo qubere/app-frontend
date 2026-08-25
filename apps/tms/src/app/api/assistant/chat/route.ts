@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { runAssistantTurn } from "@/modules/assistant/orchestrator";
 
@@ -31,7 +31,7 @@ export const POST = withAuthenticatedRoute(
           connection: "keep-alive",
         },
       });
-    } catch (err) {
+    } catch {
       return NextResponse.json({ error: "Failed to process message" }, { status: 500 });
     }
   },

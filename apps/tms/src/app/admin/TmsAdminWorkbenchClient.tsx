@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import {
-  Building, ShieldCheck, Save, Server, Cpu, Database, Globe,
-  RefreshCw, Play, CheckCircle2, AlertTriangle, Layers,
-  Sparkles, Clock, FileText, Shield, Key, Lock, Code, Terminal,
-  FileCheck2, ScanText, Boxes, Scale, Globe2, Calculator, ShieldAlert, Send, Receipt
+  ShieldCheck, Save,
+  RefreshCw, Play, CheckCircle2,
+  Shield,
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
@@ -73,86 +72,11 @@ interface TmsAdminWorkbenchClientProps {
   };
 }
 
-const REAL_TMS_AUTONOMOUS_AGENTS = [
-  {
-    id: "freight-intake",
-    name: "Freight Intake Agent",
-    category: "Intake & Orders",
-    icon: FileText,
-    scope: "Email & Document Intake",
-    description: "Ingests inbound freight emails, rate request PDFs, and transportation orders; extracts shipment origins, destinations, equipment types, and line items with evidence provenance.",
-    status: "ACTIVE",
-  },
-  {
-    id: "movement-planner",
-    name: "Movement & Stop Planning Agent",
-    category: "Routing & Logistics",
-    icon: Layers,
-    scope: "Multi-Leg Optimization",
-    description: "Plans multi-leg movement stop sequences (port to rail ramp to final door), pickup/delivery appointment windows, and drayage leg routing.",
-    status: "ACTIVE",
-  },
-  {
-    id: "carrier-rating",
-    name: "Carrier Rating & Quote Agent",
-    category: "Contract & Rating",
-    icon: Calculator,
-    scope: "Tariffs & Surcharges",
-    description: "Evaluates carrier contract rate sheets, spot rate benchmarks, fuel surcharges (FSC), and proposes margin-optimized quotes.",
-    status: "ACTIVE",
-  },
-  {
-    id: "tender-dispatch",
-    name: "Autonomous Tender Dispatch Agent",
-    category: "Dispatch Governance",
-    icon: Send,
-    scope: "Carrier Waterfall & Broadcast",
-    description: "Dispatches freight tenders to contracted carriers under Waterfall, Broadcast, or Performance-Weighted routing policies with auto-timeout control.",
-    status: "ACTIVE",
-  },
-  {
-    id: "tracking-eta",
-    name: "Tracking & ETA Cascade Agent",
-    category: "Telematics & Visibility",
-    icon: Clock,
-    scope: "Telematics & Delay Cascade",
-    description: "Observes real-time ocean & drayage telematics signals (port congestion, vessel delays), predicts customer promise impact, and updates ETAs.",
-    status: "ACTIVE",
-  },
-  {
-    id: "demurrage-risk",
-    name: "Demurrage & LFD Risk Agent",
-    category: "Surveillance & Risk",
-    icon: ShieldAlert,
-    scope: "Container LFD Surveillance",
-    description: "Performs continuous surveillance on container Last Free Day (LFD), vessel arrival windows, and customs release flags to mitigate demurrage exposure.",
-    status: "ACTIVE",
-  },
-  {
-    id: "freight-audit",
-    name: "3-Way Freight Audit Agent",
-    category: "Financials & Settlement",
-    icon: Receipt,
-    scope: "3-Way Linehaul & FSC Match",
-    description: "Executes automated 3-way matching on carrier linehaul, fuel surcharge (FSC), and accessorial invoices against contracted rates and delivery proof (POD).",
-    status: "ACTIVE",
-  },
-  {
-    id: "exception-resolution",
-    name: "Exception Resolution Agent",
-    category: "Autonomy Governance",
-    icon: CheckCircle2,
-    scope: "Policy & Dispatcher Escalation",
-    description: "Monitors operational exception items (delay flags, missing PODs, appointment misses) and evaluates policy rules for auto-resolution vs. dispatcher escalation.",
-    status: "ACTIVE",
-  },
-];
-
 export function TmsAdminWorkbenchClient({
   currentAccount,
-  initialAccounts,
+  initialAccounts: _initialAccounts,
   aiAnalytics,
-  telemetry,
+  telemetry: _telemetry,
 }: TmsAdminWorkbenchClientProps) {
   const [activeTab, setActiveTab] = useState<
     "profile" | "agents" | "data" | "api" | "cron"

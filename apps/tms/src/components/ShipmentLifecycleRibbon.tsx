@@ -10,16 +10,14 @@ import {
   Truck,
   Anchor,
   Plane,
-  FileCheck,
   Check,
-  ShieldAlert,
   CreditCard,
   Layers,
   Calendar,
   User as UserIcon,
   FileText,
 } from "lucide-react";
-import { Badge, Button } from "@/components/ui";
+import { Button } from "@/components/ui";
 
 function formatStageDateTime(val?: string | Date | null): string | null {
   if (!val) return null;
@@ -63,7 +61,7 @@ export type ShipmentLifecycleStatus = {
 
 export function ShipmentLifecycleRibbon({
   status,
-  shipmentId,
+  shipmentId: _shipmentId,
   carrierInvoiceId,
   onStageSelect,
 }: {

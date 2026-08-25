@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   ChevronDown,
   Loader2,
-  Check,
 } from "lucide-react";
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";

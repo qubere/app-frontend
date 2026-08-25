@@ -9,7 +9,6 @@ import {
   Truck,
   Layers,
   ChevronRight,
-  History as HistoryIcon,
 } from "lucide-react";
 import { CanonicalShipmentService } from "@/modules/shipment/canonicalShipmentService";
 import { Badge } from "@/components/ui/Badge";
@@ -488,7 +487,6 @@ export default async function ShipmentWorkspacePage(props: {
   // For categories whose "evidence" is a live database field rather than an
   // uploaded document -- links into the tab/section that actually renders it.
   const filingAnchorUrl = (anchor: string) => `/app/shipments/${shipment.id}?view=filing#${anchor}`;
-  const workspaceAnchorUrl = (anchor: string) => `/app/shipments/${shipment.id}?view=workspace#${anchor}`;
   // Surfaces real human-approval provenance (see FieldApproval, and the new
   // field-review flow in ExceptionsDrawer) directly in a category's evidence
   // panel, instead of the evidence only ever showing where the raw agent

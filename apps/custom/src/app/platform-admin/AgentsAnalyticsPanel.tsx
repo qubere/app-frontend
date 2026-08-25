@@ -10,11 +10,7 @@ import {
   Wrench,
   Gauge,
   CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  HelpCircle,
   FileText,
-  Clock,
   ScanText,
   Boxes,
   Scale,
@@ -27,7 +23,6 @@ import {
   RefreshCw,
   Filter,
 } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
 import type {
   AiUsageAnalytics,
   AiSurfaceUsage,
@@ -500,7 +495,7 @@ export function AgentsAnalyticsPanel({
   documentProcessing: DocumentProcessingAnalytics;
 }) {
   const [data, setData] = useState<AiUsageAnalytics>(initialData);
-  const [documentProcessing, setDocumentProcessing] = useState<DocumentProcessingAnalytics>(initialDocProcessing);
+  const [documentProcessing, _setDocumentProcessing] = useState<DocumentProcessingAnalytics>(initialDocProcessing);
   const [loading, setLoading] = useState(false);
   const [rangeDays, setRangeDays] = useState<number>(initialData.rangeDays ?? 30);
 

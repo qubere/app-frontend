@@ -67,7 +67,7 @@ const createSchema = z.object({
 export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const bodyVal = await parseAndValidateBody(req, createSchema, requestId);
   if ("response" in bodyVal) return bodyVal.response;
-  const { email, workspaceId, defaultAssignedToUserId } = bodyVal.data;
+  const { email, workspaceId: _workspaceId, defaultAssignedToUserId } = bodyVal.data;
 
   if (defaultAssignedToUserId) {
     const membership = await db.accountMembership.findFirst({

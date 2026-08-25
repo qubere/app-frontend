@@ -3,13 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Anchor, Truck, Package,
-  FileText, ShieldCheck, TriangleAlert, Sparkles, CheckCircle2, Clock,
-  Upload, Layers, Activity, Bot, Cpu, User as UserIcon, Shield
+  ArrowLeft, Truck, Package,
+  FileText, ShieldCheck, TriangleAlert, CheckCircle2, Clock,
+  Upload, Layers, Activity, Shield
 } from "lucide-react";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card, Button } from "@/components/ui";
 import { DocumentWorkspacePanel } from "@/components/DocumentWorkspacePanel";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
@@ -63,7 +63,7 @@ export function ShipmentWorkspaceClient({
   lifecycleStatus?: any;
 }) {
   const [activeTab, setActiveTab] = useState<"OVERVIEW" | "CUSTOMS" | "DOCUMENTS" | "CARGO" | "FINANCIALS" | "ACTIVITY">("OVERVIEW");
-  const [activityCategoryFilter, setActivityCategoryFilter] = useState<string>("ALL");
+  const [_activityCategoryFilter, _setActivityCategoryFilter] = useState<string>("ALL");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
   const [renderedAt] = useState(() => Date.now());
@@ -213,14 +213,6 @@ export function ShipmentWorkspaceClient({
   });
 
   auditEntries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  const filteredAuditEntries = auditEntries.filter((e) => {
-    if (activityCategoryFilter === "ALL") return true;
-    if (activityCategoryFilter === "AGENT_EXECUTION") return e.category === "AGENT_EXECUTION";
-    if (activityCategoryFilter === "TRACKING_EVENT") return e.category === "TRACKING_EVENT";
-    if (activityCategoryFilter === "SYSTEM_AUDIT") return e.category === "SYSTEM_AUDIT";
-    return true;
-  });
 
   return (
     <div className="min-h-screen bg-surface-muted text-ink flex w-full">

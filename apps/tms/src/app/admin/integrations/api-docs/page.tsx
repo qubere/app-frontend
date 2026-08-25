@@ -2,8 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
-import { Code2, Key, Terminal, Copy, Check, ExternalLink } from "lucide-react";
-import { Card, Badge, Button } from "@/components/ui";
+import { Terminal } from "lucide-react";
+import { Card } from "@/components/ui";
 
 export default async function ApiDocsPage() {
   const { userId } = await auth();

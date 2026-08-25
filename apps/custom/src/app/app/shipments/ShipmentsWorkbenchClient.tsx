@@ -310,7 +310,7 @@ export function ShipmentsWorkbenchClient({
       const msB = deadlineSortMs(sortCol === "isf" ? db_?.isf : db_?.entryFiling);
       return sortDir === "asc" ? msA - msB : msB - msA;
     });
-  }, [shipmentsList, selectedUserIds, columnFilters, searchQuery, isEnterpriseAdmin, sortCol, sortDir, deadlinesByShipment]);
+  }, [shipmentsList, selectedUserIds, columnFilters, searchQuery, isEnterpriseAdmin, sortCol, sortDir, deadlinesByShipment, customsTab]);
 
   // Derived KPI Counts based on the current filtered list
   const totalCount = filteredShipments.length;

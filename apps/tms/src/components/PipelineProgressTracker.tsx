@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, Clock, Loader2, RefreshCw, Bot, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Loader2, RefreshCw, Sparkles } from "lucide-react";
 
 interface StepExecution {
   stepNumber: number;

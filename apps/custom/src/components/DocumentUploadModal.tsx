@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Link2, ChevronDown, Check } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { Input, Select, Label, FormField } from "@/components/ui/Input";
+import { Select, Label, FormField } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 
 interface CrossShipmentDuplicate {

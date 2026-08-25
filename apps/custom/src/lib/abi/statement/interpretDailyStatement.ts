@@ -2,13 +2,11 @@ import { Decimal } from "@/lib/tariff/decimal";
 import type { CustomsResponseRecordData } from "@/lib/abi/entrySummary/interpretResponse";
 import type {
   ParsedDailyStatementResponse,
-  DailyStatementDetailGroup,
   StatementFeeInput,
   Q3DailyInput,
   Q4DailyInput,
   Q5DailyInput,
   Q6DailyInput,
-  Q7DeletedInput,
 } from "./types";
 
 export type { CustomsResponseRecordData };

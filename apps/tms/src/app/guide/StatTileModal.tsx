@@ -131,7 +131,6 @@ export function StatTileModal({ type, onClose }: StatTileModalProps) {
                   desc: "Central administration console featuring 4-level metered AI usage analytics, token burn charts, user roles, and API integrations.",
                 },
               ].map((mod) => {
-                const IconComponent = mod.icon;
                 return (
                   <Link
                     key={mod.number}

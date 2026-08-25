@@ -1,8 +1,6 @@
-import { Decimal } from "@/lib/tariff/decimal";
 import type { CustomsResponseRecordData } from "@/lib/abi/entrySummary/interpretResponse";
 import type {
   ParsedPeriodicStatementResponse,
-  PeriodicDailyStatementDetailGroup,
   StatementFeeInput,
   Q3PeriodicInput,
   Q4PeriodicInput,

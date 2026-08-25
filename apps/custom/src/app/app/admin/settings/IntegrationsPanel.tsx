@@ -135,7 +135,7 @@ export function IntegrationsPanel({
 
   // Form State
   const [apiKey, setApiKey] = useState("");
-  const [apiSecret, setApiSecret] = useState("");
+  const [apiSecret, _setApiSecret] = useState("");
   const [baseUrl, setBaseUrl] = useState("https://api.vizionapi.com/v1");
   const [environment, setEnvironment] = useState<"PRODUCTION" | "SANDBOX">("PRODUCTION");
   const [configMetadata, setConfigMetadata] = useState("");

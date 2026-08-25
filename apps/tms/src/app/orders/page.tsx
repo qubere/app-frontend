@@ -6,7 +6,7 @@ import { TmsSidebar } from "@/components/TmsSidebar";
 import { TmsHeader } from "@/components/TmsHeader";
 import { AccessDenied } from "@/components/AccessDenied";
 import Link from "next/link";
-import { Package, Search, Bot, ArrowUpRight, CheckCircle2, Clock, Sparkles, FileText, Send } from "lucide-react";
+import { Package, Search, ArrowUpRight } from "lucide-react";
 import { IntakeParserClientForm } from "@/components/IntakeParserClientForm";
 
 export default async function OrdersPage() {

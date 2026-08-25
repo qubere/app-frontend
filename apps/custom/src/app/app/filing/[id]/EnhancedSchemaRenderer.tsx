@@ -51,7 +51,7 @@ export default function EnhancedSchemaRenderer({
   maxDepth = 10,
 }: EnhancedSchemaRendererProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["root"]));
-  const [fullSchema, setFullSchema] = useState<any>(schema);
+  const [fullSchema, _setFullSchema] = useState<any>(schema);
 
   // Toggle section expansion
   const toggleSection = (path: string) => {
@@ -165,7 +165,7 @@ export default function EnhancedSchemaRenderer({
     fieldSchema: SchemaField,
     fieldPath: string,
     isRequired: boolean,
-    depth: number
+    _depth: number
   ) => {
     const resolved = getResolvedSchema(fieldSchema);
     const value = getNestedValue(data, fieldPath);
@@ -331,12 +331,6 @@ export default function EnhancedSchemaRenderer({
       setNestedValue(fieldPath, newArray);
     };
 
-    const updateItem = (index: number, value: any) => {
-      const newArray = [...values];
-      newArray[index] = value;
-      setNestedValue(fieldPath, newArray);
-    };
-
     return (
       <div className="border border-border rounded-lg p-3 mb-3">
         <div className="flex items-center justify-between mb-2">
@@ -391,7 +385,7 @@ export default function EnhancedSchemaRenderer({
     fieldName: string,
     fieldSchema: SchemaField,
     fieldPath: string,
-    depth: number
+    _depth: number
   ) => {
     const resolved = getResolvedSchema(fieldSchema);
     const values: any[] = getNestedValue(data, fieldPath) || [];
@@ -505,7 +499,6 @@ export default function EnhancedSchemaRenderer({
                 <div className="space-y-5">
                   {complexFields.map(([fieldName, fieldSchema]) => {
                     const fieldPath = path ? `${path}.${fieldName}` : fieldName;
-                    const isRequired = required.includes(fieldName);
                     const resolvedFieldSchema = getResolvedSchema(fieldSchema);
 
                     // DEBUG: Log every field being processed

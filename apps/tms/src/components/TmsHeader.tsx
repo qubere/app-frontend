@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
-import { Building2, Bot, Settings2, Building, Users, ShieldCheck, Shield, LogOut, UserCog, Plug } from "lucide-react";
+import { Building2, Bot, Settings2, LogOut, UserCog } from "lucide-react";
 import { ManageAccountModal } from "./ManageAccountModal";
 import { HelpMenu } from "./HelpMenu";
 import { NotificationBell } from "./NotificationBell";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface TmsHeaderProps {
   tenantName?: string;
@@ -19,17 +18,14 @@ interface TmsHeaderProps {
 export function TmsHeader({
   tenantName = "Enterprise Freight",
   userName = "User",
-  isPlatformAdmin = false,
-  roleNames = ["OWNER"],
+  isPlatformAdmin: _isPlatformAdmin = false,
+  roleNames: _roleNames = ["OWNER"],
 }: TmsHeaderProps) {
   const router = useRouter();
-  const { t } = useLanguage();
   const { user } = useUser();
   const { signOut, openUserProfile } = useClerk();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManageAccountOpen, setIsManageAccountOpen] = useState(false);
-
-  const labels = t.nav as Record<string, string>;
 
   const menuActions = [
     { label: "Manage Account", icon: Settings2, onClick: () => setIsManageAccountOpen(true) },

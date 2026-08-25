@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Modal, ModalHeader, Button, Input } from "@/components/ui";
-import { Sparkles, CheckCircle2, Edit3, X } from "lucide-react";
+import { Modal, ModalHeader, Button } from "@/components/ui";
+import { CheckCircle2 } from "lucide-react";
 import type { WorkQueueItem } from "@/modules/operations/services/operationsSummaryService";
 
 interface ModifyDecisionModalProps {
