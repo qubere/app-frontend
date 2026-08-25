@@ -9,6 +9,7 @@
 import type { CanonicalFieldDefinition, ProductEntitlement } from "../types/canonicalRegistry";
 import { CANONICAL_FIELD_REGISTRY_V1, REGISTRY_VERSION_V1 } from "./canonicalRegistryV1";
 import { CanonicalFieldDefinitionSchema } from "../schemas/registrySchemas";
+import { DomainError } from "../../../lib/api/error";
 
 export interface RegistrySliceFilter {
   documentType?: string;
@@ -28,7 +29,11 @@ export class RegistrySlicer {
   public static getSlice(filter: RegistrySliceFilter = {}): Record<string, CanonicalFieldDefinition> {
     const activeVersion = filter.registryVersion || this.registryVersion;
     if (activeVersion !== REGISTRY_VERSION_V1) {
-      throw new Error(`Unsupported registry version: ${activeVersion}. Active version is ${REGISTRY_VERSION_V1}.`);
+      throw new DomainError(
+        `Unsupported registry version: ${activeVersion}. Active version is ${REGISTRY_VERSION_V1}.`,
+        "UNSUPPORTED_VERSION",
+        400
+      );
     }
 
     const result: Record<string, CanonicalFieldDefinition> = {};
@@ -38,7 +43,11 @@ export class RegistrySlicer {
       for (const key of filter.fieldKeys) {
         const definition = CANONICAL_FIELD_REGISTRY_V1[key];
         if (!definition) {
-          throw new Error(`FAIL_CLOSED: Unknown or unregistered canonical field key '${key}'.`);
+          throw new DomainError(
+            `FAIL_CLOSED: Unknown or unregistered canonical field key '${key}'.`,
+            "FAIL_CLOSED",
+            400
+          );
         }
         // Validate definition with runtime Zod schema
         CanonicalFieldDefinitionSchema.parse(definition);

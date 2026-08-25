@@ -41,7 +41,8 @@ export type FieldState =
   | "CONFLICT"
   | "UNREADABLE"
   | "SUPERSEDED"
-  | "HUMAN_LOCKED";
+  | "HUMAN_LOCKED"
+  | "UNMAPPED_LEGACY";
 
 export interface BoundingBox {
   x: number;

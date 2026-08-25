@@ -9,12 +9,25 @@ import type { Fact } from "@prisma/client";
 import type { HydrationCandidate } from "../types/canonicalRegistry";
 import { FIELD_INVENTORY } from "../inventory/fieldInventory";
 import { RegistrySlicer } from "../registry/registrySlicer";
+import { DomainError } from "../../../lib/api/error";
+
+export type FactWithShipment = Fact & { shipment?: { accountId: string } };
 
 export class FactCanonicalAdapter {
   /**
    * Projects a legacy Fact record into a Canonical HydrationCandidate interface.
+   * Requires tenant accountId from parameter or fact.shipment.accountId (fails closed).
    */
-  public static toCanonicalCandidate(fact: Fact): HydrationCandidate {
+  public static toCanonicalCandidate(fact: FactWithShipment, accountId?: string): HydrationCandidate {
+    const resolvedAccountId = accountId || fact.shipment?.accountId;
+    if (!resolvedAccountId) {
+      throw new DomainError(
+        `FAIL_CLOSED: Cannot adapt Fact '${fact.id}' without valid tenant accountId.`,
+        "FAIL_CLOSED",
+        400
+      );
+    }
+
     // Find canonical key mapping from field inventory
     const inventoryEntry = FIELD_INVENTORY.find(
       (item) =>
@@ -27,10 +40,17 @@ export class FactCanonicalAdapter {
     const fieldDefinitionKey = inventoryEntry?.canonicalKey || `unknown.${fact.field}`;
     const isRegistered = RegistrySlicer.isRegisteredKey(fieldDefinitionKey);
 
+    let status: HydrationCandidate["status"] = "PROMOTED";
+    if (!isRegistered) {
+      status = "UNMAPPED_LEGACY";
+    } else if (fact.isHumanLocked) {
+      status = "HUMAN_LOCKED";
+    }
+
     return {
       id: `fact_adapter_${fact.id}`,
       hydrationRunId: fact.hydrationRunId || `legacy_run_${fact.shipmentId}`,
-      accountId: "legacy_account",
+      accountId: resolvedAccountId,
       shipmentId: fact.shipmentId,
       documentId: fact.documentId || "legacy_doc",
       fieldDefinitionKey,
@@ -42,8 +62,8 @@ export class FactCanonicalAdapter {
       validationScore: 100,
       corroborationScore: 100,
       calibratedDecisionScore: fact.confidence ?? 100,
-      status: fact.isHumanLocked ? "HUMAN_LOCKED" : "PROMOTED",
-      reasonCodes: ["ADAPTED_FROM_LEGACY_FACT"],
+      status,
+      reasonCodes: isRegistered ? ["ADAPTED_FROM_LEGACY_FACT"] : ["UNREGISTERED_LEGACY_FACT_FIELD"],
       sourceExtractionFieldIds: [],
       evidenceReferences: fact.documentId
         ? [
@@ -64,7 +84,7 @@ export class FactCanonicalAdapter {
   /**
    * Projects a list of Fact records into canonical candidates.
    */
-  public static toCanonicalCandidates(facts: Fact[]): HydrationCandidate[] {
-    return facts.map((fact) => this.toCanonicalCandidate(fact));
+  public static toCanonicalCandidates(facts: FactWithShipment[], accountId?: string): HydrationCandidate[] {
+    return facts.map((fact) => this.toCanonicalCandidate(fact, accountId));
   }
 }

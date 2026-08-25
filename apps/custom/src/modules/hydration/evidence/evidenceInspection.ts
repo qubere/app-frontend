@@ -20,6 +20,7 @@ export interface DocumentCoverageResult {
 export class EvidenceInspection {
   /**
    * Calculates extraction recall (% of visible benchmark facts persisted with evidence).
+   * Uses scoped exact-key segment matching to avoid false-positive substring/suffix hits.
    */
   public static calculateDocumentCoverage(
     items: AtomicEvidenceItem[],
@@ -43,18 +44,26 @@ export class EvidenceInspection {
         fact.canonicalKey.replace("lineItem[].", ""),
       ].filter(Boolean) as string[];
 
-      // Search atomic evidence items for matching key or alias
-      const match = items.find(
-        (item) =>
-          targetKeys.some(
-            (k) =>
-              item.stableKey === `tradeMetadata.${k}` ||
-              item.stableKey === k ||
-              item.rawLabel === k ||
-              item.stableKey.endsWith(`.${k}`) ||
-              (fact.canonicalKey.startsWith("lineItem[]") && item.stableKey.includes(k))
-          )
-      );
+      const isLineItemFact = fact.canonicalKey.startsWith("lineItem[]");
+
+      // Search atomic evidence items for matching key or alias with strict segment boundary
+      const match = items.find((item) => {
+        const itemIsLineItem = item.stableKey.startsWith("lineItem[");
+        if (isLineItemFact !== itemIsLineItem) {
+          return false;
+        }
+
+        const segments = item.stableKey.split(".");
+        const lastSegment = segments[segments.length - 1];
+
+        return targetKeys.some((k) => {
+          if (item.rawLabel === k) return true;
+          if (item.stableKey === k) return true;
+          if (item.stableKey === `tradeMetadata.${k}`) return true;
+          if (lastSegment === k) return true;
+          return false;
+        });
+      });
 
       if (match && match.rawValue && match.rawValue.trim() !== "") {
         recalledCount += 1;

@@ -44,7 +44,7 @@ export class HydrationWorker {
     const promptVer = options.mapperPromptVersion || "v1.0";
 
     // 1. Evidence Extraction & Persistence
-    const evidenceFields = await EvidenceLedgerService.persistEvidenceLedger(ctx);
+    const evidenceFields = await EvidenceLedgerService.persistEvidenceLedger(ctx, accountId);
     const atomicItems = evidenceFields.map((f) => ({
       stableKey: f.fieldName,
       rawLabel: f.fieldName,

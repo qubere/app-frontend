@@ -3795,6 +3795,7 @@ model HydrationCandidate {
   supersedesCandidateId    String?
   createdAt                DateTime         @default(now())
 
+  @@unique([hydrationRunId, fieldDefinitionKey, targetEntityRef])
   @@index([hydrationRunId])
   @@index([accountId])
   @@index([shipmentId])

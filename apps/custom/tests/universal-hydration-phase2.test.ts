@@ -8,7 +8,7 @@
  * - Reprocessing retains evidence lineage without dropping observations.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { UniversalEvidenceExtractor } from "../src/modules/hydration/evidence/universalEvidenceExtractor";
 import { EvidenceLedgerService } from "../src/modules/hydration/evidence/evidenceLedgerService";
 import { EvidenceInspection } from "../src/modules/hydration/evidence/evidenceInspection";
@@ -18,8 +18,12 @@ import {
   PACKING_LIST_FIXTURE,
   BILL_OF_LADING_FIXTURE,
 } from "../src/modules/hydration/evals/corpus";
+import { db } from "@qubere/db";
 
 describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
+  const testAccount = "acc_phase2_test_001";
+  const testDocument = "doc_phase2_test_001";
+
   it("achieves >= 97% extraction recall across Golden Corpus fixtures", () => {
     let totalBenchmarkFacts = 0;
     let totalRecalledFacts = 0;
@@ -87,5 +91,83 @@ describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
     const lineItemsItems = items.filter((i) => i.stableKey.startsWith("lineItem["));
     expect(lineItemsItems.length).toBeGreaterThan(0);
     expect(lineItemsItems.some((i) => i.groupKey === "line_item:1")).toBe(true);
+  });
+
+  it("test-matrix #29 / Defect #4: EvidenceLedgerService fails closed when reading or writing evidence for another account", async () => {
+    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue(null);
+
+    const ctx = {
+      documentId: "doc_cross_tenant_1",
+      parseVersionId: "pv_1",
+      tradeMetadata: { carrier: "HAPAG" },
+    };
+
+    await expect(
+      EvidenceLedgerService.persistEvidenceLedger(ctx, "wrong_account")
+    ).rejects.toThrow(/FAIL_CLOSED: Document 'doc_cross_tenant_1' not found for account 'wrong_account'/);
+
+    await expect(
+      EvidenceLedgerService.getEvidenceForDocument("doc_cross_tenant_1", "wrong_account")
+    ).rejects.toThrow(/FAIL_CLOSED: Document 'doc_cross_tenant_1' not found for account 'wrong_account'/);
+  });
+
+  it("Defect #6: EvidenceLedgerService uses UNIVERSAL_HYDRATION source tag and deduplicates observations for document", async () => {
+    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({ id: testDocument, accountId: testAccount } as any);
+    vi.spyOn(db.extractionField, "deleteMany").mockResolvedValue({ count: 2 } as any);
+    vi.spyOn(db.extractionField, "create").mockImplementation((async (args: any) => {
+      return {
+        id: `field_${args.data.fieldName}`,
+        ...args.data,
+        createdAt: new Date(),
+      };
+    }) as any);
+
+    const ctx = {
+      documentId: testDocument,
+      parseVersionId: "pv_dedupe_1",
+      tradeMetadata: { carrier: "MAERSK" },
+    };
+
+    const fields = await EvidenceLedgerService.persistEvidenceLedger(ctx, testAccount);
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields[0].source).toBe("UNIVERSAL_HYDRATION");
+    expect(db.extractionField.deleteMany).toHaveBeenCalledWith({
+      where: {
+        documentId: testDocument,
+        source: "UNIVERSAL_HYDRATION",
+      },
+    });
+  });
+
+  it("Defect #8: EvidenceInspection matching does not cross-match line item fields whose names are substrings of each other", () => {
+    const items = UniversalEvidenceExtractor.extractAtomicEvidence({
+      documentId: "doc_substring_test",
+      parseVersionId: "pv_1",
+      lineItems: [
+        {
+          price: "10.00",
+          unitPriceCurrency: "USD",
+        },
+      ],
+    });
+
+    const benchmarkFacts = [
+      {
+        canonicalKey: "lineItem[].price",
+        groundTruthValue: "10.00",
+      },
+      {
+        canonicalKey: "lineItem[].unitPrice",
+        groundTruthValue: "10.00",
+      },
+    ];
+
+    const coverage = EvidenceInspection.calculateDocumentCoverage(items, benchmarkFacts as any);
+
+    // "lineItem[].price" should match item.stableKey "lineItem[1].price"
+    // "lineItem[].unitPrice" should NOT match "lineItem[1].unitPriceCurrency"
+    expect(coverage.recalledFacts.some((f) => f.canonicalKey === "lineItem[].price")).toBe(true);
+    expect(coverage.recalledFacts.some((f) => f.canonicalKey === "lineItem[].unitPrice")).toBe(false);
+    expect(coverage.missingFacts.some((f) => f.canonicalKey === "lineItem[].unitPrice")).toBe(true);
   });
 });
