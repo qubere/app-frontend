@@ -36,7 +36,14 @@ export async function resolveInboundRoute(
   lookup: InboundRouteLookup = databaseInboundRouteLookup
 ): Promise<ResolvedInboundRoute | null> {
   const normalized = normalizeSenderEmail(rawSenderEmail);
-  return lookup.findActiveByNormalizedEmail(normalized);
+  const route = await lookup.findActiveByNormalizedEmail(normalized);
+  console.log("[SenderRouting] resolveInboundRoute", {
+    rawSenderEmail,
+    normalized,
+    matched: !!route,
+    accountId: route?.accountId ?? null,
+  });
+  return route;
 }
 
 /** Thrown when the sender is already routed to a different account -- the
