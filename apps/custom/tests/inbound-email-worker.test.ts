@@ -34,6 +34,11 @@ vi.mock("@/lib/db", () => ({
   db: dbMock,
   runWithAccountId: (_accountId: string | null | undefined, fn: () => unknown) => fn(),
   withAccountIdContext: (_accountId: string | null | undefined, fn: () => Promise<unknown>) => fn(),
+<<<<<<< Updated upstream
+=======
+  runWithDataMode: (_mode: string | null | undefined, fn: () => unknown) => fn(),
+  withDataModeContext: (_mode: string | null | undefined, fn: () => Promise<unknown>) => fn(),
+>>>>>>> Stashed changes
 }));
 vi.mock("@/lib/audit", () => ({
   createAuditLog: createAuditLogMock,
