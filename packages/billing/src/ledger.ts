@@ -30,10 +30,19 @@ export interface ShipmentFinancialSummary {
 
 /**
  * Calculates the complete 3-layer financial summary for a shipment.
+ *
+ * accountId is optional only for backward compatibility with existing callers that
+ * have already verified ownership; every call site in this codebase passes it, and
+ * new callers should too — this function is shared across tenants, so without the
+ * filter a caller-supplied shipmentId belonging to another account would silently
+ * return that account's revenue, cost, and AR figures.
  */
-export async function getShipmentFinancialSummary(shipmentId: string): Promise<ShipmentFinancialSummary | null> {
+export async function getShipmentFinancialSummary(
+  shipmentId: string,
+  accountId?: string
+): Promise<ShipmentFinancialSummary | null> {
   const shipment = await db.shipment.findUnique({
-    where: { id: shipmentId },
+    where: accountId ? { id: shipmentId, accountId } : { id: shipmentId },
     include: {
       shipmentCharges: {
         include: { adjustments: true, invoiceLine: { include: { invoice: true } } },

@@ -42,6 +42,21 @@ export default async function BillingReportsPage() {
     return { client, rev, cost, profit, margin, shipmentCount: client.shipments.length };
   });
 
+  // Account-wide totals: a genuine sum of the per-client rows above (not an
+  // independently-run aggregate query), so the "All Clients" total can never
+  // drift from what the Client Profitability Matrix actually displays.
+  const bookTotals = clientEconomics.reduce(
+    (acc, c) => {
+      acc.rev += c.rev;
+      acc.cost += c.cost;
+      acc.profit += c.profit;
+      acc.shipmentCount += c.shipmentCount;
+      return acc;
+    },
+    { rev: 0, cost: 0, profit: 0, shipmentCount: 0 }
+  );
+  const bookMargin = bookTotals.rev > 0 ? (bookTotals.profit / bookTotals.rev) * 100 : 0;
+
   // Service-level economics: group ShipmentCharge by rateRule.serviceCode
   const serviceCharges = await db.shipmentCharge.findMany({
     where: { accountId: ctx.accountId, status: { notIn: ["VOIDED", "REVERSED"] } },
@@ -191,6 +206,24 @@ export default async function BillingReportsPage() {
                 </tr>
               ))}
             </tbody>
+            {clientEconomics.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-[#E5E5EA] bg-[#F5F5F7] font-bold">
+                  <td className="px-5 py-4 font-sans text-ink">All Clients (Book Total)</td>
+                  <td className="px-5 py-4">{bookTotals.shipmentCount}</td>
+                  <td className="px-5 py-4 text-emerald-700">${bookTotals.rev.toFixed(2)}</td>
+                  {canViewCost && (
+                    <>
+                      <td className="px-5 py-4 text-ink-muted">${bookTotals.cost.toFixed(2)}</td>
+                      <td className="px-5 py-4 text-purple-800">${bookTotals.profit.toFixed(2)}</td>
+                      <td className="px-5 py-4 font-sans">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${bookMargin >= 50 ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : bookMargin >= 20 ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>{bookMargin.toFixed(1)}%</span>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

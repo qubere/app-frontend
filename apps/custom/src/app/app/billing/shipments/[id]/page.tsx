@@ -22,7 +22,7 @@ export default async function BillingShipmentDetailPage({ params }: { params: Pr
     },
   });
   if (!shipment) notFound();
-  const summary = await getShipmentFinancialSummary(id);
+  const summary = await getShipmentFinancialSummary(id, ctx.accountId);
   const costs = "shipmentCosts" in shipment && Array.isArray(shipment.shipmentCosts) ? shipment.shipmentCosts : [];
   return <div className="space-y-6">
     <div><Link href="/app/billing/shipments" className="text-xs font-semibold text-brand hover:underline">← Shipment economics</Link><h2 className="text-xl font-bold text-ink mt-2">{shipment.shipmentNumber}</h2><p className="text-sm text-ink-muted">{shipment.client?.name ?? shipment.importerName} · {shipment.status}</p></div>

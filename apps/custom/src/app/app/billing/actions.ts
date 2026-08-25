@@ -105,12 +105,14 @@ export async function saveRateRuleMappingsAction(ruleId: string, eventCodes: str
     });
     if (!rule) throw new Error("Rate rule not found");
 
-    // Billing event definitions are a platform capability catalog. Rate rules are
-    // tenant-owned, but the stable event codes they map to are shared metadata.
+    // Billing event definitions are seeded per-account (see seedBillingEventDefinitions):
+    // the catalog content is identical across tenants, but every account owns its own row,
+    // so the lookup below must stay scoped to accountId or it can resolve another tenant's
+    // definition id and link this account's rate rule to a foreign BillingEventDefinition.
     await seedBillingEventDefinitions(context.accountId);
     const definitions = uniqueCodes.length
       ? await db.billingEventDefinition.findMany({
-          where: { eventCode: { in: uniqueCodes }, productLine: rule.productLine },
+          where: { accountId: context.accountId, eventCode: { in: uniqueCodes }, productLine: rule.productLine },
           select: { id: true, eventCode: true },
         })
       : [];

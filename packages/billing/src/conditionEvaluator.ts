@@ -73,9 +73,19 @@ export function evaluateRateRuleCondition(
  * Builds the flat event view used by condition evaluation from a usage event row.
  * Top-level fields are available as-is; metadata sub-fields are addressable as
  * "metadata.<key>" (e.g. "metadata.confidence").
+ *
+ * Not currently called by any route or action, but this module is shared across
+ * tenants — accountId is accepted (and should always be passed by any future
+ * caller) so a caller-supplied usageEventId belonging to another account can
+ * never resolve to that account's usage-event data.
  */
-export async function buildConditionEventView(usageEventId: string): Promise<Record<string, unknown> | null> {
-  const event = await db.usageEvent.findUnique({ where: { id: usageEventId } });
+export async function buildConditionEventView(
+  usageEventId: string,
+  accountId?: string
+): Promise<Record<string, unknown> | null> {
+  const event = await db.usageEvent.findUnique({
+    where: accountId ? { id: usageEventId, accountId } : { id: usageEventId },
+  });
   if (!event) return null;
   const metadata = (event.metadata as Record<string, unknown>) ?? {};
   return {
