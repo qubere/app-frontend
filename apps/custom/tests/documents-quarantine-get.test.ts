@@ -31,6 +31,7 @@ vi.mock("@/modules/inbound/quarantineReview", () => ({
 
 vi.mock("@/lib/db", () => ({
   db: { account: { findMany: accountFindManyMock } },
+  withDataModeContext: (_mode: unknown, fn: () => unknown) => fn(),
 }));
 
 const { GET } = await import("@/app/api/documents/quarantine/route");
