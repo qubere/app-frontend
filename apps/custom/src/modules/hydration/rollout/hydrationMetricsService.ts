@@ -13,23 +13,29 @@ export interface OperationalDashboardMetrics extends EvalMetrics {
   totalCandidatesGenerated: number;
   humanCorrectionRate: number;
   abstentionRate: number;
+  estimatedCostUsdApprox?: number;
 }
 
 export class HydrationMetricsService {
   /**
    * Computes operational telemetry metrics across hydration runs for an account.
    */
-  public static async getAccountMetrics(accountId: string): Promise<OperationalDashboardMetrics> {
+  public static async getAccountMetrics(
+    accountId: string,
+    dataMode?: "PRODUCTION" | "DEMO" | "SANDBOX"
+  ): Promise<OperationalDashboardMetrics> {
     let runs: Array<{ durationMs?: number | null }> = [];
     let candidates: Array<{ status: string }> = [];
     let approvals: Array<unknown> = [];
     let _facts: Array<unknown> = [];
 
+    const mode = dataMode || "PRODUCTION";
+
     try {
       // E4 check: Tenant-scoped Fact query via shipment relation
       const [r, c, f, a] = await Promise.all([
-        db.hydrationRun.findMany({ where: { accountId } }),
-        db.hydrationCandidate.findMany({ where: { accountId } }),
+        db.hydrationRun.findMany({ where: { accountId, dataMode: mode as any } }),
+        db.hydrationCandidate.findMany({ where: { accountId, dataMode: mode as any } }),
         db.fact.findMany({ where: { isHumanLocked: true, shipment: { accountId } } }),
         db.fieldApproval.findMany({ where: { accountId } }),
       ]);
@@ -74,6 +80,7 @@ export class HydrationMetricsService {
       abstentionRate: Number(abstentionRate.toFixed(2)),
       avgLatencyMs,
       estimatedCostUsd,
+      estimatedCostUsdApprox: estimatedCostUsd,
     };
   }
 }

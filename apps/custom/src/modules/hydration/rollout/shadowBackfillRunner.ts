@@ -35,13 +35,14 @@ export class ShadowBackfillRunner {
   public static async runShadowBackfill(
     accountId: string,
     ctx: RawExtractionContext,
-    shipmentId?: string
+    shipmentId?: string,
+    dataMode?: "PRODUCTION" | "DEMO" | "SANDBOX"
   ): Promise<MigrationDiffReport> {
     // E1 check: Run hydration pipeline in shadow mode (dry run, zero database mutation)
     const execResult: PipelineExecutionResult = await HydrationWorker.processDocumentHydration(
       accountId,
       ctx,
-      { shipmentId, mapperModelVersion: "gpt-4o", mapperPromptVersion: "v1.0-shadow", mode: "shadow" }
+      { shipmentId, mapperModelVersion: "gpt-4o", mapperPromptVersion: "v1.0-shadow", mode: "shadow", dataMode }
     );
 
     // E4 check: Tenant-scoped existing Fact query

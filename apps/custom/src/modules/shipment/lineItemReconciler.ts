@@ -90,13 +90,13 @@ export function lineItemFactField(lineNumber: number, field: string): string {
  *    already-set field, and that path is what versions the shipment.
  */
 export class LineItemReconciler {
-  static async applyDiscoveries(input: ApplyDiscoveriesInput): Promise<void> {
+  static async applyDiscoveries(input: ApplyDiscoveriesInput, tx?: any): Promise<void> {
     for (const item of input.items) {
-      await this.applyOne(input, item);
+      await this.applyOne(input, item, tx);
     }
   }
 
-  private static async recordFacts(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery): Promise<void> {
+  private static async recordFacts(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery, tx?: any): Promise<void> {
     const facts: RecordFactInput[] = [];
     const push = (field: string, value: string | number | null | undefined) => {
       if (value === null || value === undefined || value === "") return;
@@ -116,26 +116,28 @@ export class LineItemReconciler {
     push("countryOfOrigin", item.countryOfOrigin);
     push("htsCode", item.htsCode);
     push("eccnCode", item.eccnCode);
-    await FactService.recordMany(facts);
+    await FactService.recordMany(facts, tx);
   }
 
-  private static async applyOne(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery): Promise<void> {
+  private static async applyOne(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery, tx?: any): Promise<void> {
+    const client = tx || db;
     // Unconditional: the context object accumulates regardless of whether
     // this discovery is allowed to touch the curated record below.
-    await this.recordFacts(ctx, item);
+    await this.recordFacts(ctx, item, tx);
 
-    const existing = await db.shipmentLineItem.findFirst({
+    const existing = await client.shipmentLineItem.findFirst({
       where: { shipmentId: ctx.shipmentId, lineNumber: item.lineNumber, accountId: ctx.accountId },
     });
 
     if (!existing) {
-      await this.create(ctx, item);
+      await this.create(ctx, item, tx);
       return;
     }
-    await this.fillEmpty(existing, item);
+    await this.fillEmpty(existing, item, tx);
   }
 
-  private static async create(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery): Promise<void> {
+  private static async create(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery, tx?: any): Promise<void> {
+    const client = tx || db;
     const quantity = item.quantity ?? LINE_ITEM_SENTINELS.quantity;
     const unitPrice = item.unitPrice ?? LINE_ITEM_SENTINELS.unitPrice;
     const totalValue = item.totalValue ?? quantity * unitPrice;
@@ -160,7 +162,7 @@ export class LineItemReconciler {
       }
     }
 
-    await db.shipmentLineItem.create({
+    await client.shipmentLineItem.create({
       data: {
         shipmentId: ctx.shipmentId,
         accountId: ctx.accountId,
@@ -180,7 +182,8 @@ export class LineItemReconciler {
     });
   }
 
-  private static async fillEmpty(existing: ShipmentLineItem, item: LineItemDiscovery): Promise<void> {
+  private static async fillEmpty(existing: ShipmentLineItem, item: LineItemDiscovery, tx?: any): Promise<void> {
+    const client = tx || db;
     // A reviewed row is fully locked -- from here, only a user edit changes it.
     if (existing.status === "Valid") return;
 
@@ -223,7 +226,7 @@ export class LineItemReconciler {
       }
     }
 
-    await db.shipmentLineItem.update({ where: { id: existing.id }, data });
+    await client.shipmentLineItem.update({ where: { id: existing.id }, data });
   }
 
   /**

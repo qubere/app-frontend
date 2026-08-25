@@ -34,6 +34,8 @@ export interface FieldReviewSummaryItem {
   evidenceReferences: GroundedEvidenceReference[];
 }
 
+export type FieldReviewAction = "APPROVE" | "EDIT" | "REJECT" | "MARK_NOT_APPLICABLE" | "SELECT_ALTERNATE";
+
 export interface FieldReviewActionResult {
   success: boolean;
   status: number;
@@ -41,6 +43,7 @@ export interface FieldReviewActionResult {
   message?: string;
   factId?: string;
   newVersion?: number;
+  materialization?: any;
 }
 
 export class FieldReviewService {
@@ -159,7 +162,8 @@ export class FieldReviewService {
     candidateId?: string;
     expectedVersion?: number;
   }): Promise<FieldReviewActionResult> {
-    const { accountId, userId, userName, shipmentId, documentId, fieldKey, action, value, candidateId, expectedVersion } = params;
+    const { accountId, userId, userName, shipmentId, documentId, fieldKey, action, candidateId, expectedVersion } = params;
+    let value = params.value;
 
     // B2 check: Atomic compare-and-swap update on Shipment.version
     let updatedShipment: { version: number } | null = null;
@@ -244,14 +248,30 @@ export class FieldReviewService {
 
     // B4 check: SELECT_ALTERNATE review action
     if (action === "SELECT_ALTERNATE" && candidateId) {
-      const candidate = await db.hydrationCandidate.findFirst({
+      const currentWinner = await db.hydrationCandidate.findFirst({
+        where: { shipmentId, fieldDefinitionKey: fieldKey, status: "PROMOTED", accountId },
+      });
+
+      if (currentWinner && currentWinner.id !== candidateId) {
+        await db.hydrationCandidate.update({
+          where: { id: currentWinner.id },
+          data: { status: "SUPERSEDED" },
+        });
+      }
+
+      const selectedCandidate = await db.hydrationCandidate.findFirst({
         where: { id: candidateId, accountId },
       });
-      if (candidate) {
+
+      if (selectedCandidate) {
         await db.hydrationCandidate.update({
           where: { id: candidateId },
-          data: { status: "PROMOTED", supersedesCandidateId: candidate.supersedesCandidateId },
+          data: {
+            status: "PROMOTED",
+            supersedesCandidateId: currentWinner?.id || null,
+          },
         });
+        value = String(selectedCandidate.rawValue ?? value);
       }
     }
 
@@ -304,38 +324,50 @@ export class FieldReviewService {
       });
     }
 
-    // 5. Materialize projection via allowlisted materializer
-    const mockDecision = {
+    // 5. Derive decision from real target candidate without synthetic 100 scores
+    const targetCandidate = candidateId
+      ? await db.hydrationCandidate.findFirst({ where: { id: candidateId, accountId } })
+      : await db.hydrationCandidate.findFirst({ where: { shipmentId, fieldDefinitionKey: fieldKey, accountId } });
+
+    const honestMappingConf = targetCandidate?.mappingConfidence ?? 90;
+
+    const honestDecision = {
       candidate: {
         proposal: {
           targetFieldKey: fieldKey,
-          targetEntityRef: null,
-          sourceExtractionFieldIds: [],
-          evidenceReferences: [{ documentId, parseVersionId: "v1", rawLabel: fieldKey, rawValue: value }],
+          targetEntityRef: targetCandidate?.targetEntityRef || null,
+          sourceExtractionFieldIds: targetCandidate?.sourceExtractionFieldIds || [],
+          evidenceReferences: [{ documentId, parseVersionId: "human_review", rawLabel: fieldKey, rawValue: value }],
           proposedValue: value,
-          mappingConfidence: 100,
+          mappingConfidence: honestMappingConf,
           relationConfidence: null,
-          reasoning: "User approved via field review",
+          reasoning: action === "EDIT" ? "User edited field via review UI" : "User approved field via review UI",
           status: "PROPOSED" as const,
           abstainReason: null,
         },
         corroboratingDocumentIds: [documentId],
-        corroborationScore: 100,
-        calibratedScore: 100,
+        corroborationScore: 0,
+        calibratedScore: honestMappingConf,
         status: "PROMOTED" as const,
       },
       shouldPromote: true,
-      reason: "HUMAN_APPROVED",
+      reason: "HUMAN_OVERRIDE",
       isHumanLocked: true,
     };
 
-    await MaterializerRegistry.materializeDecision(accountId, shipmentId, mockDecision, { expectedVersion: updatedShipment.version });
+    const matRes = await MaterializerRegistry.materializeDecision(
+      accountId,
+      shipmentId,
+      honestDecision,
+      { expectedVersion: updatedShipment.version }
+    );
 
     return {
       success: true,
       status: 200,
       factId: fact?.id,
       newVersion: updatedShipment.version,
+      materialization: matRes,
     };
   }
 }

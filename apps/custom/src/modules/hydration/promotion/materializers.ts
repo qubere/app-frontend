@@ -13,6 +13,8 @@ import { EntityResolutionService } from "../../../modules/entity/entityResolutio
 import { LineItemReconciler } from "../../../modules/shipment/lineItemReconciler";
 import type { Prisma } from "@prisma/client";
 
+import { HydrationLogger } from "../logging/hydrationLogger";
+
 export interface MaterializationResult {
   fieldKey: string;
   materializer: string;
@@ -70,18 +72,19 @@ export class MaterializerRegistry {
     }
 
     const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
+    const realCandidateId = (candidate as any).id || candidate.proposal.targetFieldKey;
 
     // Execute materializer operations inside an atomic transaction (C3 check)
     return await db.$transaction(async (tx) => {
       let factId: string | undefined;
 
-      // 1. Write canonical Fact row with idempotency check (C1 check)
+      // 1. Write canonical Fact row with real candidate identity idempotency check (C1 check)
       if (shipmentId) {
         const existingFact = await tx.fact.findFirst({
           where: {
             shipmentId,
             field: factField,
-            candidateId: candidate.proposal.targetFieldKey,
+            candidateId: realCandidateId,
           },
         });
 
@@ -99,7 +102,7 @@ export class MaterializerRegistry {
               documentId: docId,
               entityRef: candidate.proposal.targetEntityRef || undefined,
               definitionVersion: definition.version,
-              candidateId: candidate.proposal.targetFieldKey,
+              candidateId: realCandidateId,
               isHumanLocked: false,
             },
           });
@@ -123,14 +126,19 @@ export class MaterializerRegistry {
             ]);
 
             if (ALLOWLISTED_COLUMNS.has(column)) {
-              // C2 check: Optimistic concurrency check
-              const whereClause: any = { id: shipmentId, accountId };
-              if (typeof options.expectedVersion === "number") {
-                whereClause.version = options.expectedVersion;
+              if (typeof options.expectedVersion !== "number") {
+                HydrationLogger.warn("Missing expectedVersion for ShipmentScalarMaterializer", { shipmentId, fieldKey });
+                return {
+                  fieldKey,
+                  materializer: materializerName,
+                  success: false,
+                  error: "MISSING_EXPECTED_VERSION",
+                };
               }
 
+              // C2 check: Atomic optimistic concurrency check
               const updated = await tx.shipment.update({
-                where: whereClause,
+                where: { id: shipmentId, accountId, version: options.expectedVersion },
                 data: {
                   [column]: valStr,
                   version: { increment: 1 },
@@ -140,7 +148,8 @@ export class MaterializerRegistry {
                 throw err;
               });
 
-              if (!updated && typeof options.expectedVersion === "number") {
+              if (!updated) {
+                HydrationLogger.warn("Stale shipment version on materialization", { shipmentId, fieldKey, expectedVersion: options.expectedVersion });
                 return {
                   fieldKey,
                   materializer: materializerName,
@@ -163,7 +172,7 @@ export class MaterializerRegistry {
         case "PartyRoleMaterializer": {
           const role = definition.materializerConfig.role as ShipmentPartyRole;
           if (shipmentId && role && valStr) {
-            const resolvedEntity = await EntityResolutionService.findOrCreateEntity(accountId, valStr);
+            const resolvedEntity = await EntityResolutionService.findOrCreateEntity(accountId, valStr, undefined, tx);
             if (resolvedEntity) {
               await ShipmentPartyService.assignParty({
                 shipmentId,
@@ -174,7 +183,7 @@ export class MaterializerRegistry {
                 source: "DOCUMENT",
                 confidence: candidate.calibratedScore / 100,
                 isVerified: false,
-              });
+              }, tx);
             }
           }
           return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
@@ -182,15 +191,25 @@ export class MaterializerRegistry {
 
         case "LineItemMaterializer": {
           if (shipmentId) {
-            await LineItemReconciler.applyDiscoveries({
-              shipmentId,
-              accountId,
-              documentId: docId || "hydration",
-              sourceType: "EXTRACTED",
-              items: [{ lineNumber: 1, description: valStr }],
-            }).catch(() => {
-              // Graceful fallback for partial line item state
-            });
+            try {
+              await LineItemReconciler.applyDiscoveries({
+                shipmentId,
+                accountId,
+                documentId: docId || "hydration",
+                sourceType: "EXTRACTED",
+                items: [{ lineNumber: 1, description: valStr }],
+              }, tx);
+            } catch (err) {
+              HydrationLogger.error("LineItemMaterializer failed during applyDiscoveries", err, { shipmentId, accountId, fieldKey });
+              return {
+                fieldKey,
+                materializer: materializerName,
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+                factId,
+                materialized: false,
+              };
+            }
           }
           return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
         }

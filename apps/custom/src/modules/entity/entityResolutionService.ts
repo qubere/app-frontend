@@ -39,10 +39,14 @@ export class EntityResolutionService {
   /**
    * Resolve raw parsed document text or input to existing LegalEntity records.
    */
-  static async resolveEntity(input: EntityResolutionInput): Promise<{
+  static async resolveEntity(
+    input: EntityResolutionInput,
+    tx?: any
+  ): Promise<{
     bestMatch: EntityMatchCandidate | null;
     candidates: EntityMatchCandidate[];
   }> {
+    const client = tx || db;
     if (!input.rawName || input.rawName.trim().length === 0) {
       return { bestMatch: null, candidates: [] };
     }
@@ -50,7 +54,7 @@ export class EntityResolutionService {
     const normInputName = this.normalizeName(input.rawName);
 
     // 1. Fetch all candidate LegalEntities for the account
-    const entities = await db.legalEntity.findMany({
+    const entities = await client.legalEntity.findMany({
       where: {
         accountId: input.accountId,
         ...(input.clientId ? { clientId: input.clientId } : {}),
@@ -71,7 +75,7 @@ export class EntityResolutionService {
 
       // A. CBP Importer Number exact match (High confidence: +100)
       const matchingCustomsProfile = entity.customsProfiles.find(
-        (cp) =>
+        (cp: any) =>
           input.cbpImporterNumber &&
           cp.cbpImporterNumber &&
           cp.cbpImporterNumber.replace(/[^a-zA-Z0-9]/g, "") ===
@@ -106,33 +110,54 @@ export class EntityResolutionService {
         }
       }
 
-      // E. Trade Name match (+75)
-      if (entity.tradeName && this.normalizeName(entity.tradeName) === normInputName) {
-        score += 75;
-        reasons.push("Trade name / DBA match");
+      const normLegalName = this.normalizeName(entity.legalName);
+      let matchScore = 0;
+      const matchReasons: string[] = [];
+
+      // Exact normalized name match
+      if (normInputName === normLegalName) {
+        matchScore = 100;
+        matchReasons.push("Exact normalized name match");
+      }
+      // Substring match
+      else if (normInputName.includes(normLegalName) || normLegalName.includes(normInputName)) {
+        matchScore = 80;
+        matchReasons.push("Partial name match");
       }
 
-      if (score > 0) {
+      // Tax identifier match bonus
+      if (input.taxIdentifier && entity.taxIdentifier === input.taxIdentifier) {
+        matchScore = Math.min(100, matchScore + 30);
+        matchReasons.push("Tax identifier match");
+      }
+
+      // CBP importer number match bonus
+      const cbpProfile = entity.customsProfiles.find((cp: any) => cp.cbpImporterNumber === input.cbpImporterNumber);
+      if (input.cbpImporterNumber && cbpProfile) {
+        matchScore = Math.min(100, matchScore + 40);
+        matchReasons.push("CBP Importer number match");
+      }
+
+      if (matchScore >= 50) {
         candidates.push({
           legalEntityId: entity.id,
           legalName: entity.legalName,
-          matchScore: Math.min(score, 100),
-          matchReason: reasons.join("; "),
-          customsProfileId: matchingCustomsProfile?.id,
-          cbpImporterNumber: matchingCustomsProfile?.cbpImporterNumber || undefined,
+          matchScore,
+          matchReason: matchReasons.join("; "),
+          customsProfileId: cbpProfile?.id,
+          cbpImporterNumber: cbpProfile?.cbpImporterNumber,
         });
       }
     }
 
     candidates.sort((a, b) => b.matchScore - a.matchScore);
-
-    const bestMatch = candidates.length > 0 && candidates[0].matchScore >= 75 ? candidates[0] : null;
+    const bestMatch = candidates.length > 0 ? candidates[0] : null;
 
     return { bestMatch, candidates };
   }
 
   /**
-   * Helper to find or auto-create a LegalEntity when confidence is sufficient or user approves.
+   * Find existing entity or auto-create a basic LegalEntity if none matches with high confidence.
    */
   static async findOrCreateEntity(
     accountId: string,
@@ -142,25 +167,27 @@ export class EntityResolutionService {
       country?: string;
       taxIdentifier?: string;
       cbpImporterNumber?: string;
-    }
+    },
+    tx?: any
   ) {
+    const client = tx || db;
     const resolution = await this.resolveEntity({
       accountId,
       rawName,
-      clientId: options?.clientId,
+      clientId: options?.clientId ?? undefined,
       taxIdentifier: options?.taxIdentifier,
       cbpImporterNumber: options?.cbpImporterNumber,
-    });
+    }, client);
 
     if (resolution.bestMatch && resolution.bestMatch.matchScore >= 90) {
-      return db.legalEntity.findUnique({
+      return client.legalEntity.findUnique({
         where: { id: resolution.bestMatch.legalEntityId },
         include: { customsProfiles: true },
       });
     }
 
     // Create new LegalEntity
-    const newEntity = await db.legalEntity.create({
+    const newEntity = await client.legalEntity.create({
       data: {
         accountId,
         clientId: options?.clientId || null,

@@ -22,6 +22,7 @@ export interface CreateHydrationRunParams {
   mapperModelVersion: string;
   mapperPromptVersion: string;
   normalizationPolicyVersion?: string;
+  dataMode?: "PRODUCTION" | "DEMO" | "SANDBOX";
 }
 
 export class HydrationRunEngine {
@@ -31,7 +32,8 @@ export class HydrationRunEngine {
   public static generateIdempotencyKey(params: CreateHydrationRunParams): string {
     const fieldVer = params.fieldSchemaVersion || "1.0.0";
     const normVer = params.normalizationPolicyVersion || "1.0.0";
-    return `${params.accountId}:${params.documentId}:${params.activeParseVersionId}:${fieldVer}:${params.mapperPromptVersion}:${params.mapperModelVersion}:${normVer}`;
+    const mode = params.dataMode || "PRODUCTION";
+    return `${params.accountId}:${params.documentId}:${params.activeParseVersionId}:${fieldVer}:${params.mapperPromptVersion}:${params.mapperModelVersion}:${normVer}:${mode}`;
   }
 
   /**
@@ -84,6 +86,7 @@ export class HydrationRunEngine {
           mapperPromptVersion: val.mapperPromptVersion,
           normalizationPolicyVersion: val.normalizationPolicyVersion || "1.0.0",
           idempotencyKey,
+          dataMode: (params.dataMode as any) || "PRODUCTION",
           status: "RUNNING",
         },
         include: { candidates: true },
@@ -118,6 +121,7 @@ export class HydrationRunEngine {
     });
 
     const docId = run ? run.documentId : hydrationRunId.replace("run_", "");
+    const startTime = run?.createdAt ? run.createdAt.getTime() : Date.now();
 
     try {
       const createdCandidates = [];
@@ -197,6 +201,7 @@ export class HydrationRunEngine {
               status: proposal.status === "PROPOSED" ? "PROPOSED" : "ABSTAINED",
               reasonCodes: proposal.reasoning ? [proposal.reasoning] : [],
               sourceExtractionFieldIds: proposal.sourceExtractionFieldIds,
+              dataMode: (run?.dataMode as any) || "PRODUCTION",
             },
             create: {
               hydrationRunId,
@@ -211,6 +216,7 @@ export class HydrationRunEngine {
               status: proposal.status === "PROPOSED" ? "PROPOSED" : "ABSTAINED",
               reasonCodes: proposal.reasoning ? [proposal.reasoning] : [],
               sourceExtractionFieldIds: proposal.sourceExtractionFieldIds,
+              dataMode: (run?.dataMode as any) || "PRODUCTION",
             },
           });
         } catch (err) {
@@ -234,13 +240,16 @@ export class HydrationRunEngine {
         createdCandidates.push(candidate);
       }
 
-      // Update run status to SUCCEEDED
+      const durationMs = Date.now() - startTime;
+
+      // Update run status to SUCCEEDED and persist durationMs
       if (run) {
         await db.hydrationRun.update({
           where: { id: run.id },
           data: {
             status: "SUCCEEDED",
             completedAt: new Date(),
+            durationMs,
             errorCode: null,
           },
         });
@@ -248,21 +257,17 @@ export class HydrationRunEngine {
 
       return createdCandidates;
     } catch (error) {
-      // Defect 5: Mark run as FAILED with errorCode on any uncaught exception during proposal processing
-      const errMsg = error instanceof Error ? error.message : String(error);
       if (run) {
-        try {
-          await db.hydrationRun.update({
-            where: { id: run.id },
-            data: {
-              status: "FAILED",
-              errorCode: errMsg,
-              completedAt: new Date(),
-            },
-          });
-        } catch {
-          // Best effort update if DB connection is broken
-        }
+        const durationMs = Date.now() - startTime;
+        await db.hydrationRun.update({
+          where: { id: run.id },
+          data: {
+            status: "FAILED",
+            completedAt: new Date(),
+            durationMs,
+            errorCode: error instanceof DomainError ? error.message : error instanceof Error ? error.message : "INTERNAL_ERROR",
+          },
+        }).catch(() => {});
       }
       throw error;
     }

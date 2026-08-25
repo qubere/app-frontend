@@ -183,8 +183,34 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
       isHumanLocked: false,
     };
 
-    const result = await MaterializerRegistry.materializeDecision(testAccount, testShipment, mockDecision);
+    const result = await MaterializerRegistry.materializeDecision(testAccount, testShipment, mockDecision, { expectedVersion: 1 });
     expect(result.success).toBe(true);
     expect(result.factId).toBe("fact_existing_14");
+  });
+
+  it("test-matrix #22: recomputeShipmentFactsOnDetach supersedes non-human-locked facts from detached document", async () => {
+    vi.spyOn(db.shipment, "findFirst").mockResolvedValue({
+      id: "shp_detach_test",
+      accountId: "acc_detach_test",
+      version: 1,
+    } as any);
+
+    vi.spyOn(db.fact, "findMany").mockResolvedValue([
+      { id: "fact_auto_1", field: "carrierName", documentId: "doc_detached_1", isHumanLocked: false },
+    ] as any);
+
+    vi.spyOn(db.fact, "updateMany").mockResolvedValue({ count: 1 } as any);
+    vi.spyOn(db.fact, "findFirst").mockResolvedValue(null); // No human lock
+    vi.spyOn(db.hydrationCandidate, "findFirst").mockResolvedValue(null); // No surviving candidate
+
+    const res = await HydrationWorker.recomputeShipmentFactsOnDetach(
+      "acc_detach_test",
+      "shp_detach_test",
+      "doc_detached_1"
+    );
+
+    expect(res.detachedDocumentId).toBe("doc_detached_1");
+    expect(res.supersededFactsCount).toBe(1);
+    expect(res.recomputedPromotionsCount).toBe(0);
   });
 });

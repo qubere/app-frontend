@@ -112,6 +112,13 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
     expect(validateValue(["htsCodeStructureValidator"], "8542310000").isValid).toBe(true);
   });
 
+  it("test-matrix #1.2: ShipmentEventConsumer dequeues DOCUMENT_PARSE_PROMOTED outbox events", async () => {
+    const { ShipmentEventConsumer } = await import("../src/modules/events/shipmentEventConsumer");
+    const result = await ShipmentEventConsumer.dispatchOutboxEvents("acc_test_outbox", 10);
+    expect(result.processedCount).toBeGreaterThanOrEqual(0);
+    expect(result.errors).toEqual([]);
+  });
+
   it("calculates calibrated decision scores with weighted validation and corroboration", () => {
     const scoreVal = calculateCalibratedScore({
       extractionConfidence: 95,

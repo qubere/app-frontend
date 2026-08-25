@@ -11,6 +11,7 @@
  * 7. DOCUMENT_HYDRATION_PROMOTED Event Emission
  */
 
+import { db } from "@qubere/db";
 import type { RawExtractionContext } from "../evidence/universalEvidenceExtractor";
 import { EvidenceLedgerService } from "../evidence/evidenceLedgerService";
 import { HydrationRunEngine } from "../engine/hydrationRunEngine";
@@ -21,6 +22,7 @@ import { MaterializerRegistry, type MaterializationResult } from "../promotion/m
 import { RolloutController } from "../rollout/rolloutController";
 import { createExceptionItem } from "@/lib/exceptions/createException";
 import { ShipmentEventBus } from "../../../modules/events/shipmentEventBus";
+import { HydrationLogger } from "../logging/hydrationLogger";
 
 export interface PipelineExecutionResult {
   runId: string;
@@ -50,8 +52,16 @@ export class HydrationWorker {
     ctx: RawExtractionContext,
     options: ProcessHydrationOptions = {}
   ): Promise<PipelineExecutionResult> {
+    HydrationLogger.info(`Processing document hydration for doc ${ctx.documentId}`, {
+      accountId,
+      documentId: ctx.documentId,
+      shipmentId: options.shipmentId,
+      mode: options.mode,
+    });
+
     // A3 check: Rollout kill switch check
     if (!RolloutController.isHydrationEngineEnabled(accountId)) {
+      HydrationLogger.warn(`Hydration engine disabled for account ${accountId}`, { accountId });
       return {
         runId: `disabled_${ctx.documentId}`,
         isNewRun: false,
@@ -90,6 +100,7 @@ export class HydrationWorker {
       activeParseVersionId: ctx.parseVersionId,
       mapperModelVersion: modelVer,
       mapperPromptVersion: promptVer,
+      dataMode: options.dataMode,
     });
 
     // 3. Structured LLM Mapping
@@ -107,6 +118,16 @@ export class HydrationWorker {
     const decisions: PromotionDecision[] = [];
     const materializations: MaterializationResult[] = [];
 
+    // Fetch current shipment version for optimistic concurrency (CAS) check
+    let currentShipmentVersion: number | undefined;
+    if (options.shipmentId) {
+      const shp = await db.shipment.findFirst({
+        where: { id: options.shipmentId, accountId },
+        select: { version: true },
+      });
+      currentShipmentVersion = shp?.version;
+    }
+
     for (const resCand of resolvedCandidates) {
       const decision = await PromotionPolicyEngine.evaluateCandidate(options.shipmentId, resCand, accountId);
       decisions.push(decision);
@@ -121,18 +142,18 @@ export class HydrationWorker {
           type: "FIELD_CONFLICT",
           severity: "Critical",
           description: resCand.conflictReason || "Contradictory values detected across documents.",
-        }).catch(() => {
-          // Fallback if exception service is unseeded in tests
+        }).catch((err) => {
+          HydrationLogger.error("Failed to write conflict exception record", err, { accountId, shipmentId: options.shipmentId });
         });
       }
 
       if (decision.shouldPromote) {
-        // E1 check: Thread execution mode to materializer
+        // E1 check: Thread execution mode & expectedVersion to materializer
         const matRes = await MaterializerRegistry.materializeDecision(
           accountId,
           options.shipmentId,
           decision,
-          { mode: executionMode }
+          { mode: executionMode, expectedVersion: currentShipmentVersion }
         );
         materializations.push(matRes);
       }
@@ -155,14 +176,132 @@ export class HydrationWorker {
       });
     }
 
+    HydrationLogger.info(`Completed document hydration for run ${run.id}`, {
+      runId: run.id,
+      accountId,
+      promotedCount,
+      totalProposals: proposals.length,
+    });
+
     return {
       runId: run.id,
       isNewRun: isNew,
-      totalEvidenceCount: atomicItems.length,
+      totalEvidenceCount: evidenceFields.length,
       proposalsCount: proposals.length,
       promotedCount,
       decisions,
       materializations,
+    };
+  }
+
+  /**
+   * Recomputes shipment facts when a document is detached or removed.
+   *
+   * Invariant #3: Raw evidence is immutable; facts sourced from the detached document
+   * are superseded (`supersededAt = now()`) unless human-locked.
+   * Surviving candidates for affected fields are re-evaluated and promoted if qualified.
+   */
+  public static async recomputeShipmentFactsOnDetach(
+    accountId: string,
+    shipmentId: string,
+    detachedDocumentId: string
+  ): Promise<{ detachedDocumentId: string; supersededFactsCount: number; recomputedPromotionsCount: number }> {
+    HydrationLogger.info(`Recomputing shipment facts on document detach`, { accountId, shipmentId, detachedDocumentId });
+
+    // Verify tenant ownership of shipment
+    const shipment = await db.shipment.findFirst({
+      where: { id: shipmentId, accountId },
+      select: { id: true, version: true },
+    });
+
+    if (!shipment) {
+      throw new Error(`Shipment '${shipmentId}' not found for account '${accountId}'.`);
+    }
+
+    // 1. Mark non-human-locked facts from the detached document as superseded
+    const factsToSupersede = await db.fact.findMany({
+      where: {
+        shipmentId,
+        documentId: detachedDocumentId,
+        isHumanLocked: false,
+        supersededAt: null,
+      },
+    });
+
+    const affectedFields = Array.from(new Set(factsToSupersede.map((f) => f.field)));
+
+    if (factsToSupersede.length > 0) {
+      await db.fact.updateMany({
+        where: {
+          id: { in: factsToSupersede.map((f) => f.id) },
+        },
+        data: {
+          supersededAt: new Date(),
+        },
+      });
+    }
+
+    let recomputedPromotionsCount = 0;
+
+    // 2. For each affected field, evaluate surviving document candidates
+    for (const fieldKey of affectedFields) {
+      // Check if field is human-locked by another fact
+      const humanLock = await db.fact.findFirst({
+        where: { shipmentId, field: fieldKey, isHumanLocked: true, supersededAt: null },
+      });
+
+      if (humanLock) {
+        continue; // Human lock survives untouched
+      }
+
+      // Fetch top surviving candidate from surviving documents
+      const survivingCandidate = await db.hydrationCandidate.findFirst({
+        where: {
+          shipmentId,
+          fieldDefinitionKey: fieldKey,
+          documentId: { not: detachedDocumentId },
+          status: "PROPOSED",
+        },
+        orderBy: { mappingConfidence: "desc" },
+      });
+
+      if (survivingCandidate) {
+        const resolvedCandidate = {
+          proposal: {
+            targetFieldKey: survivingCandidate.fieldDefinitionKey,
+            targetEntityRef: survivingCandidate.targetEntityRef,
+            sourceExtractionFieldIds: survivingCandidate.sourceExtractionFieldIds,
+            evidenceReferences: [{ documentId: survivingCandidate.documentId, parseVersionId: "surviving", rawLabel: fieldKey, rawValue: String(survivingCandidate.rawValue) }],
+            proposedValue: survivingCandidate.rawValue,
+            mappingConfidence: survivingCandidate.mappingConfidence ?? 90,
+            relationConfidence: null,
+            reasoning: survivingCandidate.reasonCodes.join("; "),
+            status: "PROPOSED" as const,
+            abstainReason: null,
+          },
+          corroboratingDocumentIds: [survivingCandidate.documentId],
+          corroborationScore: 0,
+          calibratedScore: survivingCandidate.mappingConfidence ?? 90,
+          status: "PROMOTED" as const,
+        };
+
+        const decision = await PromotionPolicyEngine.evaluateCandidate(shipmentId, resolvedCandidate, accountId);
+        if (decision.shouldPromote) {
+          const matRes = await MaterializerRegistry.materializeDecision(accountId, shipmentId, decision, {
+            mode: "live",
+            expectedVersion: shipment.version,
+          });
+          if (matRes.success && matRes.materialized !== false) {
+            recomputedPromotionsCount++;
+          }
+        }
+      }
+    }
+
+    return {
+      detachedDocumentId,
+      supersededFactsCount: factsToSupersede.length,
+      recomputedPromotionsCount,
     };
   }
 }

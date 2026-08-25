@@ -22,6 +22,7 @@
 import { createHash } from "crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { ShipmentEventBus } from "@/modules/events/shipmentEventBus";
 import {
   DocumentParserError,
   isLegalTransition,
@@ -435,7 +436,7 @@ export async function promoteToActive(params: {
 
     const document = await tx.shipmentDocument.findFirst({
       where: { id: params.documentId, accountId: params.accountId },
-      select: { activeParseVersionId: true },
+      select: { activeParseVersionId: true, shipmentId: true },
     });
     if (!document) return { promoted: false, reason: "The document does not exist for this tenant." };
 
@@ -458,6 +459,19 @@ export async function promoteToActive(params: {
         activeParseVersionId: run.id,
         ...(run.pageCount === null ? {} : { pageCount: run.pageCount }),
       },
+    });
+
+    await ShipmentEventBus.logEvent({
+      shipmentId: document.shipmentId || params.documentId,
+      eventType: "DOCUMENT_PARSE_PROMOTED",
+      accountId: params.accountId,
+      payload: {
+        documentId: params.documentId,
+        parseVersionId: run.id,
+        version: run.version,
+      },
+    }).catch((err) => {
+      console.error("[processingRuns] Failed to log DOCUMENT_PARSE_PROMOTED event:", err);
     });
 
     return { promoted: true, reason: `Run version ${run.version} is now the active parse.` };
