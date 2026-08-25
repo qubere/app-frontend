@@ -1246,6 +1246,7 @@ model AgentDecision {
   @@index([accountId, triageState])
   @@index([autoApproved])
   @@index([documentId])
+  @@index([reviewedByUserId])
 }
 
 /// Per-account, per-agent overrides for the auto-approval thresholds in
@@ -2501,6 +2502,9 @@ model ExceptionItem {
   @@index([status])
   @@index([resolutionReasonCode])
   @@index([documentId, fieldKey])
+  @@index([assignedToUserId])
+  @@index([filingId])
+  @@index([shipmentId])
 }
 
 // Provenance record for "who confirmed this field's value, and when" --
@@ -6204,6 +6208,7 @@ model UsageEvent {
   @@index([occurredAt])
   @@index([eventCode])
   @@index([accountId, productLine, occurredAt])
+  @@index([accountId, eventCode, productLine])
 }
 
 model ShipmentCharge {
@@ -6390,6 +6395,8 @@ model BillingException {
   @@index([status])
   @@index([type])
   @@index([usageEventId])
+  @@index([clientId])
+  @@index([shipmentId])
 }
 
 enum AccountMemoryType {
