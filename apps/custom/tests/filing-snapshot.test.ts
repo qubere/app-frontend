@@ -11,7 +11,7 @@ describe("CBP Filing Immutable Snapshot Integration Suite", () => {
   const DB_TIMEOUT = 60_000;
   const TEST_HTS_CODE = "8481.80.5090";
   const TEST_HTS_NORMALIZED = "8481805090";
-  const seededReleaseId: string | null = null;
+  let seededReleaseId: string | null = null;
   let dbAvailable = false;
 
   beforeAll(async () => {
@@ -22,6 +22,71 @@ describe("CBP Filing Immutable Snapshot Integration Suite", () => {
       } else if (!existingTxType.isActive) {
         await db.filingTransactionType.update({ where: { id: existingTxType.id }, data: { isActive: true } });
       }
+
+      // FilingService.transmitFiling requires a published duty rate for every
+      // line item's HTS code. A freshly-migrated database (e.g. CI's local
+      // postgres) has no HTS reference data at all, so seed just enough of a
+      // published HtsRelease/HtsNode/HtsDutyRate for TEST_HTS_CODE to make this
+      // suite self-contained -- but only if a real release doesn't already
+      // resolve it (e.g. against a dev DB seeded from the real HTS ingestion).
+      const publishedRelease = await db.htsRelease.findFirst({
+        where: { country: "US", publicationStatus: "PUBLISHED" },
+        orderBy: { effectiveFrom: "desc" },
+        select: { id: true },
+      });
+      const existingNode = publishedRelease
+        ? await db.htsNode.findFirst({
+            where: { releaseId: publishedRelease.id, htsNumberNormalized: TEST_HTS_NORMALIZED },
+            include: { dutyRates: true },
+          })
+        : null;
+      const hasGeneralRate = existingNode?.dutyRates.some((r) => r.rateColumn === "General") ?? false;
+
+      if (!hasGeneralRate) {
+        const release = await db.htsRelease.create({
+          data: {
+            country: "US",
+            editionYear: 2026,
+            revisionNumber: 1,
+            releaseName: "Filing Snapshot Test Release",
+            effectiveFrom: new Date(),
+            sourceUrl: "https://example.test/hts-release",
+            sourceFormat: "JSON",
+            sha256: `test-${Date.now()}`,
+            validationStatus: "VALIDATED",
+            publicationStatus: "PUBLISHED",
+          },
+        });
+        seededReleaseId = release.id;
+
+        await db.htsNode.create({
+          data: {
+            release: { connect: { id: release.id } },
+            sourceRowNumber: 1,
+            indentLevel: 0,
+            htsNumberDisplay: TEST_HTS_CODE,
+            htsNumberNormalized: TEST_HTS_NORMALIZED,
+            codeLevel: 10,
+            description: "Electronic Valves",
+            fullDescription: "Electronic Valves",
+            chapter: "84",
+            heading: "8481",
+            dutyRates: {
+              create: [
+                {
+                  rateColumn: "General",
+                  rawRateText: "3%",
+                  rateType: "AdValorem",
+                  adValoremPercent: 3,
+                  isFree: false,
+                  parseStatus: "PARSED",
+                },
+              ],
+            },
+          },
+        });
+      }
+
       dbAvailable = true;
     } catch {
       console.warn("Database connection unavailable for filing-snapshot tests; skipping live DB assertions.");
