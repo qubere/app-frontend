@@ -49,6 +49,16 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
       "Drift: extracted as 'transportDocumentNumber' or 'billOfLading', Fact uses 'billOfLading'.",
   },
   {
+    legacyKey: "airWaybill",
+    tradeMetadataKey: "airWaybill",
+    fieldReviewLabel: "Air Waybill",
+    directShipmentColumn: undefined,
+    factFieldName: "airWaybill",
+    canonicalKey: "tracking.airWaybill",
+    entityKind: "TRACKING_IDENTIFIER",
+    isDriftKey: false,
+  },
+  {
     legacyKey: "hsHtsCode",
     tradeMetadataKey: "hsHtsCode",
     fieldReviewLabel: "HTS Classification Code",
