@@ -6,9 +6,11 @@
  * identical to a real data problem. Never logs credentials.
  *
  * Node-only module: instrumentation.ts dynamically imports this so the
- * edge-runtime bundler never statically parses process.pid/require(),
+ * edge-runtime bundler never statically parses process.pid/child_process,
  * which it flags even inside a runtime-guarded branch of the same file.
  */
+import { execSync } from "node:child_process";
+
 export function logBootConnections() {
   const commit =
     process.env.VERCEL_GIT_COMMIT_SHA ??
@@ -26,7 +28,7 @@ export function logBootConnections() {
     lines.push(`[boot] clerk.instance=${clerkInstanceFromPublishableKey(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)}`);
   }
 
-  // eslint-disable-next-line no-console -- intentional startup diagnostic, not app logging
+   
   console.log(lines.join("\n"));
 }
 
@@ -56,7 +58,6 @@ function clerkInstanceFromPublishableKey(key: string): string {
 function gitCommitShaFromWorkingTree(): string | null {
   try {
     // Local dev only — best-effort, must never throw or block boot.
-    const { execSync } = require("node:child_process");
     return execSync("git rev-parse HEAD", { cwd: __dirname, stdio: ["ignore", "pipe", "ignore"] })
       .toString()
       .trim();
