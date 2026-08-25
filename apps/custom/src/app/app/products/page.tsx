@@ -53,7 +53,7 @@ export default async function ProductsPage(props: {
 
   // Product carries an Account relation (dataMode-scoped) -- without this
   // wrapper listProducts silently defaults to PRODUCTION isolation.
-  const [clientsRes, productRes] = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+  const [clientsRes, productRes] = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
     Promise.all([
       getClientsData(context),
       listProducts(productActor(context, "page"), parseProductQuery(params)),

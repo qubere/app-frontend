@@ -32,7 +32,7 @@ export default async function PartyDetailPage(props: {
   const actor = partyActor(context, "page");
   // Party carries an Account relation (dataMode-scoped) -- without this
   // wrapper getParty silently defaults to PRODUCTION isolation.
-  const party = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+  const party = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
     getParty(actor, id)
   );
   // A party in another account is absent, not forbidden.

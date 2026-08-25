@@ -4,7 +4,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse } from "@/lib/api/error";
 import { parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
-import { createInboundSenderRoute, InboundSenderAlreadyRoutedError } from "@/modules/inbound/senderRouting";
+import { createInboundSenderRoute, InboundSenderAlreadyRoutedError, InboundSenderBlockedError } from "@/modules/inbound/senderRouting";
 
 export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
   const [routes, memberships] = await Promise.all([
@@ -73,6 +73,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     if (error instanceof InboundSenderAlreadyRoutedError) {
       // Never reveal which other account already claimed this sender.
       return buildErrorResponse(409, "SENDER_ALREADY_ROUTED", error.message, undefined, requestId);
+    }
+    if (error instanceof InboundSenderBlockedError) {
+      return buildErrorResponse(409, "SENDER_BLOCKED", error.message, undefined, requestId);
     }
     throw error;
   }

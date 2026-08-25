@@ -23,6 +23,7 @@ import {
   blockInboundSenderRoute,
   createInboundSenderRoute,
   InboundSenderAlreadyRoutedError,
+  InboundSenderBlockedError,
 } from "@/modules/inbound/senderRouting";
 
 describe("inbound sender route lifecycle", () => {
@@ -57,6 +58,23 @@ describe("inbound sender route lifecycle", () => {
       action: "inbound_sender_route.reactivated",
       metadata: expect.objectContaining({ normalizedSenderEmail: "rachitlohani@gmail.com", previousStatus: "REVOKED" }),
     }));
+  });
+
+  it("refuses to silently reactivate a BLOCKED sender for the same account", async () => {
+    dbMock.inboundSenderRoute.findUnique.mockResolvedValue({ id: "route_1", accountId: "acct_a", status: "BLOCKED" });
+
+    await expect(createInboundSenderRoute({
+      accountId: "acct_a",
+      email: "spam@example.com",
+      createdByUserId: "user_1",
+    })).rejects.toBeInstanceOf(InboundSenderBlockedError);
+
+    // A block is a durable admin decision -- re-adding the same sender (via
+    // Settings > Add Authorized Sender, or a quarantine release for an older
+    // pending item from a now-blocked sender) must never flip it back to
+    // ACTIVE as a side effect.
+    expect(dbMock.inboundSenderRoute.update).not.toHaveBeenCalled();
+    expect(dbMock.inboundSenderRoute.create).not.toHaveBeenCalled();
   });
 
   it("does not let a different account claim an existing sender", async () => {

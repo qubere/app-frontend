@@ -58,7 +58,7 @@ export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResul
   // email, before routing has even had a chance to run. This worker is
   // explicitly cross-tenant/pre-attribution by design, so it has to opt out
   // of that filter itself rather than rely on a caller to.
-  return withDataModeContext(null, () => runTickWithBypass());
+  return withDataModeContext(null, async () => runTickWithBypass());
 }
 
 async function runTickWithBypass(): Promise<InboundEmailTickResult> {

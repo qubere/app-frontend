@@ -18,7 +18,7 @@ export default async function DocumentsPage() {
   if (isEnterpriseAdmin) {
     // AccountMembership carries an Account relation (dataMode-scoped) --
     // without this wrapper the query silently defaults to PRODUCTION isolation.
-    const memberships = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, () =>
+    const memberships = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
       db.accountMembership.findMany({
         where: { accountId: ctx.accountId, status: "ACTIVE" },
         include: { user: true },

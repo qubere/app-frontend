@@ -69,6 +69,18 @@ export class InboundSenderAlreadyRoutedError extends Error {
   }
 }
 
+/** Thrown when re-adding a sender whose existing route for this account was
+ * deliberately BLOCKED. A block is a durable admin decision -- unlike a
+ * REVOKED route (safe to silently reactivate; it just expired/was replaced),
+ * lifting a block must be its own explicit action, not a side effect of
+ * someone re-submitting "Add Authorized Sender" with the same address. */
+export class InboundSenderBlockedError extends Error {
+  constructor() {
+    super("This sender is blocked for this account. Unblock it explicitly before re-adding.");
+    this.name = "InboundSenderBlockedError";
+  }
+}
+
 /**
  * Authorizes `email` to route inbound documents into `accountId`, going
  * forward. Shared by the Settings > Inbound Senders UI and the platform-admin
@@ -88,6 +100,7 @@ export async function createInboundSenderRoute(params: {
 
   const reactivateExisting = async (existing: { id: string; accountId: string; status: string }) => {
     if (existing.accountId !== accountId) throw new InboundSenderAlreadyRoutedError();
+    if (existing.status === "BLOCKED") throw new InboundSenderBlockedError();
 
     const route = await db.inboundSenderRoute.update({
       where: { id: existing.id },

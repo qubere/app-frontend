@@ -14,7 +14,7 @@ export default async function AdminUsersPage() {
   // without this wrapper the query silently defaults to PRODUCTION isolation.
   // (Role itself is deliberately excluded from dataMode scoping -- see
   // packages/db/src/index.ts -- so the db.role calls below are unaffected.)
-  const memberships = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+  const memberships = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
     db.accountMembership.findMany({
       where: { accountId: context.accountId },
       include: { user: true, roles: { include: { role: true } } },

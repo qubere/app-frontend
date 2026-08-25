@@ -48,7 +48,7 @@ export default async function PartiesPage(props: {
 
   // Party carries an Account relation (dataMode-scoped) -- without this
   // wrapper listParties silently defaults to PRODUCTION isolation.
-  const [clientsRes, partyRes] = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+  const [clientsRes, partyRes] = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
     Promise.all([
       getClientsData(context),
       listParties(partyActor(context, "page"), parsePartyQuery(params)),

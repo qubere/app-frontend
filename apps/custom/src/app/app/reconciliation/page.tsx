@@ -8,7 +8,7 @@ export default async function ReconciliationPage() {
 
   // ReconciliationIssue carries an Account relation (dataMode-scoped) --
   // without this wrapper the query silently defaults to PRODUCTION isolation.
-  const issues = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, () =>
+  const issues = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
     db.reconciliationIssue.findMany({
       where: { accountId: ctx.accountId },
       include: {

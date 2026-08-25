@@ -43,7 +43,7 @@ export interface ClientsData {
 export async function getClientsData(ctx: AccountContext): Promise<ClientsData> {
   // Client carries an Account relation (dataMode-scoped) -- without this wrapper
   // the query silently defaults to PRODUCTION isolation for any DEMO/SANDBOX account.
-  const clients = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, () =>
+  const clients = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
     db.client.findMany({
       where: { accountId: ctx.accountId },
       include: {

@@ -31,7 +31,7 @@ export default async function ProductDetailPage(props: {
   const actor = productActor(context, "page");
   // Product carries an Account relation (dataMode-scoped) -- without this
   // wrapper getProduct silently defaults to PRODUCTION isolation.
-  const product = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+  const product = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
     getProduct(actor, id)
   );
   // A product in another account is absent, not forbidden.
