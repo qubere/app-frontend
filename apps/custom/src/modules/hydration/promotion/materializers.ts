@@ -72,7 +72,7 @@ export class MaterializerRegistry {
     }
 
     const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
-    const realCandidateId = (candidate as any).id || candidate.proposal.targetFieldKey;
+    const realCandidateId = candidate.candidateId || candidate.proposal.targetFieldKey;
 
     // Execute materializer operations inside an atomic transaction (C3 check)
     return await db.$transaction(async (tx) => {

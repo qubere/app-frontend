@@ -12,6 +12,7 @@
 import { db } from "@qubere/db";
 import type { ResolvedCandidate } from "../resolution/corroborationConflictResolver";
 import { CANONICAL_FIELD_REGISTRY_V1 } from "../registry/canonicalRegistryV1";
+import { HydrationLogger } from "../logging/hydrationLogger";
 
 export interface PromotionDecision {
   candidate: ResolvedCandidate;
@@ -31,6 +32,13 @@ export class PromotionPolicyEngine {
   ): Promise<PromotionDecision> {
     const { proposal, status, calibratedScore } = resolvedCandidate;
     const fieldKey = proposal.targetFieldKey;
+
+    HydrationLogger.info(`Evaluating candidate promotion for field ${fieldKey}`, {
+      shipmentId,
+      fieldKey,
+      calibratedScore,
+      status,
+    });
     const definition = CANONICAL_FIELD_REGISTRY_V1[fieldKey];
 
     if (!definition) {

@@ -52,15 +52,71 @@ export class ShipmentEventConsumer {
             documentId: docId,
           });
 
+          // Fetch real parse version & extraction fields from DB
+          const extractionFields = await db.extractionField.findMany({
+            where: { documentId: docId },
+          });
+
+          const extractedFieldsMap: Record<string, string> = {};
+          const keyValuePairs: Array<{ label: string; value: string; confidence?: number; page?: number }> = [];
+
+          for (const ef of extractionFields) {
+            extractedFieldsMap[ef.fieldName] = ef.value;
+            keyValuePairs.push({
+              label: ef.fieldName,
+              value: ef.value,
+              confidence: ef.confidence ?? 95,
+              page: ef.pageNumber ?? 1,
+            });
+          }
+
+          let parseVerRecord = null;
+          if (parseVersionId !== "latest") {
+            parseVerRecord = await db.documentParseVersion.findFirst({
+              where: { id: parseVersionId },
+            });
+          } else {
+            parseVerRecord = await db.documentParseVersion.findFirst({
+              where: { documentId: docId },
+              orderBy: { version: "desc" },
+            });
+          }
+
+          let tradeMetadata: Record<string, string> | undefined;
+          let lineItems: Array<Record<string, unknown>> | undefined;
+
+          if (parseVerRecord?.rawJson) {
+            try {
+              const json = typeof parseVerRecord.rawJson === "string"
+                ? JSON.parse(parseVerRecord.rawJson)
+                : (parseVerRecord.rawJson as any);
+              if (json?.tradeMetadata) tradeMetadata = json.tradeMetadata;
+              if (json?.lineItems) lineItems = json.lineItems;
+            } catch {
+              // Ignore invalid JSON
+            }
+          }
+
+          const account = await db.account.findUnique({
+            where: { id: event.accountId },
+            select: { dataMode: true },
+          }).catch(() => null);
+
+          const dataMode = (account?.dataMode as "PRODUCTION" | "DEMO" | "SANDBOX") || "PRODUCTION";
+
           await HydrationWorker.processDocumentHydration(
             event.accountId,
             {
               documentId: docId,
-              parseVersionId,
-              extractedFields: [] as any,
+              parseVersionId: parseVerRecord?.id || parseVersionId,
+              extractedFields: extractedFieldsMap,
+              tradeMetadata,
+              lineItems,
+              keyValuePairs,
             },
             {
               shipmentId: event.aggregateId,
+              dataMode,
             }
           );
         }

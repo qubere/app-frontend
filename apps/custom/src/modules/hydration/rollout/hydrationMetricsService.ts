@@ -79,7 +79,7 @@ export class HydrationMetricsService {
       humanCorrectionRate: Number(humanCorrectionRate.toFixed(2)),
       abstentionRate: Number(abstentionRate.toFixed(2)),
       avgLatencyMs,
-      estimatedCostUsd,
+      estimatedCostUsd: estimatedCostUsd,
       estimatedCostUsdApprox: estimatedCostUsd,
     };
   }

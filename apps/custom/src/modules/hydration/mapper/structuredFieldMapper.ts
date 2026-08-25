@@ -13,11 +13,24 @@ import { FIELD_INVENTORY } from "../inventory/fieldInventory";
 import { normalizeValue } from "../validation/normalizerRegistry";
 import { validateValue } from "../validation/validators";
 import { calculateCalibratedScore } from "../validation/calibratedScoreCalculator";
+import { HydrationLogger } from "../logging/hydrationLogger";
 
 export interface MapEvidenceOptions {
   documentType?: string;
   product?: "CUSTOMS" | "TMS";
   jurisdiction?: string;
+}
+
+/**
+ * Interface contract for external LLM-driven structured output field mappers.
+ * When structured output model providers (OpenAI JSON mode, Gemini Structured Output)
+ * are invoked, their output plugs directly into this provider signature.
+ */
+export interface LLMFieldMapperProvider {
+  mapStructuredFields(
+    evidence: AtomicEvidenceItem[],
+    options?: MapEvidenceOptions
+  ): Promise<HydrationProposal[]>;
 }
 
 export class StructuredFieldMapper {
@@ -28,6 +41,7 @@ export class StructuredFieldMapper {
     items: AtomicEvidenceItem[],
     options: MapEvidenceOptions = {}
   ): HydrationProposal[] {
+    HydrationLogger.info(`Mapping ${items.length} atomic evidence items to proposals`, { count: items.length });
     const registrySlice = RegistrySlicer.getSlice({
       documentType: options.documentType,
       product: options.product,
@@ -108,7 +122,7 @@ export class StructuredFieldMapper {
         proposals.push({
           targetFieldKey: canonicalKey,
           targetEntityRef: entityRef,
-          sourceExtractionFieldIds: evItems.map((i) => i.stableKey),
+          sourceExtractionFieldIds: evItems.map((i) => i.id || i.stableKey),
           evidenceReferences: evItems.map((i) => ({
             documentId: i.documentId,
             parseVersionId: i.parseVersionId,

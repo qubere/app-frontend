@@ -1,38 +1,41 @@
 import { NextResponse, after } from "next/server";
-import type { Prisma } from "@prisma/client";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse, errorMessage } from "@/lib/api/error";
 import { parseAndValidateBody, validatePathParams } from "@/lib/api/validation";
-import { createAuditLog } from "@/lib/audit";
+import { FieldReviewService, type FieldReviewAction } from "@/modules/hydration/review/fieldReviewService";
 import { db } from "@/lib/db";
-import { EntityResolutionService } from "@/modules/entity/entityResolutionService";
-import { ShipmentPartyService, type ShipmentPartyRole } from "@/modules/shipment/shipmentPartyService";
-import { ExceptionService, DOCUMENT_FIELD_LABELS } from "@/modules/exceptions/exception.service";
-import { FactAuditService } from "@/modules/audit/factAuditService";
-import { FactService } from "@/modules/shipment/factService";
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
 import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
 import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service";
 import { z } from "zod";
 
-// Bridges FIELD_REVIEW_LABELS keys (shipments/[id]/page.tsx, mirrors
-// tradeMetadata's extraction naming) to the Shipment column they actually
-// belong on, since the names aren't always the same string.
-const DIRECT_SHIPMENT_FIELD_MAP = {
-  destinationCountry: "destinationCountry",
-  carrier: "carrierName",
-  incoterm: "incoterm",
-  currency: "invoiceCurrency",
-} as const;
-
 const paramsSchema = z.object({ id: z.string().min(1), documentId: z.string().min(1) });
 
 const bodySchema = z.object({
   fieldKey: z.string().min(1, "fieldKey is required"),
-  action: z.enum(["APPROVE", "EDIT"]),
-  value: z.string().trim().min(1, "A value is required"),
+  action: z.enum(["APPROVE", "EDIT", "REJECT", "MARK_NOT_APPLICABLE", "SELECT_ALTERNATE"]),
+  value: z.string().trim().optional(),
+  candidateId: z.string().optional(),
   expectedVersion: z.number().optional(),
 });
+
+export const GET = withAuthenticatedRoute<{ id: string; documentId: string }>(async ({ ctx, requestId, params }) => {
+  const paramsVal = validatePathParams(params, paramsSchema, requestId);
+  if ("response" in paramsVal) return paramsVal.response;
+  const { id: shipmentId, documentId } = paramsVal.data;
+
+  try {
+    const summary = await FieldReviewService.getShipmentDocumentFieldReview(
+      ctx.accountId,
+      shipmentId,
+      documentId
+    );
+    return NextResponse.json({ summary, requestId });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return buildErrorResponse(400, "BUSINESS_RULE_FAILURE", errorMsg, undefined, requestId);
+  }
+}, { permission: "shipments.read" });
 
 export const POST = withAuthenticatedRoute<{ id: string; documentId: string }>(async ({ req, ctx, requestId, params }) => {
   const paramsVal = validatePathParams(params, paramsSchema, requestId);
@@ -41,179 +44,35 @@ export const POST = withAuthenticatedRoute<{ id: string; documentId: string }>(a
 
   const bodyVal = await parseAndValidateBody(req, bodySchema, requestId);
   if ("response" in bodyVal) return bodyVal.response;
-  const { fieldKey, action, value, expectedVersion } = bodyVal.data;
+  const { fieldKey, action, value, candidateId, expectedVersion } = bodyVal.data;
+
+  const resolverName = [ctx.firstName, ctx.lastName].filter(Boolean).join(" ") || ctx.email;
 
   try {
-    const [shipment, document] = await Promise.all([
-      db.shipment.findFirst({
-        where: { id: shipmentId, accountId: ctx.accountId },
-      }),
-      db.shipmentDocument.findFirst({ where: { id: documentId, accountId: ctx.accountId } }),
-    ]);
+    const result = await FieldReviewService.submitFieldReviewAction({
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      userName: resolverName,
+      shipmentId,
+      documentId,
+      fieldKey,
+      action: action as FieldReviewAction,
+      value: value || "",
+      candidateId,
+      expectedVersion,
+    });
 
-    if (!shipment) return buildErrorResponse(404, "NOT_FOUND", "Shipment not found", undefined, requestId);
-    if (!document) return buildErrorResponse(404, "NOT_FOUND", "Document not found", undefined, requestId);
-
-    if (typeof expectedVersion === "number" && expectedVersion !== shipment.version) {
+    if (!result.success) {
       return buildErrorResponse(
-        409,
-        "STALE_SHIPMENT",
-        "This shipment changed since it was loaded. Reload before saving again.",
+        result.status || 400,
+        result.errorCode || "BUSINESS_RULE_FAILURE",
+        result.message || "Failed to process field review action",
         undefined,
         requestId
       );
     }
 
-    // Two reviewers approving/editing the same field both used to win: neither
-    // write below checked shipment.version, so whichever request landed last
-    // silently overwrote the other's change. Claiming the row with a
-    // conditional update (mirroring PATCH /api/shipments/[id]) makes the
-    // second, now-stale write fail with 409 instead of clobbering silently.
-    const shipmentVersion = shipment.version;
-    async function applyVersionedShipmentUpdate(data: Prisma.ShipmentUpdateInput): Promise<boolean> {
-      const result = await db.shipment.updateMany({
-        where: { id: shipmentId, accountId: ctx.accountId, version: shipmentVersion },
-        data: { ...data, version: { increment: 1 } },
-      });
-      return result.count > 0;
-    }
-
-    const resolverName = [ctx.firstName, ctx.lastName].filter(Boolean).join(" ") || ctx.email;
-
-    // Approving/editing a field review is a user action on the curated
-    // record -- versioned and audited the same way any other manual edit
-    // is, whichever field it targets.
-    if (fieldKey === "originCountry") {
-      await FactAuditService.logChangeEvent({
-        shipmentId,
-        userId: ctx.userId,
-        changeType: "USER_FIELD_UPDATE",
-        field: "countryOfOrigin",
-        previousValue: shipment.countryOfOrigin,
-        newValue: value,
-        reason: action === "EDIT" ? "Corrected via field review" : "Approved via field review",
-      });
-      if (!(await applyVersionedShipmentUpdate({ countryOfOrigin: value }))) {
-        return buildErrorResponse(
-          409,
-          "STALE_SHIPMENT",
-          "This shipment changed since it was loaded. Reload before saving again.",
-          undefined,
-          requestId
-        );
-      }
-      await FactService.record({ shipmentId, field: "countryOfOrigin", value, sourceType: "USER_ENTERED", documentId });
-    } else if (fieldKey === "importerName" || fieldKey === "exporterName") {
-      // These two are the only fields that mean "assign this value as a
-      // legal-entity party on the shipment" -- everything else that used to
-      // fall into this branch by default (Carrier, Incoterm, Invoice Number,
-      // etc.) was being silently mis-resolved as an EXPORTER legal entity.
-      const role: ShipmentPartyRole = fieldKey === "importerName" ? "IMPORTER_OF_RECORD" : "EXPORTER";
-      const previousParty = await db.shipmentParty.findFirst({
-        where: { shipmentId, role },
-        include: { legalEntity: { select: { legalName: true } } },
-      });
-
-      const resolvedEntity = await EntityResolutionService.findOrCreateEntity(ctx.accountId, value);
-      if (!resolvedEntity) {
-        return buildErrorResponse(400, "BUSINESS_RULE_FAILURE", "Could not resolve a legal entity for that name", undefined, requestId);
-      }
-      await ShipmentPartyService.assignParty({
-        shipmentId,
-        legalEntityId: resolvedEntity.id,
-        role,
-        accountId: ctx.accountId,
-        userId: ctx.userId,
-        source: "USER",
-        confidence: 1.0,
-        isVerified: true,
-      });
-
-      await FactAuditService.logChangeEvent({
-        shipmentId,
-        userId: ctx.userId,
-        changeType: "PARTY_ASSIGNED",
-        field: fieldKey,
-        previousValue: previousParty?.legalEntity.legalName ?? null,
-        newValue: value,
-        reason: action === "EDIT" ? "Corrected via field review" : "Approved via field review",
-      });
-      if (!(await applyVersionedShipmentUpdate({}))) {
-        return buildErrorResponse(
-          409,
-          "STALE_SHIPMENT",
-          "This shipment changed since it was loaded. Reload before saving again.",
-          undefined,
-          requestId
-        );
-      }
-      await FactService.record({ shipmentId, field: fieldKey, value, sourceType: "USER_ENTERED", documentId });
-    } else if (fieldKey in DIRECT_SHIPMENT_FIELD_MAP) {
-      // Fields that map straight onto their own Shipment column -- the
-      // FIELD_REVIEW_LABELS key (extraction/tradeMetadata naming) and the
-      // Shipment column name aren't always identical (e.g. "carrier" ->
-      // carrierName), so this map bridges the two explicitly rather than
-      // assuming they match.
-      const column = DIRECT_SHIPMENT_FIELD_MAP[fieldKey as keyof typeof DIRECT_SHIPMENT_FIELD_MAP];
-      await FactAuditService.logChangeEvent({
-        shipmentId,
-        userId: ctx.userId,
-        changeType: "USER_FIELD_UPDATE",
-        field: column,
-        previousValue: (shipment as unknown as Record<string, string | null>)[column] ?? null,
-        newValue: value,
-        reason: action === "EDIT" ? "Corrected via field review" : "Approved via field review",
-      });
-      if (!(await applyVersionedShipmentUpdate({ [column]: value }))) {
-        return buildErrorResponse(
-          409,
-          "STALE_SHIPMENT",
-          "This shipment changed since it was loaded. Reload before saving again.",
-          undefined,
-          requestId
-        );
-      }
-      await FactService.record({ shipmentId, field: column, value, sourceType: "USER_ENTERED", documentId });
-    }
-    // Fields with no dedicated Shipment column yet (invoiceNumber,
-    // invoiceDate, invoiceSubtotal, totalWeight, transportDocumentNumber,
-    // hsHtsCode) fall through here with no shipment mutation -- the
-    // FieldApproval record written below is the confirmation. Inventing a
-    // destination for these would be worse than not persisting one; when a
-    // real column/table exists for them, add it to DIRECT_SHIPMENT_FIELD_MAP
-    // above rather than guessing here.
-
-    await db.fieldApproval.create({
-      data: {
-        accountId: ctx.accountId,
-        shipmentId,
-        documentId,
-        fieldKey,
-        value,
-        approvedByUserId: ctx.userId,
-        approvedByName: resolverName,
-      },
-    });
-
-    const label = (DOCUMENT_FIELD_LABELS as Record<string, string>)[fieldKey] || fieldKey;
-    await ExceptionService.resolveDocumentFieldException(
-      documentId,
-      fieldKey,
-      ctx.accountId,
-      { userId: ctx.userId, name: resolverName },
-      action === "EDIT" ? `${label} corrected via field review to "${value}".` : `${label} approved as extracted: "${value}".`
-    );
-
-    await createAuditLog({
-      accountId: ctx.accountId,
-      userId: ctx.userId,
-      action: action === "EDIT" ? "field_review.edit" : "field_review.approve",
-      entity: "ShipmentDocument",
-      entityId: documentId,
-      metadata: { shipmentId, fieldKey, value },
-    });
-
-    // F-3: Field correction triggers reconciliation + readiness only — no OCR re-run.
+    // Trigger reconciliation + readiness after review mutation
     after(async () => {
       try {
         const fullShipment = await db.shipment.findFirst({
@@ -239,14 +98,14 @@ export const POST = withAuthenticatedRoute<{ id: string; documentId: string }>(a
         const openIssues = await db.reconciliationIssue.findMany({ where: { shipmentId, accountId: ctx.accountId, status: "Open" } });
         const evaluatedFields = new Set(evaluatedRuleIds);
 
-        for (const result of results) {
-          const existing = openIssues.find((i) => i.field === result.ruleId);
+        for (const res of results) {
+          const existing = openIssues.find((i) => i.field === res.ruleId);
           const data = {
-            field: result.ruleId,
-            severity: severityMap[result.severity] ?? "Warning",
-            expectedValue: `${result.valueA} (${result.docTypeA})`,
-            actualValue: `${result.valueB} (${result.docTypeB})`,
-            sourceDocuments: [result.docTypeA, result.docTypeB],
+            field: res.ruleId,
+            severity: severityMap[res.severity] ?? "Warning",
+            expectedValue: `${res.valueA} (${res.docTypeA})`,
+            actualValue: `${res.valueB} (${res.docTypeB})`,
+            sourceDocuments: [res.docTypeA, res.docTypeB],
           };
           if (existing) {
             await db.reconciliationIssue.update({ where: { id: existing.id }, data });
@@ -292,13 +151,12 @@ export const POST = withAuthenticatedRoute<{ id: string; documentId: string }>(a
         await db.shipment.update({ where: { id: shipmentId }, data: { readinessScore: totalScore, healthStatus } });
         await recomputeShipmentDeadlines(shipmentId, ctx.accountId);
       } catch {
-        // Non-fatal: reconciliation runs on next explicit trigger.
+        // Non-fatal background reconciliation
       }
     });
 
-    return NextResponse.json({ success: true, requestId });
+    return NextResponse.json({ success: true, result, requestId });
   } catch (error: unknown) {
     return buildErrorResponse(400, "BUSINESS_RULE_FAILURE", errorMessage(error) || "Failed to save field review", undefined, requestId);
   }
-
 }, { permission: "shipments.manage", write: true });

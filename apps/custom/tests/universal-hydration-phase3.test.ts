@@ -8,7 +8,7 @@
  * - Multi-document corroboration boosts scores and conflict detection flags contradictions.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { StructuredFieldMapper } from "../src/modules/hydration/mapper/structuredFieldMapper";
 import { UniversalEvidenceExtractor } from "../src/modules/hydration/evidence/universalEvidenceExtractor";
 import { CorroborationConflictResolver } from "../src/modules/hydration/resolution/corroborationConflictResolver";
@@ -237,5 +237,70 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
     const resolved = CorroborationConflictResolver.resolveShipmentProposals(map);
     expect(resolved.length).toBe(2);
     expect(resolved.every((r) => r.status === "CONFLICT")).toBe(true);
+  });
+
+  it("test-matrix #33: ShipmentEventConsumer dequeues pending DOCUMENT_PARSE_PROMOTED events with real parse content", async () => {
+    const { ShipmentEventConsumer } = await import("../src/modules/events/shipmentEventConsumer");
+    const { RolloutController } = await import("../src/modules/hydration/rollout/rolloutController");
+    const { db } = await import("@qubere/db");
+
+    RolloutController.resetRolloutConfig();
+
+    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({
+      id: "doc_outbox_test",
+      accountId: "acc_outbox_test",
+      shipmentId: "shp_outbox_test",
+    } as any);
+
+    vi.spyOn(db.shipment, "findFirst").mockResolvedValue({
+      id: "shp_outbox_test",
+      accountId: "acc_outbox_test",
+      version: 1,
+    } as any);
+
+    vi.spyOn(db.account, "findUnique").mockResolvedValue({
+      id: "acc_outbox_test",
+      dataMode: "PRODUCTION",
+    } as any);
+
+    vi.spyOn(db.workflowOutboxEvent, "findMany").mockResolvedValue([
+      {
+        id: "evt_test_outbox_1",
+        accountId: "acc_outbox_test",
+        eventKey: "evt_outbox_key_1",
+        eventType: "DOCUMENT_PARSE_PROMOTED",
+        aggregateType: "SHIPMENT",
+        aggregateId: "shp_outbox_test",
+        payload: { documentId: "doc_outbox_test", parseVersionId: "pv_outbox_test" },
+        status: "PENDING",
+      },
+    ] as any);
+
+    vi.spyOn(db.extractionField, "findMany").mockResolvedValue([
+      { id: "ext_1", documentId: "doc_outbox_test", fieldName: "carrier", value: "HAPAG LLOYD", confidence: 95, pageNumber: 1 },
+    ] as any);
+
+    vi.spyOn(db.documentParseVersion, "findFirst").mockResolvedValue({
+      id: "pv_outbox_test",
+      documentId: "doc_outbox_test",
+      version: 1,
+      rawJson: JSON.stringify({ tradeMetadata: { carrier: "HAPAG LLOYD" } }),
+    } as any);
+
+    const { HydrationWorker } = await import("../src/modules/hydration/orchestration/hydrationWorker");
+    vi.spyOn(HydrationWorker, "processDocumentHydration").mockResolvedValue({
+      runId: "run_test_outbox",
+      promotedCount: 1,
+      skippedReason: null,
+      totalProposals: 1,
+    } as any);
+
+    vi.spyOn(db.workflowOutboxEvent, "update").mockResolvedValue({ id: "evt_test_outbox_1", status: "DISPATCHED" } as any);
+
+    const result = await ShipmentEventConsumer.dispatchOutboxEvents("acc_outbox_test");
+    expect(result.processedCount).toBe(1);
+    expect(result.successCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+    expect(result.errors).toEqual([]);
   });
 });

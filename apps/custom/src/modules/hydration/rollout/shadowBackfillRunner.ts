@@ -9,6 +9,7 @@
 import { db } from "@qubere/db";
 import type { RawExtractionContext } from "../evidence/universalEvidenceExtractor";
 import { HydrationWorker, type PipelineExecutionResult } from "../orchestration/hydrationWorker";
+import { HydrationLogger } from "../logging/hydrationLogger";
 
 export interface MigrationDiffReport {
   documentId: string;
@@ -38,6 +39,12 @@ export class ShadowBackfillRunner {
     shipmentId?: string,
     dataMode?: "PRODUCTION" | "DEMO" | "SANDBOX"
   ): Promise<MigrationDiffReport> {
+    HydrationLogger.info(`Starting shadow backfill run for document ${ctx.documentId}`, {
+      accountId,
+      documentId: ctx.documentId,
+      parseVersionId: ctx.parseVersionId,
+      shipmentId,
+    });
     // E1 check: Run hydration pipeline in shadow mode (dry run, zero database mutation)
     const execResult: PipelineExecutionResult = await HydrationWorker.processDocumentHydration(
       accountId,

@@ -6,18 +6,17 @@
  */
 
 import { db } from "@qubere/db";
-import type { RawExtractionContext } from "./universalEvidenceExtractor";
-import { UniversalEvidenceExtractor } from "./universalEvidenceExtractor";
 import { Prisma } from "@prisma/client";
-import { DomainError } from "../../../lib/api/error";
+import { UniversalEvidenceExtractor, type RawExtractionContext } from "./universalEvidenceExtractor";
+import { DomainError } from "@/lib/api/error";
+import { HydrationLogger } from "../logging/hydrationLogger";
 
 export class EvidenceLedgerService {
   /**
-   * Batch persists atomic evidence items into the ExtractionField table.
-   * Enforces tenant isolation via accountId, uses distinct source "UNIVERSAL_HYDRATION",
-   * and deduplicates exact observations within one document run.
+   * Persists extraction output into atomic evidence records (ExtractionField).
    */
   public static async persistEvidenceLedger(ctx: RawExtractionContext, accountId: string) {
+    HydrationLogger.info(`Persisting evidence ledger for document ${ctx.documentId}`, { accountId, documentId: ctx.documentId, parseVersionId: ctx.parseVersionId });
     // Defect 4: Tenant ownership check
     const doc = await db.shipmentDocument.findFirst({
       where: { id: ctx.documentId, accountId },

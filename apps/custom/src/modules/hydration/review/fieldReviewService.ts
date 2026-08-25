@@ -18,6 +18,7 @@ import { FactAuditService } from "../../../modules/audit/factAuditService";
 import { FactService } from "../../../modules/shipment/factService";
 import { ExceptionService } from "../../../modules/exceptions/exception.service";
 import { MaterializerRegistry } from "../promotion/materializers";
+import { HydrationLogger } from "../logging/hydrationLogger";
 import type { FieldState, GroundedEvidenceReference } from "../types/canonicalRegistry";
 
 export interface FieldReviewSummaryItem {
@@ -164,6 +165,15 @@ export class FieldReviewService {
   }): Promise<FieldReviewActionResult> {
     const { accountId, userId, userName, shipmentId, documentId, fieldKey, action, candidateId, expectedVersion } = params;
     let value = params.value;
+
+    HydrationLogger.info(`Submitting field review action '${action}' for field '${fieldKey}'`, {
+      accountId,
+      shipmentId,
+      documentId,
+      fieldKey,
+      action,
+      expectedVersion,
+    });
 
     // B2 check: Atomic compare-and-swap update on Shipment.version
     let updatedShipment: { version: number } | null = null;

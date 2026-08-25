@@ -19,6 +19,7 @@ export interface RawExtractionContext {
 }
 
 export interface AtomicEvidenceItem {
+  id?: string;
   stableKey: string;
   groupKey?: string;
   rawLabel: string;

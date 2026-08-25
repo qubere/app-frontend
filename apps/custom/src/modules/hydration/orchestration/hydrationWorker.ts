@@ -81,6 +81,7 @@ export class HydrationWorker {
     // 1. Evidence Extraction & Persistence
     const evidenceFields = await EvidenceLedgerService.persistEvidenceLedger(ctx, accountId);
     const atomicItems = evidenceFields.map((f) => ({
+      id: f.id,
       stableKey: f.fieldName,
       rawLabel: f.fieldName,
       rawValue: f.value,
@@ -107,12 +108,15 @@ export class HydrationWorker {
     const proposals = StructuredFieldMapper.mapEvidenceToProposals(atomicItems);
 
     // Persist proposals to HydrationCandidate table
-    await HydrationRunEngine.persistProposals(run.id, accountId, proposals);
+    const createdCandidates = await HydrationRunEngine.persistProposals(run.id, accountId, proposals);
+    const candidateIdMap = new Map<string, string>(
+      createdCandidates.map((c: any) => [c.fieldDefinitionKey, c.id])
+    );
 
     // 4. Multi-document Corroboration & Conflict Resolution
     const docMap = new Map();
     docMap.set(ctx.documentId, proposals);
-    const resolvedCandidates = CorroborationConflictResolver.resolveShipmentProposals(docMap);
+    const resolvedCandidates = CorroborationConflictResolver.resolveShipmentProposals(docMap, candidateIdMap);
 
     // 5. Governed Policy Evaluation & 6. Allowlisted Materialization
     const decisions: PromotionDecision[] = [];

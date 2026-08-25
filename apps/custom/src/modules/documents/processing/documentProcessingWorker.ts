@@ -637,6 +637,7 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
   await ShipmentEventBus.logEvent({
     shipmentId,
     eventType: "DOCUMENT_READY_FOR_CLASSIFICATION",
+    accountId: run.document.accountId,
     payload: {
       documentId: run.documentId,
       processingRunId: run.id,
@@ -663,6 +664,9 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
     extractionRunId: extraction.extractionRunId,
     extractionSkippedReason: extraction.skippedReason,
   });
+
+  const { ShipmentEventConsumer } = await import("@/modules/events/shipmentEventConsumer");
+  await ShipmentEventConsumer.dispatchOutboxEvents(run.document.accountId).catch(() => {});
 }
 
 /**

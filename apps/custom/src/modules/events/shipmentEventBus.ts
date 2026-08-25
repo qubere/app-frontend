@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { HydrationLogger } from "../hydration/logging/hydrationLogger";
 
 export type ShipmentEventType =
   | "SHIPMENT_CREATED"
@@ -52,8 +53,12 @@ export class ShipmentEventBus {
           payload: params.payload ? JSON.parse(JSON.stringify(params.payload)) : {},
           status: "PENDING",
         },
-      }).catch(() => {
-        // Fallback for missing account or schema in isolated tests
+      }).catch((err) => {
+        HydrationLogger.warn(`Outbox event enqueue fallback for ${params.eventType}`, {
+          shipmentId: params.shipmentId,
+          eventType: params.eventType,
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
 
       return eventLog;

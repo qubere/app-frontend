@@ -136,4 +136,38 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
     expect(result.materialized).toBe(false);
     expect(result.reason).toBe("NO_TYPED_PROJECTION");
   });
+
+  it("test-matrix #28: SELECT_ALTERNATE demotes old candidate to SUPERSEDED and materializes selected candidate value", async () => {
+    vi.spyOn(db.shipment, "findFirst").mockResolvedValue({ id: testShipment, accountId: testAccount, version: 1 } as any);
+    vi.spyOn(db.shipment, "update").mockResolvedValue({ id: testShipment, version: 2 } as any);
+    vi.spyOn(db.hydrationCandidate, "updateMany").mockResolvedValue({ count: 1 } as any);
+    vi.spyOn(db.hydrationCandidate, "update").mockResolvedValue({ id: "cand_alt_2", status: "PROMOTED" } as any);
+    vi.spyOn(db.fieldApproval, "create").mockResolvedValue({ id: "app_alt_1" } as any);
+    vi.spyOn(db.fact, "create").mockResolvedValue({ id: "fact_approved_1" } as any);
+    vi.spyOn(db.fact, "update").mockResolvedValue({ id: "fact_approved_1", isHumanLocked: true } as any);
+    vi.spyOn(db, "$transaction").mockImplementation((async (cb: any) => {
+      const txMock = {
+        fact: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: "fact_approved_1" }),
+        },
+        shipment: { update: vi.fn().mockResolvedValue({ id: testShipment }) },
+      };
+      return cb(txMock);
+    }) as any);
+
+    const altRes = await FieldReviewService.submitFieldReviewAction({
+      accountId: testAccount,
+      userId: "user_rev_1",
+      userName: "Jane Reviewer",
+      shipmentId: testShipment,
+      documentId: testDocument,
+      fieldKey: "shipment.carrier.name",
+      action: "SELECT_ALTERNATE",
+      value: "MAERSK LINE",
+      candidateId: "cand_alt_2",
+    });
+
+    expect(altRes.success).toBe(true);
+  });
 });

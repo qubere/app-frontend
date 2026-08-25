@@ -213,4 +213,105 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
     expect(res.supersededFactsCount).toBe(1);
     expect(res.recomputedPromotionsCount).toBe(0);
   });
+
+  it("test-matrix #15: rolls back transaction cleanly if party assignment fails during materialization", async () => {
+    vi.spyOn(db, "$transaction").mockImplementation(async () => {
+      throw new Error("Database write failed");
+    });
+
+    const mockPartyDecision = {
+      candidate: {
+        candidateId: "cand_party_1",
+        proposal: {
+          targetFieldKey: "party.importer.name",
+          targetEntityRef: null,
+          sourceExtractionFieldIds: ["ev_party_1"],
+          evidenceReferences: [
+            { documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Importer", rawValue: "Acme Import Corp" },
+          ],
+          proposedValue: "Acme Import Corp",
+          mappingConfidence: 95,
+          relationConfidence: null,
+          reasoning: "Importer name",
+          status: "PROPOSED" as const,
+          abstainReason: null,
+        },
+        corroboratingDocumentIds: [testDocument],
+        corroborationScore: 0,
+        calibratedScore: 95.0,
+        status: "PROMOTED" as const,
+      },
+      shouldPromote: true,
+      reason: "PROMOTED",
+      isHumanLocked: false,
+    };
+
+    await expect(
+      MaterializerRegistry.materializeDecision(testAccount, testShipment, mockPartyDecision, { expectedVersion: 1 })
+    ).rejects.toThrow("Database write failed");
+  });
+
+  it("test-matrix #14: candidate identity produces distinct fact records without collision", async () => {
+    const candidateA = {
+      candidateId: "cand_identity_A",
+      proposal: {
+        targetFieldKey: "shipment.carrier.name",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: ["ev_cand_A"],
+        evidenceReferences: [{ documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Carrier", rawValue: "HAPAG LLOYD" }],
+        proposedValue: "HAPAG LLOYD",
+        mappingConfidence: 95,
+        relationConfidence: null,
+        reasoning: "Carrier candidate A",
+        status: "PROPOSED" as const,
+        abstainReason: null,
+      },
+      corroboratingDocumentIds: [testDocument],
+      corroborationScore: 0,
+      calibratedScore: 95.0,
+      status: "PROMOTED" as const,
+    };
+
+    const candidateB = {
+      candidateId: "cand_identity_B",
+      proposal: {
+        targetFieldKey: "shipment.carrier.name",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: ["ev_cand_B"],
+        evidenceReferences: [{ documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Carrier", rawValue: "MAERSK LINE" }],
+        proposedValue: "MAERSK LINE",
+        mappingConfidence: 90,
+        relationConfidence: null,
+        reasoning: "Carrier candidate B",
+        status: "PROPOSED" as const,
+        abstainReason: null,
+      },
+      corroboratingDocumentIds: [testDocument],
+      corroborationScore: 0,
+      calibratedScore: 90.0,
+      status: "PROMOTED" as const,
+    };
+
+    vi.spyOn(db, "$transaction").mockImplementation((async (cb: any) => {
+      const txMock = {
+        fact: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockImplementation((args: any) =>
+            Promise.resolve({ id: `fact_${args.data.candidateId}`, ...args.data })
+          ),
+        },
+        shipment: { update: vi.fn().mockResolvedValue({ id: testShipment }) },
+      };
+      return cb(txMock);
+    }) as any);
+
+    const resA = await MaterializerRegistry.materializeDecision(testAccount, testShipment, { candidate: candidateA, shouldPromote: true, reason: "PROMOTED", isHumanLocked: false }, { expectedVersion: 1 });
+    const resB = await MaterializerRegistry.materializeDecision(testAccount, testShipment, { candidate: candidateB, shouldPromote: true, reason: "PROMOTED", isHumanLocked: false }, { expectedVersion: 1 });
+
+    expect(resA.success).toBe(true);
+    expect(resB.success).toBe(true);
+    expect(resA.factId).toBe("fact_cand_identity_A");
+    expect(resB.factId).toBe("fact_cand_identity_B");
+    expect(resA.factId).not.toEqual(resB.factId);
+  });
 });

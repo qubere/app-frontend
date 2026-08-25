@@ -8,8 +8,10 @@
 
 import type { HydrationProposal } from "../types/canonicalRegistry";
 import { calculateCalibratedScore } from "../validation/calibratedScoreCalculator";
+import { HydrationLogger } from "../logging/hydrationLogger";
 
 export interface ResolvedCandidate {
+  candidateId?: string;
   proposal: HydrationProposal;
   corroboratingDocumentIds: string[];
   corroborationScore: number;
@@ -23,8 +25,12 @@ export class CorroborationConflictResolver {
    * Resolves candidates across multiple documents for a shipment packet.
    */
   public static resolveShipmentProposals(
-    documentProposalsMap: Map<string, HydrationProposal[]>
+    documentProposalsMap: Map<string, HydrationProposal[]>,
+    candidateIdMap?: Map<string, string>
   ): ResolvedCandidate[] {
+    HydrationLogger.info(`Resolving candidates across ${documentProposalsMap.size} documents`, {
+      documentsCount: documentProposalsMap.size,
+    });
     const allProposals: Array<{ documentId: string; proposal: HydrationProposal }> = [];
 
     for (const [docId, proposals] of documentProposalsMap.entries()) {
@@ -58,7 +64,10 @@ export class CorroborationConflictResolver {
           corroborationScore: 0,
         });
 
+        const candId = candidateIdMap?.get(first.proposal.targetFieldKey) || (first.proposal as any).candidateId;
+
         results.push({
+          candidateId: candId,
           proposal: first.proposal,
           corroboratingDocumentIds: [first.documentId],
           corroborationScore: 0,
@@ -87,7 +96,10 @@ export class CorroborationConflictResolver {
           corroborationScore,
         });
 
+        const candId = candidateIdMap?.get(first.proposal.targetFieldKey) || (first.proposal as any).candidateId;
+
         results.push({
+          candidateId: candId,
           proposal: {
             ...first.proposal,
             mappingConfidence: isIndependentCorroboration
@@ -113,7 +125,9 @@ export class CorroborationConflictResolver {
         });
 
         for (const item of items) {
+          const candId = candidateIdMap?.get(item.proposal.targetFieldKey) || (item.proposal as any).candidateId;
           results.push({
+            candidateId: candId,
             proposal: item.proposal,
             corroboratingDocumentIds: [item.documentId],
             corroborationScore: 0,

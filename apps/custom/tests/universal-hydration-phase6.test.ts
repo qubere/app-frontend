@@ -129,9 +129,51 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
 
     const metrics = await HydrationMetricsService.getAccountMetrics(testAccount);
 
-    expect(metrics).toBeDefined();
-    expect(metrics.avgLatencyMs).toBe(200);
     expect(metrics.totalHydrationRuns).toBe(2);
     expect(metrics.totalCandidatesGenerated).toBe(3);
+    expect(metrics.avgLatencyMs).toBe(200);
+    expect(metrics.estimatedCostUsdApprox).toBe(0.01);
+  });
+
+  it("test-matrix #18: mid-pipeline failure sets HydrationRun status FAILED and records errorCode", async () => {
+    const { HydrationRunEngine } = await import("../src/modules/hydration/engine/hydrationRunEngine");
+
+    let updatedStatus: string | null = null;
+    let updatedErrorCode: string | null = null;
+
+    vi.spyOn(db.hydrationRun, "findUnique").mockResolvedValue({
+      id: "run_failed_test_1",
+      accountId: testAccount,
+      documentId: "doc_fail_1",
+      createdAt: new Date(),
+    } as any);
+
+    vi.spyOn(db.hydrationRun, "update").mockImplementation((async (args: any) => {
+      updatedStatus = args.data.status;
+      updatedErrorCode = args.data.errorCode;
+      return { id: "run_failed_test_1", ...args.data };
+    }) as any);
+
+    const invalidProposals = [
+      {
+        targetFieldKey: "UNREGISTERED_FIELD_KEY_FAIL",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: [],
+        evidenceReferences: [{ documentId: "doc_fail_1", parseVersionId: "pv_1", rawLabel: "X", rawValue: "Y" }],
+        proposedValue: "Y",
+        mappingConfidence: 90,
+        relationConfidence: null,
+        reasoning: "Invalid proposal",
+        status: "PROPOSED" as const,
+        abstainReason: null,
+      },
+    ];
+
+    await expect(
+      HydrationRunEngine.persistProposals("run_failed_test_1", testAccount, invalidProposals)
+    ).rejects.toThrow();
+
+    expect(updatedStatus).toBe("FAILED");
+    expect(updatedErrorCode).toContain("FAIL_CLOSED");
   });
 });
