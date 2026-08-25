@@ -113,6 +113,61 @@ describe("inbound email worker", () => {
     expect(dbMock.shipmentDocument.create).not.toHaveBeenCalled();
   });
 
+  it("downloads and stores an unknown sender's attachment into quarantine instead of dropping it", async () => {
+    resolveInboundRouteMock.mockResolvedValue(null);
+    getReceivedEmailMock.mockResolvedValue({
+      id: "resend_email_1",
+      from: "stranger@example.com",
+      to: ["docs@inbound.qubere.ai"],
+      subject: "Invoice",
+      receivedFor: ["docs@inbound.qubere.ai"],
+      headers: {},
+      attachments: [
+        { id: "att_1", filename: "invoice.pdf", size: 2048, contentType: "application/pdf", contentId: null, contentDisposition: "attachment" },
+      ],
+    });
+    dbMock.inboundEmail.findMany.mockResolvedValue([{ id: "in_1" }]);
+    getAttachmentDownloadInfoMock.mockResolvedValue({
+      filename: "invoice.pdf",
+      size: 2048,
+      contentType: "application/pdf",
+      contentDisposition: "attachment",
+      downloadUrl: "https://signed.example/download",
+    });
+    downloadAttachmentBytesMock.mockResolvedValue(Buffer.from("%PDF-1.4\n...\n%%EOF"));
+    screenUploadForMalwareMock.mockResolvedValue({ verdict: "NOT_SCANNED", reason: "no scanner configured", scannerName: null });
+    storeDocumentFileMock.mockResolvedValue({
+      url: "https://blob.vercel-storage.com/quarantine/x",
+      checksum: "quarantinedchecksum",
+      provider: "vercel-blob",
+    });
+
+    const { runInboundEmailWorkerTick } = await import("@/modules/documents/processing/inboundEmailWorker");
+    const result = await runInboundEmailWorkerTick();
+
+    expect(result.quarantined).toBe(1);
+    expect(getAttachmentDownloadInfoMock).toHaveBeenCalled();
+    expect(downloadAttachmentBytesMock).toHaveBeenCalled();
+    expect(storeDocumentFileMock).toHaveBeenCalledWith(expect.anything(), "invoice.pdf", "quarantine");
+    expect(dbMock.inboundAttachment.update).toHaveBeenCalledWith({
+      where: { id: "att_row_1" },
+      data: {
+        processingStatus: "QUARANTINED",
+        checksum: "quarantinedchecksum",
+        quarantinedFileUrl: "https://blob.vercel-storage.com/quarantine/x",
+        actualSize: 18,
+        declaredMimeType: "application/pdf",
+      },
+    });
+    expect(dbMock.shipmentDocument.create).not.toHaveBeenCalled();
+    expect(enqueueDocumentParseMock).not.toHaveBeenCalled();
+    expect(createAuditLogMock).not.toHaveBeenCalled();
+    expect(dbMock.inboundEmail.update).toHaveBeenCalledWith({
+      where: { id: "in_1" },
+      data: { routingStatus: "QUARANTINED", quarantineReason: "unknown_sender" },
+    });
+  });
+
   it("records an inline attachment as SKIPPED_INLINE and never stores or parses it", async () => {
     getReceivedEmailMock.mockResolvedValue({
       id: "resend_email_1",

@@ -1058,6 +1058,7 @@ model InboundEmail {
   @@unique([provider, providerEventId])
   @@unique([provider, providerEmailId])
   @@index([accountId])
+  @@index([routingStatus])
 }
 
 /// One row per attachment on an InboundEmail. shipmentDocumentId is set once
@@ -1073,8 +1074,16 @@ model InboundAttachment {
   contentDisposition   String? // "inline" attachments (signature logos) are recorded but never processed
   actualSize           Int?
   checksum             String?
-  processingStatus     String            @default("PENDING") // PENDING, STORED, SKIPPED_INLINE, REJECTED, FAILED
+  /// PENDING, STORED, SKIPPED_INLINE, REJECTED, FAILED, QUARANTINED. QUARANTINED
+  /// means downloaded, scanned, and stored under quarantinedFileUrl, but not yet
+  /// promoted to a ShipmentDocument because the sender wasn't recognized -- a
+  /// platform admin has to manually release it to an account first.
+  processingStatus     String            @default("PENDING")
   rejectionReason      String?
+  /// Set only while processingStatus is QUARANTINED: the blob location of the
+  /// stored-but-unassigned file. Cleared once released (fileUrl on the
+  /// resulting ShipmentDocument takes over as the source of truth).
+  quarantinedFileUrl   String?
   shipmentDocumentId   String?           @unique
   shipmentDocument     ShipmentDocument? @relation(fields: [shipmentDocumentId], references: [id], onDelete: SetNull)
   createdAt            DateTime          @default(now())

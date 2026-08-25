@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate, cn } from "@/lib/utils";
-import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck, ShieldCheck } from "lucide-react";
+import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck, ShieldCheck, Inbox } from "lucide-react";
 import { HtsAdminPanel, HtsAdminData } from "./HtsAdminPanel";
 import { DeploymentsPanel } from "./DeploymentsPanel";
 import { AgentsAnalyticsPanel } from "./AgentsAnalyticsPanel";
@@ -13,6 +13,7 @@ import { DataAdminPanel } from "./DataAdminPanel";
 import { RateReviewPanel } from "./RateReviewPanel";
 import { KeywordRuleReviewPanel } from "./KeywordRuleReviewPanel";
 import { AccountMemoryPanel } from "./AccountMemoryPanel";
+import { QuarantinedInboundPanel } from "./QuarantinedInboundPanel";
 import { PlatformPermissionsPanel } from "./PlatformPermissionsPanel";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FormField } from "@/components/ui/Input";
@@ -36,6 +37,7 @@ interface PlatformAdminConsoleProps {
   aiUsage: AiUsageAnalytics;
   documentProcessing: DocumentProcessingAnalytics;
   pendingKeywordRuleCount: number;
+  pendingQuarantineCount: number;
   rolesPermissions?: RolesPermissionsData;
 }
 
@@ -45,11 +47,12 @@ export function PlatformAdminConsole({
   aiUsage,
   documentProcessing,
   pendingKeywordRuleCount,
+  pendingQuarantineCount,
   rolesPermissions,
 }: PlatformAdminConsoleProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
-    "accounts" | "permissions" | "hts" | "deployments" | "agents" | "api" | "cron" | "data" | "rate-review" | "keyword-rules" | "memory"
+    "accounts" | "permissions" | "hts" | "deployments" | "agents" | "api" | "cron" | "data" | "rate-review" | "keyword-rules" | "memory" | "quarantined-emails"
   >("accounts");
   const [companyName, setCompanyName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
@@ -234,6 +237,24 @@ export function PlatformAdminConsole({
           )}
         </button>
         <button
+          onClick={() => setActiveTab("quarantined-emails")}
+          className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center space-x-2 ${
+            activeTab === "quarantined-emails" ? "bg-brand text-white" : "bg-white border border-border text-ink-muted hover:text-ink"
+          }`}
+        >
+          <Inbox className="w-3.5 h-3.5" />
+          <span>Quarantined Emails</span>
+          {pendingQuarantineCount > 0 && (
+            <span
+              className={`inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-extrabold ${
+                activeTab === "quarantined-emails" ? "bg-white text-brand" : "bg-red-500 text-white"
+              }`}
+            >
+              {pendingQuarantineCount}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setActiveTab("hts")}
           className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center space-x-2 ${
             activeTab === "hts" ? "bg-brand text-white" : "bg-white border border-border text-ink-muted hover:text-ink"
@@ -285,6 +306,8 @@ export function PlatformAdminConsole({
       {activeTab === "rate-review" && <RateReviewPanel />}
 
       {activeTab === "keyword-rules" && <KeywordRuleReviewPanel />}
+
+      {activeTab === "quarantined-emails" && <QuarantinedInboundPanel accounts={accounts} />}
 
       {activeTab === "hts" && <HtsAdminPanel data={htsAdmin} />}
 

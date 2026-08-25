@@ -258,7 +258,8 @@ import { MalwareScanner } from "@/lib/security/malwareScanner";
 
 export async function storeDocumentFile(
   file: File,
-  filename: string
+  filename: string,
+  folder: string = "documents"
 ): Promise<StorageUploadResult> {
   // QPR-004: Enforce MIME type allowlist before doing anything with the file.
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
@@ -304,8 +305,8 @@ export async function storeDocumentFile(
   if (token) {
     const startTime = Date.now();
     try {
-      console.log(`[Storage] Uploading ${safeFilename} (${file.size} bytes) sha256=${checksum} to Vercel Blob Storage...`);
-      const blob = await put(`documents/${safeFilename}`, buffer, {
+      console.log(`[Storage] Uploading ${safeFilename} (${file.size} bytes) sha256=${checksum} to Vercel Blob Storage (${folder}/)...`);
+      const blob = await put(`${folder}/${safeFilename}`, buffer, {
         access: "private",
         token,
       });
@@ -331,7 +332,7 @@ export async function storeDocumentFile(
       const durationMs = Date.now() - startTime;
       void logThirdPartyCall({
         provider: "VERCEL_BLOB_STORAGE",
-        url: `documents/${safeFilename}`,
+        url: `${folder}/${safeFilename}`,
         method: "PUT",
         durationMs,
         error: err,
