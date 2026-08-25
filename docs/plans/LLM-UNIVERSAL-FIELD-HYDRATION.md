@@ -8,6 +8,76 @@
 > high **evidenced field fill rate** without allowing an LLM to invent values,
 > overwrite operator decisions, or write arbitrary database columns.
 
+## 0. Review notes (2026-08-25, against a live incident)
+
+Reviewed against a real bug found and fixed the same day this design was read,
+which independently confirms the diagnosis in Section 2 rather than just
+agreeing with it in the abstract:
+
+- A shipment's `carrier` field was extracted correctly
+  (`tradeMetadata.carrier = "HAPAG LLOYD MEXICO SA DE CV"`) but the shipment
+  workspace's field-review map read the key `carrierName`, so the UI showed
+  it as Missing. Four other fields (`totalAmount`/`invoiceSubtotal`,
+  `billOfLading`/`transportDocumentNumber`, `htsCode`/`hsHtsCode`,
+  `grossWeight`/`totalWeight`) had the same class of drift, plus a duplicate
+  `originCountry`/`countryOfOrigin` key rendering "Country of Origin" twice.
+  This is precisely the "scattered per-surface maps" failure mode Section 2
+  names — it is not a hypothetical risk, it is what the current architecture
+  already does in production-shaped data.
+- Worse: the field-review **write** path (`field-review/route.ts`) only had
+  correct handling for 3 of ~13 fields; every other field fell into a default
+  branch that resolved the confirmed value as a legal entity and assigned it
+  as the shipment's **Exporter**. Confirming "Carrier" would have silently
+  overwritten the Exporter with a carrier name. "Approve All" would have done
+  this for every unhandled field in one click. This was patched as a
+  short-term fix (see Section 11) but it is the sharpest illustration of why
+  invariant #7 (no generic LLM-to-Prisma write path, only allowlisted
+  materializers) matters even before an LLM is involved: a *hard-coded*
+  field→destination map had the exact same failure mode a badly-governed
+  registry would.
+
+Given that, the diagnosis and target architecture below are endorsed as
+correctly scoped to the real problem. Four things to resolve before
+committing the full 25–35 day estimate:
+
+1. **No cost/latency budget.** Section 7 lists "more model calls and larger
+   prompts" as a risk but gives no number. Before Phase 3, put a concrete
+   per-document token/cost/latency estimate against realistic multi-document
+   shipment packets (the two-pass document-local + shipment-level mapping in
+   5.3 multiplies this), and a stated ceiling the design must stay under.
+2. **Sequencing against other foundational gaps.** The same review session
+   that found the field-mapping bug also found: the account `dataMode`
+   (PRODUCTION/DEMO/SANDBOX) context is missing from most Server Component
+   pages app-wide (only API routes set it), a connection-pooling
+   misconfiguration was causing genuine read-after-write inconsistency
+   (writes invisible to an immediate subsequent read), and the shared
+   `ExceptionItem` creation path had no idempotency at all (one denied-party
+   screening finding was duplicated 90 times by repeated pipeline re-runs on
+   one shipment). Test #30 here correctly requires dataMode isolation for
+   hydration workers, which is good — but that means this build inherits
+   whatever state that fix is in. Confirm the dataMode-context and
+   agent-write-dedup fixes are complete and stable before Phase 4's
+   promotion/materializer work lands on top of them, not in parallel with
+   still-settling foundations.
+3. **No cross-reference to the direct-CBP-transmission (ABI) track.**
+   `FilingDraftMaterializer` (5.6) explicitly "populates draft fields only;
+   never transmits," which is the right boundary, but this document should
+   name which downstream system owns the transmission gate and confirm that
+   gate independently enforces human approval on consequential fields even
+   if a hydration bug ever promoted one incorrectly — defense in depth, not
+   reliance on this design alone being bug-free at launch.
+4. **Registry velocity trade-off should be stated explicitly, not implied.**
+   "Adding a simple scalar field should require a registry entry, not edits
+   in five files" (Section 1) is the right goal, but combined with immutable
+   versioned registry releases and the mapper only selecting keys from a
+   published version (invariant #2), adding a field is a governed release,
+   not a five-minute change. That is the correct safety trade-off — say so
+   plainly so the team doesn't expect instant iteration once this ships.
+
+None of this changes the recommendation in Section 7 — the alternatives
+(more TypeScript maps, unrestricted LLM writes, JSON-blob-only storage) are
+correctly rejected, and this session's incident is direct evidence for why.
+
 ## 1. Decision
 
 Build a hybrid hydration engine with four explicit stages:
