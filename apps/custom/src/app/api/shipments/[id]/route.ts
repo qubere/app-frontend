@@ -48,7 +48,7 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
   const { id } = paramsVal.data;
 
   const body = await req.json();
-  const { lineItems, clientId, parties, countryOfOrigin, incoterm, destinationCountry, expectedVersion, status } = body;
+  const { lineItems, clientId, parties, countryOfOrigin, incoterm, destinationCountry, expectedVersion, status, assignedBrokerId } = body;
 
   const shipment = await db.shipment.findFirst({
     where: { id, accountId: ctx.accountId, deletedAt: null },
@@ -340,6 +340,36 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
         console.error("[shipment PATCH] Async line items pipeline background error:", err);
       }
     });
+  }
+
+  // Handle Owner (assigned broker) update
+  if (assignedBrokerId !== undefined && assignedBrokerId !== shipment.assignedBrokerId) {
+    if (assignedBrokerId) {
+      const membership = await db.accountMembership.findFirst({
+        where: { accountId: ctx.accountId, userId: assignedBrokerId, status: "ACTIVE" },
+      });
+      if (!membership) {
+        return NextResponse.json({ error: "Owner must be an active member of this account" }, { status: 400 });
+      }
+    }
+
+    await FactAuditService.logChangeEvent({
+      shipmentId: id,
+      userId: ctx.userId,
+      changeType: "USER_FIELD_UPDATE",
+      field: "assignedBrokerId",
+      previousValue: shipment.assignedBrokerId,
+      newValue: assignedBrokerId,
+      reason: "User manual reassignment",
+    });
+
+    if (
+      !(await applyVersionedShipmentUpdate({
+        assignedBroker: assignedBrokerId ? { connect: { id: assignedBrokerId } } : { disconnect: true },
+      }))
+    ) {
+      return staleShipmentResponse();
+    }
   }
 
   // Handle Client update

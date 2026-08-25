@@ -38,6 +38,7 @@ export default async function DocumentsPage() {
         firstName: ctx.firstName,
         lastName: ctx.lastName,
         email: ctx.email,
+        isPlatformAdmin: !!ctx.isPlatformAdmin,
       }}
       teamMembers={teamMembers}
     />
