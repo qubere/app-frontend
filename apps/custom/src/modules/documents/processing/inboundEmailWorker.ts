@@ -18,7 +18,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { db, runWithAccountId } from "@/lib/db";
+import { db, runWithAccountId, withDataModeContext } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { storeDocumentFile, StorageValidationError } from "@/lib/storage";
 import { screenUploadForMalware } from "./malwarePolicy";
@@ -48,6 +48,19 @@ function log(event: string, fields: Record<string, string | number | boolean | n
 }
 
 export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResult> {
+  // InboundEmail has an optional `account` relation, and the shared `db`
+  // client auto-filters every read through that relation by dataMode unless
+  // told otherwise (see packages/db/src/index.ts, buildIsolatedQueryArgs) --
+  // with no context at all (the default for both call sites here: the
+  // webhook's after() and the cron tick), that default silently excludes
+  // every row that doesn't have an account yet, i.e. every freshly RECEIVED
+  // email, before routing has even had a chance to run. This worker is
+  // explicitly cross-tenant/pre-attribution by design, so it has to opt out
+  // of that filter itself rather than rely on a caller to.
+  return withDataModeContext(null, () => runTickWithBypass());
+}
+
+async function runTickWithBypass(): Promise<InboundEmailTickResult> {
   const dueEmails = await db.inboundEmail.findMany({
     where: { routingStatus: { in: ["RECEIVED", "ROUTED"] } },
     orderBy: { createdAt: "asc" },
