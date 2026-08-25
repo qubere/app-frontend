@@ -208,7 +208,7 @@ async function processOneAttachment(params: {
 }): Promise<AttachmentOutcome> {
   const { accountId, email, attachment, defaultAssigneeId } = params;
 
-const attachmentLabel = attachment.filename ?? attachment.id;
+  const attachmentLabel = attachment.filename ?? attachment.id;
   log("attachment.processing_started", {
     inboundEmailId: email.id,
     providerAttachmentId: attachment.id,
@@ -276,18 +276,31 @@ const attachmentLabel = attachment.filename ?? attachment.id;
   try {
     const download = await getAttachmentDownloadInfo(email.providerEmailId, attachment.id);
     const bytes = await downloadAttachmentBytes(download.downloadUrl);
+    log("attachment.downloaded", {
+      inboundEmailId: email.id,
+      providerAttachmentId: attachment.id,
+      filename: attachmentLabel,
+      byteLength: bytes.byteLength,
+    });
 
     try {
       assertParseableFormat(bytes);
     } catch (error) {
       const reason = isDocumentParserError(error) ? error.message : "Unreadable file format.";
-      await rejectAttachment(attachmentRow.id, reason);
+      await rejectAttachment(attachmentRow.id, reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       return NOT_STORED;
     }
 
     const scan = await screenUploadForMalware({ fileName: filename, byteSize: bytes.byteLength, bytes });
+    log("attachment.malware_scan_result", {
+      inboundEmailId: email.id,
+      providerAttachmentId: attachment.id,
+      filename: attachmentLabel,
+      verdict: scan.verdict,
+      reason: scan.reason ?? null,
+    });
     if (scan.verdict === "QUARANTINE") {
-      await rejectAttachment(attachmentRow.id, scan.reason);
+      await rejectAttachment(attachmentRow.id, scan.reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       if (accountId) {
         await createAuditLog({
           accountId,
@@ -311,9 +324,16 @@ const attachmentLabel = attachment.filename ?? attachment.id;
     let storageResult;
     try {
       storageResult = await storeDocumentFile(file, filename, folder);
+      log("attachment.stored_to_blob", {
+        inboundEmailId: email.id,
+        providerAttachmentId: attachment.id,
+        filename: attachmentLabel,
+        folder,
+        provider: storageResult.provider,
+      });
     } catch (error) {
       const reason = error instanceof StorageValidationError ? error.message : "Storage failed.";
-      await rejectAttachment(attachmentRow.id, reason);
+      await rejectAttachment(attachmentRow.id, reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       return NOT_STORED;
     }
 
@@ -331,6 +351,11 @@ const attachmentLabel = attachment.filename ?? attachment.id;
           actualSize: bytes.byteLength,
           declaredMimeType: file.type || attachment.contentType,
         },
+      });
+      log("attachment.quarantined", {
+        inboundEmailId: email.id,
+        providerAttachmentId: attachment.id,
+        filename: attachmentLabel,
       });
       return { stored: true, crossShipmentDuplicateCount: 0 };
     }
@@ -394,17 +419,31 @@ const attachmentLabel = attachment.filename ?? attachment.id;
       reason: "INITIAL",
       correlationId,
     });
+    log("attachment.stored_as_document", {
+      inboundEmailId: email.id,
+      providerAttachmentId: attachment.id,
+      filename: attachmentLabel,
+      accountId,
+      documentId: document.id,
+      crossShipmentDuplicateCount: crossShipmentDuplicates.length,
+    });
     return { stored: true, crossShipmentDuplicateCount: crossShipmentDuplicates.length };
   } catch (error) {
     await rejectAttachment(
       attachmentRow.id,
-      error instanceof Error ? error.message : "Unexpected error while processing this attachment."
+      error instanceof Error ? error.message : "Unexpected error while processing this attachment.",
+      { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel }
     );
     return NOT_STORED;
   }
 }
 
-async function rejectAttachment(attachmentId: string, reason: string): Promise<void> {
+async function rejectAttachment(
+  attachmentId: string,
+  reason: string,
+  context?: { inboundEmailId: string; providerAttachmentId: string; filename: string }
+): Promise<void> {
+  log("attachment.rejected", { attachmentId, reason, ...(context ?? {}) });
   await db.inboundAttachment.update({
     where: { id: attachmentId },
     data: { processingStatus: "REJECTED", rejectionReason: reason },

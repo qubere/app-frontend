@@ -127,8 +127,11 @@ export async function createImportedRateCardAction(input: {
     const productLine = input.productLine ?? "CUSTOMS";
     await seedBillingEventDefinitions(ctx.accountId);
     const eventCodes = [...new Set(input.lines.map((line) => line.eventCode))];
+    // Scoped to accountId: BillingEventDefinition is seeded per-account (identical content,
+    // separate rows per tenant), so an unscoped lookup here could resolve another tenant's
+    // definition id and link this account's imported rate rule to a foreign row.
     const definitions = await db.billingEventDefinition.findMany({
-      where: { eventCode: { in: eventCodes }, productLine },
+      where: { accountId: ctx.accountId, eventCode: { in: eventCodes }, productLine },
       select: { id: true, eventCode: true },
     });
     const definitionByCode = new Map(definitions.map((definition) => [definition.eventCode, definition.id]));

@@ -121,31 +121,12 @@ async function loadAccountContext(): Promise<AccountContext | null> {
         },
       });
 
-      if (actorUser) {
-        actorUser = await db.user.update({
+      if (actorUser && actorUser.clerkUserId !== clerkUserId) {
+        await db.user.update({
           where: { id: actorUser.id },
           data: { clerkUserId },
-          include: {
-            platformRoles: { include: { platformRole: true } },
-            memberships: {
-              where: { deletedAt: null },
-              include: {
-                account: {
-                include: { ownerUser: { select: { email: true, firstName: true, lastName: true } } },
-              },
-                roles: {
-                  include: {
-                    role: {
-                      include: {
-                        rolePermissions: { include: { permission: true } },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
         });
+        actorUser.clerkUserId = clerkUserId;
       }
     }
 

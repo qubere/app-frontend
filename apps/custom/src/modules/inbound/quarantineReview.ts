@@ -14,6 +14,10 @@ import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetect
 import { enqueueDocumentParse } from "@/modules/documents/processing/documentProcessingWorker";
 import { createInboundSenderRoute, InboundSenderAlreadyRoutedError } from "@/modules/inbound/senderRouting";
 
+function log(event: string, fields: Record<string, string | number | boolean | null>): void {
+  console.log(`[QuarantineReview] ${event}`, fields);
+}
+
 /**
  * Every export here reads/writes InboundEmail, which has an optional
  * `account` relation -- the shared `db` client auto-filters reads through
@@ -30,13 +34,15 @@ export function listQuarantinedInboundEmails() {
   // already reverted by the time the query really runs and this silently
   // falls back to the default (accountId-required) filter. Confirmed
   // empirically against the live DB while diagnosing this bug.
-  return withDataModeContext(null, async () =>
-    db.inboundEmail.findMany({
+  return withDataModeContext(null, async () => {
+    const items = await db.inboundEmail.findMany({
       where: { routingStatus: "QUARANTINED" },
       include: { attachments: true },
       orderBy: { createdAt: "asc" },
-    })
-  );
+    });
+    log("list.completed", { count: items.length });
+    return items;
+  });
 }
 
 export class AssigneeNotAMemberError extends Error {
@@ -66,12 +72,14 @@ async function releaseQuarantinedInboundEmailImpl(params: {
   adminUserId: string;
 }) {
   const { inboundEmailId, accountId, defaultAssignedToUserId, createSenderRoute, adminUserId } = params;
+  log("release.started", { inboundEmailId, accountId, adminUserId, createSenderRoute });
 
   const email = await db.inboundEmail.findUniqueOrThrow({
     where: { id: inboundEmailId },
     include: { attachments: true },
   });
   if (email.routingStatus !== "QUARANTINED") {
+    log("release.rejected_wrong_status", { inboundEmailId, routingStatus: email.routingStatus });
     throw new Error(`InboundEmail ${inboundEmailId} is not quarantined (status: ${email.routingStatus}).`);
   }
 
@@ -79,24 +87,44 @@ async function releaseQuarantinedInboundEmailImpl(params: {
     const membership = await db.accountMembership.findFirst({
       where: { accountId, userId: defaultAssignedToUserId, status: "ACTIVE" },
     });
-    if (!membership) throw new AssigneeNotAMemberError();
+    if (!membership) {
+      log("release.assignee_not_a_member", { inboundEmailId, accountId, defaultAssignedToUserId });
+      throw new AssigneeNotAMemberError();
+    }
   }
 
   if (createSenderRoute) {
-    await createInboundSenderRoute({
-      accountId,
-      email: email.originalFromAddress,
-      defaultAssignedToUserId,
-      createdByUserId: adminUserId,
-      auditSource: "PLATFORM_ADMIN",
-    });
+    try {
+      const route = await createInboundSenderRoute({
+        accountId,
+        email: email.originalFromAddress,
+        defaultAssignedToUserId,
+        createdByUserId: adminUserId,
+        auditSource: "PLATFORM_ADMIN",
+      });
+      log("release.sender_route_created", { inboundEmailId, accountId, senderRouteId: route.id });
+    } catch (error) {
+      log("release.sender_route_creation_failed", {
+        inboundEmailId,
+        accountId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   const { DocumentTypeCatalog } = await import("@/modules/intake/documentTypeCatalog");
 
   let storedCount = 0;
   for (const attachment of email.attachments) {
-    if (attachment.processingStatus !== "QUARANTINED" || !attachment.quarantinedFileUrl) continue;
+    if (attachment.processingStatus !== "QUARANTINED" || !attachment.quarantinedFileUrl) {
+      log("release.attachment_skipped", {
+        inboundEmailId,
+        attachmentId: attachment.id,
+        processingStatus: attachment.processingStatus,
+      });
+      continue;
+    }
 
     const correlationId = randomUUID();
     const docType = DocumentTypeCatalog.matchDocumentType(attachment.originalFilename).name;
@@ -157,6 +185,13 @@ async function releaseQuarantinedInboundEmailImpl(params: {
       });
     }
 
+    log("release.attachment_promoted", {
+      inboundEmailId,
+      attachmentId: attachment.id,
+      documentId: document.id,
+      accountId,
+      crossShipmentDuplicateCount: crossShipmentDuplicates.length,
+    });
     storedCount += 1;
   }
 
@@ -173,10 +208,12 @@ async function releaseQuarantinedInboundEmailImpl(params: {
     });
   }
 
-  return db.inboundEmail.update({
+  const updated = await db.inboundEmail.update({
     where: { id: email.id },
     data: { accountId, routingStatus: "ACCEPTED", quarantineReason: null },
   });
+  log("release.finished", { inboundEmailId, accountId, storedCount });
+  return updated;
 }
 
 export async function discardQuarantinedInboundEmail(params: {
@@ -192,14 +229,19 @@ async function discardQuarantinedInboundEmailImpl(params: {
   adminUserId: string;
   reason?: string;
 }) {
-  const { inboundEmailId, reason } = params;
+  const { inboundEmailId, adminUserId, reason } = params;
+  log("discard.started", { inboundEmailId, adminUserId, reason: reason ?? null });
+
   const email = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
   if (email.routingStatus !== "QUARANTINED") {
+    log("discard.rejected_wrong_status", { inboundEmailId, routingStatus: email.routingStatus });
     throw new Error(`InboundEmail ${inboundEmailId} is not quarantined (status: ${email.routingStatus}).`);
   }
 
-  return db.inboundEmail.update({
+  const updated = await db.inboundEmail.update({
     where: { id: email.id },
     data: { routingStatus: "REJECTED", quarantineReason: reason ?? "admin_discarded" },
   });
+  log("discard.finished", { inboundEmailId });
+  return updated;
 }

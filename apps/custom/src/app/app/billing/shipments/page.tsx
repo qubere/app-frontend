@@ -33,7 +33,7 @@ export default async function ShipmentEconomicsPage() {
   const summaries = await Promise.all(
     shipments.map(async (shipment) => ({
       shipment,
-      summary: await getShipmentFinancialSummary(shipment.id),
+      summary: await getShipmentFinancialSummary(shipment.id, ctx.accountId),
     }))
   );
 
