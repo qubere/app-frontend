@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { logAgentError } from "./agentLogger";
 
@@ -74,7 +75,7 @@ export class ResponseManagementAgent {
     // Null, not a synthetic id: a failed write produced no AgentDecision row.
     let agentDecisionId: string | null = null;
     try {
-      const agentDecision = await db.agentDecision.create({
+      const agentDecision = await createAgentDecision({
         data: {
           accountId: input.accountId,
           shipmentId: input.shipmentId,

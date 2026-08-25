@@ -222,16 +222,28 @@ async function releaseQuarantinedInboundEmailImpl(params: {
   }
 
   if (storedCount > 0 && defaultAssignedToUserId) {
-    await db.notification.create({
-      data: {
-        accountId,
-        userId: defaultAssignedToUserId,
-        type: "INBOUND_EMAIL_DOCUMENTS",
-        message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}`,
-        entityType: "InboundEmail",
-        entityId: email.id,
-      },
+    // Guards against a duplicate notification if a prior call got far enough
+    // to store attachments but crashed/raced before the routingStatus update
+    // below -- see the identical guard in inboundEmailWorker.ts. A retried or
+    // double-submitted release would otherwise recompute storedCount
+    // (correctly, from already-stored rows) and create a second notification
+    // for the same email.
+    const alreadyNotified = await db.notification.findFirst({
+      where: { entityType: "InboundEmail", entityId: email.id },
+      select: { id: true },
     });
+    if (!alreadyNotified) {
+      await db.notification.create({
+        data: {
+          accountId,
+          userId: defaultAssignedToUserId,
+          type: "INBOUND_EMAIL_DOCUMENTS",
+          message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}`,
+          entityType: "InboundEmail",
+          entityId: email.id,
+        },
+      });
+    }
   }
 
   const updated = await db.inboundEmail.update({

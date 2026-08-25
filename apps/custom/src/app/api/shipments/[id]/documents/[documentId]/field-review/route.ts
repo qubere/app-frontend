@@ -15,6 +15,16 @@ import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
 import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service";
 import { z } from "zod";
 
+// Bridges FIELD_REVIEW_LABELS keys (shipments/[id]/page.tsx, mirrors
+// tradeMetadata's extraction naming) to the Shipment column they actually
+// belong on, since the names aren't always the same string.
+const DIRECT_SHIPMENT_FIELD_MAP = {
+  destinationCountry: "destinationCountry",
+  carrier: "carrierName",
+  incoterm: "incoterm",
+  currency: "invoiceCurrency",
+} as const;
+
 const paramsSchema = z.object({ id: z.string().min(1), documentId: z.string().min(1) });
 
 const bodySchema = z.object({
@@ -93,7 +103,11 @@ export const POST = withAuthenticatedRoute<{ id: string; documentId: string }>(a
         );
       }
       await FactService.record({ shipmentId, field: "countryOfOrigin", value, sourceType: "USER_ENTERED", documentId });
-    } else {
+    } else if (fieldKey === "importerName" || fieldKey === "exporterName") {
+      // These two are the only fields that mean "assign this value as a
+      // legal-entity party on the shipment" -- everything else that used to
+      // fall into this branch by default (Carrier, Incoterm, Invoice Number,
+      // etc.) was being silently mis-resolved as an EXPORTER legal entity.
       const role: ShipmentPartyRole = fieldKey === "importerName" ? "IMPORTER_OF_RECORD" : "EXPORTER";
       const previousParty = await db.shipmentParty.findFirst({
         where: { shipmentId, role },
@@ -134,7 +148,40 @@ export const POST = withAuthenticatedRoute<{ id: string; documentId: string }>(a
         );
       }
       await FactService.record({ shipmentId, field: fieldKey, value, sourceType: "USER_ENTERED", documentId });
+    } else if (fieldKey in DIRECT_SHIPMENT_FIELD_MAP) {
+      // Fields that map straight onto their own Shipment column -- the
+      // FIELD_REVIEW_LABELS key (extraction/tradeMetadata naming) and the
+      // Shipment column name aren't always identical (e.g. "carrier" ->
+      // carrierName), so this map bridges the two explicitly rather than
+      // assuming they match.
+      const column = DIRECT_SHIPMENT_FIELD_MAP[fieldKey as keyof typeof DIRECT_SHIPMENT_FIELD_MAP];
+      await FactAuditService.logChangeEvent({
+        shipmentId,
+        userId: ctx.userId,
+        changeType: "USER_FIELD_UPDATE",
+        field: column,
+        previousValue: (shipment as unknown as Record<string, string | null>)[column] ?? null,
+        newValue: value,
+        reason: action === "EDIT" ? "Corrected via field review" : "Approved via field review",
+      });
+      if (!(await applyVersionedShipmentUpdate({ [column]: value }))) {
+        return buildErrorResponse(
+          409,
+          "STALE_SHIPMENT",
+          "This shipment changed since it was loaded. Reload before saving again.",
+          undefined,
+          requestId
+        );
+      }
+      await FactService.record({ shipmentId, field: column, value, sourceType: "USER_ENTERED", documentId });
     }
+    // Fields with no dedicated Shipment column yet (invoiceNumber,
+    // invoiceDate, invoiceSubtotal, totalWeight, transportDocumentNumber,
+    // hsHtsCode) fall through here with no shipment mutation -- the
+    // FieldApproval record written below is the confirmation. Inventing a
+    // destination for these would be worse than not persisting one; when a
+    // real column/table exists for them, add it to DIRECT_SHIPMENT_FIELD_MAP
+    // above rather than guessing here.
 
     await db.fieldApproval.create({
       data: {

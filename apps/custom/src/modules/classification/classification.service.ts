@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { ProviderMetadata } from "@/lib/providers";
 import { HtsNodeRepository } from "@/repositories/htsNodeRepository";
 import { HtsSearchService } from "@/modules/hts/htsSearchService";
@@ -88,7 +89,7 @@ export class ClassificationService {
     let agentDecisionId: string | undefined = undefined;
 
     if (targetShipmentId) {
-      const agentDecision = await db.agentDecision.create({
+      const agentDecision = await createAgentDecision({
         data: {
           accountId,
           shipmentId: targetShipmentId,

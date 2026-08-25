@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { logAgentError } from "./agentLogger";
 import { Prisma } from "@prisma/client";
@@ -79,7 +80,7 @@ export class OriginRulesAgent {
       // Null, not a synthetic id: a failed write produced no AgentDecision row.
       let agentDecisionId: string | null = null;
       try {
-        const agentDecision = await db.agentDecision.create({
+        const agentDecision = await createAgentDecision({
           data: {
             accountId: input.accountId,
             shipmentId: input.shipmentId,
@@ -223,7 +224,7 @@ export class OriginRulesAgent {
 
     let agentDecisionId: string | null = null;
     try {
-      const agentDecision = await db.agentDecision.create({
+      const agentDecision = await createAgentDecision({
         data: {
           accountId: input.accountId,
           shipmentId: input.shipmentId,
