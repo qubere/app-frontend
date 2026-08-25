@@ -55,6 +55,7 @@ export default async function AdminSettingsPage() {
     <div className="space-y-10">
       <DocumentEmailPanel
         publicDocumentAddress={process.env.RESEND_PUBLIC_DOCUMENT_ADDRESS ?? "docs@inbound.qubere.ai"}
+        accountName={context.accountName}
         initialRoutes={routes.map((r) => ({
           id: r.id,
           displaySenderEmail: r.displaySenderEmail,

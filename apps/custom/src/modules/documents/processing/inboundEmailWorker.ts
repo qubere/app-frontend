@@ -26,7 +26,7 @@ import { assertParseableFormat } from "./documentSource";
 import { isDocumentParserError } from "../parser/contracts";
 import { enqueueDocumentParse } from "./documentProcessingWorker";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
-import { resolveInboundRoute } from "@/modules/inbound/senderRouting";
+import { resolveBlockedInboundRoute, resolveInboundRoute } from "@/modules/inbound/senderRouting";
 import {
   getReceivedEmail,
   getAttachmentDownloadInfo,
@@ -40,6 +40,7 @@ export interface InboundEmailTickResult {
   claimed: number;
   quarantined: number;
   accepted: number;
+  rejected: number;
   failed: number;
 }
 
@@ -69,12 +70,13 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
 
   log("tick.started", { claimed: dueEmails.length, inboundEmailIds: dueEmails.map((e) => e.id).join(", ") || null });
 
-  const result: InboundEmailTickResult = { claimed: dueEmails.length, quarantined: 0, accepted: 0, failed: 0 };
+  const result: InboundEmailTickResult = { claimed: dueEmails.length, quarantined: 0, accepted: 0, rejected: 0, failed: 0 };
 
   for (const email of dueEmails) {
     try {
-      const accepted = await runWithAccountId(email.accountId ?? undefined, () => processOneEmail(email.id));
-      if (accepted === "QUARANTINED") result.quarantined += 1;
+      const outcome = await runWithAccountId(email.accountId ?? undefined, () => processOneEmail(email.id));
+      if (outcome === "QUARANTINED") result.quarantined += 1;
+      else if (outcome === "REJECTED") result.rejected += 1;
       else result.accepted += 1;
     } catch (error) {
       result.failed += 1;
@@ -88,13 +90,31 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
   return result;
 }
 
-async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | "ACCEPTED"> {
+async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | "ACCEPTED" | "REJECTED"> {
   let email = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
   log("email.processing_started", {
     inboundEmailId: email.id,
     routingStatus: email.routingStatus,
     normalizedFromAddress: email.normalizedFromAddress,
   });
+
+  const blockedRoute = await resolveBlockedInboundRoute(email.normalizedFromAddress);
+  if (blockedRoute) {
+    await db.inboundEmail.update({
+      where: { id: email.id },
+      data: {
+        accountId: blockedRoute.accountId,
+        routingStatus: "REJECTED",
+        quarantineReason: "blocked_sender",
+      },
+    });
+    log("email.rejected", {
+      inboundEmailId: email.id,
+      accountId: blockedRoute.accountId,
+      reason: "blocked_sender",
+    });
+    return "REJECTED";
+  }
 
   let route: Awaited<ReturnType<typeof resolveInboundRoute>> = null;
   if (email.routingStatus === "RECEIVED") {
