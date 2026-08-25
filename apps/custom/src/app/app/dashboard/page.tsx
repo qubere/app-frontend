@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { computeReadinessBreakdown, deriveReadinessDimensions } from "@/lib/shipmentReadiness";
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";
 import { extractedCurrency } from "@/modules/documents/extractedCurrency";
@@ -14,6 +14,12 @@ export default async function CommandCenterPage() {
   if (!context) return null;
 
   const accountId = context.accountId;
+
+  // Shipment (and nearly everything queried below it) carries an Account
+  // relation, dataMode-scoped -- without this wrapper the queries silently
+  // default to PRODUCTION isolation and this page shows an empty Command
+  // Center for any DEMO/SANDBOX account even though the data genuinely exists.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   // A stopgap cap, not real pagination: the Command Center's KPI tiles and
   // client-side search are documented as reading the *whole* filtered set (see
@@ -386,4 +392,5 @@ export default async function CommandCenterPage() {
       }}
     />
   );
+  });
 }

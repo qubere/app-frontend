@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { ProductLineFilter } from "../ProductLineFilter";
 
@@ -15,16 +15,20 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const requestedProductLine = (await searchParams).productLine;
   const productLine = ["CUSTOMS", "TMS", "WMS"].includes(requestedProductLine ?? "") ? requestedProductLine as "CUSTOMS" | "TMS" | "WMS" : null;
 
-  const invoices = await db.invoice.findMany({
-    where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
-    orderBy: { createdAt: "desc" },
-    include: {
-      client: { select: { name: true } },
-      importer: { select: { name: true } },
-      lines: true,
-      payments: true,
-    },
-  });
+  // Invoice carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const invoices = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.invoice.findMany({
+      where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: { select: { name: true } },
+        importer: { select: { name: true } },
+        lines: true,
+        payments: true,
+      },
+    })
+  );
 
   return (
     <div className="space-y-6">

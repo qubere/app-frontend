@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { DocumentsClient } from "./DocumentsClient";
 import type { TeamMember } from "@/lib/team";
 
@@ -16,10 +16,14 @@ export default async function DocumentsPage() {
     (ctx.roleNames.includes("ADMIN") || ctx.roleNames.includes("OWNER"));
 
   if (isEnterpriseAdmin) {
-    const memberships = await db.accountMembership.findMany({
-      where: { accountId: ctx.accountId, status: "ACTIVE" },
-      include: { user: true },
-    });
+    // AccountMembership carries an Account relation (dataMode-scoped) --
+    // without this wrapper the query silently defaults to PRODUCTION isolation.
+    const memberships = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, () =>
+      db.accountMembership.findMany({
+        where: { accountId: ctx.accountId, status: "ACTIVE" },
+        include: { user: true },
+      })
+    );
     teamMembers = memberships.map((m) => ({
       userId: m.user.id,
       email: m.user.email,

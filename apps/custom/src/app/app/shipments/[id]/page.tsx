@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -62,6 +62,12 @@ export default async function ShipmentWorkspacePage(props: {
 
   const context = await getAccountContext();
   if (!context) return null;
+
+  // Shipment (and nearly everything queried below it) carries an Account
+  // relation, dataMode-scoped -- without this wrapper the queries silently
+  // default to PRODUCTION isolation and this page 404s for any DEMO/SANDBOX
+  // account even though the data genuinely exists.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   const shipment = await db.shipment.findFirst({
     where: {
@@ -1540,5 +1546,6 @@ export default async function ShipmentWorkspacePage(props: {
       />
     </div>
   );
+  });
 }
 

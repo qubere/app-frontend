@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import type { AccountContext } from "@/lib/auth";
 
 export interface FormattedCustomsProfile {
@@ -41,17 +41,21 @@ export interface ClientsData {
 }
 
 export async function getClientsData(ctx: AccountContext): Promise<ClientsData> {
-  const clients = await db.client.findMany({
-    where: { accountId: ctx.accountId },
-    include: {
-      _count: { select: { shipments: true, products: true, parties: true } },
-      legalEntities: {
-        include: { customsProfiles: true },
-        orderBy: { legalName: "asc" },
+  // Client carries an Account relation (dataMode-scoped) -- without this wrapper
+  // the query silently defaults to PRODUCTION isolation for any DEMO/SANDBOX account.
+  const clients = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, () =>
+    db.client.findMany({
+      where: { accountId: ctx.accountId },
+      include: {
+        _count: { select: { shipments: true, products: true, parties: true } },
+        legalEntities: {
+          include: { customsProfiles: true },
+          orderBy: { legalName: "asc" },
+        },
       },
-    },
-    orderBy: { name: "asc" },
-  });
+      orderBy: { name: "asc" },
+    })
+  );
 
   return {
     clients: clients.map((c) => ({

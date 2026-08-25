@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
@@ -16,6 +16,11 @@ export default async function CustomsFilingDashboardPage(props: {
   if (!context) return null;
 
   const shipmentId = typeof searchParams.shipmentId === "string" ? searchParams.shipmentId : null;
+
+  // CustomsFiling/Shipment both carry an Account relation (dataMode-scoped)
+  // -- without this wrapper these queries silently default to PRODUCTION
+  // isolation for any DEMO/SANDBOX account.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   if (shipmentId) {
     // Only redirect to a still-live filing. A Cancelled/Closed one must not
@@ -116,4 +121,5 @@ export default async function CustomsFilingDashboardPage(props: {
   }));
 
   return <FilingDashboardClient initialFilings={rows} />;
+  });
 }

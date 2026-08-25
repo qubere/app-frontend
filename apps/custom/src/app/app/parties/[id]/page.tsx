@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAccountContext } from "@/lib/auth";
 import { canWrite } from "@/lib/api/write-access";
+import { isDataMode, withDataModeContext } from "@/lib/db";
 import { Badge } from "@/components/ui";
 import { displayDate, displayText } from "@/lib/honest";
 import { holdsPermission, partyActor } from "@/modules/party/partyActor";
@@ -29,7 +30,11 @@ export default async function PartyDetailPage(props: {
   if (!context) redirect("/sign-in");
 
   const actor = partyActor(context, "page");
-  const party = await getParty(actor, id);
+  // Party carries an Account relation (dataMode-scoped) -- without this
+  // wrapper getParty silently defaults to PRODUCTION isolation.
+  const party = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+    getParty(actor, id)
+  );
   // A party in another account is absent, not forbidden.
   if (party === null) notFound();
 

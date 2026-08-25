@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { computeReadinessScore } from "@/lib/shipmentReadiness";
 import { ShipmentsWorkbenchClient } from "./ShipmentsWorkbenchClient";
 import type { TeamMember } from "@/lib/team";
@@ -15,6 +15,12 @@ export default async function ShipmentsConsolePage() {
   // set (see ShipmentsWorkbenchClient's pagination comment), so this only
   // bounds the worst case rather than truly paginating at the query level.
   const SHIPMENT_ROW_CAP = 500;
+
+  // Shipment (and nearly everything queried below it) carries an Account
+  // relation, dataMode-scoped -- without this wrapper the queries silently
+  // default to PRODUCTION isolation and this page shows an empty workbench
+  // for any DEMO/SANDBOX account even though the data genuinely exists.
+  return withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
 
   // Select only the columns ShipmentsWorkbenchClient actually reads, plus
   // documents/lineItems/exceptionItems for computeReadinessScore below. The
@@ -144,4 +150,5 @@ export default async function ShipmentsConsolePage() {
       }}
     />
   );
+  });
 }

@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, withDataModeContext, isDataMode } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 
 export const revalidate = 0;
@@ -10,38 +10,50 @@ export default async function BillingOverviewPage() {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
 
-  const [canViewCost, canViewMargin, canManageRateCards, canCreateInvoices, canViewReports] = await Promise.all([
-    hasPermission("billing.cost.view"),
-    hasPermission("billing.margin.view"),
-    hasPermission("billing.ratecard.view"),
-    hasPermission("billing.invoice.create"),
-    hasPermission("billing.reports.view"),
-  ]);
+  // All queries below touch dataMode-scoped models (ShipmentCharge, Invoice,
+  // ShipmentCost, BillingException all carry an Account relation). Without
+  // this wrapper the shared Prisma extension defaults to PRODUCTION-only
+  // filtering, which silently returns nothing for a DEMO/SANDBOX account
+  // even when accountId matches exactly — this is not optional plumbing.
+  const {
+    canViewCost, canViewMargin, canManageRateCards, canCreateInvoices, canViewReports,
+    totalCharges, unbilledCharges, invoicedCharges, costs, exceptionsCount,
+  } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+    const [canViewCost, canViewMargin, canManageRateCards, canCreateInvoices, canViewReports] = await Promise.all([
+      hasPermission("billing.cost.view"),
+      hasPermission("billing.margin.view"),
+      hasPermission("billing.ratecard.view"),
+      hasPermission("billing.invoice.create"),
+      hasPermission("billing.reports.view"),
+    ]);
 
-  const totalCharges = await db.shipmentCharge.aggregate({
-    where: { accountId: ctx.accountId },
-    _sum: { netAmount: true, grossAmount: true, discountAmount: true },
-    _count: { id: true },
-  });
+    const totalCharges = await db.shipmentCharge.aggregate({
+      where: { accountId: ctx.accountId },
+      _sum: { netAmount: true, grossAmount: true, discountAmount: true },
+      _count: { id: true },
+    });
 
-  const unbilledCharges = await db.shipmentCharge.aggregate({
-    where: { accountId: ctx.accountId, status: "RATED", invoiceLineId: null },
-    _sum: { netAmount: true },
-    _count: { id: true },
-  });
+    const unbilledCharges = await db.shipmentCharge.aggregate({
+      where: { accountId: ctx.accountId, status: "RATED", invoiceLineId: null },
+      _sum: { netAmount: true },
+      _count: { id: true },
+    });
 
-  const invoicedCharges = await db.invoice.aggregate({
-    where: { accountId: ctx.accountId, status: { in: ["SENT", "PARTIALLY_PAID", "APPROVED", "OVERDUE"] } },
-    _sum: { totalAmount: true, balanceDue: true, paidAmount: true },
-    _count: { id: true },
-  });
+    const invoicedCharges = await db.invoice.aggregate({
+      where: { accountId: ctx.accountId, status: { in: ["SENT", "PARTIALLY_PAID", "APPROVED", "OVERDUE"] } },
+      _sum: { totalAmount: true, balanceDue: true, paidAmount: true },
+      _count: { id: true },
+    });
 
-  const costs = canViewCost || canViewMargin
-    ? await db.shipmentCost.aggregate({ where: { accountId: ctx.accountId }, _sum: { amount: true } })
-    : null;
+    const costs = canViewCost || canViewMargin
+      ? await db.shipmentCost.aggregate({ where: { accountId: ctx.accountId }, _sum: { amount: true } })
+      : null;
 
-  const exceptionsCount = await db.billingException.count({
-    where: { accountId: ctx.accountId, status: "OPEN" },
+    const exceptionsCount = await db.billingException.count({
+      where: { accountId: ctx.accountId, status: "OPEN" },
+    });
+
+    return { canViewCost, canViewMargin, canManageRateCards, canCreateInvoices, canViewReports, totalCharges, unbilledCharges, invoicedCharges, costs, exceptionsCount };
   });
 
   const totalRev = Number(totalCharges._sum.netAmount ?? 0);

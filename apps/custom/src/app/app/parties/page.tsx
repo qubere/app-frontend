@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Landmark, Upload } from "lucide-react";
 import { getAccountContext } from "@/lib/auth";
 import { canWrite } from "@/lib/api/write-access";
+import { isDataMode, withDataModeContext } from "@/lib/db";
 import { getClientsData } from "@/lib/clients/clientsData";
 import { Badge } from "@/components/ui";
 import { SortableHeader } from "@/components/table/SortableHeader";
@@ -45,10 +46,14 @@ export default async function PartiesPage(props: {
     else if (Array.isArray(value) && value.length > 0) params.set(key, value[0]);
   }
 
-  const [clientsRes, partyRes] = await Promise.all([
-    getClientsData(context),
-    listParties(partyActor(context, "page"), parsePartyQuery(params)),
-  ]);
+  // Party carries an Account relation (dataMode-scoped) -- without this
+  // wrapper listParties silently defaults to PRODUCTION isolation.
+  const [clientsRes, partyRes] = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, () =>
+    Promise.all([
+      getClientsData(context),
+      listParties(partyActor(context, "page"), parsePartyQuery(params)),
+    ])
+  );
 
   const query = parsePartyQuery(params);
   const clients = clientsRes.clients;

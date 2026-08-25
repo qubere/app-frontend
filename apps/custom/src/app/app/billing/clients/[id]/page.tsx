@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 
 export const revalidate = 0;
@@ -10,14 +10,19 @@ export default async function BillingClientDetailPage({ params }: { params: Prom
   if (!ctx) redirect("/sign-in");
   if (!(await hasPermission("billing.read"))) redirect("/app/billing");
   const { id } = await params;
-  const client = await db.client.findFirst({
-    where: { id, accountId: ctx.accountId },
-    include: {
-      rateCards: { orderBy: { updatedAt: "desc" } },
-      invoices: { orderBy: { issueDate: "desc" }, take: 25 },
-      shipments: { where: { accountId: ctx.accountId, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, shipmentNumber: true, status: true } },
-    },
-  });
+
+  // Client/RateCard/Invoice/Shipment all carry an Account relation (dataMode-scoped) --
+  // without this wrapper the query silently defaults to PRODUCTION isolation.
+  const client = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.client.findFirst({
+      where: { id, accountId: ctx.accountId },
+      include: {
+        rateCards: { orderBy: { updatedAt: "desc" } },
+        invoices: { orderBy: { issueDate: "desc" }, take: 25 },
+        shipments: { where: { accountId: ctx.accountId, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, shipmentNumber: true, status: true } },
+      },
+    })
+  );
   if (!client) notFound();
 
   const total = client.invoices.reduce((sum, invoice) => sum + Number(invoice.totalAmount), 0);

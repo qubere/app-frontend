@@ -1,6 +1,6 @@
 import { getAccountContext } from "@/lib/auth";
 import { getSettingsAuditData } from "@/lib/admin/auditData";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { SettingsAuditPanel } from "./SettingsAuditPanel";
 import { DocumentEmailPanel } from "./DocumentEmailPanel";
 import { AgentPoliciesPanel } from "./AgentPoliciesPanel";
@@ -12,6 +12,11 @@ export default async function AdminSettingsPage() {
   if (!context) {
     return null;
   }
+
+  // InboundSenderRoute/AccountMembership/AgentPolicyConfig/AuditLog/
+  // AccountApiKey all carry an Account relation (dataMode-scoped) -- without
+  // this wrapper these queries silently default to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   const [data, routes, memberships, agentPolicies, policyHistory, apiKeys] = await Promise.all([
     getSettingsAuditData(context),
@@ -100,4 +105,5 @@ export default async function AdminSettingsPage() {
       <SettingsAuditPanel accountName={context.accountName} {...data} />
     </div>
   );
+  });
 }

@@ -2,7 +2,7 @@
 
 import { parse } from "csv-parse/sync";
 import ExcelJS from "exceljs";
-import { db, withAccountIdContext } from "@/lib/db";
+import { db, isDataMode, withAccountIdContext, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { seedBillingEventDefinitions } from "@/lib/billing/telemetry";
@@ -123,7 +123,10 @@ export async function createImportedRateCardAction(input: {
   if (input.lines.some((line) => !line.lineItemName.trim() || !line.eventCode)) throw new Error("Every imported line must have a description and mapped billing event");
   if (input.lines.some((line) => !Number.isFinite(line.rate) || line.rate < 0)) throw new Error("Imported rates must be valid non-negative numbers");
 
-  return withAccountIdContext(ctx.accountId, async () => {
+  // seedBillingEventDefinitions / db.billingEventDefinition.findMany below both
+  // touch the dataMode-scoped BillingEventDefinition model (Account relation) --
+  // without this wrapper they'd silently default to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => withAccountIdContext(ctx.accountId, async () => {
     const productLine = input.productLine ?? "CUSTOMS";
     await seedBillingEventDefinitions(ctx.accountId);
     const eventCodes = [...new Set(input.lines.map((line) => line.eventCode))];
@@ -187,5 +190,5 @@ export async function createImportedRateCardAction(input: {
 
     revalidatePath("/app/billing/rate-cards");
     return { success: true, rateCardId: rateCard.id };
-  });
+  }));
 }

@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { InvoiceDetailClient } from "./InvoiceDetailClient";
 
@@ -42,24 +42,28 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     hasPermission("billing.report.export"),
   ]);
 
-  const invoice = await db.invoice.findFirst({
-    where: { id, accountId: ctx.accountId },
-    include: {
-      client: { select: { name: true } },
-      importer: { select: { name: true } },
-      payments: { orderBy: { paymentDate: "desc" } },
-      lines: {
-        include: {
-          shipment: { select: { id: true, shipmentNumber: true } },
-          charges: {
-            include: {
-              usageEvent: { select: { id: true, eventCode: true, occurredAt: true, sourceAgent: true, sourceFunction: true } },
+  // Invoice carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const invoice = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.invoice.findFirst({
+      where: { id, accountId: ctx.accountId },
+      include: {
+        client: { select: { name: true } },
+        importer: { select: { name: true } },
+        payments: { orderBy: { paymentDate: "desc" } },
+        lines: {
+          include: {
+            shipment: { select: { id: true, shipmentNumber: true } },
+            charges: {
+              include: {
+                usageEvent: { select: { id: true, eventCode: true, occurredAt: true, sourceAgent: true, sourceFunction: true } },
+              },
             },
           },
         },
       },
-    },
-  });
+    })
+  );
 
   if (!invoice) notFound();
 

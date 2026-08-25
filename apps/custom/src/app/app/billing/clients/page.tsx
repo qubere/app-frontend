@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 
 export const revalidate = 0;
@@ -10,22 +10,26 @@ export default async function BillingClientsPage() {
   if (!ctx) redirect("/sign-in");
   if (!(await hasPermission("billing.read"))) redirect("/app/billing");
 
-  const clients = await db.client.findMany({
-    where: { accountId: ctx.accountId },
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      status: true,
-      contactName: true,
-      contactEmail: true,
-      billingContactName: true,
-      billingContactEmail: true,
-      paymentTermsDays: true,
-      _count: { select: { shipments: true, rateCards: true, invoices: true } },
-      invoices: { select: { totalAmount: true, balanceDue: true } },
-    },
-  });
+  // Client carries an Account relation (dataMode-scoped) -- without this wrapper
+  // the query silently defaults to PRODUCTION isolation.
+  const clients = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.client.findMany({
+      where: { accountId: ctx.accountId },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        contactName: true,
+        contactEmail: true,
+        billingContactName: true,
+        billingContactEmail: true,
+        paymentTermsDays: true,
+        _count: { select: { shipments: true, rateCards: true, invoices: true } },
+        invoices: { select: { totalAmount: true, balanceDue: true } },
+      },
+    })
+  );
 
   return (
     <div className="space-y-6">

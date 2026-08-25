@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { ProductLineFilter } from "../ProductLineFilter";
 
@@ -18,19 +18,23 @@ export default async function RateCardsPage({ searchParams }: { searchParams: Pr
   const requestedProductLine = (await searchParams).productLine;
   const productLine = ["CUSTOMS", "TMS", "WMS"].includes(requestedProductLine ?? "") ? requestedProductLine as "CUSTOMS" | "TMS" | "WMS" : null;
 
-  const rateCards = await db.rateCard.findMany({
-    where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
-    include: {
-      client: { select: { name: true } },
-      importer: { select: { name: true } },
-      versions: {
-        orderBy: { version: "desc" },
-        take: 1,
-        include: { _count: { select: { rules: true } } },
+  // RateCard carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const rateCards = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.rateCard.findMany({
+      where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
+      include: {
+        client: { select: { name: true } },
+        importer: { select: { name: true } },
+        versions: {
+          orderBy: { version: "desc" },
+          take: 1,
+          include: { _count: { select: { rules: true } } },
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    })
+  );
 
   return (
     <div className="space-y-6">
