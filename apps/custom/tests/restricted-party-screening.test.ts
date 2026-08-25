@@ -10,11 +10,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const getRestrictedPartyReferenceList = vi.fn();
 const getRedFlagRules = vi.fn();
 const getApprovedDispositions = vi.fn();
+const getAccountScreeningConfig = vi.fn();
 
 vi.mock("@/modules/agents/compliance/restrictedParty/restrictedPartyRepository", () => ({
   getRestrictedPartyReferenceList,
   getRedFlagRules,
   getApprovedDispositions,
+  getAccountScreeningConfig,
 }));
 
 const { runRestrictedPartyScreening } = await import(
@@ -68,6 +70,7 @@ function redFlagRule(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   getApprovedDispositions.mockResolvedValue(new Map());
+  getAccountScreeningConfig.mockResolvedValue(null);
 });
 
 describe("runRestrictedPartyScreening: missing reference data never resolves to CLEAR", () => {
@@ -237,6 +240,58 @@ describe("runRestrictedPartyScreening: status derivation for errors", () => {
     expect(result.passes[0].status).toBe("PARTIAL");
     expect(result.passes[0].matches).toHaveLength(1);
     expect(result.passes[0].errorMessage).toContain("keyword rules unavailable");
+  });
+});
+
+describe("runRestrictedPartyScreening: account-level matcher config precedence", () => {
+  it("falls back to the module default when neither a request override nor an account config is set", async () => {
+    getRestrictedPartyReferenceList.mockResolvedValue([]);
+    getRedFlagRules.mockResolvedValue([]);
+    const result = await runRestrictedPartyScreening(baseInput());
+    expect(result.passes[0].nameThreshold).toBe(80);
+    expect(result.passes[0].phoneticAlgorithm).toBe("DOUBLE_METAPHONE");
+    expect(result.passes[0].continueOnExactMatch).toBe(false);
+  });
+
+  it("uses the account config value when no request override is given", async () => {
+    getRestrictedPartyReferenceList.mockResolvedValue([]);
+    getRedFlagRules.mockResolvedValue([]);
+    getAccountScreeningConfig.mockResolvedValue({
+      nameThreshold: 65,
+      phoneticAlgorithm: "METAPHONE2",
+      continueOnExactMatch: true,
+      alternateScreeningEnabled: true,
+      excludeMetaphone: null,
+      addressThreshold: null,
+      countryMatchRequired: null,
+      redFlagCheckEnabled: null,
+    });
+    const result = await runRestrictedPartyScreening(baseInput());
+    expect(result.passes[0].nameThreshold).toBe(65);
+    expect(result.passes[0].phoneticAlgorithm).toBe("METAPHONE2");
+    expect(result.passes[0].continueOnExactMatch).toBe(true);
+    expect(result.passes[0].alternateScreeningEnabled).toBe(true);
+  });
+
+  it("a request override always wins over the account config", async () => {
+    getRestrictedPartyReferenceList.mockResolvedValue([]);
+    getRedFlagRules.mockResolvedValue([]);
+    getAccountScreeningConfig.mockResolvedValue({ nameThreshold: 65 });
+    const result = await runRestrictedPartyScreening(baseInput({ nameThreshold: 90 }));
+    expect(result.passes[0].nameThreshold).toBe(90);
+  });
+});
+
+describe("runRestrictedPartyScreening: matcher-behavior evidence", () => {
+  it("persists exactMatchFound and alternate-screening evidence on the pass outcome", async () => {
+    getRestrictedPartyReferenceList.mockResolvedValue([screeningEntity({ name: "Acme Trading Co" })]);
+    getRedFlagRules.mockResolvedValue([]);
+    const result = await runRestrictedPartyScreening(
+      baseInput({ identity: { name: "Acme Trading Co" } })
+    );
+    expect(result.passes[0].exactMatchFound).toBe(true);
+    expect(result.passes[0].alternateScreeningRan).toBe(false);
+    expect(typeof result.passes[0].alternateScreeningReason === "string" || result.passes[0].alternateScreeningReason === null).toBe(true);
   });
 });
 

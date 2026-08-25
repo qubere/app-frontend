@@ -14,11 +14,15 @@ import type { CandidateReason, ScreeningCandidate } from "./candidateGeneration"
 
 function methodFromReasons(reasons: Set<CandidateReason>): RestrictedPartyMatchMethod {
   if (reasons.has("EXACT")) return "EXACT";
-  const hasRawWord = reasons.has("RAW_WORD");
-  const hasPhonetic = reasons.has("DOUBLE_METAPHONE");
-  if (hasRawWord && hasPhonetic) return "COMBINED";
-  if (hasRawWord) return "RAW_WORD";
-  return "DOUBLE_METAPHONE";
+
+  const nonExact: RestrictedPartyMatchMethod[] = [];
+  if (reasons.has("RAW_WORD")) nonExact.push("RAW_WORD");
+  if (reasons.has("DOUBLE_METAPHONE")) nonExact.push("DOUBLE_METAPHONE");
+  if (reasons.has("METAPHONE2")) nonExact.push("METAPHONE");
+  if (reasons.has("ALTERNATE_WHOLE_WORD")) nonExact.push("ALTERNATE_WHOLE_WORD");
+
+  if (nonExact.length > 1) return "COMBINED";
+  return nonExact[0] ?? "DOUBLE_METAPHONE";
 }
 
 export interface ScoreMatchOptions {
@@ -46,9 +50,22 @@ export function scoreCandidate(
     if (tier === "HIT" && addressScore < options.addressThreshold) tier = "REVIEW_REQUIRED";
   }
 
+  // Country evidence: the flat ScreeningEntity.country column (populated for
+  // every source, including OFAC/BIS which carry only one address), OR --
+  // when a Dow Jones entity carries several addresses in the child table --
+  // any one of them naming the screened country. A multi-address entity
+  // whose non-primary address matches shouldn't be treated as a country
+  // mismatch just because its single flattened column doesn't.
   let countryMatch: boolean | null = null;
-  if (options.targetCountry && candidate.entity.country) {
-    countryMatch = normalizeForMatching(options.targetCountry) === normalizeForMatching(candidate.entity.country);
+  if (options.targetCountry) {
+    const targetCountryNormalized = normalizeForMatching(options.targetCountry);
+    const candidateCountries = [
+      candidate.entity.country,
+      ...candidate.entity.addresses.map((a) => a.countryName),
+    ].filter((c): c is string => !!c);
+    if (candidateCountries.length > 0) {
+      countryMatch = candidateCountries.some((c) => normalizeForMatching(c) === targetCountryNormalized);
+    }
   }
   if (options.countryMatchRequired && tier === "HIT" && countryMatch !== true) {
     tier = "REVIEW_REQUIRED";

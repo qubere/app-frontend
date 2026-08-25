@@ -290,6 +290,7 @@ model Account {
   restrictedPartyDispositions     RestrictedPartyDisposition[]
   partyScreeningSummaries         PartyScreeningSummary[]
   complianceScreeningFindings     ComplianceScreeningFinding[]
+  restrictedPartyScreeningConfig  AccountScreeningConfig?
 
   @@index([type])
   @@index([slug])
@@ -3028,6 +3029,37 @@ model AccountEmbargoConfig {
 }
 
 // =====================================================================
+// Restricted / Denied Party Screening -- account-level matcher
+// configuration. Every field is nullable: unset means "no account
+// override," and runRestrictedPartyScreening resolves effective values as
+// request override > this row > module defaults (DEFAULT_NAME_THRESHOLD
+// etc. in restrictedParty/types.ts). Absence of a row for an account is
+// equivalent to every field being unset -- never treated as an error.
+// =====================================================================
+enum RestrictedPartyPhoneticAlgorithm {
+  DOUBLE_METAPHONE
+  METAPHONE2
+}
+
+model AccountScreeningConfig {
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  nameThreshold             Int?
+  addressThreshold          Int?
+  countryMatchRequired      Boolean?
+  redFlagCheckEnabled       Boolean?
+  excludeMetaphone          Boolean?
+  phoneticAlgorithm         RestrictedPartyPhoneticAlgorithm?
+  continueOnExactMatch      Boolean?
+  alternateScreeningEnabled Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =====================================================================
 // Country Embargo Screening audit -- Qubere-native equivalent of the
 // source SERVICE_USAGE / SERVICE_USAGE_LINES header+detail audit pattern.
 // One header per screening invocation; one detail line per completed
@@ -5479,12 +5511,119 @@ model ScreeningEntity {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  restrictedPartyMatches RestrictedPartyMatch[]
+  // Dow Jones Risk & Compliance full-feed ingestion (additive; NULL for
+  // pre-existing OFAC/BIS/UFLPA rows). Real dedup key for this provider is
+  // (provider, providerRecordId) -- entityHash above stays populated with the
+  // same sha256 formula purely to satisfy the column's NOT NULL/@unique.
+  provider          String? // e.g. "DOW_JONES"
+  providerRecordId  String? // source system's own Entity Id
+  providerUpdatedAt DateTime? // source Entity/Date field
+  sourceAuthority   String? // e.g. "OFAC", "UN", "EU", "BIS" -- resolved via sourceListMapper
+  sourceFileDate    DateTime? // feed timestamp (PFA/@date), e.g. from DJRC_SOR_XML_<date>_F.xml
+  sourceFileType    String? // "full" | "delta"
+  providerMetadata  Json? // countryDetails, sources, profileNotes -- not modeled as their own tables in MVP
 
+  restrictedPartyMatches RestrictedPartyMatch[]
+  aliases                ScreeningEntityAlias[]
+  addresses              ScreeningEntityAddress[]
+  identifiers            ScreeningEntityIdentifier[]
+  references             ScreeningEntityReference[]
+
+  @@unique([provider, providerRecordId])
   @@index([name])
   @@index([sourceList])
   @@index([publicationStatus])
   @@index([country])
+  // Composite indexes matching restrictedPartyRepository.ts's actual
+  // reference-list WHERE shape (publicationStatus + sourceList IN (...) OR
+  // provider) -- the single-column indexes above don't let the planner
+  // combine both predicates as efficiently once the table spans OFAC + BIS +
+  // Dow Jones' ~62k rows.
+  @@index([publicationStatus, sourceList])
+  @@index([publicationStatus, provider])
+}
+
+/// One name variant (Also Known As, Formerly Known As, Spelling Variation, ...)
+/// for a Dow Jones ScreeningEntity. The chosen "Primary Name" is not duplicated
+/// here -- it lives on ScreeningEntity.name; this table holds every other
+/// NameDetails record from the source feed.
+model ScreeningEntityAlias {
+  id                String          @id @default(cuid())
+  screeningEntityId String
+  screeningEntity   ScreeningEntity @relation(fields: [screeningEntityId], references: [id], onDelete: Cascade)
+  providerSubId     String? // source NameDetails SubId
+  name              String
+  aliasType         String // e.g. "Also Known As", "Formerly Known As", "Spelling Variation", "Low Quality AKA"
+  isPrimary         Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+
+  @@index([screeningEntityId])
+}
+
+/// One address (Companies/CompanyDetails record) for a Dow Jones
+/// ScreeningEntity. The first becomes the flat ScreeningEntity.address/city/
+/// country for back-compat with the existing matcher; all are preserved here.
+model ScreeningEntityAddress {
+  id                String          @id @default(cuid())
+  screeningEntityId String
+  screeningEntity   ScreeningEntity @relation(fields: [screeningEntityId], references: [id], onDelete: Cascade)
+  providerSubId     String?
+  addressLine       String?
+  city              String?
+  stateOrProvince   String?
+  countryCode       String? // raw Dow Jones country code (not ISO -- see CountryLists dictionary)
+  countryName       String?
+  isPrimary         Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+
+  @@index([screeningEntityId])
+}
+
+/// One identifier (IDNumberTypesList/IDNumberTypes record) for a Dow Jones
+/// ScreeningEntity -- e.g. Company Identification No., OFAC Program ID, SIC,
+/// NAICS. Only IDType = "OFAC Program ID" also feeds ScreeningEntity.programCodes.
+model ScreeningEntityIdentifier {
+  id                String          @id @default(cuid())
+  screeningEntityId String
+  screeningEntity   ScreeningEntity @relation(fields: [screeningEntityId], references: [id], onDelete: Cascade)
+  identifierType    String
+  identifierValue   String
+  notes             String?
+  createdAt         DateTime        @default(now())
+
+  @@index([screeningEntityId])
+  @@index([identifierType, identifierValue])
+}
+
+/// One sanctions-reference (References/SanctionsReferences record) for a Dow
+/// Jones ScreeningEntity, resolved via sourceListMapper.mapDowJonesReference.
+/// A single entity can carry several -- e.g. an OFAC SDN listing that is also
+/// on a UN Security Council list.
+model ScreeningEntityReference {
+  id                String          @id @default(cuid())
+  screeningEntityId String
+  screeningEntity   ScreeningEntity @relation(fields: [screeningEntityId], references: [id], onDelete: Cascade)
+  providerSubId     String?
+  sourceAuthority   String // e.g. "OFAC", "UN", "EU", "UNKNOWN"
+  sourceList        String // e.g. "SDN", normalized dictionary name, or "UNKNOWN_..."
+  sourceListName    String // the raw SanctionsReferencesLists <Name> value, unmodified
+  sourceStatus      String // "Current" | "Suspended" (dictionary's own <Status>)
+  effectiveDate     DateTime?
+  expirationDate    DateTime?
+  programCode       String?
+  citation          String?
+  // Legacy tables_of_denial_orders gap-closure (PartyScreening_Tables.sql):
+  // restriction/order/publication metadata not previously representable.
+  // All nullable/unbackfilled -- no current ingestion source populates them yet.
+  restrictionType   String? // tdo_type_of_denial: denial/restriction classification (provider-neutral, not assumed to be "denial" for every list)
+  orderNumber       String? // tdo_no_tdo: denial/action/order number
+  orderDate         DateTime? // tdo_dt_tdo: denial/order/action date (distinct from effectiveDate/publicationDate)
+  publicationDate   DateTime? // tdo_dt_fr_cit: citation/Federal-Register publication date
+  citationUrl       String? // cit_url: link to the regulatory citation
+  createdAt         DateTime        @default(now())
+
+  @@index([screeningEntityId])
+  @@index([sourceAuthority, sourceList])
 }
 
 /// Phrase/keyword reference data shared by End-Use Screening (restricted end-use
@@ -5543,6 +5682,7 @@ enum RestrictedPartyMatchMethod {
   RAW_WORD
   METAPHONE
   DOUBLE_METAPHONE
+  ALTERNATE_WHOLE_WORD
   COMBINED
 }
 
@@ -5591,10 +5731,28 @@ model RestrictedPartyScreeningResult {
   countryMatchRequired Boolean
   redFlagCheckEnabled  Boolean
 
+  /// Matcher-behavior evidence -- what actually ran for this pass, so a
+  /// historical result remains self-explaining even if account config
+  /// changes later. Nullable only because rows created before this field
+  /// existed have no value to backfill.
+  excludeMetaphone          Boolean?
+  phoneticAlgorithm         RestrictedPartyPhoneticAlgorithm?
+  continueOnExactMatch      Boolean?
+  exactMatchFound           Boolean?
+  alternateScreeningEnabled Boolean?
+  alternateScreeningRan     Boolean?
+  alternateScreeningReason  String?
+
   status RestrictedPartyScreeningStatus
 
   hitCount     Int @default(0)
   redFlagCount Int @default(0)
+  /// True when the scored candidate set exceeded MAX_PERSISTED_MATCHES and
+  /// was truncated to the top-scoring matches before persistence -- never a
+  /// silent cap; a caller/reviewer can tell a truncated result apart from a
+  /// genuinely small one. Nullable only because rows created before this
+  /// field existed have no value to backfill.
+  matchesTruncated Boolean?
 
   errorCode    String?
   errorMessage String?

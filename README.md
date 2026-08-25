@@ -236,14 +236,31 @@ the gap where `SDN`, `CONSOLIDATED_NON_SDN`, `DPL`, `ISN`, `SSI`, `FSE`, `PLC`,
 and `NS_MBS` `ScreeningEntity` rows were fully ingested but never screened by
 any pipeline module. It screens Party Master records (name + address + contact,
 each its own immutable pass) and shipment/line-level parties, using exact,
-raw-word, and a self-contained Double Metaphone phonetic shortlist feeding the
-existing `scoreDpsMatch` fuzzy scorer, plus an independent red-flag word check
+raw-word, and a self-contained phonetic shortlist — Double Metaphone or a
+classic single-code Metaphone2, selectable per account via
+`AccountScreeningConfig.phoneticAlgorithm` — feeding the existing
+`scoreDpsMatch` fuzzy scorer, plus an independent red-flag word check
 (`ComplianceKeywordRule`, `category: "RESTRICTED_PARTY_RED_FLAG"`). Every result
 is immutable; reviewer judgment (`APPROVED`/`FALSE_POSITIVE`/`BLOCKED`/etc.) is
 recorded separately on `RestrictedPartyDisposition`, 1:1 with the result, so a
 past HIT is never rewritten. Party Master keeps a satellite
 `PartyScreeningSummary` per party (current status, last result, staleness
 driven by identity-fact changes and reference-data republishes — no fixed TTL).
+
+Reference data now also includes a **Dow Jones full-feed ingestion pipeline**
+(`src/modules/screening/dowJones/`), carrying provider lineage (`provider`,
+`providerRecordId`, `providerUpdatedAt`, `sourceAuthority`) and multi-valued
+child data (`ScreeningEntityAlias`, `ScreeningEntityAddress`,
+`ScreeningEntityIdentifier`, `ScreeningEntityReference`) per profile — modeled
+so a single Dow Jones entity can carry several regulatory references (OFAC,
+BIS, UN, EU, etc.) rather than the legacy one-denial-order-per-row shape. A
+2026-08-25 gap analysis against the legacy Oracle RPS schema
+(`PartyScreening_Tables.sql`) closed the remaining business-critical fields —
+`ScreeningEntityReference.restrictionType`/`orderNumber`/`orderDate`/
+`publicationDate`/`citationUrl` — while explicitly declining to recreate
+Oracle-era storage artifacts (fixed name/address word columns, Soundex
+columns, `DENIED_WORDS`, `SUBSCRIBER_PARTY_LIST`, `TRADING_PARTNER`
+duplication); see the report's Section N for the full mapping matrix.
 
 It's wired into the `ComplianceAuditAgent` as a seventh concurrent check
 (`RESTRICTED_PARTY` / `PARTY_RED_FLAG` finding categories), exposed to external
@@ -259,8 +276,9 @@ sub-tabs (the five existing embargo-family findings, plus a dedicated **Party
 Screening** sub-tab for this module's results) and on each party's own detail
 page. Deliberately not yet implemented: PEP screening, beneficial-ownership
 graphs, corporate registry ingestion, autonomous approval, and any fuzzy
-matching beyond the Double Metaphone shortlist — see `docs/party-master.md`
-and Section K of the implementation report for the full list of known gaps.
+matching beyond the Double Metaphone/Metaphone2 shortlist — see
+`docs/party-master.md` and Sections K/N of the implementation report for the
+full list of known gaps.
 
 ### 13. Qubere Autonomous Freight Execution TMS (`apps/tms`)
 

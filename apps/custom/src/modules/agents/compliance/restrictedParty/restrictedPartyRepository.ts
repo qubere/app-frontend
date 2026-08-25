@@ -6,18 +6,30 @@
 // UFLPA_ENTITY_LIST (forcedLabor), and MEU_LIST (militaryEndUse) -- those
 // are already screened by other modules and must not be double-counted here.
 import { db } from "@/lib/db";
-import type { ComplianceKeywordRule, ScreeningEntity } from "@prisma/client";
+import type { AccountScreeningConfig, ComplianceKeywordRule, ScreeningEntity, ScreeningEntityAddress } from "@prisma/client";
 import type { ApprovedDispositionMap } from "./suppression";
 
 export const RESTRICTED_PARTY_SOURCE_LISTS = ["SDN", "CONSOLIDATED_NON_SDN", "DPL", "ISN", "SSI", "FSE", "PLC", "NS_MBS"];
 
 export const RESTRICTED_PARTY_RED_FLAG_CATEGORY = "RESTRICTED_PARTY_RED_FLAG";
 
+/** A reference entity plus every address on file (Dow Jones entities can carry several; OFAC/BIS rows have none beyond the flat address/city/country columns). */
+export type ScreeningEntityWithAddresses = ScreeningEntity & { addresses: ScreeningEntityAddress[] };
+
 /** Published denial-order reference rows this module owns. Empty result must be treated as SKIPPED, never CLEAR. */
-export async function getRestrictedPartyReferenceList(): Promise<ScreeningEntity[]> {
+export async function getRestrictedPartyReferenceList(): Promise<ScreeningEntityWithAddresses[]> {
   return db.screeningEntity.findMany({
-    where: { sourceList: { in: RESTRICTED_PARTY_SOURCE_LISTS }, publicationStatus: "PUBLISHED" },
+    where: {
+      publicationStatus: "PUBLISHED",
+      OR: [{ sourceList: { in: RESTRICTED_PARTY_SOURCE_LISTS } }, { provider: "DOW_JONES" }],
+    },
+    include: { addresses: true },
   });
+}
+
+/** Tenant-level RPS matcher config, or null when the account has never configured one -- callers fall back to module defaults per field. */
+export async function getAccountScreeningConfig(accountId: string): Promise<AccountScreeningConfig | null> {
+  return db.accountScreeningConfig.findUnique({ where: { accountId } });
 }
 
 /** Published red-flag keyword rules. Empty result disables the red-flag check (never fabricated as a false CLEAR on the denial-order pass). */
