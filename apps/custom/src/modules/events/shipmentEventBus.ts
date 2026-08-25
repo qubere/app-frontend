@@ -11,6 +11,7 @@ export type ShipmentEventType =
   | "CONFLICT_DETECTED"
   | "EXCEPTION_RESOLVED"
   | "AGENT_EXECUTION_TRIGGERED"
+  | "DOCUMENT_HYDRATION_PROMOTED"
   | "FILING_SUBMITTED";
 
 export interface LogEventParams {
