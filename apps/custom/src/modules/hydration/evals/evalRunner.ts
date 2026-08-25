@@ -118,7 +118,7 @@ export function runHydrationEvaluation(): EvaluationReport {
     evidencedFillRate: Number(evidencedFillRate.toFixed(2)),
     conflictRate: 0.0,
     avgLatencyMs: Math.round(elapsedTime / GOLDEN_CORPUS_FIXTURES.length),
-    estimatedCostUsd: 0.0,
+    estimatedCostUsdApprox: 0.0,
   };
 
   return {

@@ -188,46 +188,120 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
     expect(result.factId).toBe("fact_existing_14");
   });
 
-  it("test-matrix #22: recomputeShipmentFactsOnDetach supersedes non-human-locked facts from detached document", async () => {
-    vi.spyOn(db.shipment, "findFirst").mockResolvedValue({
-      id: "shp_detach_test",
-      accountId: "acc_detach_test",
-      version: 1,
-    } as any);
+  it("test-matrix #22 (Real Postgres DB): recomputeShipmentFactsOnDetach supersedes non-human-locked facts from detached document", async () => {
+    const runId = Date.now().toString(36);
+    const realAccount = `acc_detach_${runId}`;
+    const realShipment = `shp_detach_${runId}`;
+    const realDoc = `doc_detach_${runId}`;
 
-    vi.spyOn(db.fact, "findMany").mockResolvedValue([
-      { id: "fact_auto_1", field: "carrierName", documentId: "doc_detached_1", isHumanLocked: false },
-    ] as any);
+    await db.account.create({
+      data: {
+        id: realAccount,
+        name: `Detach Account ${runId}`,
+        slug: `detach-slug-${runId}`,
+      },
+    });
 
-    vi.spyOn(db.fact, "updateMany").mockResolvedValue({ count: 1 } as any);
-    vi.spyOn(db.fact, "findFirst").mockResolvedValue(null); // No human lock
-    vi.spyOn(db.hydrationCandidate, "findFirst").mockResolvedValue(null); // No surviving candidate
+    await db.shipment.create({
+      data: {
+        id: realShipment,
+        accountId: realAccount,
+        shipmentNumber: `SHP-DETACH-${runId}`,
+        importerName: "IMPORTER INC",
+      },
+    });
+
+    await db.shipmentDocument.create({
+      data: {
+        id: realDoc,
+        accountId: realAccount,
+        shipmentId: realShipment,
+        docType: "COMMERCIAL_INVOICE",
+        fileName: "detach_doc.pdf",
+        status: "Received",
+      },
+    });
+
+    await db.fact.create({
+      data: {
+        id: `fact_detach_${runId}`,
+        shipmentId: realShipment,
+        documentId: realDoc,
+        field: "shipment.carrier.name",
+        value: "HAPAG LLOYD",
+        sourceType: "DOCUMENT_DERIVED",
+        isHumanLocked: false,
+      },
+    });
 
     const res = await HydrationWorker.recomputeShipmentFactsOnDetach(
-      "acc_detach_test",
-      "shp_detach_test",
-      "doc_detached_1"
+      realAccount,
+      realShipment,
+      realDoc
     );
 
-    expect(res.detachedDocumentId).toBe("doc_detached_1");
+    expect(res.detachedDocumentId).toBe(realDoc);
     expect(res.supersededFactsCount).toBe(1);
-    expect(res.recomputedPromotionsCount).toBe(0);
+
+    const factAfter = await db.fact.findUnique({
+      where: { id: `fact_detach_${runId}` },
+    });
+    expect(factAfter?.supersededAt).not.toBeNull();
+
+    await db.fact.deleteMany({ where: { shipmentId: realShipment } });
+    await db.shipmentDocument.deleteMany({ where: { accountId: realAccount } });
+    await db.shipment.deleteMany({ where: { id: realShipment } });
   });
 
-  it("test-matrix #15: rolls back transaction cleanly if party assignment fails during materialization", async () => {
-    vi.spyOn(db, "$transaction").mockImplementation(async () => {
-      throw new Error("Database write failed");
+  it("test-matrix #15.2 (Real Postgres DB): rolls back transaction cleanly if party assignment fails during materialization", async () => {
+    const runId = Date.now().toString(36);
+    const realAccount = `acc_tx_rollback_${runId}`;
+    const realShipment = `shp_tx_rollback_${runId}`;
+    const realDoc = `doc_tx_rollback_${runId}`;
+
+    await db.account.create({
+      data: {
+        id: realAccount,
+        name: `Tx Rollback Account ${runId}`,
+        slug: `tx-rollback-slug-${runId}`,
+      },
     });
+
+    await db.shipment.create({
+      data: {
+        id: realShipment,
+        accountId: realAccount,
+        shipmentNumber: `SHP-TX-ROLLBACK-${runId}`,
+        importerName: "IMPORTER INC",
+      },
+    });
+
+    await db.shipmentDocument.create({
+      data: {
+        id: realDoc,
+        accountId: realAccount,
+        shipmentId: realShipment,
+        docType: "COMMERCIAL_INVOICE",
+        fileName: "invoice.pdf",
+        status: "Received",
+      },
+    });
+
+    vi.restoreAllMocks();
+    const { ShipmentPartyService } = await import("../src/modules/shipment/shipmentPartyService");
+    vi.spyOn(ShipmentPartyService, "assignParty").mockRejectedValue(
+      new Error("FORCED_PARTY_ASSIGNMENT_FAILURE")
+    );
 
     const mockPartyDecision = {
       candidate: {
-        candidateId: "cand_party_1",
+        candidateId: `cand_party_${runId}`,
         proposal: {
           targetFieldKey: "party.importer.name",
           targetEntityRef: null,
           sourceExtractionFieldIds: ["ev_party_1"],
           evidenceReferences: [
-            { documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Importer", rawValue: "Acme Import Corp" },
+            { documentId: realDoc, parseVersionId: "pv_1", rawLabel: "Importer", rawValue: "Acme Import Corp" },
           ],
           proposedValue: "Acme Import Corp",
           mappingConfidence: 95,
@@ -236,7 +310,7 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
           status: "PROPOSED" as const,
           abstainReason: null,
         },
-        corroboratingDocumentIds: [testDocument],
+        corroboratingDocumentIds: [realDoc],
         corroborationScore: 0,
         calibratedScore: 95.0,
         status: "PROMOTED" as const,
@@ -247,11 +321,21 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
     };
 
     await expect(
-      MaterializerRegistry.materializeDecision(testAccount, testShipment, mockPartyDecision, { expectedVersion: 1 })
-    ).rejects.toThrow("Database write failed");
+      MaterializerRegistry.materializeDecision(realAccount, realShipment, mockPartyDecision, { expectedVersion: 1 })
+    ).rejects.toThrow("FORCED_PARTY_ASSIGNMENT_FAILURE");
+
+    // Real Postgres DB assertion: verify 0 Fact rows persisted due to transaction rollback
+    const factsInDb = await db.fact.findMany({
+      where: { shipmentId: realShipment },
+    });
+    expect(factsInDb.length).toBe(0);
+
+    await db.shipmentDocument.deleteMany({ where: { accountId: realAccount } });
+    await db.shipment.deleteMany({ where: { id: realShipment } });
+    vi.restoreAllMocks();
   });
 
-  it("test-matrix #14: candidate identity produces distinct fact records without collision", async () => {
+  it("test-matrix #14.2: candidate identity produces distinct fact records without collision", async () => {
     const candidateA = {
       candidateId: "cand_identity_A",
       proposal: {

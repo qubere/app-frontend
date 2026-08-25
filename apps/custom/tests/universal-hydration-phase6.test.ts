@@ -42,9 +42,17 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
 
     vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue(mockDoc as any);
     vi.spyOn(db.hydrationRun, "findFirst").mockResolvedValue(mockRun as any);
-    vi.spyOn(db.hydrationRun, "findUnique").mockResolvedValue(null);
+    vi.spyOn(db.hydrationRun, "findUnique").mockResolvedValue(mockRun as any);
     vi.spyOn(db.hydrationRun, "create").mockResolvedValue({ ...mockRun, candidates: [] } as any);
-    vi.spyOn(db.hydrationRun, "update").mockResolvedValue({ ...mockRun, status: "SUCCEEDED" } as any);
+    vi.spyOn(db.hydrationRun, "update").mockImplementation((async (args: any) => ({
+      ...mockRun,
+      ...args.data,
+    })) as any);
+    vi.spyOn(db.extractionField, "create").mockImplementation((async (args: any) => ({
+      id: `ext_${Math.random().toString(36).slice(2, 7)}`,
+      ...args.data,
+      createdAt: new Date(),
+    })) as any);
     vi.spyOn(db.extractionField, "findMany").mockImplementation(((args: any) => {
       const requestedIds = args?.where?.id?.in || [];
       return Promise.resolve(
@@ -141,7 +149,7 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
     let updatedStatus: string | null = null;
     let updatedErrorCode: string | null = null;
 
-    vi.spyOn(db.hydrationRun, "findUnique").mockResolvedValue({
+    vi.spyOn(db.hydrationRun, "findFirst").mockResolvedValue({
       id: "run_failed_test_1",
       accountId: testAccount,
       documentId: "doc_fail_1",
@@ -175,5 +183,79 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
 
     expect(updatedStatus).toBe("FAILED");
     expect(updatedErrorCode).toContain("FAIL_CLOSED");
+  });
+
+  it("test-matrix #18 (Real Postgres DB): mid-pipeline failure persists status FAILED and errorCode to Postgres", async () => {
+    vi.restoreAllMocks();
+    const { HydrationRunEngine } = await import("../src/modules/hydration/engine/hydrationRunEngine");
+    const runId = Date.now().toString(36);
+    const realAccount = `acc_fail_db_${runId}`;
+    const realDoc = `doc_fail_db_${runId}`;
+    const realRun = `run_fail_db_${runId}`;
+
+    await db.account.create({
+      data: {
+        id: realAccount,
+        name: `Failed Run DB Account ${runId}`,
+        slug: `failed-run-db-slug-${runId}`,
+      },
+    });
+
+    await db.shipmentDocument.create({
+      data: {
+        id: realDoc,
+        accountId: realAccount,
+        docType: "COMMERCIAL_INVOICE",
+        fileName: "fail_doc.pdf",
+        status: "Received",
+      },
+    });
+
+    await db.hydrationRun.create({
+      data: {
+        id: realRun,
+        accountId: realAccount,
+        documentId: realDoc,
+        activeParseVersionId: "pv_fail_db",
+        fieldSchemaVersion: "1.0.0",
+        extractionSchemaVersion: "1.0.0",
+        mapperModelVersion: "gpt-4o",
+        mapperPromptVersion: "v1.0",
+        normalizationPolicyVersion: "1.0.0",
+        idempotencyKey: `${realAccount}:${realDoc}:pv_fail_db:1.0.0:v1.0:gpt-4o:1.0.0`,
+        status: "RUNNING",
+      },
+    });
+
+    const invalidProposals = [
+      {
+        targetFieldKey: "UNREGISTERED_FIELD_KEY_FAIL_DB",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: [],
+        evidenceReferences: [{ documentId: realDoc, parseVersionId: "pv_1", rawLabel: "X", rawValue: "Y" }],
+        proposedValue: "Y",
+        mappingConfidence: 90,
+        relationConfidence: null,
+        reasoning: "Invalid proposal",
+        status: "PROPOSED" as const,
+        abstainReason: null,
+      },
+    ];
+
+    await expect(
+      HydrationRunEngine.persistProposals(realRun, realAccount, invalidProposals)
+    ).rejects.toThrow();
+
+    // Query Postgres directly to confirm FAILED status and errorCode were persisted!
+    const persistedRun = await db.hydrationRun.findUnique({
+      where: { id: realRun },
+    });
+
+    expect(persistedRun?.status).toBe("FAILED");
+    expect(persistedRun?.errorCode).toContain("FAIL_CLOSED");
+
+    // Cleanup
+    await db.hydrationRun.deleteMany({ where: { id: realRun } });
+    await db.shipmentDocument.deleteMany({ where: { id: realDoc } });
   });
 });

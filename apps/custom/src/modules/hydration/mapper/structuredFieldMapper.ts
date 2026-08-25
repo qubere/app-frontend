@@ -1,7 +1,10 @@
 /**
- * Structured Field Mapper — Grounded Semantic Candidate Generator
+ * Structured Field Mapper — Deterministic Grounded Candidate Generator (v1 Launch Scope)
  *
- * Maps atomic evidence items to canonical field keys present in the active field registry.
+ * Maps atomic evidence items produced by upstream LLM document extraction (DocumentIntelligenceAgent)
+ * to canonical field keys in the active field registry. Performs alias matching, value normalization,
+ * cardinality validation, and calibrated confidence scoring.
+ *
  * Enforces Invariant #1 (cites persisted evidence IDs) and Invariant #2 (target keys must
  * exist in active field registry).
  */
@@ -22,9 +25,8 @@ export interface MapEvidenceOptions {
 }
 
 /**
- * Interface contract for external LLM-driven structured output field mappers.
- * When structured output model providers (OpenAI JSON mode, Gemini Structured Output)
- * are invoked, their output plugs directly into this provider signature.
+ * Optional v2 extension contract for direct LLM-driven structured output re-mappers
+ * (e.g. OpenAI JSON mode / Gemini Structured Output re-mapping plugins).
  */
 export interface LLMFieldMapperProvider {
   mapStructuredFields(

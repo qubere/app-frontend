@@ -141,5 +141,5 @@ export interface EvalMetrics {
   evidencedFillRate: number; // applicable fields with promoted or review-ready value / applicable fields
   conflictRate: number; // fields with unresolvable contradictory candidates / applicable fields
   avgLatencyMs: number;
-  estimatedCostUsd: number;
+  estimatedCostUsdApprox: number;
 }

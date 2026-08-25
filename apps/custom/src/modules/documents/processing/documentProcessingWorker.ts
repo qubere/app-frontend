@@ -666,7 +666,13 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
   });
 
   const { ShipmentEventConsumer } = await import("@/modules/events/shipmentEventConsumer");
-  await ShipmentEventConsumer.dispatchOutboxEvents(run.document.accountId).catch(() => {});
+  const { HydrationLogger } = await import("@/modules/hydration/logging/hydrationLogger");
+  await ShipmentEventConsumer.dispatchOutboxEvents(run.document.accountId).catch((err) => {
+    HydrationLogger.warn("[DocumentWorker] Synchronous outbox dispatch deferred to cron outbox dispatcher", {
+      accountId: run.document.accountId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 }
 
 /**

@@ -13,7 +13,6 @@ export interface OperationalDashboardMetrics extends EvalMetrics {
   totalCandidatesGenerated: number;
   humanCorrectionRate: number;
   abstentionRate: number;
-  estimatedCostUsdApprox?: number;
 }
 
 export class HydrationMetricsService {
@@ -79,7 +78,6 @@ export class HydrationMetricsService {
       humanCorrectionRate: Number(humanCorrectionRate.toFixed(2)),
       abstentionRate: Number(abstentionRate.toFixed(2)),
       avgLatencyMs,
-      estimatedCostUsd: estimatedCostUsd,
       estimatedCostUsdApprox: estimatedCostUsd,
     };
   }
