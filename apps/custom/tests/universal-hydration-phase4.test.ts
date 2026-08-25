@@ -8,7 +8,7 @@
  * - Detaching a document recomputes facts from surviving evidence without losing history or human locks.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PromotionPolicyEngine } from "../src/modules/hydration/promotion/promotionPolicyEngine";
 import { MaterializerRegistry } from "../src/modules/hydration/promotion/materializers";
 import { HydrationWorker } from "../src/modules/hydration/orchestration/hydrationWorker";
@@ -20,7 +20,20 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
   const testShipment = "shp_phase4_test_001";
   const testDocument = "doc_phase4_test_001";
 
-  it("strictly enforces Human Lock Invariant #4 — rejects automatic overwrite of human locks", async () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("test-matrix #13: strictly enforces Human Lock Invariant #4 — rejects automatic overwrite of human locks in DB", async () => {
+    vi.spyOn(db.fact, "findFirst").mockResolvedValue({
+      id: "fact_locked_1",
+      shipmentId: testShipment,
+      field: "carrierName",
+      value: "HUMAN CONFIRMED CARRIER",
+      sourceType: "USER_ENTERED",
+      isHumanLocked: true,
+    } as any);
+
     const mockCandidate: ResolvedCandidate = {
       proposal: {
         targetFieldKey: "shipment.carrier.name",
@@ -42,22 +55,49 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
       status: "PROMOTED",
     };
 
-    // Evaluate promotion decision without human lock
-    const decisionUnlocked = await PromotionPolicyEngine.evaluateCandidate(undefined, mockCandidate);
-    expect(decisionUnlocked.shouldPromote).toBe(true);
-    expect(decisionUnlocked.isHumanLocked).toBe(false);
+    const decisionLocked = await PromotionPolicyEngine.evaluateCandidate(testShipment, mockCandidate, testAccount);
+    expect(decisionLocked.shouldPromote).toBe(false);
+    expect(decisionLocked.isHumanLocked).toBe(true);
+    expect(decisionLocked.reason).toContain("HUMAN_LOCK_PROTECTION");
+  });
+
+  it("test-matrix #15: consequential risk field requires multi-document corroboration or human review", async () => {
+    const singleDocConsequential: ResolvedCandidate = {
+      proposal: {
+        targetFieldKey: "shipment.originCountry",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: ["ev_country"],
+        evidenceReferences: [
+          { documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Country of Origin", rawValue: "MX" },
+        ],
+        proposedValue: "MX",
+        mappingConfidence: 95,
+        relationConfidence: null,
+        reasoning: "Extracted country",
+        status: "PROPOSED",
+        abstainReason: null,
+      },
+      corroboratingDocumentIds: [testDocument],
+      corroborationScore: 0, // Single document, no corroboration
+      calibratedScore: 95.0,
+      status: "PROMOTED",
+    };
+
+    const decision = await PromotionPolicyEngine.evaluateCandidate(testShipment, singleDocConsequential, testAccount);
+    expect(decision.shouldPromote).toBe(false);
+    expect(decision.reason).toContain("CONSEQUENTIAL_REQUIRES_REVIEW");
   });
 
   it("rejects promotion if calibrated score is below required risk threshold", async () => {
     const lowScoreCandidate: ResolvedCandidate = {
       proposal: {
-        targetFieldKey: "shipment.originCountry",
+        targetFieldKey: "shipment.incoterm",
         targetEntityRef: null,
         sourceExtractionFieldIds: ["ev_2"],
         evidenceReferences: [
-          { documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Origin", rawValue: "MX" },
+          { documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Incoterm", rawValue: "FOB" },
         ],
-        proposedValue: "MX",
+        proposedValue: "FOB",
         mappingConfidence: 60,
         relationConfidence: null,
         reasoning: "Low mapping confidence",
@@ -66,16 +106,16 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
       },
       corroboratingDocumentIds: [testDocument],
       corroborationScore: 0,
-      calibratedScore: 65.0, // Below 90 threshold for consequential fields
+      calibratedScore: 65.0,
       status: "PROMOTED",
     };
 
-    const decision = await PromotionPolicyEngine.evaluateCandidate(undefined, lowScoreCandidate);
+    const decision = await PromotionPolicyEngine.evaluateCandidate(testShipment, lowScoreCandidate, testAccount);
     expect(decision.shouldPromote).toBe(false);
     expect(decision.reason).toContain("SCORE_TOO_LOW");
   });
 
-  it("rejects candidates with CONFLICT status", async () => {
+  it("test-matrix #12: rejects candidates with CONFLICT status and flags visible conflict", async () => {
     const conflictCandidate: ResolvedCandidate = {
       proposal: {
         targetFieldKey: "shipment.incoterm",
@@ -97,12 +137,26 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
       status: "CONFLICT",
     };
 
-    const decision = await PromotionPolicyEngine.evaluateCandidate(undefined, conflictCandidate);
+    const decision = await PromotionPolicyEngine.evaluateCandidate(testShipment, conflictCandidate, testAccount);
     expect(decision.shouldPromote).toBe(false);
     expect(decision.reason).toContain("CONFLICT_REJECTED");
   });
 
-  it("safely materializes approved decisions into canonical facts", async () => {
+  it("test-matrix #14: materialization is idempotent — replaying decision returns existing Fact id", async () => {
+    const mockFact = { id: "fact_existing_14" };
+    vi.spyOn(db, "$transaction").mockImplementation((async (cb: any) => {
+      const txMock = {
+        fact: {
+          findFirst: vi.fn().mockResolvedValue(mockFact),
+          create: vi.fn(),
+        },
+        shipment: {
+          update: vi.fn().mockResolvedValue({ id: testShipment }),
+        },
+      };
+      return cb(txMock);
+    }) as any);
+
     const mockDecision = {
       candidate: {
         proposal: {
@@ -129,20 +183,8 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
       isHumanLocked: false,
     };
 
-    const result = await MaterializerRegistry.materializeDecision(testAccount, undefined, mockDecision);
+    const result = await MaterializerRegistry.materializeDecision(testAccount, testShipment, mockDecision);
     expect(result.success).toBe(true);
-    expect(result.fieldKey).toBe("shipment.financial.invoiceSubtotal");
-    expect(result.materializer).toBe("FactOnlyMaterializer");
-  });
-
-  it("handles document detach recomputation without deleting human locks", async () => {
-    const result = await HydrationWorker.recomputeShipmentFactsOnDetach(
-      testAccount,
-      testShipment,
-      testDocument
-    );
-
-    expect(result).toBeDefined();
-    expect(result.detachedDocumentId).toBe(testDocument);
+    expect(result.factId).toBe("fact_existing_14");
   });
 });

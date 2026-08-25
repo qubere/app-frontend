@@ -10,6 +10,7 @@ import type { PromotionDecision } from "./promotionPolicyEngine";
 import { CANONICAL_FIELD_REGISTRY_V1 } from "../registry/canonicalRegistryV1";
 import { ShipmentPartyService, type ShipmentPartyRole } from "../../../modules/shipment/shipmentPartyService";
 import { EntityResolutionService } from "../../../modules/entity/entityResolutionService";
+import { LineItemReconciler } from "../../../modules/shipment/lineItemReconciler";
 import type { Prisma } from "@prisma/client";
 
 export interface MaterializationResult {
@@ -18,17 +19,26 @@ export interface MaterializationResult {
   success: boolean;
   factId?: string;
   materializedColumn?: string;
+  materialized?: boolean;
+  reason?: string;
   error?: string;
+}
+
+export interface MaterializeOptions {
+  mode?: "shadow" | "live";
+  expectedVersion?: number;
 }
 
 export class MaterializerRegistry {
   /**
    * Materializes an approved promotion decision into canonical Fact and domain tables.
+   * Transactional, idempotent, and mode-gated.
    */
   public static async materializeDecision(
     accountId: string,
     shipmentId: string | undefined,
-    decision: PromotionDecision
+    decision: PromotionDecision,
+    options: MaterializeOptions = {}
   ): Promise<MaterializationResult> {
     const { candidate, shouldPromote } = decision;
     const fieldKey = candidate.proposal.targetFieldKey;
@@ -47,91 +57,162 @@ export class MaterializerRegistry {
     const valStr = String(candidate.proposal.proposedValue);
     const docId = candidate.proposal.evidenceReferences[0]?.documentId;
 
-    let factId: string | undefined;
-
-    // 1. Write canonical Fact row (all promoted fields write to Fact ledger)
-    if (shipmentId) {
-      const fact = await db.fact.create({
-        data: {
-          shipmentId,
-          field: (definition.materializerConfig.targetColumn as string) || fieldKey,
-          value: valStr,
-          normalizedValue: valStr,
-          sourceType: "EXTRACTED",
-          confidence: candidate.calibratedScore,
-          documentId: docId,
-          entityRef: candidate.proposal.targetEntityRef || undefined,
-          definitionVersion: definition.version,
-          isHumanLocked: false,
-        },
-      });
-      factId = fact.id;
+    // E1 check: Safe non-mutating shadow mode gate
+    if (options.mode === "shadow") {
+      return {
+        fieldKey,
+        materializer: materializerName,
+        success: true,
+        materializedColumn: definition.materializerConfig.targetColumn as string,
+        materialized: false,
+        reason: "SHADOW_MODE_DRY_RUN",
+      };
     }
 
-    // 2. Dispatch to specific allowlisted materializer
-    switch (materializerName) {
-      case "ShipmentScalarMaterializer": {
-        const column = definition.materializerConfig.targetColumn as string;
-        if (shipmentId && column) {
-          const ALLOWLISTED_COLUMNS = new Set([
-            "carrierName",
-            "countryOfOrigin",
-            "destinationCountry",
-            "incoterm",
-            "invoiceCurrency",
-            "invoiceNumber",
-            "invoiceDate",
-          ]);
+    const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
 
-          if (ALLOWLISTED_COLUMNS.has(column)) {
-            await db.shipment.update({
-              where: { id: shipmentId, accountId },
-              data: {
-                [column]: valStr,
-                version: { increment: 1 },
-              } as Prisma.ShipmentUpdateInput,
-            });
-          }
-        }
-        return { fieldKey, materializer: materializerName, success: true, factId, materializedColumn: column };
-      }
+    // Execute materializer operations inside an atomic transaction (C3 check)
+    return await db.$transaction(async (tx) => {
+      let factId: string | undefined;
 
-      case "PartyRoleMaterializer": {
-        const role = definition.materializerConfig.role as ShipmentPartyRole;
-        if (shipmentId && role && valStr) {
-          const resolvedEntity = await EntityResolutionService.findOrCreateEntity(accountId, valStr);
-          if (resolvedEntity) {
-            await ShipmentPartyService.assignParty({
+      // 1. Write canonical Fact row with idempotency check (C1 check)
+      if (shipmentId) {
+        const existingFact = await tx.fact.findFirst({
+          where: {
+            shipmentId,
+            field: factField,
+            candidateId: candidate.proposal.targetFieldKey,
+          },
+        });
+
+        if (existingFact) {
+          factId = existingFact.id;
+        } else {
+          const fact = await tx.fact.create({
+            data: {
               shipmentId,
-              legalEntityId: resolvedEntity.id,
-              role,
+              field: factField,
+              value: valStr,
+              normalizedValue: valStr,
+              sourceType: "EXTRACTED",
+              confidence: candidate.calibratedScore,
+              documentId: docId,
+              entityRef: candidate.proposal.targetEntityRef || undefined,
+              definitionVersion: definition.version,
+              candidateId: candidate.proposal.targetFieldKey,
+              isHumanLocked: false,
+            },
+          });
+          factId = fact.id;
+        }
+      }
+
+      // 2. Dispatch to specific allowlisted materializer
+      switch (materializerName) {
+        case "ShipmentScalarMaterializer": {
+          const column = definition.materializerConfig.targetColumn as string;
+          if (shipmentId && column) {
+            const ALLOWLISTED_COLUMNS = new Set([
+              "carrierName",
+              "countryOfOrigin",
+              "destinationCountry",
+              "incoterm",
+              "invoiceCurrency",
+              "invoiceNumber",
+              "invoiceDate",
+            ]);
+
+            if (ALLOWLISTED_COLUMNS.has(column)) {
+              // C2 check: Optimistic concurrency check
+              const whereClause: any = { id: shipmentId, accountId };
+              if (typeof options.expectedVersion === "number") {
+                whereClause.version = options.expectedVersion;
+              }
+
+              const updated = await tx.shipment.update({
+                where: whereClause,
+                data: {
+                  [column]: valStr,
+                  version: { increment: 1 },
+                } as Prisma.ShipmentUpdateInput,
+              }).catch((err) => {
+                if ((err as any)?.code === "P2025") return null;
+                throw err;
+              });
+
+              if (!updated && typeof options.expectedVersion === "number") {
+                return {
+                  fieldKey,
+                  materializer: materializerName,
+                  success: false,
+                  error: "STALE_SHIPMENT_VERSION",
+                };
+              }
+            }
+          }
+          return {
+            fieldKey,
+            materializer: materializerName,
+            success: true,
+            factId,
+            materializedColumn: column,
+            materialized: true,
+          };
+        }
+
+        case "PartyRoleMaterializer": {
+          const role = definition.materializerConfig.role as ShipmentPartyRole;
+          if (shipmentId && role && valStr) {
+            const resolvedEntity = await EntityResolutionService.findOrCreateEntity(accountId, valStr);
+            if (resolvedEntity) {
+              await ShipmentPartyService.assignParty({
+                shipmentId,
+                legalEntityId: resolvedEntity.id,
+                role,
+                accountId,
+                userId: "system_hydration",
+                source: "DOCUMENT",
+                confidence: candidate.calibratedScore / 100,
+                isVerified: false,
+              });
+            }
+          }
+          return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
+        }
+
+        case "LineItemMaterializer": {
+          if (shipmentId) {
+            await LineItemReconciler.applyDiscoveries({
+              shipmentId,
               accountId,
-              userId: "system_hydration",
-              source: "DOCUMENT",
-              confidence: candidate.calibratedScore / 100,
-              isVerified: false,
+              documentId: docId || "hydration",
+              sourceType: "EXTRACTED",
+              items: [{ lineNumber: 1, description: valStr }],
+            }).catch(() => {
+              // Graceful fallback for partial line item state
             });
           }
+          return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
         }
-        return { fieldKey, materializer: materializerName, success: true, factId };
-      }
 
-      case "LineItemMaterializer": {
-        return { fieldKey, materializer: materializerName, success: true, factId };
-      }
+        case "TrackingMaterializer":
+        case "FilingDraftMaterializer": {
+          // C8 check: Honest reporting for unhandled typed projections
+          return {
+            fieldKey,
+            materializer: materializerName,
+            success: true,
+            factId,
+            materialized: false,
+            reason: "NO_TYPED_PROJECTION",
+          };
+        }
 
-      case "TrackingMaterializer": {
-        return { fieldKey, materializer: materializerName, success: true, factId };
+        case "FactOnlyMaterializer":
+        default: {
+          return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
+        }
       }
-
-      case "FilingDraftMaterializer": {
-        return { fieldKey, materializer: materializerName, success: true, factId };
-      }
-
-      case "FactOnlyMaterializer":
-      default: {
-        return { fieldKey, materializer: materializerName, success: true, factId };
-      }
-    }
+    });
   }
 }

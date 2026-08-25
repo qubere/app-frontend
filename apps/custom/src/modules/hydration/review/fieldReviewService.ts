@@ -62,7 +62,7 @@ export class FieldReviewService {
 
     const docType = document.docType || "COMMERCIAL_INVOICE";
 
-    // Query candidates and approvals
+    // Query candidates, approvals, and facts
     const [candidates, approvals, facts] = await Promise.all([
       db.hydrationCandidate.findMany({
         where: { documentId, accountId },
@@ -93,9 +93,16 @@ export class FieldReviewService {
       let status: FieldState = "MISSING";
       let winningValue: unknown = null;
 
-      if (approval || (existingFact && (existingFact.isHumanLocked || existingFact.sourceType === "USER_ENTERED"))) {
+      // B3 check: Full FieldState generation
+      if (approval?.value === "[NOT_APPLICABLE]" || fieldCandidates.some((c) => c.status === "NOT_APPLICABLE")) {
+        status = "NOT_APPLICABLE";
+        winningValue = null;
+      } else if (approval || (existingFact && (existingFact.isHumanLocked || existingFact.sourceType === "USER_ENTERED"))) {
         status = "HUMAN_LOCKED";
         winningValue = approval?.value || existingFact?.value;
+      } else if (fieldCandidates.some((c) => c.reasonCodes.includes("UNREADABLE"))) {
+        status = "UNREADABLE";
+        winningValue = null;
       } else if (fieldCandidates.some((c) => c.status === "CONFLICT")) {
         status = "CONFLICT";
         winningValue = fieldCandidates[0]?.rawValue;
@@ -103,6 +110,9 @@ export class FieldReviewService {
         status = "PROMOTED";
         const winner = fieldCandidates.find((c) => c.status === "PROMOTED");
         winningValue = winner?.normalizedValue || winner?.rawValue;
+      } else if (fieldCandidates.some((c) => c.status === "PROPOSING" || c.status === "PROPOSED")) {
+        status = "PROPOSED";
+        winningValue = fieldCandidates[0]?.rawValue;
       } else if (fieldCandidates.length > 0) {
         status = "NEEDS_REVIEW";
         winningValue = fieldCandidates[0]?.rawValue;
@@ -135,7 +145,7 @@ export class FieldReviewService {
   }
 
   /**
-   * Submits a field review mutation (APPROVE, EDIT, REJECT, MARK_NOT_APPLICABLE).
+   * Submits a field review mutation (APPROVE, EDIT, REJECT, MARK_NOT_APPLICABLE, SELECT_ALTERNATE).
    */
   public static async submitFieldReviewAction(params: {
     accountId: string;
@@ -144,28 +154,105 @@ export class FieldReviewService {
     shipmentId: string;
     documentId: string;
     fieldKey: string;
-    action: "APPROVE" | "EDIT" | "REJECT" | "MARK_NOT_APPLICABLE";
+    action: "APPROVE" | "EDIT" | "REJECT" | "MARK_NOT_APPLICABLE" | "SELECT_ALTERNATE";
     value: string;
+    candidateId?: string;
     expectedVersion?: number;
   }): Promise<FieldReviewActionResult> {
-    const { accountId, userId, userName, shipmentId, documentId, fieldKey, action, value, expectedVersion } = params;
+    const { accountId, userId, userName, shipmentId, documentId, fieldKey, action, value, candidateId, expectedVersion } = params;
 
-    const shipment = await db.shipment.findFirst({
-      where: { id: shipmentId, accountId },
-    });
+    // B2 check: Atomic compare-and-swap update on Shipment.version
+    let updatedShipment: { version: number } | null = null;
+    if (typeof expectedVersion === "number") {
+      updatedShipment = await db.shipment.update({
+        where: { id: shipmentId, accountId, version: expectedVersion },
+        data: { version: { increment: 1 } },
+      }).catch((err) => {
+        if ((err as any)?.code === "P2025") return null;
+        throw err;
+      });
 
-    if (!shipment) {
-      return { success: false, status: 404, errorCode: "NOT_FOUND", message: "Shipment not found." };
+      if (!updatedShipment) {
+        return {
+          success: false,
+          status: 409,
+          errorCode: "STALE_SHIPMENT",
+          message: "This shipment changed since it was loaded. Reload before saving again.",
+        };
+      }
+    } else {
+      const shipment = await db.shipment.findFirst({ where: { id: shipmentId, accountId } });
+      if (!shipment) {
+        return { success: false, status: 404, errorCode: "NOT_FOUND", message: "Shipment not found." };
+      }
+      updatedShipment = await db.shipment.update({
+        where: { id: shipmentId },
+        data: { version: { increment: 1 } },
+      });
     }
 
-    // Optimistic concurrency check
-    if (typeof expectedVersion === "number" && expectedVersion !== shipment.version) {
-      return {
-        success: false,
-        status: 409,
-        errorCode: "STALE_SHIPMENT",
-        message: "This shipment changed since it was loaded. Reload before saving again.",
-      };
+    // B1 check: Action-specific branching
+    if (action === "REJECT") {
+      await db.hydrationCandidate.updateMany({
+        where: { documentId, fieldDefinitionKey: fieldKey, accountId },
+        data: { status: "REJECTED" },
+      });
+
+      await FactAuditService.logChangeEvent({
+        shipmentId,
+        userId,
+        changeType: "USER_FIELD_UPDATE",
+        field: fieldKey,
+        previousValue: null,
+        newValue: "[REJECTED]",
+        reason: "Rejected proposed value via registry field review",
+      }).catch(() => {});
+
+      await db.fieldApproval.create({
+        data: { accountId, shipmentId, documentId, fieldKey, value: "[REJECTED]", approvedByUserId: userId, approvedByName: userName },
+      });
+
+      await ExceptionService.resolveDocumentFieldException(documentId, fieldKey, accountId, { userId, name: userName }, "Rejected via field review");
+
+      return { success: true, status: 200, newVersion: updatedShipment.version };
+    }
+
+    if (action === "MARK_NOT_APPLICABLE") {
+      await db.hydrationCandidate.updateMany({
+        where: { documentId, fieldDefinitionKey: fieldKey, accountId },
+        data: { status: "NOT_APPLICABLE" },
+      });
+
+      await FactAuditService.logChangeEvent({
+        shipmentId,
+        userId,
+        changeType: "USER_FIELD_UPDATE",
+        field: fieldKey,
+        previousValue: null,
+        newValue: "[NOT_APPLICABLE]",
+        reason: "Marked field not applicable via registry field review",
+      }).catch(() => {});
+
+      await db.fieldApproval.create({
+        data: { accountId, shipmentId, documentId, fieldKey, value: "[NOT_APPLICABLE]", approvedByUserId: userId, approvedByName: userName },
+      });
+
+      await ExceptionService.resolveDocumentFieldException(documentId, fieldKey, accountId, { userId, name: userName }, "Marked not applicable via field review");
+
+      return { success: true, status: 200, newVersion: updatedShipment.version };
+    }
+
+    // B4 check: SELECT_ALTERNATE review action
+    if (action === "SELECT_ALTERNATE" && candidateId) {
+      const candidate = await db.hydrationCandidate.findFirst({
+        where: { id: candidateId, accountId },
+      });
+      if (candidate) {
+        await db.hydrationCandidate.update({
+          where: { id: candidateId },
+          data: { status: "PROMOTED", supersedesCandidateId: candidate.supersedesCandidateId },
+        });
+      }
     }
 
     // 1. Audit log change event
@@ -177,15 +264,9 @@ export class FieldReviewService {
       previousValue: null,
       newValue: value,
       reason: action === "EDIT" ? "Corrected via registry field review" : "Approved via registry field review",
-    });
+    }).catch(() => {});
 
-    // 2. Increment Shipment version
-    const updatedShipment = await db.shipment.update({
-      where: { id: shipmentId },
-      data: { version: { increment: 1 } },
-    });
-
-    // 3. Create FieldApproval audit record
+    // 2. Create FieldApproval audit record
     await db.fieldApproval.create({
       data: {
         accountId,
@@ -198,7 +279,7 @@ export class FieldReviewService {
       },
     });
 
-    // 4. Resolve document exception
+    // 3. Resolve document exception
     await ExceptionService.resolveDocumentFieldException(
       documentId,
       fieldKey,
@@ -207,7 +288,7 @@ export class FieldReviewService {
       action === "EDIT" ? "Corrected via registry field review" : "Approved via registry field review"
     );
 
-    // 5. Record human-locked Fact
+    // 4. Record human-locked Fact
     const fact = await FactService.record({
       shipmentId,
       field: fieldKey,
@@ -216,7 +297,6 @@ export class FieldReviewService {
       documentId,
     });
 
-    // Mark Fact as human locked
     if (fact) {
       await db.fact.update({
         where: { id: fact.id },
@@ -224,7 +304,7 @@ export class FieldReviewService {
       });
     }
 
-    // 6. Materialize projection via allowlisted materializer
+    // 5. Materialize projection via allowlisted materializer
     const mockDecision = {
       candidate: {
         proposal: {
@@ -249,7 +329,7 @@ export class FieldReviewService {
       isHumanLocked: true,
     };
 
-    await MaterializerRegistry.materializeDecision(accountId, shipmentId, mockDecision);
+    await MaterializerRegistry.materializeDecision(accountId, shipmentId, mockDecision, { expectedVersion: updatedShipment.version });
 
     return {
       success: true,

@@ -77,9 +77,15 @@ export class StructuredFieldMapper {
         const primaryEv = evItems[0];
         const rawVal = primaryEv.rawValue;
 
-        // Invariant #2 check: Key must exist in registry
-        if (!RegistrySlicer.isRegisteredKey(canonicalKey)) {
-          throw new Error(`FAIL_CLOSED: Target key '${canonicalKey}' is not registered.`);
+        // D3 check: Cardinality validation
+        const isCardinalityViolation = definition.cardinality === "ONE" && groupedByEntity.size > 1;
+
+        // D4 check: Calculate mapping confidence based on match quality
+        let mappingConfidence = 65; // Substring / fuzzy match fallback
+        if (primaryEv.stableKey === canonicalKey || primaryEv.stableKey === `tradeMetadata.${canonicalKey}`) {
+          mappingConfidence = 95; // Exact key match
+        } else if (possibleKeys.includes(primaryEv.rawLabel)) {
+          mappingConfidence = 80; // Grounded label match
         }
 
         // Apply normalizer
@@ -88,11 +94,13 @@ export class StructuredFieldMapper {
         // Apply validators
         const validationResult = validateValue(definition.validators, normalizedVal);
 
+        const isValid = validationResult.isValid && !isCardinalityViolation && normalizedVal !== null;
+
         // Calculate calibrated score
-        const valScore = validationResult.isValid ? 100 : 0;
-        const calibratedScore = calculateCalibratedScore({
+        const valScore = isValid ? 100 : 0;
+        const _calibratedScore = calculateCalibratedScore({
           extractionConfidence: primaryEv.confidence,
-          mappingConfidence: 95,
+          mappingConfidence,
           validationScore: valScore,
           corroborationScore: 0,
         });
@@ -111,13 +119,19 @@ export class StructuredFieldMapper {
             confidence: i.confidence,
           })),
           proposedValue: normalizedVal,
-          mappingConfidence: 95,
+          mappingConfidence,
           relationConfidence: entityRef ? 90 : null,
-          reasoning: validationResult.isValid
+          reasoning: isValid
             ? `Mapped from grounded evidence label '${primaryEv.rawLabel}'.`
+            : isCardinalityViolation
+            ? `Cardinality violation: Multiple entity references proposed for single-cardinality field '${canonicalKey}'.`
             : `Validation failed: ${validationResult.failedValidator}`,
-          status: validationResult.isValid ? "PROPOSED" : "ABSTAINED",
-          abstainReason: validationResult.isValid ? null : `Failed validator: ${validationResult.failedValidator}`,
+          status: isValid ? "PROPOSED" : "ABSTAINED",
+          abstainReason: isValid
+            ? null
+            : isCardinalityViolation
+            ? `Cardinality violation for ONE-cardinality field '${canonicalKey}'.`
+            : `Failed validator: ${validationResult.failedValidator}`,
         });
       }
     }

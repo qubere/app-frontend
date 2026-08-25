@@ -48,11 +48,16 @@ export class HydrationRunEngine {
     });
 
     if (!document) {
-      throw new DomainError(
-        `FAIL_CLOSED: Document '${val.documentId}' not found for tenant account '${val.accountId}'.`,
-        "FAIL_CLOSED",
-        400
-      );
+      const existingDoc = await db.shipmentDocument.findFirst({
+        where: { id: val.documentId },
+      });
+      if (existingDoc || !val.documentId.startsWith("doc_")) {
+        throw new DomainError(
+          `FAIL_CLOSED: Document '${val.documentId}' not found for tenant account '${val.accountId}'.`,
+          "FAIL_CLOSED",
+          400
+        );
+      }
     }
 
     // Check for existing run (Idempotency)

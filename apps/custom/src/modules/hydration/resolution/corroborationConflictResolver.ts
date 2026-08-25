@@ -74,10 +74,12 @@ export class CorroborationConflictResolver {
       );
       const uniqueNormValues = new Set(normValues);
 
+      const docIds = Array.from(new Set(items.map((i) => i.documentId)));
+
       if (uniqueNormValues.size === 1) {
-        // Corroborated! All independent documents agree on the normalized value.
-        const docIds = Array.from(new Set(items.map((i) => i.documentId)));
-        const corroborationScore = 100;
+        // Corroboration requires > 1 distinct independent documents
+        const isIndependentCorroboration = docIds.length > 1;
+        const corroborationScore = isIndependentCorroboration ? 100 : 0;
         const calibratedScore = calculateCalibratedScore({
           mappingConfidence: first.proposal.mappingConfidence,
           extractionConfidence: 95,
@@ -88,8 +90,12 @@ export class CorroborationConflictResolver {
         results.push({
           proposal: {
             ...first.proposal,
-            mappingConfidence: Math.min(100, first.proposal.mappingConfidence + 5),
-            reasoning: `Corroborated by ${docIds.length} independent documents (${docIds.join(", ")}).`,
+            mappingConfidence: isIndependentCorroboration
+              ? Math.min(100, first.proposal.mappingConfidence + 5)
+              : first.proposal.mappingConfidence,
+            reasoning: isIndependentCorroboration
+              ? `Corroborated by ${docIds.length} independent documents (${docIds.join(", ")}).`
+              : `Single document proposal extracted from ${docIds.join(", ")}.`,
           },
           corroboratingDocumentIds: docIds,
           corroborationScore,
@@ -98,7 +104,7 @@ export class CorroborationConflictResolver {
         });
       } else {
         // Conflict! Independent documents report contradictory values.
-        const docIds = Array.from(new Set(items.map((i) => i.documentId)));
+        const _docIds = Array.from(new Set(items.map((i) => i.documentId)));
         const calibratedScore = calculateCalibratedScore({
           mappingConfidence: first.proposal.mappingConfidence,
           extractionConfidence: 95,

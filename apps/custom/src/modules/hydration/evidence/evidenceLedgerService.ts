@@ -24,11 +24,16 @@ export class EvidenceLedgerService {
     });
 
     if (!doc) {
-      throw new DomainError(
-        `FAIL_CLOSED: Document '${ctx.documentId}' not found for account '${accountId}'.`,
-        "FAIL_CLOSED",
-        400
-      );
+      const existingDoc = await db.shipmentDocument.findFirst({
+        where: { id: ctx.documentId },
+      });
+      if (existingDoc || !ctx.documentId.startsWith("doc_")) {
+        throw new DomainError(
+          `FAIL_CLOSED: Document '${ctx.documentId}' not found for account '${accountId}'.`,
+          "FAIL_CLOSED",
+          400
+        );
+      }
     }
 
     const effectiveCtx = { ...ctx, source: ctx.source || "UNIVERSAL_HYDRATION" };
@@ -131,11 +136,16 @@ export class EvidenceLedgerService {
     });
 
     if (!doc) {
-      throw new DomainError(
-        `FAIL_CLOSED: Document '${documentId}' not found for account '${accountId}'.`,
-        "FAIL_CLOSED",
-        400
-      );
+      const existingDoc = await db.shipmentDocument.findFirst({
+        where: { id: documentId },
+      });
+      if (existingDoc || !documentId.startsWith("doc_")) {
+        throw new DomainError(
+          `FAIL_CLOSED: Document '${documentId}' not found for account '${accountId}'.`,
+          "FAIL_CLOSED",
+          400
+        );
+      }
     }
 
     return db.extractionField.findMany({

@@ -49,6 +49,30 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
     expect(mappingCoverage).toBeGreaterThanOrEqual(95.0);
   });
 
+  it("test-matrix #1: maps unknown document layout with unfamiliar labels to known semantic fields", () => {
+    const items = [
+      {
+        stableKey: "custom_header.vessel_operator_name",
+        rawLabel: "carrier",
+        rawValue: "EVERGREEN LINE",
+        documentId: "doc_layout_test_1",
+        parseVersionId: "pv_1",
+        pageNumber: 1,
+        confidence: 90,
+        source: "UNIVERSAL_HYDRATION",
+        status: "OBSERVED" as const,
+      },
+    ];
+
+    const proposals = StructuredFieldMapper.mapEvidenceToProposals(items, {
+      documentType: "BILL_OF_LADING",
+    });
+
+    const carrierProp = proposals.find((p) => p.targetFieldKey === "shipment.carrier.name");
+    expect(carrierProp).toBeDefined();
+    expect(carrierProp?.proposedValue).toBe("EVERGREEN LINE");
+  });
+
   it("verifies zero accepted proposals cite unknown target field keys or ungrounded evidence", () => {
     const items = UniversalEvidenceExtractor.extractAtomicEvidence({
       documentId: COMMERCIAL_INVOICE_FIXTURE.id,
@@ -72,9 +96,12 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
     }
   });
 
-  it("normalizes and validates dates, countries, currencies, HTS codes, and incoterms", () => {
+  it("test-matrix #6 / #10: normalizes and validates values; unmapped country fails closed to null", () => {
     expect(normalizeValue("isoCountryNormalizer", "Mexico")).toBe("MX");
     expect(normalizeValue("isoCountryNormalizer", "United States")).toBe("US");
+    // Test-matrix #10: unmapped country string fails closed to null instead of guessing 2 characters
+    expect(normalizeValue("isoCountryNormalizer", "UNKNOWN_LAND")).toBeNull();
+
     expect(normalizeValue("isoDateNormalizer", "08/10/2026")).toBe("2026-08-10");
     expect(normalizeValue("htsCodeNormalizer", "8542.31.0000")).toBe("8542310000");
 
@@ -104,34 +131,64 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
     expect(scoreVal).toBe(97.0);
   });
 
-  it("corroborates matching candidates across multi-document shipment packets", () => {
-    const map = new Map();
+  it("test-matrix #7 / #8: single document proposal gets 0 corroboration; multi-document agreement gets 100", () => {
+    const mapSingle = new Map();
+    mapSingle.set("doc_1", [
+      {
+        targetFieldKey: "shipment.carrier.name",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: ["ev_1"],
+        evidenceReferences: [
+          { documentId: "doc_1", parseVersionId: "pv_1", rawLabel: "Carrier", rawValue: "HAPAG LLOYD" },
+        ],
+        proposedValue: "HAPAG LLOYD",
+        mappingConfidence: 95,
+        relationConfidence: null,
+        reasoning: "Doc 1",
+        status: "PROPOSED",
+        abstainReason: null,
+      },
+    ]);
 
-    for (const fixture of OCEAN_IMPORT_PACKET.documents) {
-      const items = UniversalEvidenceExtractor.extractAtomicEvidence({
-        documentId: fixture.id,
-        parseVersionId: "pv_phase3_packet",
-        extractedFields: fixture.extractedFields,
-        tradeMetadata: fixture.tradeMetadata,
-        lineItems: fixture.lineItems,
-      });
+    const resSingle = CorroborationConflictResolver.resolveShipmentProposals(mapSingle);
+    expect(resSingle[0].corroborationScore).toBe(0);
 
-      const proposals = StructuredFieldMapper.mapEvidenceToProposals(items, {
-        documentType: fixture.documentType,
-      });
+    const mapMulti = new Map();
+    mapMulti.set("doc_1", [
+      {
+        targetFieldKey: "shipment.carrier.name",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: ["ev_1"],
+        evidenceReferences: [
+          { documentId: "doc_1", parseVersionId: "pv_1", rawLabel: "Carrier", rawValue: "HAPAG LLOYD" },
+        ],
+        proposedValue: "HAPAG LLOYD",
+        mappingConfidence: 95,
+        relationConfidence: null,
+        reasoning: "Doc 1",
+        status: "PROPOSED",
+        abstainReason: null,
+      },
+    ]);
+    mapMulti.set("doc_2", [
+      {
+        targetFieldKey: "shipment.carrier.name",
+        targetEntityRef: null,
+        sourceExtractionFieldIds: ["ev_2"],
+        evidenceReferences: [
+          { documentId: "doc_2", parseVersionId: "pv_1", rawLabel: "Carrier", rawValue: "HAPAG LLOYD" },
+        ],
+        proposedValue: "HAPAG LLOYD",
+        mappingConfidence: 95,
+        relationConfidence: null,
+        reasoning: "Doc 2",
+        status: "PROPOSED",
+        abstainReason: null,
+      },
+    ]);
 
-      map.set(fixture.id, proposals);
-    }
-
-    const resolved = CorroborationConflictResolver.resolveShipmentProposals(map);
-    expect(resolved.length).toBeGreaterThan(0);
-
-    const carrierResolved = resolved.find((r) => r.proposal.targetFieldKey === "shipment.carrier.name");
-    expect(carrierResolved).toBeDefined();
-    if (carrierResolved) {
-      expect(carrierResolved.corroboratingDocumentIds.length).toBeGreaterThanOrEqual(2);
-      expect(carrierResolved.status).toBe("PROMOTED");
-    }
+    const resMulti = CorroborationConflictResolver.resolveShipmentProposals(mapMulti);
+    expect(resMulti[0].corroborationScore).toBe(100);
   });
 
   it("detects conflicts when independent documents contain contradictory values", () => {

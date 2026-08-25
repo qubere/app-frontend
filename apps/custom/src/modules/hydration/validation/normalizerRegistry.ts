@@ -21,7 +21,7 @@ export const NORMALIZER_REGISTRY: Record<string, NormalizerFn> = {
     return String(value).trim().toUpperCase();
   },
 
-  isoCountryNormalizer: (value: unknown): string => {
+  isoCountryNormalizer: (value: unknown): string | null => {
     if (!value) return "";
     const str = String(value).trim().toUpperCase();
     // Common country aliases -> ISO-2
@@ -36,7 +36,7 @@ export const NORMALIZER_REGISTRY: Record<string, NormalizerFn> = {
       VIETNAM: "VN",
       CANADA: "CA",
     };
-    return countryMap[str] || (str.length === 2 ? str : str.slice(0, 2));
+    return countryMap[str] || (str.length === 2 ? str : null);
   },
 
   isoDateNormalizer: (value: unknown): string | null => {

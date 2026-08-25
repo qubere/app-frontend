@@ -30,22 +30,23 @@ export interface MigrationDiffReport {
 export class ShadowBackfillRunner {
   /**
    * Runs a stored active parse context through universal hydration in shadow mode.
+   * Safe non-mutating dry run.
    */
   public static async runShadowBackfill(
     accountId: string,
     ctx: RawExtractionContext,
     shipmentId?: string
   ): Promise<MigrationDiffReport> {
-    // 1. Run hydration pipeline in shadow mode
+    // E1 check: Run hydration pipeline in shadow mode (dry run, zero database mutation)
     const execResult: PipelineExecutionResult = await HydrationWorker.processDocumentHydration(
       accountId,
       ctx,
-      { shipmentId, mapperModelVersion: "gpt-4o", mapperPromptVersion: "v1.0-shadow" }
+      { shipmentId, mapperModelVersion: "gpt-4o", mapperPromptVersion: "v1.0-shadow", mode: "shadow" }
     );
 
-    // 2. Fetch existing legacy Facts for shipment/document
+    // E4 check: Tenant-scoped existing Fact query
     const existingFacts = shipmentId
-      ? await db.fact.findMany({ where: { shipmentId } })
+      ? await db.fact.findMany({ where: { shipmentId, shipment: { accountId } } })
       : [];
 
     const legacyFactMap = new Map(existingFacts.map((f) => [f.field, f.value]));

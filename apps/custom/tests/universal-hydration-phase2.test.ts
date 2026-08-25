@@ -94,7 +94,10 @@ describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
   });
 
   it("test-matrix #29 / Defect #4: EvidenceLedgerService fails closed when reading or writing evidence for another account", async () => {
-    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue(null);
+    vi.spyOn(db.shipmentDocument, "findFirst").mockImplementation(((args: any) => {
+      if (args?.where?.accountId === "wrong_account") return Promise.resolve(null);
+      return Promise.resolve({ id: "doc_cross_tenant_1", accountId: "right_account" });
+    }) as any);
 
     const ctx = {
       documentId: "doc_cross_tenant_1",
@@ -164,8 +167,6 @@ describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
 
     const coverage = EvidenceInspection.calculateDocumentCoverage(items, benchmarkFacts as any);
 
-    // "lineItem[].price" should match item.stableKey "lineItem[1].price"
-    // "lineItem[].unitPrice" should NOT match "lineItem[1].unitPriceCurrency"
     expect(coverage.recalledFacts.some((f) => f.canonicalKey === "lineItem[].price")).toBe(true);
     expect(coverage.recalledFacts.some((f) => f.canonicalKey === "lineItem[].unitPrice")).toBe(false);
     expect(coverage.missingFacts.some((f) => f.canonicalKey === "lineItem[].unitPrice")).toBe(true);

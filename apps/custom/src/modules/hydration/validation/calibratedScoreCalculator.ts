@@ -16,9 +16,9 @@ export interface ScoreInput {
 }
 
 export function calculateCalibratedScore(input: ScoreInput): number {
-  const mapConf = Math.min(100, Math.max(0, input.mappingConfidence ?? 90));
-  const extConf = Math.min(100, Math.max(0, input.extractionConfidence ?? 90));
-  const valScore = Math.min(100, Math.max(0, input.validationScore ?? 100));
+  const mapConf = Math.min(100, Math.max(0, input.mappingConfidence ?? 0));
+  const extConf = Math.min(100, Math.max(0, input.extractionConfidence ?? 0));
+  const valScore = Math.min(100, Math.max(0, input.validationScore ?? 0));
   const corrScore = Math.min(100, Math.max(0, input.corroborationScore ?? 0));
 
   // Weighted score calculation

@@ -26,7 +26,8 @@ export class PromotionPolicyEngine {
    */
   public static async evaluateCandidate(
     shipmentId: string | undefined,
-    resolvedCandidate: ResolvedCandidate
+    resolvedCandidate: ResolvedCandidate,
+    accountId?: string
   ): Promise<PromotionDecision> {
     const { proposal, status, calibratedScore } = resolvedCandidate;
     const fieldKey = proposal.targetFieldKey;
@@ -41,13 +42,18 @@ export class PromotionPolicyEngine {
       };
     }
 
-    // 1. Invariant #4: Human Lock Protection Check
+    // 1. Invariant #4: Human Lock Protection Check (Tenant-scoped)
     if (shipmentId) {
+      const factWhere: any = {
+        shipmentId,
+        field: (definition.materializerConfig.targetColumn as string) || fieldKey,
+      };
+      if (accountId) {
+        factWhere.shipment = { accountId };
+      }
+
       const existingFact = await db.fact.findFirst({
-        where: {
-          shipmentId,
-          field: definition.materializerConfig.targetColumn as string || fieldKey,
-        },
+        where: factWhere,
         orderBy: { createdAt: "desc" },
       });
 
@@ -80,9 +86,18 @@ export class PromotionPolicyEngine {
       };
     }
 
-    // 3. Risk Class & Score Threshold Checks
+    // 3. Risk Class & Score Threshold Checks (Invariant #11)
     const isConsequential = definition.riskClass === "CONSEQUENTIAL";
     const minScoreThreshold = isConsequential ? 90.0 : 80.0;
+
+    if (isConsequential && resolvedCandidate.corroborationScore === 0) {
+      return {
+        candidate: resolvedCandidate,
+        shouldPromote: false,
+        reason: `CONSEQUENTIAL_REQUIRES_REVIEW: Consequential risk field '${fieldKey}' requires multi-document corroboration or human review.`,
+        isHumanLocked: false,
+      };
+    }
 
     if (calibratedScore < minScoreThreshold) {
       return {

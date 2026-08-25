@@ -3740,6 +3740,7 @@ model Fact {
 
   @@index([shipmentId])
   @@index([field])
+  @@unique([shipmentId, field, candidateId])
 }
 
 model HydrationRun {
@@ -3760,6 +3761,8 @@ model HydrationRun {
   status                     String // QUEUED | RUNNING | SUCCEEDED | NEEDS_REVIEW | FAILED
   metrics                    Json?
   errorCode                  String?
+  dataMode                   DataMode         @default(PRODUCTION)
+  durationMs                 Int?
   createdAt                  DateTime         @default(now())
   completedAt                DateTime?
 
@@ -3793,6 +3796,7 @@ model HydrationCandidate {
   reasonCodes              String[]
   sourceExtractionFieldIds String[]
   supersedesCandidateId    String?
+  dataMode                 DataMode         @default(PRODUCTION)
   createdAt                DateTime         @default(now())
 
   @@unique([hydrationRunId, fieldDefinitionKey, targetEntityRef])
