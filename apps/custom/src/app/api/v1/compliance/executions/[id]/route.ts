@@ -27,7 +27,7 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
         screeningFindings: { orderBy: { createdAt: "asc" } },
         parentExecution: { select: { id: true, executionType: true, startedAt: true } },
         rescreens: { select: { id: true, executionType: true, startedAt: true, status: true } },
-        initiatedByUser: { select: { id: true, name: true, email: true } },
+        initiatedByUser: { select: { id: true, firstName: true, lastName: true, email: true } },
       },
     });
 

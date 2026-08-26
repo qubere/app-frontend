@@ -21,8 +21,8 @@ vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/api/auth-guards", () => ({
   withAuthenticatedRoute: (handler: any, options: any) => {
     (withAuthenticatedRouteOptions as any[]).push(options);
-    return (req: any, context: any) =>
-      handler({ req, ctx: { accountId: "acct_1", userId: "user_1" }, requestId: "req_1", params: context?.params ?? {} });
+    return async (req: any, context: any) =>
+      handler({ req, ctx: { accountId: "acct_1", userId: "user_1" }, requestId: "req_1", params: context ? await context.params : {} });
   },
 }));
 const withAuthenticatedRouteOptions: Array<{ permission?: string }> = [];
@@ -47,7 +47,7 @@ beforeEach(() => {
 describe("GET .../restricted-party-screening-history", () => {
   it("returns 404 for a party belonging to another account", async () => {
     dbMock.party.findFirst.mockResolvedValue(null);
-    const response = await GET(req(), { params: { partyId: "party_other_tenant" } });
+    const response = await GET(req(), { params: Promise.resolve({ partyId: "party_other_tenant" }) });
     expect(response.status).toBe(404);
     expect(dbMock.party.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "party_other_tenant", accountId: "acct_1" } })
@@ -59,7 +59,7 @@ describe("GET .../restricted-party-screening-history", () => {
     dbMock.partyScreeningApproval.findMany.mockResolvedValue([]);
     checkPreApprovalGate.mockResolvedValue({ applied: false, reason: "No active pre-approval exists for this party." });
 
-    await GET(req(), { params: { partyId: "party_1" } });
+    await GET(req(), { params: Promise.resolve({ partyId: "party_1" }) });
 
     expect(checkPreApprovalGate).toHaveBeenCalledWith({
       accountId: "acct_1",
@@ -81,7 +81,7 @@ describe("GET .../restricted-party-screening-history", () => {
       approvalId: "approval_current",
     });
 
-    const response = await GET(req(), { params: { partyId: "party_1" } });
+    const response = await GET(req(), { params: Promise.resolve({ partyId: "party_1" }) });
     const body = await response.json();
 
     const current = body.preApprovals.find((a: any) => a.id === "approval_current");

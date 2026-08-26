@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RestrictedPartyPassOutcome } from "@/modules/agents/compliance/restrictedParty/types";
 
 // Restricted / Denied-Party Screening: persistResult.ts's persistScreeningRun.
 // Covers: the four audit-evidence fields (normalizedScreenedName,
@@ -90,7 +91,7 @@ function passOutcome(overrides: Record<string, unknown> = {}) {
     screeningInputHash: "hash_1",
     screeningDurationMs: 1,
     ...overrides,
-  };
+  } as unknown as RestrictedPartyPassOutcome;
 }
 
 describe("persistScreeningRun: audit-evidence fields", () => {

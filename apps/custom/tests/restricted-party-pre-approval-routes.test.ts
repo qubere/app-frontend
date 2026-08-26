@@ -21,8 +21,8 @@ const guardOptionsByRoute: Array<{ permission?: string; write?: boolean }> = [];
 vi.mock("@/lib/api/auth-guards", () => ({
   withAuthenticatedRoute: (handler: any, options: any) => {
     guardOptionsByRoute.push(options);
-    return (req: any, context: any) =>
-      handler({ req, ctx: { accountId: "acct_1", userId: "user_1" }, requestId: "req_1", params: context?.params ?? {} });
+    return async (req: any, context: any) =>
+      handler({ req, ctx: { accountId: "acct_1", userId: "user_1" }, requestId: "req_1", params: context ? await context.params : {} });
   },
 }));
 
@@ -70,7 +70,7 @@ describe("POST .../pre-approval: grants a party-level pre-approval", () => {
   it("returns 404 rather than creating an approval when the party does not belong to this account", async () => {
     dbMock.party.findFirst.mockResolvedValue(null);
 
-    const response = await POST(jsonRequest({}), { params: { partyId: "party_other_tenant" } });
+    const response = await POST(jsonRequest({}), { params: Promise.resolve({ partyId: "party_other_tenant" }) });
 
     expect(response.status).toBe(404);
     expect(dbMock.party.findFirst).toHaveBeenCalledWith(
@@ -85,7 +85,7 @@ describe("POST .../pre-approval: grants a party-level pre-approval", () => {
 
     const response = await POST(
       jsonRequest({ reason: "Trusted long-standing customer" }),
-      { params: { partyId: "party_1" } }
+      { params: Promise.resolve({ partyId: "party_1" }) }
     );
     const body = await response.json();
 
@@ -100,7 +100,7 @@ describe("POST .../pre-approval: grants a party-level pre-approval", () => {
     dbMock.party.findFirst.mockResolvedValue({ id: "party_1" });
     createPreApproval.mockRejectedValue(new PartyNotFoundForApprovalError("Party not found"));
 
-    const response = await POST(jsonRequest({}), { params: { partyId: "party_1" } });
+    const response = await POST(jsonRequest({}), { params: Promise.resolve({ partyId: "party_1" }) });
     expect(response.status).toBe(404);
   });
 
@@ -108,7 +108,7 @@ describe("POST .../pre-approval: grants a party-level pre-approval", () => {
     dbMock.party.findFirst.mockResolvedValue({ id: "party_1" });
     createPreApproval.mockRejectedValue(new PartyHasNoActiveIdentityForApprovalError("No active identity"));
 
-    const response = await POST(jsonRequest({}), { params: { partyId: "party_1" } });
+    const response = await POST(jsonRequest({}), { params: Promise.resolve({ partyId: "party_1" }) });
     expect(response.status).toBe(422);
   });
 });
@@ -121,7 +121,7 @@ describe("PATCH .../pre-approval/[approvalId]: revokes a party-level pre-approva
   it("returns 404 when the approval does not belong to this account, even if the id exists elsewhere", async () => {
     dbMock.partyScreeningApproval.findFirst.mockResolvedValue(null);
 
-    const response = await PATCH(jsonRequest({}), { params: { partyId: "party_1", approvalId: "approval_other_tenant" } });
+    const response = await PATCH(jsonRequest({}), { params: Promise.resolve({ partyId: "party_1", approvalId: "approval_other_tenant" }) });
 
     expect(response.status).toBe(404);
     expect(dbMock.partyScreeningApproval.findFirst).toHaveBeenCalledWith(
@@ -133,7 +133,7 @@ describe("PATCH .../pre-approval/[approvalId]: revokes a party-level pre-approva
   it("returns 404 when the approval id does not belong to the given partyId (cross-party mismatch)", async () => {
     dbMock.partyScreeningApproval.findFirst.mockResolvedValue(null);
 
-    const response = await PATCH(jsonRequest({}), { params: { partyId: "party_wrong", approvalId: "approval_1" } });
+    const response = await PATCH(jsonRequest({}), { params: Promise.resolve({ partyId: "party_wrong", approvalId: "approval_1" }) });
 
     expect(response.status).toBe(404);
   });
@@ -144,7 +144,7 @@ describe("PATCH .../pre-approval/[approvalId]: revokes a party-level pre-approva
 
     const response = await PATCH(
       jsonRequest({ reason: "Party re-flagged" }),
-      { params: { partyId: "party_1", approvalId: "approval_1" } }
+      { params: Promise.resolve({ partyId: "party_1", approvalId: "approval_1" }) }
     );
     const body = await response.json();
 
@@ -159,7 +159,7 @@ describe("PATCH .../pre-approval/[approvalId]: revokes a party-level pre-approva
     dbMock.partyScreeningApproval.findFirst.mockResolvedValue({ id: "approval_1" });
     revokePreApproval.mockRejectedValue(new PreApprovalNotFoundError("Pre-approval not found"));
 
-    const response = await PATCH(jsonRequest({}), { params: { partyId: "party_1", approvalId: "approval_1" } });
+    const response = await PATCH(jsonRequest({}), { params: Promise.resolve({ partyId: "party_1", approvalId: "approval_1" }) });
     expect(response.status).toBe(404);
   });
 });
