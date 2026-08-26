@@ -1,4 +1,5 @@
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasPermission } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { ProtestListClient } from "./ProtestListClient";
 
@@ -10,6 +11,7 @@ export const metadata = {
 export default async function ProtestListPage() {
   const ctx = await getAccountContext();
   if (!ctx) return null;
+  if (!(await hasPermission("protest.read"))) redirect("/app/dashboard");
 
   const protestsRaw = await withDataModeContext(
     isDataMode(ctx.dataMode) ? ctx.dataMode : null,

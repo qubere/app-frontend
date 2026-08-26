@@ -1,4 +1,5 @@
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasPermission } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { PscListClient } from "./PscListClient";
 
@@ -10,6 +11,7 @@ export const metadata = {
 export default async function PscListPage() {
   const ctx = await getAccountContext();
   if (!ctx) return null;
+  if (!(await hasPermission("psc.read"))) redirect("/app/dashboard");
 
   const pscsRaw = await withDataModeContext(
     isDataMode(ctx.dataMode) ? ctx.dataMode : null,

@@ -81,9 +81,22 @@ export default async function DocumentsPage() {
           accountId,
           shipmentId: null,
         },
-        include: {
+        select: {
+          id: true,
+          fileName: true,
+          docType: true,
+          documentType: true,
+          documentTypeConfidence: true,
+          status: true,
+          createdAt: true,
+          fileUrl: true,
+          confidence: true,
+          source: true,
           shipmentCandidates: {
-            include: {
+            select: {
+              id: true,
+              confidenceScore: true,
+              matchReasons: true,
               shipment: {
                 select: { id: true, shipmentNumber: true, portOfEntry: true },
               },
