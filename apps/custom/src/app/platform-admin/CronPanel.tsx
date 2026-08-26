@@ -43,9 +43,14 @@ function formatDate(isoString: string | null | undefined): string {
   }
 }
 
-export function CronPanel() {
-  const [jobs, setJobs] = useState<CronJob[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface CronPanelProps {
+  initialJobs?: CronJob[];
+}
+
+export function CronPanel({ initialJobs }: CronPanelProps = {}) {
+  const hasInitial = Boolean(initialJobs && initialJobs.length > 0);
+  const [jobs, setJobs] = useState<CronJob[]>(() => initialJobs || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [methodFilter, setMethodFilter] = useState<"ALL" | "GET" | "POST">("ALL");
@@ -75,7 +80,9 @@ export function CronPanel() {
   };
 
   useEffect(() => {
-    fetchCronJobs();
+    if (!hasInitial) {
+      fetchCronJobs();
+    }
   }, []);
 
   const runJobManually = async (jobId: string, jobName: string) => {

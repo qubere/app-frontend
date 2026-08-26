@@ -9,6 +9,8 @@ import { getAiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import { getDocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
 import { listPendingKeywordRuleReviews } from "@/modules/complianceKeywordRules/keywordRuleReviewService";
 import { getRolesPermissionsData } from "@/lib/admin/rolesData";
+import { getSystemCronJobs } from "@/lib/admin/cronData";
+import { getAllDatasetsWithStatus } from "@/lib/data/datasetRegistry";
 
 export default async function PlatformAdminPage() {
   const context = await getAccountContext();
@@ -100,11 +102,17 @@ export default async function PlatformAdminPage() {
     lastRefreshAt: mostRecentRelease?.retrievedAt.toISOString() || null,
   };
 
-  const aiUsage = await getAiUsageAnalytics(30);
-  const documentProcessing = await getDocumentProcessingAnalytics(30);
-  const pendingKeywordRules = await listPendingKeywordRuleReviews();
+  const [aiUsage, documentProcessing, pendingKeywordRules, rolesPermissions, cronJobs, datasets] =
+    await Promise.all([
+      getAiUsageAnalytics(30),
+      getDocumentProcessingAnalytics(30),
+      listPendingKeywordRuleReviews(),
+      getRolesPermissionsData(context),
+      getSystemCronJobs(),
+      getAllDatasetsWithStatus(),
+    ]);
+
   const pendingKeywordRuleCount = pendingKeywordRules.length;
-  const rolesPermissions = await getRolesPermissionsData(context);
 
   return (
     <div className="min-h-screen bg-surface-muted text-ink p-8 selection:bg-brand/20 selection:text-brand">
@@ -140,6 +148,8 @@ export default async function PlatformAdminPage() {
           documentProcessing={documentProcessing}
           pendingKeywordRuleCount={pendingKeywordRuleCount}
           rolesPermissions={rolesPermissions}
+          initialCronJobs={cronJobs}
+          initialDatasets={datasets}
         />
       </div>
     </div>
