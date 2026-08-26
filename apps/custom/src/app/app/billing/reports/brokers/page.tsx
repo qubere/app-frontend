@@ -1,6 +1,6 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 
 export const revalidate = 0;
@@ -11,32 +11,38 @@ export default async function BrokerWorkloadPage() {
   if (!(await hasPermission("billing.reports.view"))) redirect("/app/billing");
   const canViewCost = await hasPermission("billing.cost.view");
 
-  // Manual usage events grouped by userId
-  const manualEvents = await db.usageEvent.findMany({
-    where: { accountId: ctx.accountId, automated: false, userId: { not: null } },
-    select: {
-      userId: true,
-      shipmentId: true,
-      success: true,
-      processingDuration: true,
-    },
-  });
+  // UsageEvent and ShipmentCost both carry an Account relation (dataMode-scoped)
+  // -- without this wrapper both queries silently default to PRODUCTION isolation.
+  const { manualEvents, laborCosts, users } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+    // Manual usage events grouped by userId
+    const manualEvents = await db.usageEvent.findMany({
+      where: { accountId: ctx.accountId, automated: false, userId: { not: null } },
+      select: {
+        userId: true,
+        shipmentId: true,
+        success: true,
+        processingDuration: true,
+      },
+    });
 
-  // Labor costs per userId (from ShipmentCost where costType = LABOR and userId is set)
-  const laborCosts = await db.shipmentCost.findMany({
-    where: { accountId: ctx.accountId, costType: "LABOR" },
-    select: { userId: true, amount: true, durationSec: true },
-  });
+    // Labor costs per userId (from ShipmentCost where costType = LABOR and userId is set)
+    const laborCosts = await db.shipmentCost.findMany({
+      where: { accountId: ctx.accountId, costType: "LABOR" },
+      select: { userId: true, amount: true, durationSec: true },
+    });
 
-  // Resolve user display names from UserProfile or User table
-  const userIds = [...new Set([
-    ...manualEvents.map((e) => e.userId).filter(Boolean),
-    ...laborCosts.map((c) => c.userId).filter(Boolean),
-  ])] as string[];
+    // Resolve user display names from UserProfile or User table
+    const userIds = [...new Set([
+      ...manualEvents.map((e) => e.userId).filter(Boolean),
+      ...laborCosts.map((c) => c.userId).filter(Boolean),
+    ])] as string[];
 
-  const users = await db.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, firstName: true, lastName: true, email: true },
+    const users = await db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+
+    return { manualEvents, laborCosts, users };
   });
   const userMap = new Map(users.map((u) => [u.id, { ...u, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email }]));
 

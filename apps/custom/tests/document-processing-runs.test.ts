@@ -20,6 +20,12 @@ const dbMock = {
     findFirst: vi.fn(),
     update: vi.fn(),
   },
+  shipmentEventLog: {
+    create: vi.fn(),
+  },
+  workflowOutboxEvent: {
+    create: vi.fn(),
+  },
   $transaction: vi.fn(),
 };
 
@@ -70,6 +76,8 @@ beforeEach(() => {
   dbMock.documentParseVersion.create.mockResolvedValue(runRow());
   dbMock.documentParseVersion.updateMany.mockResolvedValue({ count: 1 });
   dbMock.documentParseVersion.findMany.mockResolvedValue([]);
+  dbMock.shipmentEventLog.create.mockResolvedValue({ id: "shipment_event_1" });
+  dbMock.workflowOutboxEvent.create.mockResolvedValue({ id: "outbox_event_1" });
   // Run the transaction body against the same mock client.
   dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => Promise<unknown>) =>
     fn(dbMock)

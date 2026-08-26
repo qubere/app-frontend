@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 
 export const revalidate = 0;
@@ -12,21 +12,54 @@ export default async function BillingReportsPage() {
   if (!(await hasPermission("billing.reports.view"))) redirect("/app/billing");
   const canViewCost = await hasPermission("billing.cost.view");
 
-  const clients = await db.client.findMany({
-    where: { accountId: ctx.accountId },
-    take: 20,
-    select: {
-      id: true,
-      name: true,
-      shipments: {
-        where: { accountId: ctx.accountId },
-        select: {
-          id: true,
-          shipmentCharges: { where: { accountId: ctx.accountId }, select: { netAmount: true } },
-          ...(canViewCost ? { shipmentCosts: { where: { accountId: ctx.accountId }, select: { amount: true } } } : {}),
+  // Client, ShipmentCharge, ShipmentCost, and UsageEvent all carry an Account
+  // relation (dataMode-scoped) -- without this wrapper every query below
+  // silently defaults to PRODUCTION isolation.
+  const { clients, serviceCharges, serviceCostsByEventId, agentUsageEvents } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+    const clients = await db.client.findMany({
+      where: { accountId: ctx.accountId },
+      take: 20,
+      select: {
+        id: true,
+        name: true,
+        shipments: {
+          where: { accountId: ctx.accountId },
+          select: {
+            id: true,
+            shipmentCharges: { where: { accountId: ctx.accountId }, select: { netAmount: true } },
+            ...(canViewCost ? { shipmentCosts: { where: { accountId: ctx.accountId }, select: { amount: true } } } : {}),
+          },
         },
       },
-    },
+    });
+
+    // Service-level economics: group ShipmentCharge by rateRule.serviceCode
+    const serviceCharges = await db.shipmentCharge.findMany({
+      where: { accountId: ctx.accountId, status: { notIn: ["VOIDED", "REVERSED"] } },
+      select: {
+        grossAmount: true,
+        netAmount: true,
+        usageEventId: true,
+        rateRule: { select: { serviceCode: true, lineItemName: true } },
+      },
+    });
+
+    const serviceCostsByEventId = canViewCost
+      ? await db.shipmentCost.findMany({
+          where: { accountId: ctx.accountId, usageEventId: { not: null } },
+          select: { usageEventId: true, amount: true },
+        })
+      : [];
+
+    const agentUsageEvents = await db.usageEvent.findMany({
+      where: { accountId: ctx.accountId, automated: true, sourceAgent: { not: null } },
+      include: {
+        charges: { where: { accountId: ctx.accountId }, select: { netAmount: true } },
+        ...(canViewCost ? { costs: { where: { accountId: ctx.accountId }, select: { amount: true } } } : {}),
+      },
+    });
+
+    return { clients, serviceCharges, serviceCostsByEventId, agentUsageEvents };
   });
 
   const clientEconomics = clients.map((client) => {
@@ -57,23 +90,6 @@ export default async function BillingReportsPage() {
   );
   const bookMargin = bookTotals.rev > 0 ? (bookTotals.profit / bookTotals.rev) * 100 : 0;
 
-  // Service-level economics: group ShipmentCharge by rateRule.serviceCode
-  const serviceCharges = await db.shipmentCharge.findMany({
-    where: { accountId: ctx.accountId, status: { notIn: ["VOIDED", "REVERSED"] } },
-    select: {
-      grossAmount: true,
-      netAmount: true,
-      usageEventId: true,
-      rateRule: { select: { serviceCode: true, lineItemName: true } },
-    },
-  });
-
-  const serviceCostsByEventId = canViewCost
-    ? await db.shipmentCost.findMany({
-        where: { accountId: ctx.accountId, usageEventId: { not: null } },
-        select: { usageEventId: true, amount: true },
-      })
-    : [];
   const costByEvent = new Map<string, number>();
   for (const sc of serviceCostsByEventId) {
     if (sc.usageEventId) costByEvent.set(sc.usageEventId, (costByEvent.get(sc.usageEventId) ?? 0) + Number(sc.amount));
@@ -92,14 +108,6 @@ export default async function BillingReportsPage() {
   const serviceMetrics = Array.from(serviceMap.values())
     .map((s) => ({ ...s, margin: s.revenue > 0 ? ((s.revenue - s.cost) / s.revenue) * 100 : null }))
     .sort((a, b) => b.revenue - a.revenue);
-
-  const agentUsageEvents = await db.usageEvent.findMany({
-    where: { accountId: ctx.accountId, automated: true, sourceAgent: { not: null } },
-    include: {
-      charges: { where: { accountId: ctx.accountId }, select: { netAmount: true } },
-      ...(canViewCost ? { costs: { where: { accountId: ctx.accountId }, select: { amount: true } } } : {}),
-    },
-  });
 
   const agentGroups = new Map<string, { agent: string; executions: number; cost: number; revenue: number; failed: number }>();
   for (const ev of agentUsageEvents) {

@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { db } from "@/lib/db";
+import { db, withDataModeContext } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { normalizeSenderEmail } from "./emailNormalization";
 
@@ -15,13 +15,27 @@ export interface InboundRouteLookup {
 
 export const databaseInboundRouteLookup: InboundRouteLookup = {
   async findActiveByNormalizedEmail(normalizedEmail) {
-    const route = await db.inboundSenderRoute.findFirst({
-      where: { normalizedSenderEmail: normalizedEmail, status: "ACTIVE" },
-      select: { id: true, accountId: true, defaultAssignedToUserId: true },
-    });
-    return route;
+    // Sender routing happens before the email has a tenant. Keep the bypass at
+    // the repository boundary so callers cannot accidentally hide valid routes
+    // behind the default account.dataMode filter.
+    return withDataModeContext(null, async () =>
+      db.inboundSenderRoute.findFirst({
+        where: { normalizedSenderEmail: normalizedEmail, status: "ACTIVE" },
+        select: { id: true, accountId: true, defaultAssignedToUserId: true },
+      })
+    );
   },
 };
+
+export async function resolveBlockedInboundRoute(rawSenderEmail: string): Promise<ResolvedInboundRoute | null> {
+  const normalized = normalizeSenderEmail(rawSenderEmail);
+  return withDataModeContext(null, async () =>
+    db.inboundSenderRoute.findFirst({
+      where: { normalizedSenderEmail: normalized, status: "BLOCKED" },
+      select: { id: true, accountId: true, defaultAssignedToUserId: true },
+    })
+  );
+}
 
 /**
  * Resolves the single active route for a sender, if any.
@@ -55,6 +69,18 @@ export class InboundSenderAlreadyRoutedError extends Error {
   }
 }
 
+/** Thrown when re-adding a sender whose existing route for this account was
+ * deliberately BLOCKED. A block is a durable admin decision -- unlike a
+ * REVOKED route (safe to silently reactivate; it just expired/was replaced),
+ * lifting a block must be its own explicit action, not a side effect of
+ * someone re-submitting "Add Authorized Sender" with the same address. */
+export class InboundSenderBlockedError extends Error {
+  constructor() {
+    super("This sender is blocked for this account. Unblock it explicitly before re-adding.");
+    this.name = "InboundSenderBlockedError";
+  }
+}
+
 /**
  * Authorizes `email` to route inbound documents into `accountId`, going
  * forward. Shared by the Settings > Inbound Senders UI and the platform-admin
@@ -71,6 +97,45 @@ export async function createInboundSenderRoute(params: {
 }) {
   const { accountId, email, defaultAssignedToUserId, createdByUserId, auditSource = "UI", requestId } = params;
   const normalizedSenderEmail = normalizeSenderEmail(email);
+
+  const reactivateExisting = async (existing: { id: string; accountId: string; status: string }) => {
+    if (existing.accountId !== accountId) throw new InboundSenderAlreadyRoutedError();
+    if (existing.status === "BLOCKED") throw new InboundSenderBlockedError();
+
+    const route = await db.inboundSenderRoute.update({
+      where: { id: existing.id },
+      data: {
+        displaySenderEmail: email.trim(),
+        defaultAssignedToUserId: defaultAssignedToUserId ?? null,
+        status: "ACTIVE",
+      },
+    });
+
+    await createAuditLog({
+      accountId,
+      userId: createdByUserId,
+      action: existing.status === "ACTIVE" ? "inbound_sender_route.updated" : "inbound_sender_route.reactivated",
+      entity: "InboundSenderRoute",
+      entityId: route.id,
+      source: auditSource,
+      metadata: {
+        normalizedSenderEmail,
+        previousStatus: existing.status,
+        defaultAssignedToUserId: defaultAssignedToUserId ?? null,
+      },
+      requestId,
+    });
+
+    return route;
+  };
+
+  const existing = await withDataModeContext(null, async () =>
+    db.inboundSenderRoute.findUnique({
+      where: { normalizedSenderEmail },
+      select: { id: true, accountId: true, status: true },
+    })
+  );
+  if (existing) return reactivateExisting(existing);
 
   try {
     const route = await db.inboundSenderRoute.create({
@@ -97,8 +162,62 @@ export async function createInboundSenderRoute(params: {
     return route;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      // Close the create race without turning a same-account retry into a
+      // misleading "authorized elsewhere" error.
+      const raced = await withDataModeContext(null, async () =>
+        db.inboundSenderRoute.findUnique({
+          where: { normalizedSenderEmail },
+          select: { id: true, accountId: true, status: true },
+        })
+      );
+      if (raced) return reactivateExisting(raced);
       throw new InboundSenderAlreadyRoutedError();
     }
     throw error;
   }
+}
+
+export async function blockInboundSenderRoute(params: {
+  accountId: string;
+  email: string;
+  blockedByUserId: string;
+  auditSource?: string;
+  requestId?: string;
+}) {
+  const { accountId, email, blockedByUserId, auditSource = "UI", requestId } = params;
+  const normalizedSenderEmail = normalizeSenderEmail(email);
+
+  const existing = await withDataModeContext(null, async () =>
+    db.inboundSenderRoute.findUnique({ where: { normalizedSenderEmail } })
+  );
+  if (existing && existing.accountId !== accountId) throw new InboundSenderAlreadyRoutedError();
+
+  const route = existing
+    ? await db.inboundSenderRoute.update({
+        where: { id: existing.id },
+        data: { displaySenderEmail: email.trim(), status: "BLOCKED", defaultAssignedToUserId: null },
+      })
+    : await db.inboundSenderRoute.create({
+        data: {
+          accountId,
+          normalizedSenderEmail,
+          displaySenderEmail: email.trim(),
+          defaultAssignedToUserId: null,
+          status: "BLOCKED",
+          createdByUserId: blockedByUserId,
+        },
+      });
+
+  await createAuditLog({
+    accountId,
+    userId: blockedByUserId,
+    action: "inbound_sender_route.blocked",
+    entity: "InboundSenderRoute",
+    entityId: route.id,
+    source: auditSource,
+    metadata: { normalizedSenderEmail },
+    requestId,
+  });
+
+  return route;
 }

@@ -33,8 +33,9 @@ export interface RecordFactInput {
  * the rule that governs how (and whether) a Fact reaches the curated record.
  */
 export class FactService {
-  static async record(input: RecordFactInput): Promise<Fact> {
-    return db.fact.create({
+  static async record(input: RecordFactInput, tx?: any): Promise<Fact> {
+    const client = tx || db;
+    return client.fact.create({
       data: {
         shipmentId: input.shipmentId,
         field: input.field,
@@ -49,9 +50,10 @@ export class FactService {
     });
   }
 
-  static async recordMany(inputs: RecordFactInput[]): Promise<{ count: number }> {
+  static async recordMany(inputs: RecordFactInput[], tx?: any): Promise<{ count: number }> {
+    const client = tx || db;
     if (inputs.length === 0) return { count: 0 };
-    return db.fact.createMany({
+    return client.fact.createMany({
       data: inputs.map((input) => ({
         shipmentId: input.shipmentId,
         field: input.field,

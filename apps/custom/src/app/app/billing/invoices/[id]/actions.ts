@@ -1,6 +1,6 @@
 "use server";
 
-import { db, withAccountIdContext } from "@/lib/db";
+import { db, isDataMode, withAccountIdContext, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { recordInvoicePayment } from "@/lib/billing/invoicing";
@@ -24,7 +24,9 @@ export async function recordPaymentAction(invoiceId: string, formData: FormData)
   const paymentMethod = String(formData.get("paymentMethod") || "").trim();
   if (!paymentMethod) throw new Error("Payment method is required");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // recordInvoicePayment queries/updates Invoice (dataMode-scoped via Account
+  // relation) -- without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const payment = await recordInvoicePayment({
       accountId: context.accountId,
       invoiceId,
@@ -46,13 +48,15 @@ export async function recordPaymentAction(invoiceId: string, formData: FormData)
     revalidatePath("/app/billing/invoices");
     revalidatePath("/app/billing");
     return { success: true };
-  });
+  }));
 }
 
 export async function submitInvoiceForApprovalAction(invoiceId: string) {
   const context = await requirePermission("billing.invoice.create");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.invoice.findFirst touches Invoice (dataMode-scoped via Account relation) --
+  // without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
       where: { id: invoiceId, accountId: context.accountId },
       select: { id: true, status: true, invoiceNumber: true, createdById: true },
@@ -73,13 +77,15 @@ export async function submitInvoiceForApprovalAction(invoiceId: string) {
     revalidatePath(`/app/billing/invoices/${invoiceId}`);
     revalidatePath("/app/billing/invoices");
     return { success: true };
-  });
+  }));
 }
 
 export async function approveInvoiceAction(invoiceId: string) {
   const context = await requirePermission("billing.invoice.approve");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.invoice.findFirst touches Invoice (dataMode-scoped via Account relation) --
+  // without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
       where: { id: invoiceId, accountId: context.accountId },
       select: { id: true, status: true, invoiceNumber: true, createdById: true },
@@ -101,13 +107,15 @@ export async function approveInvoiceAction(invoiceId: string) {
     revalidatePath(`/app/billing/invoices/${invoiceId}`);
     revalidatePath("/app/billing/invoices");
     return { success: true };
-  });
+  }));
 }
 
 export async function sendInvoiceAction(invoiceId: string) {
   const context = await requirePermission("billing.invoice.send");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.invoice.findFirst touches Invoice (dataMode-scoped via Account relation) --
+  // without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
       where: { id: invoiceId, accountId: context.accountId },
       select: { id: true, status: true, invoiceNumber: true },
@@ -129,14 +137,17 @@ export async function sendInvoiceAction(invoiceId: string) {
     revalidatePath(`/app/billing/invoices/${invoiceId}`);
     revalidatePath("/app/billing/invoices");
     return { success: true };
-  });
+  }));
 }
 
 export async function voidInvoiceAction(invoiceId: string, reason: string) {
   const context = await requirePermission("billing.invoice.void");
   if (!reason.trim()) throw new Error("A reason is required to void an invoice");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.invoice.findFirst and tx.shipmentCharge.updateMany below both touch
+  // dataMode-scoped models (Account relation) -- without this wrapper both
+  // would silently default to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const invoice = await db.invoice.findFirst({
       where: { id: invoiceId, accountId: context.accountId },
       include: { lines: { include: { charges: { select: { id: true } } } } },
@@ -174,5 +185,5 @@ export async function voidInvoiceAction(invoiceId: string, reason: string) {
     revalidatePath("/app/billing/invoices");
     revalidatePath("/app/billing");
     return { success: true };
-  });
+  }));
 }

@@ -200,6 +200,10 @@ const dbMock = {
     }),
   },
 
+  workflowOutboxEvent: {
+    create: vi.fn(async () => ({})),
+  },
+
   $transaction: vi.fn(),
 };
 

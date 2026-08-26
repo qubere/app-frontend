@@ -163,6 +163,8 @@ model Account {
   exceptionItems              ExceptionItem[]
   fieldApprovals              FieldApproval[]
   landedCostScenarios         LandedCostScenario[]
+  hydrationRuns               HydrationRun[]
+  hydrationCandidates         HydrationCandidate[]
   teams                       Team[]
   impersonationSessions       ImpersonationSession[]
   refundOpportunities         RefundOpportunity[]
@@ -617,6 +619,8 @@ model Shipment {
   reconciliationIssues            ReconciliationIssue[]
   pipelineJobs                    PipelineJob[]
   facts                           Fact[]
+  hydrationRuns                   HydrationRun[]
+  hydrationCandidates             HydrationCandidate[]
   shipmentParties                 ShipmentParty[]
   changeEvents                    ShipmentChangeEvent[]
   eventLogs                       ShipmentEventLog[]
@@ -994,6 +998,8 @@ model ShipmentDocument {
 
   extractionFields   ExtractionField[]
   parseVersions      DocumentParseVersion[]
+  hydrationRuns      HydrationRun[]
+  hydrationCandidates HydrationCandidate[]
   exceptionItems     ExceptionItem[]
   fieldApprovals     FieldApproval[]
   agentDecisions     AgentDecision[]
@@ -3713,21 +3719,95 @@ model ClassificationChangeImpact {
 }
 
 model Fact {
-  id              String   @id @default(cuid())
-  shipmentId      String
-  shipment        Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  field           String // e.g. "countryOfOrigin"
-  value           String // e.g. "VN"
-  normalizedValue String?
-  sourceType      String // e.g. "EXTRACTED", "USER_ENTERED", "AGENT_PROPOSED"
-  confidence      Float? // e.g. 98.5
-  documentId      String? // Optional link to ShipmentDocument
-  documentPage    Int? // Optional page number
-  metadata        Json? // Stores the dynamic JSON blob for fields not modeled as columns
-  createdAt       DateTime @default(now())
+  id                String    @id @default(cuid())
+  shipmentId        String
+  shipment          Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  field             String // e.g. "countryOfOrigin"
+  value             String // e.g. "VN"
+  normalizedValue   String?
+  sourceType        String // e.g. "EXTRACTED", "USER_ENTERED", "AGENT_PROPOSED"
+  confidence        Float? // e.g. 98.5
+  documentId        String? // Optional link to ShipmentDocument
+  documentPage      Int? // Optional page number
+  metadata          Json? // Stores the dynamic JSON blob for fields not modeled as columns
+  entityRef         String? // e.g. "line:1", "party:EXPORTER"
+  definitionVersion String? // e.g. "1.0.0"
+  hydrationRunId    String?
+  candidateId       String?
+  isHumanLocked     Boolean   @default(false)
+  supersededAt      DateTime?
+  createdAt         DateTime  @default(now())
 
   @@index([shipmentId])
   @@index([field])
+  @@unique([shipmentId, field, candidateId])
+}
+
+model HydrationRun {
+  id                         String           @id @default(cuid())
+  accountId                  String
+  account                    Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId                 String?
+  shipment                   Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  documentId                 String
+  document                   ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  activeParseVersionId       String
+  fieldSchemaVersion         String
+  extractionSchemaVersion    String
+  mapperModelVersion         String
+  mapperPromptVersion        String
+  normalizationPolicyVersion String
+  idempotencyKey             String           @unique
+  status                     String // QUEUED | RUNNING | SUCCEEDED | NEEDS_REVIEW | FAILED
+  metrics                    Json?
+  errorCode                  String?
+  dataMode                   DataMode         @default(PRODUCTION)
+  durationMs                 Int?
+  createdAt                  DateTime         @default(now())
+  completedAt                DateTime?
+
+  candidates HydrationCandidate[]
+
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([documentId])
+}
+
+model HydrationCandidate {
+  id                       String           @id @default(cuid())
+  hydrationRunId           String
+  hydrationRun             HydrationRun     @relation(fields: [hydrationRunId], references: [id], onDelete: Cascade)
+  accountId                String
+  account                  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId               String?
+  shipment                 Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  documentId               String
+  document                 ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fieldDefinitionKey       String
+  // Empty string is the canonical scalar entity reference. Keeping this
+  // non-null makes the compound idempotency key enforceable in PostgreSQL;
+  // nullable columns do not collide in unique indexes.
+  targetEntityRef          String           @default("")
+  rawValue                 Json
+  normalizedValue          Json?
+  extractionConfidence     Float?
+  mappingConfidence        Float?
+  validationScore          Float?
+  corroborationScore       Float?
+  calibratedDecisionScore  Float?
+  status                   String // PROPOSED | PROMOTED | REVIEW | REJECTED | CONFLICT | ABSTAINED
+  reasonCodes              String[]
+  sourceExtractionFieldIds String[]
+  supersedesCandidateId    String?
+  dataMode                 DataMode         @default(PRODUCTION)
+  createdAt                DateTime         @default(now())
+
+  @@unique([hydrationRunId, fieldDefinitionKey, targetEntityRef])
+  @@index([hydrationRunId])
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([documentId])
+  @@index([fieldDefinitionKey])
 }
 
 model FilingSnapshot {

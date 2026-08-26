@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { resolveAllowUpdates } from "@/lib/canonicalMessaging/filingActionRules";
 import { resolveChildActions } from "@/lib/canonicalMessaging/childActionRules";
@@ -11,6 +11,11 @@ export default async function CustomsFilingDetailPage(props: { params: Promise<{
   const { id } = await props.params;
   const context = await getAccountContext();
   if (!context) return null;
+
+  // CustomsFiling/AuditLog both carry an Account relation (dataMode-scoped)
+  // -- without this wrapper these queries silently default to PRODUCTION
+  // isolation for any DEMO/SANDBOX account.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   const filing = await db.customsFiling.findFirst({
     where: { id, accountId: context.accountId },
@@ -178,4 +183,5 @@ export default async function CustomsFilingDetailPage(props: { params: Promise<{
       />
     </div>
   );
+  });
 }

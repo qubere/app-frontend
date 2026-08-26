@@ -1,6 +1,6 @@
 "use server";
 
-import { db, runWithAccountId, withAccountIdContext } from "@/lib/db";
+import { db, isDataMode, runWithAccountId, withAccountIdContext, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { createInvoiceFromCharges } from "@/lib/billing/invoicing";
@@ -98,7 +98,10 @@ export async function saveRateRuleMappingsAction(ruleId: string, eventCodes: str
   const context = await requireBillingPermission("billing.mapping.edit");
   const uniqueCodes = [...new Set(eventCodes.filter(Boolean))];
 
-  return withAccountIdContext(context.accountId, async () => {
+  // seedBillingEventDefinitions / db.billingEventDefinition.findMany below both
+  // touch the dataMode-scoped BillingEventDefinition model (Account relation) --
+  // without this wrapper they'd silently default to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const rule = await db.rateRule.findFirst({
       where: { id: ruleId, rateCardVersion: { rateCard: { accountId: context.accountId } } },
       select: { id: true, lineItemName: true, productLine: true },
@@ -138,13 +141,16 @@ export async function saveRateRuleMappingsAction(ruleId: string, eventCodes: str
     });
     revalidatePath("/app/billing/rate-cards");
     return { success: true };
-  });
+  }));
 }
 
 export async function activateRateCardAction(rateCardId: string) {
   const context = await requireBillingPermission("billing.ratecard.activate");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.rateCard.findFirst and the rateCard.updateMany below both touch RateCard
+  // (dataMode-scoped via its Account relation) -- without this wrapper both
+  // would silently default to PRODUCTION isolation on a DEMO/SANDBOX account.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const card = await db.rateCard.findFirst({
       where: { id: rateCardId, accountId: context.accountId },
       include: { versions: { orderBy: { version: "desc" }, take: 1 } },
@@ -187,7 +193,7 @@ export async function activateRateCardAction(rateCardId: string) {
     revalidatePath("/app/billing/rate-cards");
     revalidatePath(`/app/billing/rate-cards/${card.id}`);
     return { success: true };
-  });
+  }));
 }
 
 // ── Phase 2: Rate card lifecycle actions ──────────────────────────────────────
@@ -199,7 +205,9 @@ export async function activateRateCardAction(rateCardId: string) {
 export async function createNewRateCardVersionAction(rateCardId: string, effectiveDate?: string) {
   const context = await requireBillingPermission("billing.ratecard.create");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.rateCard.findFirst touches RateCard (dataMode-scoped via Account relation) --
+  // without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const card = await db.rateCard.findFirst({
       where: { id: rateCardId, accountId: context.accountId },
       include: {
@@ -280,7 +288,7 @@ export async function createNewRateCardVersionAction(rateCardId: string, effecti
     });
     revalidatePath(`/app/billing/rate-cards/${card.id}`);
     return { success: true, versionId: newVersion.id, version: newVersionNumber };
-  });
+  }));
 }
 
 /** Updates a line-item rule — only allowed while the version is DRAFT. */
@@ -419,7 +427,9 @@ export async function addDraftRateRuleAction(
 export async function retireRateCardAction(rateCardId: string) {
   const context = await requireBillingPermission("billing.ratecard.retire");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.rateCard.findFirst touches RateCard (dataMode-scoped via Account relation) --
+  // without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const card = await db.rateCard.findFirst({
       where: { id: rateCardId, accountId: context.accountId },
       select: { id: true, name: true, status: true },
@@ -440,7 +450,7 @@ export async function retireRateCardAction(rateCardId: string) {
     revalidatePath("/app/billing/rate-cards");
     revalidatePath(`/app/billing/rate-cards/${card.id}`);
     return { success: true };
-  });
+  }));
 }
 
 /**
@@ -453,7 +463,9 @@ export async function duplicateRateCardAction(
 ) {
   const context = await requireBillingPermission("billing.ratecard.duplicate");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.rateCard.findFirst touches RateCard (dataMode-scoped via Account relation) --
+  // without this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const source = await db.rateCard.findFirst({
       where: { id: rateCardId, accountId: context.accountId },
       include: {
@@ -540,7 +552,7 @@ export async function duplicateRateCardAction(
     });
     revalidatePath("/app/billing/rate-cards");
     return { success: true, rateCardId: newCard.id };
-  });
+  }));
 }
 
 export async function createInvoiceAction(formData: FormData) {
@@ -548,7 +560,10 @@ export async function createInvoiceAction(formData: FormData) {
   const chargeIds = formData.getAll("chargeIds").map(String).filter(Boolean);
   if (!chargeIds.length) throw new Error("Select at least one charge");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.shipmentCharge.findMany, db.client.findFirst, and createInvoiceFromCharges
+  // (which itself queries ShipmentCharge/Invoice) all touch dataMode-scoped models --
+  // without this wrapper they'd silently default to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const charges = await db.shipmentCharge.findMany({
       where: { id: { in: chargeIds }, accountId: context.accountId, status: "RATED", invoiceLineId: null },
       include: {
@@ -596,5 +611,5 @@ export async function createInvoiceAction(formData: FormData) {
     });
     revalidatePath("/app/billing/invoices");
     return { success: true, invoiceId: invoice.id };
-  });
+  }));
 }

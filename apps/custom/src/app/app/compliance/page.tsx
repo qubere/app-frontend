@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { Scale } from "lucide-react";
 import { holdsPermission } from "@/modules/party/partyActor";
 import { ComplianceWorkspaceClient, type ScreeningBucketData } from "./ComplianceWorkspaceClient";
@@ -21,6 +21,12 @@ export default async function CompliancePage() {
   if (!context) return null;
 
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
+
+  // ComplianceFinding/ComplianceAuditRecord/ComplianceScreeningFinding/
+  // RestrictedPartyScreeningResult/PartyScreeningSummary all carry an Account
+  // relation (dataMode-scoped) -- without this wrapper these queries silently
+  // default to PRODUCTION isolation for any DEMO/SANDBOX account.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   const [findings, recentAudits, screeningFindings, partyScreeningResults, partySummaryGroups] = await Promise.all([
     db.complianceFinding.findMany({
@@ -185,4 +191,5 @@ export default async function CompliancePage() {
       />
     </div>
   );
+  });
 }

@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { SimulateClient } from "./SimulateClient";
 
@@ -15,15 +15,19 @@ export default async function RateCardSimulatePage({ params }: { params: Promise
 
   const { id } = await params;
 
-  const rateCard = await db.rateCard.findFirst({
-    where: { id, accountId: ctx.accountId },
-    include: {
-      versions: {
-        orderBy: { version: "desc" },
-        select: { id: true, version: true, status: true, effectiveDate: true },
+  // RateCard carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const rateCard = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.rateCard.findFirst({
+      where: { id, accountId: ctx.accountId },
+      include: {
+        versions: {
+          orderBy: { version: "desc" },
+          select: { id: true, version: true, status: true, effectiveDate: true },
+        },
       },
-    },
-  });
+    })
+  );
   if (!rateCard) notFound();
 
   // Prefer the latest DRAFT version for "what if we activate this?" scenarios;

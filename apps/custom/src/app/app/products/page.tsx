@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Package, Upload } from "lucide-react";
 import { getAccountContext } from "@/lib/auth";
 import { canWrite } from "@/lib/api/write-access";
+import { isDataMode, withDataModeContext } from "@/lib/db";
 import { getClientsData } from "@/lib/clients/clientsData";
 import { Badge } from "@/components/ui";
 import { SortableHeader } from "@/components/table/SortableHeader";
@@ -50,10 +51,14 @@ export default async function ProductsPage(props: {
     else if (Array.isArray(value) && value.length > 0) params.set(key, value[0]);
   }
 
-  const [clientsRes, productRes] = await Promise.all([
-    getClientsData(context),
-    listProducts(productActor(context, "page"), parseProductQuery(params)),
-  ]);
+  // Product carries an Account relation (dataMode-scoped) -- without this
+  // wrapper listProducts silently defaults to PRODUCTION isolation.
+  const [clientsRes, productRes] = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
+    Promise.all([
+      getClientsData(context),
+      listProducts(productActor(context, "page"), parseProductQuery(params)),
+    ])
+  );
 
   const query = parseProductQuery(params);
   const clients = clientsRes.clients;

@@ -48,10 +48,18 @@ function resolveBucket(result: AuditCheckResult): ScreeningBucket | null {
 }
 
 /**
- * Persists one immutable ComplianceScreeningFinding row per failing
- * AuditCheckResult that belongs to one of the six Screening workspace
- * categories. Passing checks and non-screening categories (PGA, ADD/CVD,
- * Valuation, HTS Integrity, Data Missing) are not this table's concern.
+ * Persists one ComplianceScreeningFinding row per failing AuditCheckResult
+ * that belongs to one of the six Screening workspace categories. Passing
+ * checks and non-screening categories (PGA, ADD/CVD, Valuation, HTS
+ * Integrity, Data Missing) are not this table's concern.
+ *
+ * The Compliance Audit Agent step re-runs on every pipeline invocation
+ * (upload, field edit, reconcile, retry), and an unresolved finding --
+ * e.g. a still-missing embargo screening on the same line -- fails the exact
+ * same check on every re-run. Idempotent by (accountId, shipmentId,
+ * lineNumber, category, ruleId) among still-OPEN findings: a re-run that
+ * turns up the same open finding reuses the existing row instead of piling
+ * another one into the unfiltered Screening workspace list.
  */
 export async function persistComplianceScreeningFindings(
   accountId: string,
@@ -78,5 +86,16 @@ export async function persistComplianceScreeningFindings(
 
   if (rows.length === 0) return;
 
-  await db.complianceScreeningFinding.createMany({ data: rows });
+  const openFindings = await db.complianceScreeningFinding.findMany({
+    where: { accountId, shipmentId, status: "OPEN" },
+    select: { lineNumber: true, category: true, ruleId: true },
+  });
+  const openKey = (r: { lineNumber: number | null; category: string; ruleId: string }) =>
+    `${r.lineNumber ?? "null"}::${r.category}::${r.ruleId}`;
+  const openKeys = new Set(openFindings.map(openKey));
+
+  const newRows = rows.filter((r) => !openKeys.has(openKey(r)));
+  if (newRows.length === 0) return;
+
+  await db.complianceScreeningFinding.createMany({ data: newRows });
 }

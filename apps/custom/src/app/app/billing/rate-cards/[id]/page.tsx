@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { activateRateCardAction, createNewRateCardVersionAction, retireRateCardAction, duplicateRateCardAction } from "../../actions";
 import { MappingClient } from "./MappingClient";
@@ -25,17 +25,21 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
   ]);
 
   const { id } = await params;
-  const rateCard = await db.rateCard.findFirst({
-    where: { id, accountId: ctx.accountId },
-    include: {
-      client: { select: { name: true } },
-      importer: { select: { name: true } },
-      versions: {
-        orderBy: { version: "desc" },
-        include: { rules: { include: { capabilityMappings: { include: { eventDefinition: true } } } } },
+  // RateCard carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const rateCard = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.rateCard.findFirst({
+      where: { id, accountId: ctx.accountId },
+      include: {
+        client: { select: { name: true } },
+        importer: { select: { name: true } },
+        versions: {
+          orderBy: { version: "desc" },
+          include: { rules: { include: { capabilityMappings: { include: { eventDefinition: true } } } } },
+        },
       },
-    },
-  });
+    })
+  );
 
   if (!rateCard) notFound();
   const rateCardId = rateCard.id;

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAccountContext } from "@/lib/auth";
 import { canWrite } from "@/lib/api/write-access";
+import { isDataMode, withDataModeContext } from "@/lib/db";
 import { Badge } from "@/components/ui";
 import { displayDate, displayText } from "@/lib/honest";
 import { holdsPermission, productActor } from "@/modules/product/productActor";
@@ -28,7 +29,11 @@ export default async function ProductDetailPage(props: {
   if (!context) redirect("/sign-in");
 
   const actor = productActor(context, "page");
-  const product = await getProduct(actor, id);
+  // Product carries an Account relation (dataMode-scoped) -- without this
+  // wrapper getProduct silently defaults to PRODUCTION isolation.
+  const product = await withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
+    getProduct(actor, id)
+  );
   // A product in another account is absent, not forbidden.
   if (product === null) notFound();
 

@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { adjustShipmentChargeAction } from "./actions";
 import { BillingActionForm } from "../../BillingActionForm";
@@ -15,17 +15,21 @@ export default async function BillingChargePage({ params }: { params: Promise<{ 
   const canAdjust = await hasPermission("billing.charge.adjust");
   const { id } = await params;
 
-  const charge = await db.shipmentCharge.findFirst({
-    where: { id, accountId: ctx.accountId },
-    include: {
-      shipment: { select: { shipmentNumber: true, client: { select: { name: true } } } },
-      usageEvent: { select: { eventCode: true, occurredAt: true, sourceFunction: true, sourceAgent: true, metadata: true } },
-      rateRule: { select: { lineItemName: true, pricingModel: true, serviceCode: true } },
-      rateCardVersion: { include: { rateCard: { select: { name: true } } } },
-      adjustments: { orderBy: { createdAt: "desc" } },
-      invoiceLine: { include: { invoice: { select: { invoiceNumber: true, status: true } } } },
-    },
-  });
+  // ShipmentCharge carries an Account relation (dataMode-scoped) -- without
+  // this wrapper the query silently defaults to PRODUCTION isolation.
+  const charge = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.shipmentCharge.findFirst({
+      where: { id, accountId: ctx.accountId },
+      include: {
+        shipment: { select: { shipmentNumber: true, client: { select: { name: true } } } },
+        usageEvent: { select: { eventCode: true, occurredAt: true, sourceFunction: true, sourceAgent: true, metadata: true } },
+        rateRule: { select: { lineItemName: true, pricingModel: true, serviceCode: true } },
+        rateCardVersion: { include: { rateCard: { select: { name: true } } } },
+        adjustments: { orderBy: { createdAt: "desc" } },
+        invoiceLine: { include: { invoice: { select: { invoiceNumber: true, status: true } } } },
+      },
+    })
+  );
   if (!charge) notFound();
 
   const isLocked = Boolean(charge.invoiceLineId) || charge.status === "INVOICED";

@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -62,6 +62,12 @@ export default async function ShipmentWorkspacePage(props: {
 
   const context = await getAccountContext();
   if (!context) return null;
+
+  // Shipment (and nearly everything queried below it) carries an Account
+  // relation, dataMode-scoped -- without this wrapper the queries silently
+  // default to PRODUCTION isolation and this page 404s for any DEMO/SANDBOX
+  // account even though the data genuinely exists.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   const shipment = await db.shipment.findFirst({
     where: {
@@ -225,26 +231,30 @@ export default async function ShipmentWorkspacePage(props: {
   // with real FieldApproval provenance. Passed to ExceptionsDrawer so the
   // Exceptions panel can group by source document instead of showing a flat
   // list of exceptions that all happen to point at the same file.
+  // Keys must match ShipmentDocument.extractedJson.tradeMetadata's real field
+  // names (see documentIntelligenceAgent.ts / DOCUMENT_TRADE_FIELDS in
+  // decisions/editableFields.ts, the other reader of the same JSON) -- a
+  // mismatched key here silently reads undefined and renders "Missing" even
+  // when the value was genuinely extracted. portOfEntry/entryType/netWeight
+  // are intentionally absent: they are broker/system-determined, never
+  // produced by document extraction, so they belong on a different review
+  // surface, not this one. quantity/description (line-item fields) are
+  // handled by LineItemsTable below, not here -- tradeMetadata has no
+  // scalar quantity/description of its own to read.
   const FIELD_REVIEW_LABELS: Record<string, string> = {
     exporterName: "Exporter Name",
     importerName: "Importer / Consignee Name",
     originCountry: "Country of Origin",
-    countryOfOrigin: "Country of Origin",
     destinationCountry: "Destination Country",
-    carrierName: "Carrier",
-    portOfEntry: "Port of Entry",
-    entryType: "Entry Type",
+    carrier: "Carrier",
     incoterm: "Incoterm",
     invoiceNumber: "Invoice Number",
     invoiceDate: "Invoice Date",
-    totalAmount: "Total Invoice Amount",
+    invoiceSubtotal: "Total Invoice Amount",
     currency: "Invoice Currency",
-    grossWeight: "Gross Weight",
-    netWeight: "Net Weight",
-    billOfLading: "Bill of Lading",
-    quantity: "Line Item Quantity",
-    description: "Item Description",
-    htsCode: "HTS Classification Code",
+    totalWeight: "Gross Weight",
+    transportDocumentNumber: "Bill of Lading",
+    hsHtsCode: "HTS Classification Code",
   };
   const documentFieldSummaries = documents
     .filter((d) => Boolean(d.extractedJson))
@@ -1540,5 +1550,6 @@ export default async function ShipmentWorkspacePage(props: {
       />
     </div>
   );
+  });
 }
 

@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { ProductLineFilter } from "../ProductLineFilter";
 
@@ -15,18 +15,22 @@ export default async function UsageLedgerPage({ searchParams }: { searchParams: 
   const requestedProductLine = (await searchParams).productLine;
   const productLine = ["CUSTOMS", "TMS", "WMS"].includes(requestedProductLine ?? "") ? requestedProductLine as "CUSTOMS" | "TMS" | "WMS" : null;
 
-  const events = await db.usageEvent.findMany({
-    where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
-    take: 100,
-    orderBy: { occurredAt: "desc" },
-    include: {
-      client: { select: { name: true } },
-      shipment: { select: { shipmentNumber: true } },
-      eventDefinition: { select: { name: true, category: true } },
-      charges: { where: { accountId: ctx.accountId }, select: { id: true, netAmount: true, status: true } },
-      ...(canViewCost ? { costs: { where: { accountId: ctx.accountId }, select: { id: true, amount: true, costType: true } } } : {}),
-    },
-  });
+  // UsageEvent carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const events = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.usageEvent.findMany({
+      where: { accountId: ctx.accountId, ...(productLine ? { productLine } : {}) },
+      take: 100,
+      orderBy: { occurredAt: "desc" },
+      include: {
+        client: { select: { name: true } },
+        shipment: { select: { shipmentNumber: true } },
+        eventDefinition: { select: { name: true, category: true } },
+        charges: { where: { accountId: ctx.accountId }, select: { id: true, netAmount: true, status: true } },
+        ...(canViewCost ? { costs: { where: { accountId: ctx.accountId }, select: { id: true, amount: true, costType: true } } } : {}),
+      },
+    })
+  );
 
   return (
     <div className="space-y-6">

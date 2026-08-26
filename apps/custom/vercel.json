@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/cbp-cross-rulings-ingest",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/outbox-dispatch",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

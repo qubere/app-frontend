@@ -12,7 +12,11 @@ import { db, withDataModeContext } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
 import { enqueueDocumentParse } from "@/modules/documents/processing/documentProcessingWorker";
-import { createInboundSenderRoute, InboundSenderAlreadyRoutedError } from "@/modules/inbound/senderRouting";
+import {
+  blockInboundSenderRoute,
+  createInboundSenderRoute,
+  InboundSenderAlreadyRoutedError,
+} from "@/modules/inbound/senderRouting";
 
 function log(event: string, fields: Record<string, string | number | boolean | null>): void {
   console.log(`[QuarantineReview] ${event}`, fields);
@@ -27,7 +31,7 @@ function log(event: string, fields: Record<string, string | number | boolean | n
  * the *admin's own* dataMode, not null) establish the right bypass for that,
  * so this module has to opt out itself, same as inboundEmailWorker.ts.
  */
-export function listQuarantinedInboundEmails() {
+export function listQuarantinedInboundEmails(options?: { accountId?: string; includeUnassigned?: boolean }) {
   // The callback must itself be declared `async` -- a plain (non-async)
   // arrow that just returns the lazy Prisma promise never actually triggers
   // it within withDataModeContext's active window, so the context has
@@ -36,13 +40,35 @@ export function listQuarantinedInboundEmails() {
   // empirically against the live DB while diagnosing this bug.
   return withDataModeContext(null, async () => {
     const items = await db.inboundEmail.findMany({
-      where: { routingStatus: "QUARANTINED" },
-      include: { attachments: true },
+      where: {
+        routingStatus: "QUARANTINED",
+        ...(options?.accountId
+          ? { accountId: options.accountId }
+          : options?.includeUnassigned
+            ? { accountId: null }
+            : {}),
+      },
+      include: {
+        account: { select: { id: true, name: true } },
+        attachments: true,
+      },
       orderBy: { createdAt: "asc" },
     });
     log("list.completed", { count: items.length });
     return items;
   });
+}
+
+export async function getQuarantinedInboundEmail(inboundEmailId: string) {
+  return withDataModeContext(null, async () =>
+    db.inboundEmail.findFirst({
+      where: { id: inboundEmailId, routingStatus: "QUARANTINED" },
+      include: {
+        account: { select: { id: true, name: true } },
+        attachments: true,
+      },
+    })
+  );
 }
 
 export class AssigneeNotAMemberError extends Error {
@@ -196,16 +222,28 @@ async function releaseQuarantinedInboundEmailImpl(params: {
   }
 
   if (storedCount > 0 && defaultAssignedToUserId) {
-    await db.notification.create({
-      data: {
-        accountId,
-        userId: defaultAssignedToUserId,
-        type: "INBOUND_EMAIL_DOCUMENTS",
-        message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}`,
-        entityType: "InboundEmail",
-        entityId: email.id,
-      },
+    // Guards against a duplicate notification if a prior call got far enough
+    // to store attachments but crashed/raced before the routingStatus update
+    // below -- see the identical guard in inboundEmailWorker.ts. A retried or
+    // double-submitted release would otherwise recompute storedCount
+    // (correctly, from already-stored rows) and create a second notification
+    // for the same email.
+    const alreadyNotified = await db.notification.findFirst({
+      where: { entityType: "InboundEmail", entityId: email.id },
+      select: { id: true },
     });
+    if (!alreadyNotified) {
+      await db.notification.create({
+        data: {
+          accountId,
+          userId: defaultAssignedToUserId,
+          type: "INBOUND_EMAIL_DOCUMENTS",
+          message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}`,
+          entityType: "InboundEmail",
+          entityId: email.id,
+        },
+      });
+    }
   }
 
   const updated = await db.inboundEmail.update({
@@ -222,6 +260,37 @@ export async function discardQuarantinedInboundEmail(params: {
   reason?: string;
 }) {
   return withDataModeContext(null, async () => discardQuarantinedInboundEmailImpl(params));
+}
+
+export async function blockQuarantinedInboundEmail(params: {
+  inboundEmailId: string;
+  accountId: string;
+  adminUserId: string;
+  requestId?: string;
+}) {
+  return withDataModeContext(null, async () => {
+    const email = await db.inboundEmail.findUniqueOrThrow({ where: { id: params.inboundEmailId } });
+    if (email.routingStatus !== "QUARANTINED") {
+      throw new Error(`InboundEmail ${params.inboundEmailId} is not quarantined (status: ${email.routingStatus}).`);
+    }
+    if (email.accountId && email.accountId !== params.accountId) {
+      throw new Error("Quarantined email is already attributed to a different account.");
+    }
+
+    await blockInboundSenderRoute({
+      accountId: params.accountId,
+      email: email.normalizedFromAddress,
+      blockedByUserId: params.adminUserId,
+      auditSource: "DOCUMENTS_QUEUE",
+      requestId: params.requestId,
+    });
+
+    return discardQuarantinedInboundEmailImpl({
+      inboundEmailId: params.inboundEmailId,
+      adminUserId: params.adminUserId,
+      reason: "blocked_sender",
+    });
+  });
 }
 
 async function discardQuarantinedInboundEmailImpl(params: {

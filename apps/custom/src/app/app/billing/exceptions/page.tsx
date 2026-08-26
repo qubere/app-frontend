@@ -1,6 +1,6 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { detectRevenueLeakage } from "@/lib/billing/ledger";
 import { BillingActionForm } from "../BillingActionForm";
@@ -17,16 +17,23 @@ export default async function BillingExceptionsPage() {
     hasPermission("billing.exception.waive"),
   ]);
 
-  const exceptions = await db.billingException.findMany({
-    where: { accountId: ctx.accountId, status: "OPEN" },
-    orderBy: { createdAt: "desc" },
-    include: {
-      client: { select: { name: true } },
-      shipment: { select: { shipmentNumber: true } },
-    },
-  });
+  // BillingException carries an Account relation, and detectRevenueLeakage
+  // (in @qubere/billing/ledger) queries UsageEvent internally -- both are
+  // dataMode-scoped, so without this wrapper they'd silently default to
+  // PRODUCTION isolation.
+  const { exceptions, leakageAlerts } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+    const exceptions = await db.billingException.findMany({
+      where: { accountId: ctx.accountId, status: "OPEN" },
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: { select: { name: true } },
+        shipment: { select: { shipmentNumber: true } },
+      },
+    });
 
-  const leakageAlerts = await detectRevenueLeakage(ctx.accountId);
+    const leakageAlerts = await detectRevenueLeakage(ctx.accountId);
+    return { exceptions, leakageAlerts };
+  });
 
   return (
     <div className="space-y-6">

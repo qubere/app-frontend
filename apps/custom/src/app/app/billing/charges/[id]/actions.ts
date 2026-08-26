@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
-import { db, withAccountIdContext } from "@/lib/db";
+import { db, isDataMode, withAccountIdContext, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
@@ -20,7 +20,10 @@ export async function adjustShipmentChargeAction(chargeId: string, formData: For
   if (!Number.isFinite(rawAmount) || rawAmount < 0) throw new Error("Adjustment amount must be a non-negative number");
   if (!["DISCOUNT", "CREDIT", "WAIVER"].includes(adjustmentType)) throw new Error("Unsupported adjustment type");
 
-  return withAccountIdContext(ctx.accountId, async () => {
+  // db.shipmentCharge.findFirst touches ShipmentCharge (dataMode-scoped via
+  // Account relation) -- without this wrapper it silently defaults to
+  // PRODUCTION isolation.
+  return withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => withAccountIdContext(ctx.accountId, async () => {
     const charge = await db.shipmentCharge.findFirst({
       where: { id: chargeId, accountId: ctx.accountId },
     });
@@ -91,5 +94,5 @@ export async function adjustShipmentChargeAction(chargeId: string, formData: For
     revalidatePath("/app/billing/usage");
     revalidatePath("/app/billing/shipments");
     revalidatePath("/app/billing");
-  });
+  }));
 }

@@ -1,6 +1,6 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { saveCostProfileAction } from "./actions";
 import { BillingActionForm } from "../BillingActionForm";
@@ -13,10 +13,14 @@ export default async function BillingSettingsPage() {
   if (!(await hasPermission("billing.cost.view"))) redirect("/app/billing");
   const canManageCosts = await hasPermission("billing.cost_profile.create") || await hasPermission("billing.settings.manage");
 
-  const profile = await db.costProfile.findFirst({
-    where: { accountId: ctx.accountId },
-    orderBy: { effectiveDate: "desc" },
-  });
+  // CostProfile carries an Account relation (dataMode-scoped) -- without this
+  // wrapper the query silently defaults to PRODUCTION isolation.
+  const profile = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.costProfile.findFirst({
+      where: { accountId: ctx.accountId },
+      orderBy: { effectiveDate: "desc" },
+    })
+  );
 
   const loadedLaborRate = profile ? Number(profile.loadedLaborRate) : 72.0;
   const aiTokenRate = profile ? Number(profile.aiTokenRate) : 0.00015;

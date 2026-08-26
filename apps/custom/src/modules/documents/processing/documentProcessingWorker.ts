@@ -637,6 +637,7 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
   await ShipmentEventBus.logEvent({
     shipmentId,
     eventType: "DOCUMENT_READY_FOR_CLASSIFICATION",
+    accountId: run.document.accountId,
     payload: {
       documentId: run.documentId,
       processingRunId: run.id,
@@ -662,6 +663,15 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
     extractionRan: extraction.ran,
     extractionRunId: extraction.extractionRunId,
     extractionSkippedReason: extraction.skippedReason,
+  });
+
+  const { ShipmentEventConsumer } = await import("@/modules/events/shipmentEventConsumer");
+  const { HydrationLogger } = await import("@/modules/hydration/logging/hydrationLogger");
+  await ShipmentEventConsumer.dispatchOutboxEvents(run.document.accountId).catch((err) => {
+    HydrationLogger.warn("[DocumentWorker] Synchronous outbox dispatch deferred to cron outbox dispatcher", {
+      accountId: run.document.accountId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
 }
 

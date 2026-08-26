@@ -2,7 +2,7 @@
 
 import { createAuditLog } from "@/lib/audit";
 import { getAccountContext, hasPermission } from "@/lib/auth";
-import { db, withAccountIdContext } from "@/lib/db";
+import { db, isDataMode, withAccountIdContext, withDataModeContext } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 async function updateBillingException(exceptionId: string, reason: string, status: "RESOLVED" | "WAIVED") {
@@ -12,7 +12,11 @@ async function updateBillingException(exceptionId: string, reason: string, statu
   if (!(await hasPermission(permission))) throw new Error(`Forbidden: ${permission} permission required`);
   if (!reason.trim()) throw new Error("A resolution reason is required");
 
-  return withAccountIdContext(context.accountId, async () => {
+  // db.billingException.findFirst and the updateMany below both touch
+  // BillingException (dataMode-scoped via Account relation) -- without this
+  // wrapper both would silently default to PRODUCTION isolation, and the
+  // updateMany would match 0 rows on a DEMO/SANDBOX account.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => withAccountIdContext(context.accountId, async () => {
     const exception = await db.billingException.findFirst({
       where: { id: exceptionId, accountId: context.accountId },
       select: { id: true, type: true, status: true },
@@ -37,7 +41,7 @@ async function updateBillingException(exceptionId: string, reason: string, statu
     revalidatePath("/app/billing/exceptions");
     revalidatePath("/app/billing");
     return { success: true };
-  });
+  }));
 }
 
 export async function resolveExceptionAction(exceptionId: string, formData: FormData) {

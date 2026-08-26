@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { getShipmentFinancialSummary } from "@/lib/billing/ledger";
 
@@ -16,26 +16,34 @@ export default async function ShipmentEconomicsPage() {
     hasPermission("billing.margin.view"),
   ]);
 
-  const shipments = await db.shipment.findMany({
-    where: { accountId: ctx.accountId, deletedAt: null },
-    take: 50,
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      shipmentNumber: true,
-      importerName: true,
-      status: true,
-      createdAt: true,
-      client: { select: { name: true } },
-    },
-  });
+  // Shipment carries an Account relation, and getShipmentFinancialSummary (in
+  // @qubere/billing/ledger) queries Shipment/UsageEvent internally -- both are
+  // dataMode-scoped, so without this wrapper they'd silently default to
+  // PRODUCTION isolation.
+  const { shipments, summaries } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+    const shipments = await db.shipment.findMany({
+      where: { accountId: ctx.accountId, deletedAt: null },
+      take: 50,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        shipmentNumber: true,
+        importerName: true,
+        status: true,
+        createdAt: true,
+        client: { select: { name: true } },
+      },
+    });
 
-  const summaries = await Promise.all(
-    shipments.map(async (shipment) => ({
-      shipment,
-      summary: await getShipmentFinancialSummary(shipment.id, ctx.accountId),
-    }))
-  );
+    const summaries = await Promise.all(
+      shipments.map(async (shipment) => ({
+        shipment,
+        summary: await getShipmentFinancialSummary(shipment.id, ctx.accountId),
+      }))
+    );
+
+    return { shipments, summaries };
+  });
 
   return (
     <div className="space-y-6">

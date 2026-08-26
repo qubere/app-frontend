@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { db } from "@/lib/db";
+import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { meterGeminiCall } from "@/lib/ai/aiMeter";
 import { aiModel } from "@/lib/ai/aiModel";
@@ -187,7 +188,7 @@ export class HTSClassificationAgent {
       // Null, not a synthetic id: a failed write produced no AgentDecision row.
       let agentDecisionId: string | null = null;
       try {
-        const agentDecision = await db.agentDecision.create({
+        const agentDecision = await createAgentDecision({
           data: {
             accountId: input.accountId,
             shipmentId: input.shipmentId,
@@ -486,7 +487,7 @@ ${candidateContext}`;
         const status = policy.outcome === "AUTO" ? "AUTO_VERIFIED" : "Needs Review";
         const accountMemoryCount = accountMemoryCountByLine.get(result.lineNumber) ?? 0;
 
-        const agentDecision = await db.agentDecision.create({
+        const agentDecision = await createAgentDecision({
           data: {
             accountId: input.accountId,
             shipmentId: input.shipmentId,

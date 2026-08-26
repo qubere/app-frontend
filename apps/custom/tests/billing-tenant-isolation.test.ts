@@ -220,6 +220,8 @@ vi.mock("@/lib/db", () => ({
   db: mockDb,
   withAccountIdContext: vi.fn(async (_accountId: string, cb: () => unknown) => cb()),
   runWithAccountId: vi.fn(async (_accountId: string, cb: () => unknown) => cb()),
+  withDataModeContext: vi.fn(async (_mode: unknown, cb: () => unknown) => cb()),
+  isDataMode: () => true,
 }));
 
 import { retireRateCardAction, addDraftRateRuleAction, updateDraftRateRuleAction, saveRateRuleMappingsAction } from "@/app/app/billing/actions";
@@ -595,6 +597,8 @@ describe("tenant isolation: the Client billing detail page cannot cross-contamin
       },
       withAccountIdContext: vi.fn(async (_a: string, cb: () => unknown) => cb()),
       runWithAccountId: vi.fn(async (_a: string, cb: () => unknown) => cb()),
+      withDataModeContext: vi.fn(async (_mode: unknown, cb: () => unknown) => cb()),
+      isDataMode: () => true,
     }));
     vi.doMock("next/navigation", () => ({
       notFound: vi.fn(() => {
@@ -678,6 +682,8 @@ describe("billing reports: the account-wide total is a real sum of the per-clien
         usageEvent: { findMany: vi.fn(async () => []) },
       },
       withAccountIdContext: vi.fn(async (_a: string, cb: () => unknown) => cb()),
+      withDataModeContext: vi.fn(async (_mode: unknown, cb: () => unknown) => cb()),
+      isDataMode: () => true,
     }));
     vi.doMock("next/navigation", () => ({
       notFound: vi.fn(),

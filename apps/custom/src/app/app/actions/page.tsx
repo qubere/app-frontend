@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { canWrite } from "@/lib/api/write-access";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { groupDecisions } from "@/modules/decisions/groupDecisions";
 import { getAllReviewableDecisionWhereFilter } from "@/modules/decisions/decisionState";
 import { buildShipmentActionGroups } from "@/modules/actions/shipmentActions";
@@ -45,6 +45,12 @@ export default async function ActionsPage(props: {
 
   const shipmentId =
     typeof searchParams.shipmentId === "string" ? searchParams.shipmentId : undefined;
+
+  // AgentDecision/ShipmentDocument/ExceptionItem all carry an Account relation
+  // (dataMode-scoped, as does everything loadWorkQueueForAccount below queries)
+  // -- without this wrapper these queries silently default to PRODUCTION
+  // isolation for any DEMO/SANDBOX account.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   const [decisions, allDocuments, exceptions] = await Promise.all([
     db.agentDecision.findMany({
@@ -191,4 +197,5 @@ export default async function ActionsPage(props: {
       urgencyByShipment={urgencyByShipment}
     />
   );
+  });
 }

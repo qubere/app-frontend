@@ -2,7 +2,7 @@
 
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { runRateSimulation, SimulationSummary } from "@/lib/billing/rateSimulation";
-import { withAccountIdContext } from "@/lib/db";
+import { isDataMode, withAccountIdContext, withDataModeContext } from "@/lib/db";
 
 export async function runRateSimulationAction(
   proposedRateCardVersionId: string,
@@ -17,11 +17,14 @@ export async function runRateSimulationAction(
     throw new Error("Historical window must be between 1 and 24 months");
   }
 
-  return withAccountIdContext(ctx.accountId, async () => {
+  // runRateSimulation (in @qubere/billing/rateSimulation) queries UsageEvent
+  // internally, which is dataMode-scoped via its Account relation -- without
+  // this wrapper it silently defaults to PRODUCTION isolation.
+  return withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => withAccountIdContext(ctx.accountId, async () => {
     return runRateSimulation({
       accountId: ctx.accountId,
       proposedRateCardVersionId,
       months,
     });
-  });
+  }));
 }

@@ -16,6 +16,7 @@ vi.mock("../src/lib/db", () => ({
       create: vi.fn().mockImplementation(async ({ data }) => ({ id: `doc_${Date.now()}`, ...data })),
     },
     agentDecision: {
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockImplementation(async ({ data }) => ({ id: `dec_${Date.now()}`, ...data })),
     },
     htsNode: {

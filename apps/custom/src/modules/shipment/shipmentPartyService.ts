@@ -34,8 +34,9 @@ export class ShipmentPartyService {
    * Assign or update a LegalEntity role on a shipment.
    * Ensures idempotency: updating existing role assignment if present.
    */
-  static async assignParty(input: AssignPartyInput) {
-    const legalEntity = await db.legalEntity.findFirst({
+  static async assignParty(input: AssignPartyInput, tx?: any) {
+    const client = tx || db;
+    const legalEntity = await client.legalEntity.findFirst({
       where: { id: input.legalEntityId, accountId: input.accountId },
       select: { id: true },
     });
@@ -43,7 +44,7 @@ export class ShipmentPartyService {
       throw new Error(`LegalEntity '${input.legalEntityId}' not found for account.`);
     }
 
-    const existing = await db.shipmentParty.findFirst({
+    const existing = await client.shipmentParty.findFirst({
       where: {
         shipmentId: input.shipmentId,
         role: input.role,
@@ -51,7 +52,7 @@ export class ShipmentPartyService {
     });
 
     if (existing) {
-      return db.shipmentParty.update({
+      return client.shipmentParty.update({
         where: { id: existing.id },
         data: {
           legalEntityId: input.legalEntityId,
@@ -67,7 +68,7 @@ export class ShipmentPartyService {
       });
     }
 
-    const created = await db.shipmentParty.create({
+    const created = await client.shipmentParty.create({
       data: {
         shipmentId: input.shipmentId,
         legalEntityId: input.legalEntityId,

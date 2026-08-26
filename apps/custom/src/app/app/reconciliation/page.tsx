@@ -1,20 +1,24 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { ReconciliationClient } from "./ReconciliationClient";
 
 export default async function ReconciliationPage() {
   const ctx = await getAccountContext();
   if (!ctx) return null;
 
-  const issues = await db.reconciliationIssue.findMany({
-    where: { accountId: ctx.accountId },
-    include: {
-      shipment: {
-        include: { complianceDeadlines: true },
+  // ReconciliationIssue carries an Account relation (dataMode-scoped) --
+  // without this wrapper the query silently defaults to PRODUCTION isolation.
+  const issues = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.reconciliationIssue.findMany({
+      where: { accountId: ctx.accountId },
+      include: {
+        shipment: {
+          include: { complianceDeadlines: true },
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    })
+  );
 
   const serializedIssues = issues.map((i) => ({
     id: i.id,

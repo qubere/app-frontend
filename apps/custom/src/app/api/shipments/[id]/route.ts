@@ -48,7 +48,7 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
   const { id } = paramsVal.data;
 
   const body = await req.json();
-  const { lineItems, clientId, parties, countryOfOrigin, incoterm, destinationCountry, expectedVersion, status } = body;
+  const { lineItems, clientId, parties, countryOfOrigin, incoterm, destinationCountry, expectedVersion, status, assignedBrokerId } = body;
 
   const shipment = await db.shipment.findFirst({
     where: { id, accountId: ctx.accountId, deletedAt: null },
@@ -75,7 +75,13 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
   }
 
   let currentVersion = shipment.version;
-  async function applyVersionedShipmentUpdate(data: Prisma.ShipmentUpdateInput): Promise<boolean> {
+  // updateMany's data type is ShipmentUncheckedUpdateManyInput, not
+  // ShipmentUpdateInput -- Prisma never supports nested relation writes
+  // (connect/disconnect) in an updateMany, since it targets a where-matched
+  // set rather than a single record graph, and the "checked" variant used by
+  // update() drops FK scalars entirely in favor of the relation object. FK
+  // fields like assignedBrokerId must be written as plain scalars here.
+  async function applyVersionedShipmentUpdate(data: Prisma.ShipmentUncheckedUpdateManyInput): Promise<boolean> {
     const result = await db.shipment.updateMany({
       where: { id, accountId: ctx.accountId, version: currentVersion },
       data: { ...data, version: { increment: 1 } },
@@ -340,6 +346,32 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
         console.error("[shipment PATCH] Async line items pipeline background error:", err);
       }
     });
+  }
+
+  // Handle Owner (assigned broker) update
+  if (assignedBrokerId !== undefined && assignedBrokerId !== shipment.assignedBrokerId) {
+    if (assignedBrokerId) {
+      const membership = await db.accountMembership.findFirst({
+        where: { accountId: ctx.accountId, userId: assignedBrokerId, status: "ACTIVE" },
+      });
+      if (!membership) {
+        return NextResponse.json({ error: "Owner must be an active member of this account" }, { status: 400 });
+      }
+    }
+
+    await FactAuditService.logChangeEvent({
+      shipmentId: id,
+      userId: ctx.userId,
+      changeType: "USER_FIELD_UPDATE",
+      field: "assignedBrokerId",
+      previousValue: shipment.assignedBrokerId,
+      newValue: assignedBrokerId,
+      reason: "User manual reassignment",
+    });
+
+    if (!(await applyVersionedShipmentUpdate({ assignedBrokerId: assignedBrokerId || null }))) {
+      return staleShipmentResponse();
+    }
   }
 
   // Handle Client update

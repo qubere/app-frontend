@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { getShipmentFinancialSummary } from "@/lib/billing/ledger";
 
@@ -12,17 +12,25 @@ export default async function BillingShipmentDetailPage({ params }: { params: Pr
   if (!(await hasPermission("billing.charge.view"))) redirect("/app/billing");
   const { id } = await params;
   const canViewCost = await hasPermission("billing.cost.view");
-  const shipment = await db.shipment.findFirst({
-    where: { id, accountId: ctx.accountId, deletedAt: null },
-    select: {
-      id: true, shipmentNumber: true, importerName: true, status: true,
-      client: { select: { id: true, name: true } },
-      shipmentCharges: { where: { accountId: ctx.accountId }, orderBy: { createdAt: "desc" }, include: { usageEvent: { select: { eventCode: true, productLine: true } }, adjustments: true } },
-      ...(canViewCost ? { shipmentCosts: { where: { accountId: ctx.accountId }, orderBy: { createdAt: "desc" } } } : {}),
-    },
+
+  // Shipment/ShipmentCharge/ShipmentCost all carry an Account relation, and
+  // getShipmentFinancialSummary (in @qubere/billing/ledger) queries Shipment/
+  // UsageEvent internally -- all dataMode-scoped, so without this wrapper they'd
+  // silently default to PRODUCTION isolation.
+  const { shipment, summary } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+    const shipment = await db.shipment.findFirst({
+      where: { id, accountId: ctx.accountId, deletedAt: null },
+      select: {
+        id: true, shipmentNumber: true, importerName: true, status: true,
+        client: { select: { id: true, name: true } },
+        shipmentCharges: { where: { accountId: ctx.accountId }, orderBy: { createdAt: "desc" }, include: { usageEvent: { select: { eventCode: true, productLine: true } }, adjustments: true } },
+        ...(canViewCost ? { shipmentCosts: { where: { accountId: ctx.accountId }, orderBy: { createdAt: "desc" } } } : {}),
+      },
+    });
+    const summary = shipment ? await getShipmentFinancialSummary(id, ctx.accountId) : null;
+    return { shipment, summary };
   });
   if (!shipment) notFound();
-  const summary = await getShipmentFinancialSummary(id, ctx.accountId);
   const costs = "shipmentCosts" in shipment && Array.isArray(shipment.shipmentCosts) ? shipment.shipmentCosts : [];
   return <div className="space-y-6">
     <div><Link href="/app/billing/shipments" className="text-xs font-semibold text-brand hover:underline">← Shipment economics</Link><h2 className="text-xl font-bold text-ink mt-2">{shipment.shipmentNumber}</h2><p className="text-sm text-ink-muted">{shipment.client?.name ?? shipment.importerName} · {shipment.status}</p></div>

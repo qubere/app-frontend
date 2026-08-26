@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createInvoiceAction } from "../../actions";
 import { BillingActionForm } from "../../BillingActionForm";
@@ -19,25 +19,29 @@ export default async function CreateInvoicePage({
   if (!canCreate) redirect("/app/billing/invoices");
 
   const params = await searchParams;
-  const allEligibleCharges = await db.shipmentCharge.findMany({
-    where: {
-      accountId: ctx.accountId,
-      status: "RATED",
-      invoiceLineId: null,
-      shipment: { accountId: ctx.accountId, clientId: { not: null } },
-    },
-    take: 500,
-    include: {
-      shipment: {
-        select: {
-          shipmentNumber: true,
-          clientId: true,
-          client: { select: { id: true, name: true } },
+  // ShipmentCharge carries an Account relation (dataMode-scoped) -- without
+  // this wrapper the query silently defaults to PRODUCTION isolation.
+  const allEligibleCharges = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+    db.shipmentCharge.findMany({
+      where: {
+        accountId: ctx.accountId,
+        status: "RATED",
+        invoiceLineId: null,
+        shipment: { accountId: ctx.accountId, clientId: { not: null } },
+      },
+      take: 500,
+      include: {
+        shipment: {
+          select: {
+            shipmentNumber: true,
+            clientId: true,
+            client: { select: { id: true, name: true } },
+          },
         },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    })
+  );
 
   const clients = Array.from(
     new Map(

@@ -25,6 +25,7 @@ const storeDocumentFileMock = vi.fn();
 const screenUploadForMalwareMock = vi.fn();
 const enqueueDocumentParseMock = vi.fn();
 const resolveInboundRouteMock = vi.fn();
+const resolveBlockedInboundRouteMock = vi.fn();
 const getReceivedEmailMock = vi.fn();
 const getAttachmentDownloadInfoMock = vi.fn();
 const downloadAttachmentBytesMock = vi.fn();
@@ -55,6 +56,7 @@ vi.mock("@/modules/documents/processing/documentProcessingWorker", () => ({
 }));
 vi.mock("@/modules/inbound/senderRouting", () => ({
   resolveInboundRoute: resolveInboundRouteMock,
+  resolveBlockedInboundRoute: resolveBlockedInboundRouteMock,
 }));
 vi.mock("@/lib/inbound/resendClient", () => ({
   getReceivedEmail: getReceivedEmailMock,
@@ -79,6 +81,7 @@ const RECEIVED_EMAIL = {
 describe("inbound email worker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resolveBlockedInboundRouteMock.mockResolvedValue(null);
     dbMock.inboundEmail.findUniqueOrThrow.mockResolvedValue(RECEIVED_EMAIL);
     dbMock.inboundEmail.update.mockImplementation(async ({ data }) => ({ ...RECEIVED_EMAIL, ...data, accountId: data.accountId ?? "acct_a" }));
     resolveInboundRouteMock.mockResolvedValue(ROUTE);
@@ -112,6 +115,26 @@ describe("inbound email worker", () => {
     });
     expect(storeDocumentFileMock).not.toHaveBeenCalled();
     expect(dbMock.shipmentDocument.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blocked sender before fetching the provider email or attachments", async () => {
+    resolveBlockedInboundRouteMock.mockResolvedValue({
+      id: "route_blocked",
+      accountId: "acct_a",
+      defaultAssignedToUserId: null,
+    });
+    dbMock.inboundEmail.findMany.mockResolvedValue([{ id: "in_1" }]);
+
+    const { runInboundEmailWorkerTick } = await import("@/modules/documents/processing/inboundEmailWorker");
+    const result = await runInboundEmailWorkerTick();
+
+    expect(result.rejected).toBe(1);
+    expect(dbMock.inboundEmail.update).toHaveBeenCalledWith({
+      where: { id: "in_1" },
+      data: { accountId: "acct_a", routingStatus: "REJECTED", quarantineReason: "blocked_sender" },
+    });
+    expect(getReceivedEmailMock).not.toHaveBeenCalled();
+    expect(storeDocumentFileMock).not.toHaveBeenCalled();
   });
 
   it("downloads and stores an unknown sender's attachment into quarantine instead of dropping it", async () => {

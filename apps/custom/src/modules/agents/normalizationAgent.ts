@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { db } from "@/lib/db";
+import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { meterGeminiCall } from "@/lib/ai/aiMeter";
 import { aiModel } from "@/lib/ai/aiModel";
@@ -600,7 +601,7 @@ ${JSON.stringify(docData, null, 2)}`;
     // Null, not a synthetic id: a failed write produced no AgentDecision row.
     let agentDecisionId: string | null = null;
     try {
-      const agentDecision = await db.agentDecision.create({
+      const agentDecision = await createAgentDecision({
         data: {
           accountId: input.accountId,
           shipmentId: input.shipmentId,
