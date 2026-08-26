@@ -169,6 +169,14 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "filing.cancel", description: "Request filing cancellation.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
   { name: "filing.view_responses", description: "View raw ACE/CBP electronic responses.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER"] },
 
+  // Post-entry recovery
+  { name: "psc.read", description: "View post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
+  { name: "psc.create", description: "Create and update draft post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "psc.manage", description: "Submit, withdraw, and otherwise manage post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "protest.read", description: "View customs protests and their supporting records.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
+  { name: "protest.create", description: "Create and update draft customs protests, notes, and attachments.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "protest.manage", description: "File, withdraw, and request further review of customs protests.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+
   // Reporting
   { name: "report.read", description: "View analytics reports and dashboards.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
   { name: "report.export", description: "Export report datasets to CSV/Excel.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_BILLING", "OWNER", "ADMIN"] },
