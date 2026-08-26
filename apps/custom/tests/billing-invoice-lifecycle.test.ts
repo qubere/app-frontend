@@ -28,6 +28,8 @@ vi.mock("@/lib/db", () => {
   };
   return {
     withAccountIdContext: vi.fn(async (_accountId: string, callback: () => unknown) => callback()),
+    withDataModeContext: vi.fn(async (_mode: unknown, callback: () => unknown) => callback()),
+    isDataMode: vi.fn(() => false),
     db: {
       invoice: {
         findFirst: harness.findFirst,

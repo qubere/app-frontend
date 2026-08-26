@@ -38,6 +38,7 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
       idempotencyKey: `${testAccount}:${COMMERCIAL_INVOICE_FIXTURE.id}:pv_phase6_shadow:1.0.0:v1.0-shadow:gpt-4o:1.0.0`,
       status: "RUNNING",
       errorCode: null,
+      createdAt: new Date(),
     };
 
     vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue(mockDoc as any);

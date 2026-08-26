@@ -164,6 +164,7 @@ describe("Universal Field Hydration — Phase 1 Persistence & Registry", () => {
       idempotencyKey: `${testAccount}:${testDocument}:${testParseVer}`,
       status: "RUNNING",
       errorCode: null,
+      createdAt: new Date(),
     };
 
     vi.spyOn(db.hydrationRun, "findFirst").mockResolvedValue(mockRun as any);
@@ -221,6 +222,7 @@ describe("Universal Field Hydration — Phase 1 Persistence & Registry", () => {
       idempotencyKey: `${testAccount}:${testDocument}:${testParseVer}`,
       status: "RUNNING",
       errorCode: null,
+      createdAt: new Date(),
     };
 
     let updatedStatus = "RUNNING";
@@ -271,6 +273,7 @@ describe("Universal Field Hydration — Phase 1 Persistence & Registry", () => {
       idempotencyKey: `${testAccount}:${testDocument}:${testParseVer}`,
       status: "RUNNING",
       errorCode: null,
+      createdAt: new Date(),
     };
 
     const mockCandidate = {
