@@ -99,13 +99,6 @@ interface ReviewQueue {
   valuation: number;
 }
 
-/** An agent decision, reduced to what the dashboard counts. */
-interface CommandCenterDecision {
-  id: string;
-  status: string;
-  assignedBrokerId: string | null;
-}
-
 /** A regulatory update tile item. */
 interface CommandCenterRegUpdate {
   id: string;
@@ -120,12 +113,9 @@ interface CommandCenterClientProps {
   accountName: string;
   initialShipments: CommandCenterShipment[];
   urgencyByShipment?: UrgencyMap;
-  /**
-   * Still supplied by the page; the new design derives all actionable counts
-   * from per-shipment aiReview fields instead of the top-level decisions list.
-   * Kept on props so the page keeps compiling.
-   */
-  initialDecisions: CommandCenterDecision[];
+  /** Exact counts across every "latest decision per shipment per agent", not capped. */
+  autoCertifiedCount?: number;
+  humanReviewedCount?: number;
   /**
    * Still supplied by the page, but nothing on this screen renders it any more.
    * Kept on props so the page keeps compiling.
@@ -142,9 +132,6 @@ interface CommandCenterClientProps {
   /** True once the account's open shipments exceed the page's SHIPMENT_ROW_CAP. */
   shipmentsTruncated?: boolean;
   shipmentTotalCount?: number;
-  /** True once the account's agent decisions exceed the page's SHIPMENT_ROW_CAP. */
-  decisionsTruncated?: boolean;
-  decisionTotalCount?: number;
   classificationSignals?: ClassificationSignals;
   productIntelligenceSignals?: ProductIntelligenceSignals;
   reviewQueue?: ReviewQueue;
@@ -163,15 +150,14 @@ const ACTIVE_STATUSES = new Set(["In Progress", "On Hold", "Ready to File", "Pen
 
 export function CommandCenterClient({
   initialShipments,
-  initialDecisions,
+  autoCertifiedCount = 0,
+  humanReviewedCount = 0,
   urgencyByShipment = {},
   teamMembers,
   clients,
   agentOperations = [],
   shipmentsTruncated = false,
   shipmentTotalCount,
-  decisionsTruncated = false,
-  decisionTotalCount,
   classificationSignals,
   productIntelligenceSignals,
   reviewQueue,
@@ -275,11 +261,8 @@ export function CommandCenterClient({
 
   // ─── AI Throughput ────────────────────────────────────────────────────────
 
-  const AUTO_CERTIFIED_STATUSES = new Set(["AUTO_VERIFIED", "Auto-Approved", "Verified"]);
-  const HUMAN_REVIEWED_STATUSES = new Set(["Approved", "APPROVED", "Rejected", "REJECTED"]);
-
-  const autoCertified = initialDecisions.filter((d) => AUTO_CERTIFIED_STATUSES.has(d.status)).length;
-  const humanReviewed = initialDecisions.filter((d) => HUMAN_REVIEWED_STATUSES.has(d.status)).length;
+  const autoCertified = autoCertifiedCount;
+  const humanReviewed = humanReviewedCount;
   const totalResolved = autoCertified + humanReviewed;
   const touchRate = liveMetrics?.touchRate != null ? liveMetrics.touchRate : (totalResolved > 0 ? Math.round((humanReviewed / totalResolved) * 100) : null);
 
@@ -1115,15 +1098,10 @@ export function CommandCenterClient({
         </div>
       )}
 
-      {(shipmentsTruncated || decisionsTruncated) && (
+      {shipmentsTruncated && (
         <div className="bg-amber-50 border border-amber-300 text-amber-800 text-xs font-semibold rounded-xl px-4 py-2.5">
-          {shipmentsTruncated && (
-            <>Showing the {filteredShipments.length} most recent of {shipmentTotalCount} open shipments. </>
-          )}
-          {decisionsTruncated && (
-            <>Agent throughput reflects the {initialDecisions.length} most recent of {decisionTotalCount} decisions. </>
-          )}
-          KPI tiles above only cover the shipments/decisions shown.
+          Showing the {filteredShipments.length} most recent of {shipmentTotalCount} open shipments. KPI tiles above
+          only cover the shipments shown.
         </div>
       )}
 

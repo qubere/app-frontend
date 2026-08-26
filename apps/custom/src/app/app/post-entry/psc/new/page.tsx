@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getAccountContext } from "@/lib/auth";
 import { PscNewClient } from "./PscNewClient";
 
@@ -9,5 +10,9 @@ export const metadata = {
 export default async function PscNewPage() {
   const ctx = await getAccountContext();
   if (!ctx) return null;
-  return <PscNewClient />;
+  return (
+    <Suspense fallback={null}>
+      <PscNewClient />
+    </Suspense>
+  );
 }

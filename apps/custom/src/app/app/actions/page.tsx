@@ -136,9 +136,35 @@ export default async function ActionsPage(props: {
     { shipmentId }
   );
 
-  const serializedDecisions = JSON.parse(JSON.stringify(decisions));
-  const serializedDocuments = JSON.parse(JSON.stringify(allDocuments));
-  const serializedExceptions = JSON.parse(JSON.stringify(exceptions));
+  const serializedDecisions = decisions.map((d) => ({
+    ...d,
+    shipmentId: d.shipmentId ?? "",
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.updatedAt.toISOString(),
+    shipment: d.shipment
+      ? {
+          ...d.shipment,
+          filingDeadline: d.shipment.filingDeadline ? d.shipment.filingDeadline.toISOString() : null,
+        }
+      : null,
+  }));
+
+  const serializedDocuments = allDocuments.map((d) => ({
+    ...d,
+    createdAt: d.createdAt.toISOString(),
+  }));
+
+  const serializedExceptions = exceptions.map((e) => ({
+    ...e,
+    createdAt: e.createdAt.toISOString(),
+    resolvedAt: e.resolvedAt ? e.resolvedAt.toISOString() : null,
+    shipment: e.shipment
+      ? {
+          ...e.shipment,
+          filingDeadline: e.shipment.filingDeadline ? e.shipment.filingDeadline.toISOString() : null,
+        }
+      : null,
+  }));
 
   const decisionGroups = groupDecisions(serializedDecisions, serializedDocuments);
   const groups = buildShipmentActionGroups(decisionGroups, serializedExceptions);

@@ -4,10 +4,18 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useDecisionActions } from "@/lib/decisions/useDecisionActions";
 import { ExceptionQuickActions } from "./ExceptionQuickActions";
-import { ExceptionSlideOver } from "./ExceptionSlideOver";
-import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
+
+const ExceptionSlideOver = dynamic(
+  () => import("./ExceptionSlideOver").then((mod) => mod.ExceptionSlideOver),
+  { ssr: false }
+);
+const DocumentReviewPanel = dynamic(
+  () => import("@/components/DocumentReviewPanel").then((mod) => mod.DocumentReviewPanel),
+  { ssr: false }
+);
 import { Modal, ModalHeader, ModalBody } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor } from "@/modules/decisions/editableFields";

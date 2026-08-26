@@ -68,19 +68,53 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       return null;
     }
 
-    let actorUser = await db.user.findFirst({
-      where: { clerkUserId, deletedAt: null },
-      include: {
-        platformRoles: { include: { platformRole: true } },
-        memberships: {
-          where: { deletedAt: null },
-          include: {
-            account: true,
-            roles: {
-              include: {
-                role: {
-                  include: {
-                    rolePermissions: { include: { permission: true } },
+    const userSelect = {
+      id: true,
+      clerkUserId: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      deletedAt: true,
+      platformRoles: {
+        select: {
+          platformRole: {
+            select: { name: true },
+          },
+        },
+      },
+      memberships: {
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          status: true,
+          accountId: true,
+          account: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              type: true,
+              status: true,
+              deletedAt: true,
+              ownerUserId: true,
+              dataMode: true,
+              createdAt: true,
+              ownerUser: { select: { email: true, firstName: true, lastName: true } },
+            },
+          },
+          roles: {
+            select: {
+              roleId: true,
+              role: {
+                select: {
+                  id: true,
+                  name: true,
+                  rolePermissions: {
+                    select: {
+                      permission: {
+                        select: { name: true },
+                      },
+                    },
                   },
                 },
               },
@@ -88,6 +122,11 @@ async function loadAccountContext(): Promise<AccountContext | null> {
           },
         },
       },
+    } as const;
+
+    let actorUser = await db.user.findFirst({
+      where: { clerkUserId, deletedAt: null },
+      select: userSelect,
     });
 
     if (!actorUser) {
@@ -99,26 +138,7 @@ async function loadAccountContext(): Promise<AccountContext | null> {
 
       actorUser = await db.user.findFirst({
         where: { email, deletedAt: null },
-        include: {
-          platformRoles: { include: { platformRole: true } },
-          memberships: {
-            where: { deletedAt: null },
-            include: {
-              account: {
-                include: { ownerUser: { select: { email: true, firstName: true, lastName: true } } },
-              },
-              roles: {
-                include: {
-                  role: {
-                    include: {
-                      rolePermissions: { include: { permission: true } },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        select: userSelect,
       });
 
       if (actorUser && actorUser.clerkUserId !== clerkUserId) {
@@ -250,32 +270,34 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"].includes(r.toUpperCase())
     ) || isPlatformAdmin;
 
-    const directAssignments = (db as any).userClientAssignment?.findMany
-      ? await (db as any).userClientAssignment.findMany({
-          where: { userId: effectiveUser.id },
-          select: { clientId: true },
-        })
-      : [];
+    let authorizedClientIds: string[] = [];
+    if (!isAllClients) {
+      const [directAssignments, teamMemberships] = await Promise.all([
+        (db as any).userClientAssignment?.findMany
+          ? (db as any).userClientAssignment.findMany({
+              where: { userId: effectiveUser.id },
+              select: { clientId: true },
+            })
+          : Promise.resolve([]),
+        (db as any).accountTeamMembership?.findMany
+          ? (db as any).accountTeamMembership.findMany({
+              where: { userId: effectiveUser.id },
+              select: {
+                team: {
+                  select: { clients: { select: { clientId: true } } },
+                },
+              },
+            })
+          : Promise.resolve([]),
+      ]);
 
-    const teamMemberships = (db as any).accountTeamMembership?.findMany
-      ? await (db as any).accountTeamMembership.findMany({
-          where: { userId: effectiveUser.id },
-          select: {
-            team: {
-              select: { clients: { select: { clientId: true } } },
-            },
-          },
-        })
-      : [];
-
-    const authorizedClientIds = isAllClients
-      ? (await db.client.findMany({ where: { accountId: activeMembership.account.id, status: "ACTIVE" }, select: { id: true } })).map((c) => c.id)
-      : Array.from(
-          new Set<string>([
-            ...directAssignments.map((a: any) => a.clientId),
-            ...teamMemberships.flatMap((tm: any) => tm.team.clients.map((c: any) => c.clientId)),
-          ])
-        );
+      authorizedClientIds = Array.from(
+        new Set<string>([
+          ...directAssignments.map((a: any) => a.clientId),
+          ...teamMemberships.flatMap((tm: any) => tm.team.clients.map((c: any) => c.clientId)),
+        ])
+      );
+    }
 
     const allMemberships = actorUser.memberships
       .filter((m) => m.status === "ACTIVE" && m.account.deletedAt === null)

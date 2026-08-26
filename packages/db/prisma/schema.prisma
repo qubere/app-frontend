@@ -669,6 +669,7 @@ model Shipment {
   @@index([promiseState])
   @@index([lastFreeDay])
   @@index([healthStatus])
+  @@index([accountId, deletedAt, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,6 +1022,8 @@ model ShipmentDocument {
   @@index([accountId])
   @@index([accountId, checksum])
   @@index([documentType])
+  @@index([accountId, createdAt])
+  @@index([accountId, status, createdAt])
 }
 
 /// Authorizes one normalized sender email to route inbound documents into
@@ -1266,10 +1269,12 @@ model AgentDecision {
   @@index([accountId])
   @@index([status])
   @@index([triageState])
-  @@index([accountId, triageState])
   @@index([autoApproved])
   @@index([documentId])
   @@index([reviewedByUserId])
+  @@index([accountId, createdAt])
+  @@index([accountId, triageState, createdAt])
+  @@index([accountId, status, createdAt])
 }
 
 /// Per-account, per-agent overrides for the auto-approval thresholds in
@@ -1646,6 +1651,7 @@ model RegulatoryUpdate {
   @@index([jurisdiction])
   @@index([category])
   @@index([impactLevel])
+  @@index([effectiveDate])
 }
 
 // -----------------------------------------------------------------------------
@@ -2089,6 +2095,7 @@ model ComplianceAuditRecord {
 
   @@index([accountId])
   @@index([filingId])
+  @@index([accountId, runAt])
 }
 
 model ImporterOfRecord {
@@ -2528,6 +2535,7 @@ model ExceptionItem {
   @@index([assignedToUserId])
   @@index([filingId])
   @@index([shipmentId])
+  @@index([accountId, status, createdAt])
 }
 
 // Provenance record for "who confirmed this field's value, and when" --
@@ -2759,6 +2767,7 @@ model ComplianceFinding {
   @@index([accountId])
   @@index([filingId])
   @@index([status])
+  @@index([accountId, status, createdAt])
 }
 
 model SupplierRiskScore {
