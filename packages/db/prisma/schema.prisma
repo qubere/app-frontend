@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 74130)
-Total output lines: 7542
-
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
@@ -2389,7 +2386,2668 @@ model DocumentParseVersion {
 
   /// What produced this row: IBM_DOCLING or MOCK_PARSER for a parse run,
   /// GEMINI_VISION for an extraction read off the document image, or
-  /// GEMINI_PARSED_CONTEXT for one…24130 tokens truncated…/ column rather than a relation because a window survives the user record being
+  /// GEMINI_PARSED_CONTEXT for one read off a parser's rendered context (whose
+  /// upstream parser is then named in parserName).
+  parserProvider String?
+  /// Parser name as the provider reported it. Null when it reports none.
+  parserName     String?
+  /// Qubere processing profile: STANDARD | OCR_FALLBACK | FULL_PAGE_OCR.
+  profile        String?
+  /// Why this run exists: INITIAL | MANUAL_REPROCESS | OCR_RETRY | QUALITY_RETRY | PARSER_UPGRADE | CONFIG_CHANGE.
+  reason         String?
+  /// Hash of the provider settings that affect output. Part of the idempotency key.
+  configHash     String?
+  /// Version of the Qubere parser normalisation contract this run was written under.
+  schemaVersion  String?
+
+  /// Provider-side task identifier, persisted immediately on submission so a
+  /// process restart never orphans work already accepted by the provider.
+  externalTaskId String?
+  /// Derived from tenant + content hash + provider + profile + config hash.
+  /// Unique, so a duplicate queue delivery cannot create a second run.
+  idempotencyKey String? @unique
+  /// QUEUED | SUBMITTED | POLLING | SUCCEEDED | NEEDS_REVIEW | FAILED.
+  status         String? @default("SUCCEEDED")
+  /// Last provider status string observed. Sanitised; never a response body.
+  providerStatus String?
+
+  queuedAt     DateTime?
+  startedAt    DateTime?
+  /// Refreshed while a worker holds this run, so crashed work is reclaimable.
+  heartbeatAt  DateTime?
+  completedAt  DateTime?
+  nextRetryAt  DateTime?
+  lastPolledAt DateTime?
+  nextPollAt   DateTime?
+
+  pollAttemptCount Int @default(0)
+  attemptCount     Int @default(0)
+  maxAttempts      Int @default(4)
+
+  durationMs      Int?
+  pageCount       Int?
+  /// Null means the provider did not report OCR usage — not that OCR was absent.
+  ocrUsed         Boolean?
+  fullPageOcrUsed Boolean?
+
+  /// Structured code from the parser error model, e.g. PARSER_TIMEOUT.
+  errorCode    String?
+  /// Sanitised message safe to surface. Never a provider payload.
+  errorMessage String?
+  retryable    Boolean?
+
+  /// Parser warnings and non-fatal provider errors, as recorded.
+  warningsJson  Json?
+  /// Objective quality-gate assessment for this run.
+  qualityJson   Json?
+  /// Index of artifacts in object storage: type -> ref, mime, bytes, sha256.
+  artifactsJson Json?
+  /// Correlation id linking upload -> queue -> provider -> result -> agents.
+  correlationId String?
+
+  @@index([documentId])
+  @@index([documentId, version])
+  @@index([accountId])
+  /// Drives the worker's "what is due" query.
+  @@index([status, nextPollAt])
+  @@index([status, nextRetryAt])
+  @@index([status, heartbeatAt])
+}
+
+model ShipmentChangeEvent {
+  id            String   @id @default(cuid())
+  shipmentId    String
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  changeType    String
+  field         String
+  previousValue String?  @db.Text
+  newValue      String?  @db.Text
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([userId])
+}
+
+model ExceptionItem {
+  id                   String            @id @default(cuid())
+  accountId            String
+  account              Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId           String?
+  shipment             Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  filingId             String?
+  filing               CustomsFiling?    @relation(fields: [filingId], references: [id], onDelete: SetNull)
+  // Set when this exception is about one specific field on one specific
+  // uploaded document (e.g. "Exporter Name missing on Invoice.pdf"), so the
+  // Exceptions panel can group by source document instead of showing a flat
+  // list. Null for shipment-level exceptions (e.g. missing Importer of Record).
+  documentId           String?
+  document             ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  fieldKey             String? // "exporterName" | "importerName" | "originCountry", set together with documentId
+  code                 String?
+  category             String? // MISSING_DATA | CONFLICT | VALIDATION | COMPLIANCE | DOCUMENT | CLASSIFICATION | VALUATION | FILING
+  type                 String // missing_document | data_mismatch | broker_hold | compliance_flag
+  severity             String            @default("Medium") // High | Medium | Low | Critical
+  description          String
+  status               String            @default("Open") // Open | InProgress | Resolved
+  blocking             Boolean           @default(false)
+  requiredAction       String?
+  sourceAgent          String?
+  version              Int               @default(1)
+  assignedToUserId     String?
+  assignedToUser       User?             @relation("ExceptionAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  createdAt            DateTime          @default(now())
+  resolvedAt           DateTime?
+  resolvedBy           String?
+  // Human-readable snapshot of who resolved this, taken at resolve time --
+  // resolvedBy stores the userId (or "SYSTEM" for auto-resolves), this is
+  // what's actually safe to render directly in the UI without a join.
+  resolvedByName       String?
+  resolutionNote       String?
+  // Picklist code from resolutionReasons.ts — stored alongside the free-text
+  // note so reason analytics are query-able. Null for pre-migration rows and for
+  // cancellations (which do not require a stated reason).
+  resolutionReasonCode String?
+  // Chronological log of status transitions, assignments, and notes.
+  // Each entry: { timestamp: ISO string, userId: string, action: string, note?: string }
+  history              Json              @default("[]")
+
+  @@index([accountId])
+  @@index([status])
+  @@index([resolutionReasonCode])
+  @@index([documentId, fieldKey])
+  @@index([assignedToUserId])
+  @@index([filingId])
+  @@index([shipmentId])
+}
+
+// Provenance record for "who confirmed this field's value, and when" --
+// written both when a user fills in a genuinely missing field (resolving an
+// ExceptionItem) and when a user just clicks Approve on a value the agent
+// already extracted correctly (no ExceptionItem involved in that case, since
+// nothing was ever wrong). Kept separate from ExceptionItem so routine
+// approvals of already-correct fields don't inflate open-exception counts
+// shown elsewhere (dashboard, decisions page).
+model FieldApproval {
+  id               String            @id @default(cuid())
+  accountId        String
+  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId       String
+  shipment         Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  documentId       String?
+  document         ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  fieldKey         String // "exporterName" | "importerName" | "originCountry"
+  value            String
+  approvedByUserId String
+  approvedByName   String
+  approvedAt       DateTime          @default(now())
+
+  @@index([shipmentId, fieldKey])
+}
+
+model ShipmentEventLog {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  eventType   String // SHIPMENT_CREATED, DOCUMENT_UPLOADED, RECONCILIATION_REQUESTED, etc.
+  payload     Json?
+  triggeredBy String   @default("SYSTEM")
+  createdAt   DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model AgentExecutionRecord {
+  id             String    @id @default(cuid())
+  accountId      String?
+  account        Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId     String
+  shipment       Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  agentName      String
+  triggerEvent   String?
+  invokedBy      String?   @default("SYSTEM")
+  // Position of this agent within the run that fired it -- the merged
+  // PipelineOrchestrator selects agents dynamically per trigger, so this is
+  // an ordinal for that run rather than a fixed 1-10 pipeline slot.
+  stepNumber     Int?
+  nextStep       String?
+  summary        String? // Human-readable one-line summary of what this step found or changed.
+  status         String    @default("COMPLETED") // RUNNING, COMPLETED, FAILED
+  // Null when the agent reported no confidence, or reported a multi-dimensional
+  // breakdown instead of a single number -- never substitute a synthetic figure.
+  confidence     Json?
+  // The AgentDecision this step produced, when it produced one.
+  decisionId     String?
+  aiProviderUsed String?
+  durationMs     Int?
+  modelVersion   String?   @default("gemini-3.6-flash")
+  error          String?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  // Exactly what buildAgentContext() handed this agent for this step, and what
+  // it returned -- so "what did agent N actually see" is answered by reading
+  // this row instead of re-deriving it from code.
+  inputSnapshot  Json?
+  outputSnapshot Json?
+  // Groups every agent step fired by one orchestration call into a single
+  // invocation for the Agent Executions waterfall view -- without this,
+  // rows from the same run are indistinguishable from unrelated ones.
+  runId          String?
+
+  @@index([shipmentId])
+  @@index([accountId])
+  @@index([agentName])
+  @@index([runId])
+}
+
+model RegulatoryUpdateImpact {
+  id                 String           @id @default(cuid())
+  regulatoryUpdateId String
+  regulatoryUpdate   RegulatoryUpdate @relation(fields: [regulatoryUpdateId], references: [id], onDelete: Cascade)
+  shipmentId         String
+  shipment           Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  impactDescription  String
+  createdAt          DateTime         @default(now())
+
+  @@index([regulatoryUpdateId])
+  @@index([shipmentId])
+}
+
+model ExtractionField {
+  id                 String           @id @default(cuid())
+  documentId         String
+  document           ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fieldName          String // e.g. invoiceNumber, invoiceDate, totalValue, htsCandidate
+  value              String
+  confidence         Int? // null until the extractor reports one
+  pageNumber         Int?
+  bbox               Json? // { x: 120, y: 340, width: 200, height: 24 } — PDF points
+  source             String           @default("OCR_AI_AGENT") // OCR_AI_AGENT | HUMAN_CORRECTION | PARSER
+  /// Set when source = HUMAN_CORRECTION. The value before the correction.
+  correctedFromValue String?
+  /// userId of the reviewer who made the correction.
+  correctedByUserId  String?
+  /// Wall-clock time of the correction.
+  correctedAt        DateTime?
+  createdAt          DateTime         @default(now())
+
+  @@index([documentId])
+  @@index([fieldName])
+  @@index([documentId, source])
+}
+
+model ReconciliationIssue {
+  id                 String    @id @default(cuid())
+  shipmentId         String
+  shipment           Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  accountId          String
+  account            Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  severity           String    @default("Warning") // Info | Warning | Critical
+  field              String // quantity | weight | country | totalValue | container
+  expectedValue      String
+  actualValue        String
+  sourceDocuments    String[] // e.g. ["Commercial Invoice", "Packing List"]
+  status             String    @default("Open") // Open | Resolved | Ignored
+  issueType          String    @default("DOCUMENT_CONFLICT") // DOCUMENT_CONFLICT | ENTRY_DISCREPANCY | PSC_CANDIDATE
+  // C-2: Resolution detail — which value was accepted and by whom
+  resolution         String? // ACCEPTED_A | ACCEPTED_B | BOTH_WRONG | ACKNOWLEDGED
+  note               String? // free-text resolution note entered by the reviewer
+  resolvedByUserId   String?
+  resolvedByUserName String?
+  createdAt          DateTime  @default(now())
+  resolvedAt         DateTime?
+
+  @@index([shipmentId])
+  @@index([accountId])
+}
+
+model CanonicalProduct {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  canonicalName   String // e.g. Stainless Steel Hydraulic Valve 1/2 NPT
+  sku             String?
+  partNumber      String?
+  manufacturer    String?
+  countryOfOrigin String?
+  htsCode         String?
+  dutyRate        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// Bridge to the Global Product Master. `CanonicalProduct` predates it and
+  /// carries a single `htsCode`/`countryOfOrigin` pair, which is only ever
+  /// valid for one jurisdiction and one claim. The row is kept rather than
+  /// dropped so nothing is lost, and this column names the Product that now
+  /// holds the same facts under jurisdictional separation.
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  aliases ProductAlias[]
+
+  @@index([accountId])
+  @@index([productId])
+}
+
+model ProductAlias {
+  id                 String           @id @default(cuid())
+  canonicalProductId String
+  canonicalProduct   CanonicalProduct @relation(fields: [canonicalProductId], references: [id], onDelete: Cascade)
+  aliasName          String // e.g. "iPhone 16 Pro Max 256GB Black" or "iPhone Pro Max"
+  source             String           @default("Invoice")
+  matchConfidence    Int              @default(94)
+  createdAt          DateTime         @default(now())
+
+  @@index([canonicalProductId])
+}
+
+model PgaRequirement {
+  id                 String           @id @default(cuid())
+  shipmentLineItemId String
+  shipmentLineItem   ShipmentLineItem @relation(fields: [shipmentLineItemId], references: [id], onDelete: Cascade)
+  agency             String // FDA | EPA | FCC | USDA | CPSC
+  reason             String // e.g. Radiation emitting device / Wireless transmitter
+  requiredFiling     String // e.g. Form FCC 740 / Equipment Authorization
+  missingPermits     String[]
+  holdRisk           String           @default("Medium") // High | Medium | Low
+
+  // Cross-agency high-frequency PGA fields
+  lpcoNumber         String?
+  lpcoTypeCode       String?
+  issuerCode         String?
+  permitTypeCode     String? // PG13 / PG14
+  aocCode            String?
+  firmsCode          String?
+  inspectionLocation String?
+
+  /// Agency-specific JSON details (FDA prior notice, EPA vehicle/engine class, FWS species, NOAA vessel details, etc.)
+  agencyData Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([shipmentLineItemId])
+}
+
+model ComplianceFinding {
+  id               String        @id @default(cuid())
+  accountId        String
+  account          Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId         String
+  filing           CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  rule             String // e.g. Valuation Variance, HTS Override, Missing Assists
+  severity         String        @default("Warning") // Info | Warning | High | Critical
+  description      String
+  recommendation   String
+  status           String        @default("Open") // Open | Investigating | Resolved | AcceptedRisk | Closed
+  confidence       Int           @default(92)
+  assignedToUserId String?
+  assignedToUser   User?         @relation("FindingAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime      @default(now())
+  resolvedAt       DateTime?
+
+  @@index([accountId])
+  @@index([filingId])
+  @@index([status])
+}
+
+model SupplierRiskScore {
+  id                        String   @id @default(cuid())
+  accountId                 String
+  account                   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  supplierName              String
+  supplierId                String?
+  score                     Int      @default(15) // 0 - 100 risk score
+  riskLevel                 String   @default("Low") // Low | Medium | High | Critical
+  violationHistoryCount     Int      @default(0)
+  missingDocsCount          Int      @default(0)
+  pgaIssuesCount            Int      @default(0)
+  classificationIssuesCount Int      @default(0)
+  lastUpdated               DateTime @default(now())
+
+  @@index([accountId])
+  @@index([supplierName])
+}
+
+model BrokerMetrics {
+  id                String   @id @default(cuid())
+  accountId         String
+  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  brokerName        String
+  entriesProcessed  Int      @default(142)
+  accuracyPct       Decimal  @default(98.5)
+  overrideRatePct   Decimal  @default(2.1)
+  correctionRatePct Decimal  @default(0.7)
+  avgReviewTimeMin  Int      @default(18)
+  rejectedCount     Int      @default(1)
+  lastUpdated       DateTime @default(now())
+
+  @@index([accountId])
+  @@index([brokerName])
+}
+
+model ValuationAssistsRecord {
+  id                      String        @id @default(cuid())
+  accountId               String
+  account                 Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId                String        @unique
+  filing                  CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  declaredValue           Decimal
+  transferPricingMatch    Boolean       @default(true)
+  freightIncluded         Boolean       @default(true)
+  insuranceIncluded       Boolean       @default(true)
+  potentialAssists        Json? // [{ assistType: "tooling", estimatedValue: 5000, declared: false }]
+  relatedPartyTransaction Boolean       @default(false)
+  status                  String        @default("Verified")
+  createdAt               DateTime      @default(now())
+
+  @@index([accountId])
+}
+
+model AuditTimeline {
+  id        String        @id @default(cuid())
+  accountId String
+  account   Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId  String
+  filing    CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  event     String // e.g. Entry Ingested, Valuation Checked, Audit Finding Raised, Reasonable Care Verified
+  actor     String        @default("System Audit Agent")
+  metadata  Json?
+  timestamp DateTime      @default(now())
+
+  @@index([accountId])
+  @@index([filingId])
+}
+
+model DeniedPartyWatchlist {
+  id            String    @id @default(cuid())
+  listSource    String // OFAC_SDN | BIS_ENTITY_LIST | UN_SANCTIONS | EU_SANCTIONS | UK_HMT
+  entityName    String
+  entityType    String // Individual | Organization | Vessel
+  country       String
+  program       String? // SDNTK | RUSSIA-EO14024 | COUNTER-NARCOTICS
+  addresses     Json?
+  listVersion   String? // E.g., "2026-08-08"
+  publishDate   DateTime? // Release date of source file
+  effectiveDate DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  @@index([entityName])
+  @@index([listSource])
+}
+
+model ScreeningLog {
+  id           String    @id @default(cuid())
+  accountId    String
+  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  targetName   String
+  targetType   String // Shipper | Consignee | Broker | Carrier | Manufacturer
+  matchStatus  String // PASSED | FLAGGED | BLOCKED
+  matchScore   Int       @default(0) // 0-100 fuzzy match score
+  matchedParty String?
+  listSource   String?
+  listVersion  String? // Logged list version at moment of screening
+  publishDate  DateTime? // Logged list publish date
+  screenedAt   DateTime  @default(now())
+
+  @@index([accountId])
+  @@index([matchStatus])
+}
+
+model EmbargoRule {
+  id          String   @id @default(cuid())
+  countryCode String   @unique // CU, IR, KP, SY, UFLPA_XINJIANG
+  countryName String
+  regime      String // Comprehensive Sanctions | UFLPA Forced Labor | Selective Controls
+  restriction String
+  authority   String   @default("US OFAC / CBP UFLPA")
+  createdAt   DateTime @default(now())
+}
+
+model TradeBenchmark {
+  id               String   @id @default(cuid())
+  htsCode10        String   @unique
+  industryAvgDuty  Decimal  @default(3.5)
+  avgDeclaredPrice Decimal
+  topOriginCountry String   @default("China")
+  totalUSVolumeVal Decimal
+  lastUpdated      DateTime @default(now())
+
+  @@index([htsCode10])
+}
+
+// =====================================================================
+// Country Embargo Screening reference data.
+//
+// Table/column names below are preserved exactly as extracted from the
+// authoritative source DDL (CountryEmbargoScreening_Tables.sql,
+// ece_create_table.sql) via `@@map`/`@map` so the extracted .sql data
+// files can be loaded without any identifier transformation. Only the
+// columns actually consumed by embargo screening are modeled -- the
+// source DDL itself notes columns like currency/phone-prefix/transit-mode
+// flags are irrelevant to screening (see comment on `commerce_control_list`
+// in the source DDL: "Trimmed to the columns relevant to embargo").
+// See src/modules/agents/compliance/embargo/ for the screening engine.
+// =====================================================================
+
+/// countries -- country master. cyIndEmbargoed/cyIndBoycotted are country-level
+/// flags; cyIndGlds gates the generic-LD embargo path; cyIndLds/cyIndDps gate
+/// license/party screening eligibility.
+model Country {
+  cySeq          Int       @id @map("cy_seq")
+  cyId           String    @map("cy_id")
+  cyName         String?   @map("cy_name")
+  cyShortName    String?   @map("cy_shrt_name")
+  cyIndEmbargoed String?   @map("cy_ind_embargoed")
+  cyIndBoycotted String?   @map("cy_ind_boycotted")
+  cyIndDps       String?   @map("cy_ind_dps")
+  cyIndLds       String?   @map("cy_ind_lds")
+  cyIndEms       String?   @map("cy_ind_ems")
+  cyIndGlds      String?   @map("CY_IND_GLDS")
+  cyDtCrt        DateTime? @map("cy_dt_crt")
+  cyDtUpd        DateTime? @map("cy_dt_upd")
+
+  @@index([cyId])
+  @@index([cyName])
+  @@map("countries")
+}
+
+/// country_groups -- country group definitions (e.g. E1/EU-style groups) used
+/// for group-based embargo fallback.
+model CountryGroup {
+  cygSeq       Int     @id @map("cyg_seq")
+  cygId        String  @map("cyg_id")
+  cygShortName String  @map("cyg_shrt_name")
+  cygDesc      String? @map("cyg_desc")
+  cygIndHts    String? @map("cyg_ind_hts")
+
+  @@index([cygId])
+  @@map("country_groups")
+}
+
+/// country_group_maps -- country -> country_group membership, effective-dated.
+/// NOTE: keyed on the country's business code (COUNTRY_ID, e.g. "AD") and the
+/// group's business code (GROUP_ID, e.g. "5505") -- not the cygrm_cy_seq /
+/// cygrm_cyg_seq surrogate keys the original DDL implied. The real extracted
+/// data (EMB-Check/sql/country_group_maps.sql) inserts COUNTRY_ID/GROUP_ID
+/// text columns, so the schema follows the actual data over the DDL script.
+model CountryGroupMap {
+  cygrmSeq          Int       @id @map("cygrm_seq")
+  countryId         String    @map("COUNTRY_ID")
+  groupId           String    @map("GROUP_ID")
+  cygrmEffectiveDt  DateTime? @map("CYGRM_EFFECTIVE_DT")
+  cygrmExpirationDt DateTime? @map("CYGRM_EXPIRATION_DT")
+
+  @@index([countryId, groupId])
+  @@index([cygrmEffectiveDt, cygrmExpirationDt])
+  @@map("country_group_maps")
+}
+
+/// compliance_country_groups -- scopes cy_ccg_maps rows below.
+model ComplianceCountryGroup {
+  ccgSeq  Int     @id @map("ccg_seq")
+  ccgId   String? @map("ccg_id")
+  ccgDesc String? @map("ccg_desc")
+
+  @@index([ccgId])
+  @@map("compliance_country_groups")
+}
+
+/// cy_ccg_maps -- country -> compliance-country-group mapping, used to scope
+/// embargo rules to a group of compliance (ship-from) countries.
+/// NOTE: keyed on the country's business code (COUNTRY_ID) and the compliance
+/// group's business code (COMPLIANCE_GROUP_ID, e.g. "B", "D3") -- see the
+/// CountryGroupMap note above; same DDL-vs-real-data discrepancy applies here.
+model CyCcgMap {
+  cygmSeq           Int    @id @map("cygm_seq")
+  countryId         String @map("COUNTRY_ID")
+  complianceGroupId String @map("COMPLIANCE_GROUP_ID")
+
+  @@index([countryId, complianceGroupId])
+  @@map("cy_ccg_maps")
+}
+
+/// country_by_country_maps -- THE core embargo relationship table: which
+/// compliance (ship-from) country embargoes which destination/origin country,
+/// plus sanction-type evidence indicators.
+///
+/// NOTE: keyed on the countries' business codes (COMPLIANCE_COUNTRY /
+/// EMBARGOED_COUNTRY, e.g. "US" / "CU") -- not the cycy_from_cy_seq /
+/// cycy_to_cy_seq surrogate keys the original DDL implied. The real extracted
+/// data (EMB-Check/sql/country_by_country_maps.sql) inserts these text
+/// columns, so the schema follows the actual data over the DDL script.
+model CountryByCountryMap {
+  cycySeq                 Int     @id @map("cycy_seq")
+  complianceCountry       String  @map("COMPLIANCE_COUNTRY")
+  complianceCountryName   String? @map("COMPLIANCE_COUNTRY_NAME")
+  embargoedCountry        String  @map("EMBARGOED_COUNTRY")
+  embargoedCountryName    String? @map("EMBARGOED_COUNTRY_NAME")
+  cycyIndEmbargoed        String? @map("CYCY_IND_EMBARGOED")
+  cycyIndNationalSanction String? @map("CYCY_IND_NATIONAL_SANCTION")
+  cycyIndEuSanction       String? @map("CYCY_IND_EU_SANCTION")
+  cycyIndUnSanction       String? @map("CYCY_IND_UN_SANCTION")
+
+  @@index([complianceCountry, embargoedCountry])
+  @@map("country_by_country_maps")
+}
+
+/// commerce_control_list -- ECCN/CCL master, only the columns needed for the
+/// product/classification-level embargo evidence used by screening.
+///
+/// NOTE: keyed on the country's business code (CCL_COUNTRY) -- not the
+/// ccl_cy_seq surrogate key the original DDL implied; see notes above.
+model CommerceControlList {
+  cclSeq        Int     @id @map("ccl_seq")
+  cclId         String  @map("ccl_id")
+  cclDesc       String  @map("ccl_desc")
+  cclCountry    String? @map("CCL_COUNTRY")
+  cclIndUn      String? @map("ccl_ind_un")
+  cclIndOfacCtl String? @map("ccl_ind_ofac_ctl")
+  cclLicensable String? @map("ccl_licensable")
+
+  @@index([cclId, cclCountry])
+  @@map("commerce_control_list")
+}
+
+// =====================================================================
+// Country Embargo Screening -- tenant-scoped account configuration.
+//
+// Maps the source "subscriber" screening/audit configuration
+// (SbsIndEmbargoScreening, SbsIndPrivateEmbargo, SbsIndServerScreening,
+// GenericExportLDEnabled, SbsIndEmailAlert, GenAuditLog) onto Qubere's
+// Account tenant boundary. One row per Account -- no Subscriber entity.
+// =====================================================================
+model AccountEmbargoConfig {
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  embargoScreeningEnabled Boolean @default(true)
+  privateEmbargoEnabled   Boolean @default(false)
+  serverScreeningEnabled  Boolean @default(true)
+  genericExportLdEnabled  Boolean @default(false)
+
+  audited                Boolean @default(true)
+  emailAlertEnabled      Boolean @default(false)
+  generalAuditLogEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =====================================================================
+// Restricted / Denied Party Screening -- account-level matcher
+// configuration. Every field is nullable: unset means "no account
+// override," and runRestrictedPartyScreening resolves effective values as
+// request override > this row > module defaults (DEFAULT_NAME_THRESHOLD
+// etc. in restrictedParty/types.ts). Absence of a row for an account is
+// equivalent to every field being unset -- never treated as an error.
+// =====================================================================
+enum RestrictedPartyPhoneticAlgorithm {
+  DOUBLE_METAPHONE
+  METAPHONE2
+}
+
+model AccountScreeningConfig {
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  nameThreshold             Int?
+  addressThreshold          Int?
+  countryMatchRequired      Boolean?
+  redFlagCheckEnabled       Boolean?
+  excludeMetaphone          Boolean?
+  phoneticAlgorithm         RestrictedPartyPhoneticAlgorithm?
+  continueOnExactMatch      Boolean?
+  alternateScreeningEnabled Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =====================================================================
+// Country Embargo Screening audit -- Qubere-native equivalent of the
+// source SERVICE_USAGE / SERVICE_USAGE_LINES header+detail audit pattern.
+// One header per screening invocation; one detail line per completed
+// check (screeningLevel x type), written only when detailed audit is
+// enabled for the account. See src/modules/agents/compliance/embargo/embargoAudit.ts.
+// =====================================================================
+model EmbargoUsageHeader {
+  id            String   @id @default(cuid())
+  accountId     String
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId    String
+  transactionId String?
+  screeningType String   @default("COUNTRY_EMBARGO")
+  correlationId String?
+  screenedAt    DateTime @default(now())
+
+  lines EmbargoUsageLine[]
+
+  @@index([accountId, shipmentId])
+  @@index([screenedAt])
+}
+
+model EmbargoUsageLine {
+  id            String             @id @default(cuid())
+  headerId      String
+  header        EmbargoUsageHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId    String
+  transactionId String?
+  partyId       String?
+  lineItemId    String?
+  userDefined   String?
+
+  exceptionType     String   @default("EM")
+  screeningLevel    String // TRANSACTION | PARTY | LINE
+  type              String // D | O
+  complianceCountry String
+  screenedCountry   String
+  eccn              String?
+  militaryEndUse    Boolean?
+  matcher           String // PRIVATE | US | GENERIC | STANDARD
+  ruleId            String?
+  result            String // P | F
+  screenedAt        DateTime @default(now())
+  evidence          Json?
+
+  @@index([headerId])
+  @@index([accountId, shipmentId])
+}
+
+model AgentExecutionLog {
+  id             String   @id @default(cuid())
+  accountId      String
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId     String
+  agentName      String
+  stepNumber     Int
+  status         String // Completed | Review Required | Attention | BLOCKED
+  summary        String
+  confidence     Json?
+  aiProviderUsed String
+  decisionId     String
+  inputSnapshot  Json?
+  outputSnapshot Json?
+  timestamp      DateTime @default(now())
+  // Groups every step of one ComplianceWorkflowEngine.executePipeline() call
+  // into a single invocation for the Agent Executions waterfall view.
+  runId          String?
+  triggerEvent   String?
+  invokedBy      String?
+  durationMs     Int?
+
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([agentName])
+  @@index([runId])
+}
+
+model ShipmentStateRecord {
+  id                String   @id @default(cuid())
+  accountId         String
+  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId        String   @unique
+  lifecycleStatus   String // COMPLETED | BLOCKED | REVIEW_REQUIRED
+  userActionStatus  String // ACTION_REQUIRED | NONE
+  completenessScore Int      @default(0)
+  complianceStatus  String // CLEARED | BLOCKED_DEPENDENCY
+  readinessScore    Int      @default(0)
+  blockersCount     Int      @default(0)
+  snapshotData      Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([shipmentId])
+}
+
+// ============================================================================
+// PIPELINE QUEUE & ORCHESTRATION (Postgres Queue)
+// ============================================================================
+
+model PipelineJob {
+  id             String    @id @default(cuid())
+  accountId      String
+  userId         String
+  shipmentId     String
+  /// Namespaces jobs that share this durable queue. Existing Customs jobs use
+  /// CUSTOMS; TMS document workflows use TMS_DOCUMENT_PROCESSING.
+  workflowType   String    @default("CUSTOMS")
+  /// Stable trigger identity used to make enqueue idempotent. Nullable for
+  /// legacy jobs. TMS uses document id + checksum + workflow version.
+  idempotencyKey String?
+  correlationId  String?
+  status         String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  currentStep    Int       @default(1)
+  totalSteps     Int       @default(10)
+  priority       Int       @default(0) // Higher number = higher priority
+  state          Json      @default("{}") // The AgentState object
+  errorMessage   String?
+  attemptCount   Int       @default(0)
+  maxAttempts    Int       @default(3)
+  nextRetryAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  lockedAt       DateTime? // Used by worker to detect stalled jobs
+  heartbeatAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  stepExecutions PipelineStepExecution[]
+  shipment       Shipment                @relation(fields: [shipmentId], references: [id])
+  account        Account                 @relation(fields: [accountId], references: [id])
+
+  @@unique([accountId, idempotencyKey])
+  @@index([status, priority, createdAt])
+  @@index([shipmentId])
+  @@index([accountId, workflowType, shipmentId, createdAt])
+  @@index([status, nextRetryAt])
+  @@index([status, heartbeatAt])
+}
+
+model PipelineStepExecution {
+  id           String    @id @default(cuid())
+  jobId        String
+  stepNumber   Int
+  agentName    String
+  status       String // RUNNING, SUCCESS, FAILED, SKIPPED, REVIEW_REQUIRED
+  attempt      Int       @default(1)
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  output       Json? // The output returned by the agent
+  errorMessage String?
+
+  job PipelineJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, stepNumber])
+  @@index([jobId, attempt])
+}
+
+enum WorkflowOutboxStatus {
+  PENDING
+  DISPATCHING
+  DISPATCHED
+  FAILED
+}
+
+/// Transactional hand-off between authoritative workflow state and the
+/// external executor. Producers insert this record in the same transaction as
+/// the PipelineJob; a dispatcher can safely retry publication by eventKey.
+model WorkflowOutboxEvent {
+  id            String               @id @default(cuid())
+  accountId     String
+  eventKey      String               @unique
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  correlationId String?
+  payload       Json
+  status        WorkflowOutboxStatus @default(PENDING)
+  attemptCount  Int                  @default(0)
+  maxAttempts   Int                  @default(12)
+  nextAttemptAt DateTime             @default(now())
+  lockedAt      DateTime?
+  dispatchedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([aggregateType, aggregateId])
+  @@index([accountId, createdAt])
+}
+
+// ============================================================================
+// AUTHORITATIVE HTS MASTER DOMAIN MODELS
+// ============================================================================
+
+model HtsRelease {
+  id                  String    @id @default(cuid())
+  // ISO 3166-1 alpha-2 country this tariff schedule belongs to (e.g. "US"
+  // for HTSUS). Schema groundwork for eventually ingesting other
+  // countries' schedules alongside the US one -- the ingestion pipeline
+  // and search/lookup services are still US-only for now; this field just
+  // makes the data model ready to be scoped by country when that's built.
+  country             String    @default("US")
+  editionYear         Int
+  revisionNumber      Int
+  releaseName         String
+  effectiveFrom       DateTime
+  publishedAt         DateTime?
+  sourceUrl           String
+  sourceFormat        String // JSON, CSV, PDF
+  sha256              String
+  rawObjectKey        String?
+  retrievedAt         DateTime  @default(now())
+  validationStatus    String // PENDING, VALIDATED, FAILED
+  publicationStatus   String    @default("DRAFT") // DRAFT, PUBLISHED, SUPERSEDED, ROLLED_BACK
+  supersedesReleaseId String?
+
+  nodes          HtsNode[]
+  legalDocuments LegalDocument[]
+  changesFrom    HtsChange[]     @relation("HtsChangeFrom")
+  changesTo      HtsChange[]     @relation("HtsChangeTo")
+
+  @@index([publicationStatus])
+  @@index([effectiveFrom])
+  @@index([sha256])
+  @@index([country])
+}
+
+model HtsNode {
+  id                  String  @id @default(cuid())
+  releaseId           String
+  sourceRowNumber     Int
+  parentId            String?
+  indentLevel         Int
+  htsNumberDisplay    String
+  htsNumberNormalized String
+  codeLevel           Int // 2 (Chapter), 4 (Heading), 6 (Subheading), 8 (Tariff Line), 10 (Stat Suffix)
+  description         String
+  fullDescription     String
+  isSuperiorHeading   Boolean @default(false)
+  isClassifiable      Boolean @default(true)
+  chapter             String
+  heading             String
+  subheading6         String?
+  tariffLine8         String?
+  statisticalSuffix10 String?
+
+  release           HtsRelease                   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  parent            HtsNode?                     @relation("HtsNodeHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children          HtsNode[]                    @relation("HtsNodeHierarchy")
+  dutyRates         HtsDutyRate[]
+  units             HtsUnit[]
+  noteLinks         HtsNoteLink[]
+  oldChanges        HtsChange[]                  @relation("HtsChangeOld")
+  newChanges        HtsChange[]                  @relation("HtsChangeNew")
+  proposals         ClassificationProposal[]
+  decisions         ClassificationDecision[]
+  scenarioLineItems LandedCostScenarioLineItem[]
+
+  @@index([releaseId])
+  @@index([htsNumberNormalized])
+  @@index([chapter, heading])
+  @@index([codeLevel])
+}
+
+model HtsDutyRate {
+  id               String  @id @default(cuid())
+  htsNodeId        String
+  rateColumn       String // General, Special, Column 2, Section301, AD_CVD
+  programCode      String? // GSP, USMCA, etc.
+  rawRateText      String
+  rateType         String? // Free, AdValorem, Specific, Compound, Unparsed, SECTION_301, ANTIDUMPING, COUNTERVAILING
+  trancheId        String? // List1, List2, List3, List4A, List4B
+  exclusion        Boolean @default(false)
+  caseNumber       String? // e.g. A-570-601
+  manufacturer     String? // Manufacturer name or "*"
+  countryOfOrigin  String? // e.g. CN
+  adValoremPercent Float?
+  specificAmount   Float?
+  specificUnit     String?
+  currency         String  @default("USD")
+  isFree           Boolean @default(false)
+  parseStatus      String  @default("PARSED") // PARSED, UNPARSED_FALLBACK, MANUAL_VERIFIED
+
+  node HtsNode @relation(fields: [htsNodeId], references: [id], onDelete: Cascade)
+
+  @@index([htsNodeId])
+  @@index([rateColumn])
+  @@index([rateType])
+  @@index([caseNumber])
+}
+
+model HtsUnit {
+  id        String @id @default(cuid())
+  htsNodeId String
+  sequence  Int    @default(1)
+  unitCode  String
+
+  node HtsNode @relation(fields: [htsNodeId], references: [id], onDelete: Cascade)
+
+  @@index([htsNodeId])
+}
+
+model LegalDocument {
+  id               String    @id @default(cuid())
+  releaseId        String
+  documentType     String // GeneralNote, SectionNote, ChapterNote, AdditionalUSNote
+  title            String
+  sourceUrl        String?
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  rawObjectKey     String?
+  checksum         String
+  extractionStatus String    @default("COMPLETED")
+
+  release   HtsRelease      @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  fragments LegalFragment[]
+
+  @@index([releaseId])
+  @@index([documentType])
+}
+
+model LegalFragment {
+  id               String  @id @default(cuid())
+  legalDocumentId  String
+  citation         String
+  text             String
+  parentFragmentId String?
+  pageOrLocation   String?
+
+  legalDocument LegalDocument @relation(fields: [legalDocumentId], references: [id], onDelete: Cascade)
+  noteLinks     HtsNoteLink[]
+
+  @@index([legalDocumentId])
+  @@index([citation])
+}
+
+model HtsNoteLink {
+  htsNodeId       String
+  legalFragmentId String
+  linkType        String @default("APPLIES_TO")
+
+  node     HtsNode       @relation(fields: [htsNodeId], references: [id], onDelete: Cascade)
+  fragment LegalFragment @relation(fields: [legalFragmentId], references: [id], onDelete: Cascade)
+
+  @@id([htsNodeId, legalFragmentId])
+}
+
+model HtsChange {
+  id              String  @id @default(cuid())
+  fromReleaseId   String
+  toReleaseId     String
+  oldHtsNodeId    String?
+  newHtsNodeId    String?
+  changeType      String // ADDED, REMOVED, RENUMBERED, DESCRIPTION_CHANGED, RATE_CHANGED
+  changedFields   Json
+  sourceActionUrl String?
+  reviewStatus    String  @default("PENDING")
+
+  fromRelease HtsRelease @relation("HtsChangeFrom", fields: [fromReleaseId], references: [id])
+  toRelease   HtsRelease @relation("HtsChangeTo", fields: [toReleaseId], references: [id])
+  oldNode     HtsNode?   @relation("HtsChangeOld", fields: [oldHtsNodeId], references: [id])
+  newNode     HtsNode?   @relation("HtsChangeNew", fields: [newHtsNodeId], references: [id])
+
+  @@unique([fromReleaseId, toReleaseId, changeType, oldHtsNodeId, newHtsNodeId])
+  @@index([fromReleaseId, toReleaseId])
+}
+
+// ============================================================================
+// CBP CROSS RULING DOMAIN MODELS
+// ============================================================================
+
+model Ruling {
+  id                      String   @id @default(cuid())
+  rulingNumber            String   @unique
+  sourceProvider          String   @default("CBP_CROSS")
+  sourceUrl               String?
+  issuedAt                DateTime
+  office                  String?
+  rulingType              String   @default("HQ") // HQ, NY
+  title                   String
+  rawObjectKey            String?
+  checksum                String?
+  publicationStatus       String   @default("PUBLISHED")
+  modifiedOrRevokedStatus String   @default("EFFECTIVE")
+  lastVerifiedAt          DateTime @default(now())
+
+  fragments     RulingFragment[]
+  htsReferences RulingHtsReference[]
+  fromRelations RulingRelationship[] @relation("RulingRelFrom")
+  toRelations   RulingRelationship[] @relation("RulingRelTo")
+
+  @@index([rulingNumber])
+  @@index([issuedAt])
+}
+
+model RulingFragment {
+  id               String  @id @default(cuid())
+  rulingId         String
+  fragmentType     String // Facts, Issue, Holding, Analysis
+  text             String
+  citationLocation String?
+
+  ruling Ruling @relation(fields: [rulingId], references: [id], onDelete: Cascade)
+
+  @@index([rulingId])
+}
+
+model RulingHtsReference {
+  rulingId         String
+  htsNumberDisplay String
+  relationType     String @default("CLASSIFIED_AS")
+
+  ruling Ruling @relation(fields: [rulingId], references: [id], onDelete: Cascade)
+
+  @@id([rulingId, htsNumberDisplay])
+}
+
+model RulingRelationship {
+  fromRulingId       String
+  toRulingId         String
+  relationshipType   String // MODIFIES, REVOKES, CITES, AFFIRMS
+  evidenceFragmentId String?
+
+  fromRuling Ruling @relation("RulingRelFrom", fields: [fromRulingId], references: [id], onDelete: Cascade)
+  toRuling   Ruling @relation("RulingRelTo", fields: [toRulingId], references: [id], onDelete: Cascade)
+
+  @@id([fromRulingId, toRulingId, relationshipType])
+}
+
+// ============================================================================
+// CLASSIFICATION CASE & PROPOSAL ENGINE DOMAIN MODELS
+// ============================================================================
+
+model ClassificationCase {
+  id                     String    @id @default(cuid())
+  accountId              String
+  externalReference      String?
+  status                 String    @default("DRAFT") // DRAFT, AWAITING_DOCUMENTS, NEEDS_INFORMATION, QUEUED, PROCESSING, PROPOSED, HUMAN_REVIEW_REQUIRED, APPROVED, REJECTED, SUPERSEDED, FAILED, CANCELLED
+  priority               String    @default("MEDIUM")
+  assigneeUserId         String?
+  requestedByUserId      String
+  jurisdiction           String    @default("US")
+  classificationAsOfDate DateTime  @default(now())
+  htsReleaseId           String?
+  dueAt                  DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  rowVersion             Int       @default(1)
+
+  account        Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subjects       ClassificationSubject[]
+  documents      CaseDocument[]
+  extractedFacts ExtractedFact[]
+  runs           ClassificationRun[]
+  decisions      ClassificationDecision[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([assigneeUserId])
+}
+
+model ClassificationSubject {
+  id                       String  @id @default(cuid())
+  caseId                   String
+  canonicalProductId       String?
+  rawDescription           String
+  structuredAttributesJson Json    @default("{}")
+  countryOfOrigin          String?
+  intendedUse              String?
+  completenessScore        Int     @default(0)
+
+  case ClassificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+model CaseDocument {
+  id               String @id @default(cuid())
+  caseId           String
+  accountId        String
+  objectKey        String
+  originalFilename String
+  detectedMimeType String
+  sha256           String
+  byteSize         Int
+  malwareStatus    String @default("PASSED")
+  processingStatus String @default("PENDING")
+  retentionClass   String @default("STANDARD")
+
+  case           ClassificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  extractedFacts ExtractedFact[]
+
+  @@index([caseId])
+  @@index([accountId])
+}
+
+model ExtractedFact {
+  id                  String  @id @default(cuid())
+  caseId              String
+  documentId          String?
+  factType            String
+  normalizedValueJson Json
+  rawValue            String
+  confidence          Float
+  page                Int?
+  regionJson          Json?
+  modelVersion        String
+  verificationStatus  String  @default("UNVERIFIED") // UNVERIFIED, VERIFIED, CORRECTED
+  verifiedByUserId    String?
+
+  case            ClassificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  document        CaseDocument?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  productEvidence ProductEvidence[]
+  partyEvidence   PartyEvidence[]
+
+  @@index([caseId])
+  @@index([factType])
+}
+
+model ClassificationRun {
+  id                    String    @id @default(cuid())
+  caseId                String
+  status                String    @default("RUNNING") // RUNNING, COMPLETED, FAILED
+  idempotencyKey        String?
+  htsReleaseId          String
+  promptVersion         String
+  modelProvider         String
+  modelVersion          String
+  rulesEngineVersion    String
+  retrievalIndexVersion String
+  startedAt             DateTime  @default(now())
+  completedAt           DateTime?
+  tokenUsageJson        Json?
+  costAmount            Float?
+  failureCode           String?
+
+  case      ClassificationCase       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  proposals ClassificationProposal[]
+
+  @@index([caseId])
+  @@index([status])
+}
+
+model ClassificationProposal {
+  id                   String   @id @default(cuid())
+  runId                String
+  proposedHtsNodeId    String
+  rank                 Int
+  calibratedConfidence Float
+  confidenceBand       String // HIGH, MEDIUM, LOW
+  recommendationStatus String // PROPOSED, NEEDS_INFORMATION, HUMAN_REVIEW_REQUIRED
+  summary              String
+  missingFactsJson     Json     @default("[]")
+  createdAt            DateTime @default(now())
+
+  run           ClassificationRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  proposedNode  HtsNode                  @relation(fields: [proposedHtsNodeId], references: [id])
+  griSteps      GriAnalysisStep[]
+  evidenceItems ProposalEvidence[]
+  decisions     ClassificationDecision[]
+
+  @@index([runId])
+  @@index([proposedHtsNodeId])
+}
+
+model GriAnalysisStep {
+  id                      String @id @default(cuid())
+  proposalId              String
+  sequence                Int
+  griRule                 String // GRI 1, GRI 2a, GRI 2b, GRI 3a, GRI 3b, GRI 3c, GRI 4, GRI 5a, GRI 5b, GRI 6
+  question                String
+  conclusion              String
+  outcome                 String // APPLIED, NOT_APPLICABLE, PASSED_TO_NEXT
+  deterministicChecksJson Json   @default("{}")
+
+  proposal ClassificationProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, sequence])
+}
+
+model ProposalEvidence {
+  id                  String  @id @default(cuid())
+  proposalId          String
+  evidenceType        String // HTS_NOTE, CROSS_RULING, SPEC_SHEET, PAST_DECISION
+  sourceEntityId      String?
+  sourceReleaseId     String?
+  sourceUrl           String?
+  citation            String
+  quotedFragment      String
+  relevanceScore      Float
+  supportsOrConflicts String // SUPPORTS, CONFLICTS
+
+  proposal ClassificationProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+}
+
+model ClassificationDecision {
+  id                   String    @id @default(cuid())
+  caseId               String
+  proposalId           String?
+  decisionStatus       String // APPROVED, REJECTED, OVERRIDDEN
+  approvedHtsNodeId    String
+  reviewerUserId       String
+  rationale            String
+  overrideReason       String?
+  attestedAt           DateTime  @default(now())
+  effectiveFrom        DateTime  @default(now())
+  effectiveTo          DateTime?
+  supersedesDecisionId String?
+
+  case          ClassificationCase           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  proposal      ClassificationProposal?      @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  approvedNode  HtsNode                      @relation(fields: [approvedHtsNodeId], references: [id])
+  changeImpacts ClassificationChangeImpact[]
+
+  @@index([caseId])
+  @@index([approvedHtsNodeId])
+}
+
+model ClassificationChangeImpact {
+  id                       String                 @id @default(cuid())
+  classificationDecisionId String
+  classificationDecision   ClassificationDecision @relation(fields: [classificationDecisionId], references: [id], onDelete: Cascade)
+  accountId                String
+  account                  Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId               String
+  shipment                 Shipment               @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  lineItemId               String?
+  filingId                 String?
+  filing                   CustomsFiling?         @relation(fields: [filingId], references: [id], onDelete: SetNull)
+  previousHtsCode          String?
+  newHtsCode               String
+  dutyImpact               Decimal                @default(0) @db.Decimal(14, 4)
+  createdAt                DateTime               @default(now())
+
+  @@index([classificationDecisionId])
+  @@index([shipmentId])
+  @@index([accountId])
+}
+
+model Fact {
+  id                String    @id @default(cuid())
+  shipmentId        String
+  shipment          Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  field             String // e.g. "countryOfOrigin"
+  value             String // e.g. "VN"
+  normalizedValue   String?
+  sourceType        String // e.g. "EXTRACTED", "USER_ENTERED", "AGENT_PROPOSED"
+  confidence        Float? // e.g. 98.5
+  documentId        String? // Optional link to ShipmentDocument
+  documentPage      Int? // Optional page number
+  metadata          Json? // Stores the dynamic JSON blob for fields not modeled as columns
+  entityRef         String? // e.g. "line:1", "party:EXPORTER"
+  definitionVersion String? // e.g. "1.0.0"
+  hydrationRunId    String?
+  candidateId       String?
+  isHumanLocked     Boolean   @default(false)
+  supersededAt      DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([shipmentId])
+  @@index([field])
+  @@unique([shipmentId, field, candidateId])
+}
+
+model HydrationRun {
+  id                         String           @id @default(cuid())
+  accountId                  String
+  account                    Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId                 String?
+  shipment                   Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  documentId                 String
+  document                   ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  activeParseVersionId       String
+  fieldSchemaVersion         String
+  extractionSchemaVersion    String
+  mapperModelVersion         String
+  mapperPromptVersion        String
+  normalizationPolicyVersion String
+  idempotencyKey             String           @unique
+  status                     String // QUEUED | RUNNING | SUCCEEDED | NEEDS_REVIEW | FAILED
+  metrics                    Json?
+  errorCode                  String?
+  dataMode                   DataMode         @default(PRODUCTION)
+  durationMs                 Int?
+  createdAt                  DateTime         @default(now())
+  completedAt                DateTime?
+
+  candidates HydrationCandidate[]
+
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([documentId])
+}
+
+model HydrationCandidate {
+  id                       String           @id @default(cuid())
+  hydrationRunId           String
+  hydrationRun             HydrationRun     @relation(fields: [hydrationRunId], references: [id], onDelete: Cascade)
+  accountId                String
+  account                  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId               String?
+  shipment                 Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  documentId               String
+  document                 ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fieldDefinitionKey       String
+  // Empty string is the canonical scalar entity reference. Keeping this
+  // non-null makes the compound idempotency key enforceable in PostgreSQL;
+  // nullable columns do not collide in unique indexes.
+  targetEntityRef          String           @default("")
+  rawValue                 Json
+  normalizedValue          Json?
+  extractionConfidence     Float?
+  mappingConfidence        Float?
+  validationScore          Float?
+  corroborationScore       Float?
+  calibratedDecisionScore  Float?
+  status                   String // PROPOSED | PROMOTED | REVIEW | REJECTED | CONFLICT | ABSTAINED
+  reasonCodes              String[]
+  sourceExtractionFieldIds String[]
+  supersedesCandidateId    String?
+  dataMode                 DataMode         @default(PRODUCTION)
+  createdAt                DateTime         @default(now())
+
+  @@unique([hydrationRunId, fieldDefinitionKey, targetEntityRef])
+  @@index([hydrationRunId])
+  @@index([accountId])
+  @@index([shipmentId])
+  @@index([documentId])
+  @@index([fieldDefinitionKey])
+}
+
+model FilingSnapshot {
+  id             String        @id @default(cuid())
+  filingId       String        @unique
+  filing         CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  snapshotData   Json // Immutable JSON representation of all shipment, parties, and line item facts
+  hasSection301  Boolean       @default(false)
+  section301List String?
+  createdAt      DateTime      @default(now())
+
+  @@index([filingId])
+}
+
+// ============================================================================
+// GLOBAL PRODUCT / ITEM MASTER
+//
+// "Global" means one tenant's product master serves that tenant's trade across
+// many countries and customs jurisdictions. It does not mean products are
+// visible between tenants: every model below carries `accountId` and every
+// query in `src/modules/product` filters on it.
+//
+// The organising principle is that global product facts and jurisdictional
+// customs decisions are different things and live in different tables. There is
+// deliberately no `Product.hsCode` column -- an HTS number is only ever true for
+// one jurisdiction under one nomenclature at one point in time, so it lives on
+// `ProductClassification` and nowhere else.
+// ============================================================================
+
+/// Operational lifecycle of the product record. Separate from review state: a
+/// product can be ACTIVE and still UNREVIEWED, which is the common case for
+/// anything that arrived by import.
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  SUPERSEDED
+  ARCHIVED
+}
+
+/// Human review state of the product's master data. Never set by an agent.
+enum ProductReviewStatus {
+  UNREVIEWED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+enum ProductIdentifierType {
+  INTERNAL_SKU
+  CUSTOMER_SKU
+  SUPPLIER_SKU
+  MANUFACTURER_PART_NUMBER
+  MODEL_NUMBER
+  GTIN
+  UPC
+  EAN
+  STYLE_NUMBER
+  OTHER
+}
+
+enum ProductAttributeValueType {
+  STRING
+  NUMBER
+  BOOLEAN
+  DATE
+  ENUM
+  JSON
+}
+
+/// Whether a stored fact is the one in force. Facts are superseded, never
+/// overwritten, so the prior value stays readable in history.
+enum ProductFactStatus {
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
+/// Where a fact or decision came from. Sources are not equally authoritative and
+/// the UI says which one it was; nothing here collapses them into "known".
+enum ProductSourceType {
+  DOCUMENT
+  EXTRACTED_FACT
+  ERP
+  PIM
+  USER
+  MANUFACTURER_DATASHEET
+  SUPPLIER_DECLARATION
+  CUSTOMS_RULING
+  REGULATORY_SOURCE
+  IMPORT
+  AGENT
+  OTHER
+}
+
+/// A supplier is not a manufacturer and a brand owner is not either. Keeping the
+/// roles distinct is what lets origin and classification work be attributed to
+/// the party that actually made the goods.
+enum ProductPartyRole {
+  MANUFACTURER
+  SUPPLIER
+  BRAND_OWNER
+}
+
+/// Country of manufacture is a manufacturing fact. Country of origin is a legal
+/// conclusion. They are separate members of this enum because conflating them is
+/// the single most common way a customs origin statement goes wrong.
+enum ProductCountryFactType {
+  MANUFACTURE_COUNTRY
+  PRODUCTION_COUNTRY
+  ORIGIN_CLAIM
+}
+
+enum ProductCountryFactStatus {
+  CLAIMED
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  SUPERSEDED
+}
+
+/// Only APPROVED is an approved customs classification. CANDIDATE and PROPOSED
+/// are working state and must never be read as a filing position.
+enum ProductClassificationStatus {
+  CANDIDATE
+  PROPOSED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUPERSEDED
+  EXPIRED
+}
+
+enum ProductClassificationMethod {
+  MANUAL
+  IMPORT
+  AGENT_PROPOSED
+  RULING_BASED
+}
+
+/// How much customs attention a change deserves. CUSTOMS_SIGNIFICANT means the
+/// changed fact is one that classification or origin analysis is built on -- it
+/// does not mean the code or the origin has changed.
+enum ProductChangeSignificance {
+  NON_MATERIAL
+  POTENTIALLY_CUSTOMS_SIGNIFICANT
+  CUSTOMS_SIGNIFICANT
+}
+
+/// Workflow signals raised when a customs-significant fact changes. These are
+/// requests for a person to look again. They are not customs decisions and they
+/// never alter one.
+enum ProductImpactFlag {
+  CLASSIFICATION_REVALIDATION_REQUIRED
+  ORIGIN_REVALIDATION_REQUIRED
+  REGULATORY_REVALIDATION_REQUIRED
+  VALUATION_REVIEW_REQUIRED
+}
+
+enum ProductRevalidationStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+/// Outcome of deterministic identifier matching. AMBIGUOUS is a real answer and
+/// is never collapsed into a match.
+enum ProductMatchStatus {
+  EXACT_MATCH
+  POSSIBLE_MATCH
+  AMBIGUOUS
+  NO_MATCH
+}
+
+/// The logical, reusable item. Holds identity and description only: every fact
+/// that varies by source, jurisdiction, or time lives in a child table with its
+/// own status, effective dates, and evidence.
+model Product {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId  String?
+  client    Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  /// Convenience copy of the INTERNAL_SKU identifier, kept unique per account so
+  /// the database refuses a second product under the same internal SKU. The
+  /// authoritative list of identifiers is still `identifiers`.
+  internalSku String?
+
+  productName String
+
+  /// Four descriptions, deliberately not one. The customs description is written
+  /// for a classifier and is never generated from the commercial one.
+  commercialDescription String?
+  technicalDescription  String?
+  customsDescription    String?
+
+  brand String?
+  model String?
+
+  status       ProductStatus       @default(DRAFT)
+  reviewStatus ProductReviewStatus @default(UNREVIEWED)
+
+  /// Incremented by the service on every recorded change, so a change event can
+  /// name the version it produced.
+  currentVersion Int @default(1)
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  identifiers       ProductIdentifier[]
+  attributes        ProductAttribute[]
+  compositions      ProductComposition[]
+  parties           ProductParty[]
+  countryFacts      ProductCountryFact[]
+  classifications   ProductClassification[]
+  evidence          ProductEvidence[]
+  changeEvents      ProductChangeEvent[]
+  revalidationFlags ProductRevalidationFlag[]
+  shipmentLineItems ShipmentLineItem[]
+  canonicalProducts CanonicalProduct[]
+
+  /// Postgres treats NULLs as distinct, so any number of products may have no
+  /// internal SKU while no two may share one.
+  @@unique([accountId, internalSku])
+  @@index([accountId, deletedAt])
+  @@index([accountId, status])
+  @@index([accountId, reviewStatus])
+  @@index([accountId, productName])
+  @@index([accountId, updatedAt])
+  @@index([accountId, brand])
+  @@index([accountId, model])
+}
+
+/// One of the many ways a product is named. A product is never identified by SKU
+/// alone: the same part number belongs to different products at different
+/// manufacturers, which is why `issuerPartyId` exists.
+model ProductIdentifier {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  identifierType  ProductIdentifierType
+  /// As supplied. Never rewritten.
+  value           String
+  /// Deterministically normalized (trimmed, upper-cased, separators removed for
+  /// GTIN-family codes). Matching reads this; people read `value`.
+  normalizedValue String
+
+  /// The manufacturer or supplier whose numbering this is, where known. A
+  /// manufacturer part number without an issuer proves far less than one with.
+  issuerPartyId String?
+  issuerParty   LegalEntity? @relation(fields: [issuerPartyId], references: [id], onDelete: SetNull)
+
+  isPrimary  Boolean           @default(false)
+  sourceType ProductSourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// Scoped to the product, not the account: the same value legitimately recurs
+  /// across products from different manufacturers. Cross-product uniqueness for
+  /// genuinely unique schemes (GTIN, internal SKU) is enforced in the service,
+  /// where the manufacturer can be taken into account.
+  @@unique([productId, identifierType, normalizedValue])
+  @@index([accountId, identifierType, normalizedValue])
+  @@index([accountId, normalizedValue])
+  @@index([productId])
+}
+
+/// A typed product characteristic. Deliberately a table rather than columns:
+/// a valve, a textile, and a chemical need different facts, and a column per
+/// industry produces a product table nobody can read.
+model ProductAttribute {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Stable machine code, e.g. MATERIAL, VOLTAGE, PRIMARY_FUNCTION. Codes in the
+  /// catalogue in `src/modules/product/productAttributes.ts` get a display name
+  /// and unit handling; codes outside it are still accepted and stored as given.
+  attributeCode String
+  attributeName String
+
+  rawValue        String
+  normalizedValue String?
+  valueType       ProductAttributeValueType @default(STRING)
+  rawUnit         String?
+  normalizedUnit  String?
+
+  status     ProductFactStatus @default(ACTIVE)
+  sourceType ProductSourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   ProductEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId, attributeCode, status])
+  @@index([accountId, attributeCode])
+  @@index([accountId, attributeCode, normalizedValue])
+}
+
+/// What the product is made of. Percentages are optional and are never invented
+/// to make a declaration total 100%.
+model ProductComposition {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  material           String
+  componentName      String?
+  percentage         Decimal? @db.Decimal(7, 4)
+  quantity           Decimal? @db.Decimal(18, 6)
+  unit               String?
+  normalizedUnit     String?
+  grade              String?
+  alloy              String?
+  chemicalIdentifier String?
+
+  /// True only when the source stated a complete composition. Only then is a
+  /// percentage total meaningful, and even then it is reported, not enforced.
+  isCompleteDeclaration Boolean @default(false)
+
+  status     ProductFactStatus @default(ACTIVE)
+  sourceType ProductSourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   ProductEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId, status])
+  @@index([accountId, material])
+}
+
+/// Links a product to an organisation in the existing Party domain
+/// (`LegalEntity`). No manufacturer or supplier entity is duplicated here.
+model ProductParty {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+
+  role ProductPartyRole
+
+  /// The plant or site, where the tenant tracks it. Free text rather than a
+  /// second address model: the address of record stays on `LegalEntity`.
+  manufacturingSite String?
+
+  status     ProductFactStatus @default(ACTIVE)
+  sourceType ProductSourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   ProductEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId, role, status])
+  @@index([accountId, legalEntityId])
+}
+
+/// Country facts, kept apart by type. A MANUFACTURE_COUNTRY row is a statement
+/// about where goods were made; an ORIGIN_CLAIM row is somebody's assertion of
+/// legal origin. Neither is derived from the other, and neither is derived from
+/// a supplier address, a seller country, or a port of loading.
+model ProductCountryFact {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  factType ProductCountryFactType
+
+  /// As stated by the source, e.g. "Germany".
+  rawCountry  String
+  /// ISO 3166-1 alpha-2 where the raw value resolves deterministically, else
+  /// null. An unrecognised country is left unresolved rather than guessed.
+  countryCode String?
+
+  status          ProductCountryFactStatus @default(CLAIMED)
+  sourceType      ProductSourceType        @default(USER)
+  /// Free-text description of the claim's provenance, e.g. "Supplier
+  /// declaration dated 2026-02-11".
+  sourceReference String?
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   ProductEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId, factType, status])
+  @@index([accountId, factType, countryCode])
+}
+
+/// A customs classification for one jurisdiction under one nomenclature. There
+/// is one row per jurisdiction, so a US HTSUS decision and an EU CN decision
+/// coexist and neither overwrites the other.
+model ProductClassification {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// ISO 3166-1 alpha-2, or a customs union code such as "EU". Not assumed to
+  /// determine the nomenclature.
+  jurisdiction String
+  /// HTSUS, CN, TARIC, UKGT, ... Extensible; nothing here is hard-coded to a
+  /// fixed list of countries.
+  nomenclature String
+
+  classificationCode String
+  /// Digits only, for lookup and comparison. `classificationCode` keeps the
+  /// dotted form the source used.
+  normalizedCode     String
+  description        String?
+
+  status          ProductClassificationStatus @default(CANDIDATE)
+  decisionSource  ProductSourceType           @default(USER)
+  decisionMethod  ProductClassificationMethod @default(MANUAL)
+  decisionVersion Int                         @default(1)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewNote       String?
+
+  /// Set when a later decision replaces this one. The superseded row is kept.
+  supersededById String?                @unique
+  supersededBy   ProductClassification? @relation("ClassificationSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes     ProductClassification? @relation("ClassificationSupersession")
+
+  evidenceId String?
+  evidence   ProductEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId, jurisdiction, status])
+  @@index([accountId, jurisdiction, nomenclature, normalizedCode], name: "ProductClassification_accountId_jurisdiction_nomenclature_norma")
+  @@index([accountId, status])
+  @@index([productId, effectiveFrom])
+}
+
+/// Provenance for a product fact or decision. Where Document Intelligence
+/// produced the fact, the row points at the document or the extracted fact
+/// itself rather than restating it, so the lineage back to the page and region
+/// stays intact.
+model ProductEvidence {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sourceType ProductSourceType
+
+  sourceDocumentId String?
+  sourceDocument   ShipmentDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  sourceExtractedFactId String?
+  sourceExtractedFact   ExtractedFact? @relation(fields: [sourceExtractedFactId], references: [id], onDelete: SetNull)
+
+  /// For sources that are not Qubere documents: an ERP object key, a ruling
+  /// number, a supplier declaration reference.
+  sourceReference String?
+  sourceUrl       String?
+
+  /// Location within the source document, when the extraction reported one.
+  page        Int?
+  boundingBox Json?
+  tableId     String?
+  rowIndex    Int?
+  columnIndex Int?
+
+  description String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  attributes      ProductAttribute[]
+  compositions    ProductComposition[]
+  parties         ProductParty[]
+  countryFacts    ProductCountryFact[]
+  classifications ProductClassification[]
+
+  @@index([productId])
+  @@index([accountId, sourceType])
+  @@index([sourceDocumentId])
+  @@index([sourceExtractedFactId])
+}
+
+/// An append-only record of what changed on a product, what it changed from and
+/// to, and how much customs attention that deserves. Nothing in the Product
+/// Master deletes a prior value; this is where the prior value stays legible.
+model ProductChangeEvent {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// The `Product.currentVersion` this change produced.
+  versionNumber Int
+
+  /// The record that changed, e.g. "Product", "ProductAttribute:MATERIAL",
+  /// "ProductClassification:US/HTSUS".
+  entity String
+  /// The specific field, e.g. "material", "countryOfManufacture", "status".
+  field  String
+
+  oldValue String?
+  newValue String?
+
+  significance ProductChangeSignificance @default(NON_MATERIAL)
+  impactFlags  ProductImpactFlag[]       @default([])
+
+  changeReason    String?
+  changedByUserId String?
+  correlationId   String?
+
+  createdAt DateTime @default(now())
+
+  revalidationFlags ProductRevalidationFlag[]
+
+  @@index([productId, createdAt])
+  @@index([accountId, createdAt])
+  @@index([productId, versionNumber])
+  @@index([accountId, significance])
+}
+
+/// An open request to revalidate something because a fact underneath it moved.
+/// A workflow signal only: raising one never changes a classification, an origin
+/// claim, or a review state, and resolving one never approves anything.
+model ProductRevalidationFlag {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  flag   ProductImpactFlag
+  status ProductRevalidationStatus @default(OPEN)
+
+  /// Why it was raised, in the words shown to the reviewer.
+  reason String
+
+  triggeredByChangeEventId String?
+  triggeredByChangeEvent   ProductChangeEvent? @relation(fields: [triggeredByChangeEventId], references: [id], onDelete: SetNull)
+
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  resolutionNote   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, status])
+  @@index([accountId, status, flag])
+}
+
+// ---------------------------------------------------------------------------
+// Global Party Master
+//
+// One record per organisation or individual, per tenant, separate from any
+// role it plays. `LegalEntity` is the existing party record used today by
+// `ShipmentParty`, `ProductParty` and `CustomsProfile` -- it is untouched and
+// still standing, exactly as `CanonicalProduct` still stands next to
+// `Product`. `LegalEntity.partyId` is the only new link, a nullable backfill
+// pointer at the master, mirroring `CanonicalProduct.productId`.
+// ---------------------------------------------------------------------------
+
+enum PartyKind {
+  ORGANIZATION
+  INDIVIDUAL
+}
+
+enum PartyStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  SUPERSEDED
+  ARCHIVED
+}
+
+/// Human review state of the party's master data. Never set by an agent.
+enum PartyReviewStatus {
+  UNREVIEWED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+enum PartyNameType {
+  LEGAL
+  TRADE
+  DBA
+  FORMER_LEGAL
+  TRANSLATED
+}
+
+enum PartyIdentifierType {
+  EORI
+  DUNS
+  LEI
+  VAT
+  TAX_ID
+  CUSTOMS_ID
+  INTERNAL_PARTY_CODE
+  CUSTOMER_NUMBER
+  SUPPLIER_NUMBER
+  OTHER
+}
+
+/// Whether a stored fact is the one in force. Facts are superseded, never
+/// overwritten, so the prior value stays readable in history.
+enum PartyFactStatus {
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
+/// Where a fact came from. Sources are not equally authoritative and the UI
+/// says which one it was; nothing here collapses them into "known".
+enum PartySourceType {
+  DOCUMENT
+  EXTRACTED_FACT
+  ERP
+  CRM
+  USER
+  CUSTOMER_DECLARATION
+  SUPPLIER_DECLARATION
+  EXTERNAL_REGISTRY
+  IMPORT
+  AGENT
+  OTHER
+}
+
+/// CLAIMED is what a source stated. VERIFIED means a person checked it against
+/// evidence -- never set by import, and never set just because a registration
+/// number matches a pattern.
+enum PartyRegistrationStatus {
+  CLAIMED
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  SUPERSEDED
+}
+
+enum PartyAddressType {
+  REGISTERED
+  MAILING
+  BILLING
+  SITE
+  OPERATING
+}
+
+/// What a party does, not who it is. The same party can hold more than one of
+/// these across different products or shipments.
+enum PartyRoleType {
+  IMPORTER
+  EXPORTER
+  MANUFACTURER
+  SUPPLIER
+  CUSTOMER
+  CONSIGNEE
+  CONSIGNOR
+  CARRIER
+  FREIGHT_FORWARDER
+  CUSTOMS_BROKER
+  WAREHOUSE
+  TERMINAL
+  DRAYAGE_PROVIDER
+  BUYER
+  SELLER
+  NOTIFY_PARTY
+  OTHER
+}
+
+/// A stated relationship between two parties. Never a beneficial-ownership
+/// graph and never inferred -- only recorded when a source stated it.
+enum PartyRelationshipType {
+  PARENT_OF
+  SUBSIDIARY_OF
+  AFFILIATE_OF
+  AGENT_OF
+  SUCCESSOR_OF
+  PREDECESSOR_OF
+}
+
+/// How much compliance attention a change deserves. COMPLIANCE_SIGNIFICANT
+/// means the changed fact is one identity, registration or screening work is
+/// built on -- it does not mean any of those has actually changed.
+enum PartyChangeSignificance {
+  NON_MATERIAL
+  POTENTIALLY_COMPLIANCE_SIGNIFICANT
+  COMPLIANCE_SIGNIFICANT
+}
+
+/// Workflow signals raised when a compliance-significant fact changes. These
+/// are requests for a person to look again. SCREENING_REVALIDATION_REQUIRED is
+/// not a screening result and never a permanent party status -- it is a
+/// resolvable flag like the other three, cleared by a person, never inferred
+/// into a pass/fail.
+enum PartyImpactFlag {
+  IDENTITY_REVALIDATION_REQUIRED
+  REGISTRATION_REVALIDATION_REQUIRED
+  ADDRESS_REVALIDATION_REQUIRED
+  SCREENING_REVALIDATION_REQUIRED
+}
+
+enum PartyRevalidationStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+/// Outcome of deterministic identifier/name matching. AMBIGUOUS is a real
+/// answer and is never collapsed into a match.
+enum PartyMatchStatus {
+  EXACT_MATCH
+  POSSIBLE_MATCH
+  AMBIGUOUS
+  NO_MATCH
+}
+
+/// The logical organisation or individual. Holds identity only: every name,
+/// identifier, registration, address, contact, role and relationship that
+/// varies by jurisdiction, source or time lives in a child table with its own
+/// status, effective dates and evidence. There is deliberately no name and no
+/// country column here, for the same reason there is no `Product.hsCode`.
+model Party {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId  String?
+  client    Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  /// Convenience copy of the INTERNAL_PARTY_CODE identifier, kept unique per
+  /// account. The authoritative list of identifiers is still `identifiers`.
+  internalPartyCode String?
+
+  /// Individual vs organisation. Not a role -- a role is what a party does on
+  /// a shipment or product; this is what kind of legal actor it is.
+  partyKind PartyKind @default(ORGANIZATION)
+
+  status       PartyStatus       @default(DRAFT)
+  reviewStatus PartyReviewStatus @default(UNREVIEWED)
+
+  /// Incremented by the service on every recorded change, so a change event
+  /// can name the version it produced.
+  currentVersion Int @default(1)
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  legalEntities     LegalEntity[]
+  names             PartyName[]
+  identifiers       PartyIdentifier[]
+  registrations     PartyRegistration[]
+  addresses         PartyAddress[]
+  contacts          PartyContact[]
+  roles             PartyRole[]
+  sites             PartySite[]
+  carrierProfile    CarrierProfile?
+  movements         Movement[]              @relation("CarrierPartyMovements")
+  movementStops     MovementStop[]
+  carrierRates      CarrierRate[]           @relation("CarrierPartyRates")
+  freightQuotes     FreightQuote[]          @relation("CarrierPartyQuotes")
+  evidence          PartyEvidence[]
+  changeEvents      PartyChangeEvent[]
+  revalidationFlags PartyRevalidationFlag[]
+  relationshipsFrom PartyRelationship[]     @relation("PartyRelationshipFrom")
+  relationshipsTo   PartyRelationship[]     @relation("PartyRelationshipTo")
+
+  restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
+  screeningSummary                PartyScreeningSummary?
+
+  /// Postgres treats NULLs as distinct, so any number of parties may have no
+  /// internal code while no two may share one.
+  @@unique([accountId, internalPartyCode])
+  @@index([accountId, clientId])
+  @@index([accountId, deletedAt])
+  @@index([accountId, status])
+  @@index([accountId, reviewStatus])
+  @@index([accountId, updatedAt])
+}
+
+/// One of the many names a party is known by. A party is never identified by
+/// name alone -- the matcher only treats a name as strong evidence when paired
+/// with a country of registration or a verified address.
+model PartyName {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  nameType PartyNameType
+
+  rawName String
+
+  /// Deterministically normalized: trimmed, upper-cased, punctuation and
+  /// legal suffixes (Inc, Ltd, GmbH, SA, ...) folded. Matching reads this;
+  /// people read `rawName`.
+  normalizedName String
+
+  language  String?
+  isPrimary Boolean @default(false)
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   PartyEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([partyId, nameType, status])
+  @@index([accountId, normalizedName])
+}
+
+/// A jurisdiction identifier or external number -- EORI, DUNS, LEI, VAT, a
+/// customer/supplier number a counterpart assigned. Never a name.
+model PartyIdentifier {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  identifierType PartyIdentifierType
+
+  value           String
+  normalizedValue String
+
+  /// Where the identifier was issued, e.g. the EORI's member state. A fact
+  /// about the identifier, not about where the party is located -- never
+  /// conflated with an address country.
+  issuingCountry   String?
+  issuingAuthority String?
+
+  isPrimary Boolean @default(false)
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   PartyEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([partyId, identifierType, normalizedValue])
+  @@index([accountId, identifierType, normalizedValue])
+  @@index([accountId, normalizedValue])
+  @@index([partyId])
+}
+
+/// A business registration in one jurisdiction: a registry number issued by a
+/// named authority, plus the country of registration the matcher pairs with a
+/// normalized legal name. Never inferred from an address.
+model PartyRegistration {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  registrationNumber   String
+  registeringAuthority String?
+  country              String
+  legalForm            String?
+
+  status PartyRegistrationStatus @default(CLAIMED)
+
+  registeredOn DateTime?
+
+  verifiedByUserId String?
+  verifiedAt       DateTime?
+
+  sourceType PartySourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   PartyEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([partyId, status])
+  @@index([accountId, country, registrationNumber])
+}
+
+/// An address the party gave for a specific purpose. Address country is its
+/// own fact, separate from country of registration and from any identifier's
+/// issuing country -- never derived from either.
+model PartyAddress {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  addressType PartyAddressType
+
+  addressLine1  String
+  addressLine2  String?
+  city          String?
+  stateProvince String?
+  postalCode    String?
+  country       String
+
+  isPrimary  Boolean @default(false)
+  isVerified Boolean @default(false)
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   PartyEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sites PartySite[]
+
+  @@index([partyId, addressType, status])
+  @@index([accountId, country])
+}
+
+model PartyContact {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  name  String?
+  title String?
+  email String?
+  phone String?
+
+  isPrimary Boolean @default(false)
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([partyId, status])
+}
+
+/// What a party does, kept apart from who it is. The same Party can hold
+/// MANUFACTURER on one product family and SUPPLIER on another without a
+/// second Party record, and losing a role never touches identity.
+model PartyRole {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  roleType PartyRoleType
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   PartyEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([partyId, roleType, status])
+  @@index([accountId, roleType])
+}
+
+/// A stated relationship between two parties in this master, e.g. subsidiary
+/// or agent. Never a beneficial-ownership graph and never inferred.
+model PartyRelationship {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  fromPartyId String
+  fromParty   Party  @relation("PartyRelationshipFrom", fields: [fromPartyId], references: [id], onDelete: Cascade)
+  toPartyId   String
+  toParty     Party  @relation("PartyRelationshipTo", fields: [toPartyId], references: [id], onDelete: Cascade)
+
+  relationshipType PartyRelationshipType
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+
+  evidenceId String?
+  evidence   PartyEvidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([fromPartyId, relationshipType])
+  @@index([toPartyId, relationshipType])
+  @@index([accountId])
+}
+
+/// An operating facility or site, at an address the party already has on
+/// file. Free-standing rather than duplicating address fields.
+model PartySite {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  siteName  String
+  addressId String?
+  address   PartyAddress? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  status     PartyFactStatus @default(ACTIVE)
+  sourceType PartySourceType @default(USER)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([partyId, status])
+  @@index([addressId])
+}
+
+model PartyEvidence {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  sourceType PartySourceType
+
+  sourceDocumentId String?
+  sourceDocument   ShipmentDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  sourceExtractedFactId String?
+  sourceExtractedFact   ExtractedFact? @relation(fields: [sourceExtractedFactId], references: [id], onDelete: SetNull)
+
+  /// For sources that are not Qubere documents: an ERP object key, a registry
+  /// reference, a supplier declaration reference.
+  sourceReference String?
+  sourceUrl       String?
+
+  page        Int?
+  boundingBox Json?
+  tableId     String?
+  rowIndex    Int?
+  columnIndex Int?
+
+  description String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  names         PartyName[]
+  identifiers   PartyIdentifier[]
+  registrations PartyRegistration[]
+  addresses     PartyAddress[]
+  roles         PartyRole[]
+  relationships PartyRelationship[]
+
+  @@index([partyId])
+  @@index([accountId, sourceType])
+  @@index([sourceDocumentId])
+  @@index([sourceExtractedFactId])
+}
+
+/// An append-only record of what changed on a party, what it changed from and
+/// to, and how much compliance attention that deserves. Nothing here deletes a
+/// prior value; this is where the prior value stays legible.
+model PartyChangeEvent {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  /// The `Party.currentVersion` this change produced.
+  versionNumber Int
+
+  /// The record that changed, e.g. "Party", "PartyName:LEGAL",
+  /// "PartyRegistration:DE".
+  entity String
+  /// The specific field, e.g. "normalizedName", "country", "status".
+  field  String
+
+  oldValue String?
+  newValue String?
+
+  significance PartyChangeSignificance @default(NON_MATERIAL)
+  impactFlags  PartyImpactFlag[]
+
+  changeReason    String?
+  changedByUserId String?
+  correlationId   String?
+
+  createdAt DateTime @default(now())
+
+  revalidationFlags PartyRevalidationFlag[]
+
+  @@index([partyId, createdAt])
+  @@index([accountId, createdAt])
+  @@index([partyId, versionNumber])
+  @@index([accountId, significance])
+}
+
+/// An open request to revalidate something because a fact underneath it
+/// moved. A workflow signal only: raising one never changes an identity, a
+/// registration, or a review state, and resolving one never approves
+/// anything. SCREENING_REVALIDATION_REQUIRED specifically is a request to look
+/// again, never a screening result and never a permanent party status.
+model PartyRevalidationFlag {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  flag   PartyImpactFlag
+  status PartyRevalidationStatus @default(OPEN)
+
+  /// Why it was raised, in the words shown to the reviewer.
+  reason String
+
+  triggeredByChangeEventId String?
+  triggeredByChangeEvent   PartyChangeEvent? @relation(fields: [triggeredByChangeEventId], references: [id], onDelete: SetNull)
+
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  resolutionNote   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partyId, status])
+  @@index([accountId, status, flag])
+}
+
+/// Counted AI consumption, one row per (account, user, surface, window).
+///
+/// Two jobs in one table. `windowKind = "minute"` rows count requests, and are
+/// what a shared rate limit reads; `windowKind = "day"` rows accumulate tokens,
+/// and are what a spend ceiling reads. Both are incremented by a single atomic
+/// statement, which is the reason this lives in Postgres rather than in each
+/// server instance's memory — a per-instance counter is only ever a hint.
+///
+/// `userId` carries the literal "*" on the row that aggregates a whole account,
+/// rather than NULL. That is not cosmetic: Postgres treats NULLs as distinct in
+/// a unique index, so a nullable column here would make ON CONFLICT never fire
+/// for the account row and quietly insert a new one per request. It is a plain
+/// column rather than a relation because a window survives the user record being
 /// removed; the account relation cascades, because usage of a deleted account is
 /// not worth keeping.
 model AiUsageWindow {
