@@ -23,6 +23,7 @@
     "@qubere/billing": "*",
     "@qubere/db": "*",
     "@qubere/decisions": "*",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.6.1",
     "@vercel/speed-insights": "^2.0.0",
     "ajv": "^8.20.0",

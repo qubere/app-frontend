@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/next";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import "./globals.css";
 
@@ -25,6 +26,7 @@ export default function RootLayout({
             {children}
           </LanguageProvider>
           <SpeedInsights />
+          <Analytics />
         </body>
       </html>
     </ClerkProvider>
