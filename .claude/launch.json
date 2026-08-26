@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "worktree-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3100"],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev"],
+      "cwd": "apps/custom",
       "port": 3100
     }
   ]

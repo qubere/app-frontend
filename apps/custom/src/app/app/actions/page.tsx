@@ -6,7 +6,7 @@ import { groupDecisions } from "@/modules/decisions/groupDecisions";
 import { getAllReviewableDecisionWhereFilter } from "@/modules/decisions/decisionState";
 import { buildShipmentActionGroups } from "@/modules/actions/shipmentActions";
 import { buildWorkQueue, filterWorkQueue, parseWorkFilter } from "@/modules/work/workQueue";
-import { loadWorkQueueForAccount } from "@/modules/work/workQueueLoader";
+import { loadWorkQueueForAccountFromPrefetched } from "@/modules/work/workQueueLoader";
 import { RISK_ACCEPTANCE_PERMISSION, openStatusVariants } from "@/modules/exceptions/exceptionState";
 import { ActionsClient } from "./ActionsClient";
 
@@ -28,12 +28,14 @@ const exceptionSelect = {
     select: {
       id: true,
       shipmentNumber: true,
+      filingDeadline: true,
       assignedBrokerId: true,
       assignedBroker: { select: { id: true, firstName: true, lastName: true, email: true } },
       client: { select: { id: true, name: true } },
     },
   },
   assignedToUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+  blocking: true,
 } as const;
 
 export default async function ActionsPage(props: {
@@ -52,7 +54,7 @@ export default async function ActionsPage(props: {
   // isolation for any DEMO/SANDBOX account.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  const [decisions, allDocuments, exceptions] = await Promise.all([
+  const [decisions, allDocuments, exceptions, writable, mayWaive] = await Promise.all([
     db.agentDecision.findMany({
       where: {
         accountId: context.accountId,
@@ -84,8 +86,7 @@ export default async function ActionsPage(props: {
           select: {
             id: true,
             shipmentNumber: true,
-            documents: { select: { id: true, docType: true, fileName: true, status: true, fileUrl: true, extractedJson: true, shipmentId: true, createdAt: true, updatedAt: true } },
-            lineItems: { select: { id: true, lineNumber: true, htsCode: true, description: true, quantity: true, unitPrice: true, totalValue: true, countryOfOrigin: true, status: true } },
+            filingDeadline: true,
             assignedBrokerId: true,
             assignedBroker: { select: { id: true, firstName: true, lastName: true, email: true } },
             client: { select: { id: true, name: true } },
@@ -101,6 +102,15 @@ export default async function ActionsPage(props: {
         shipment: { accountId: context.accountId },
         ...(shipmentId ? { shipmentId } : {}),
       },
+      select: {
+        id: true,
+        shipmentId: true,
+        fileName: true,
+        fileUrl: true,
+        status: true,
+        createdAt: true,
+        shipment: { select: { shipmentNumber: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 200,
     }),
@@ -115,13 +125,16 @@ export default async function ActionsPage(props: {
       orderBy: { createdAt: "desc" },
       take: 200,
     }),
-  ]);
-
-  const [writable, mayWaive, queueLoaderResult] = await Promise.all([
     Promise.resolve(canWrite(context)),
     hasPermission(RISK_ACCEPTANCE_PERMISSION).then((ok) => canWrite(context) && ok),
-    loadWorkQueueForAccount(context.accountId, context.userId, { shipmentId }),
   ]);
+
+  const queueLoaderResult = await loadWorkQueueForAccountFromPrefetched(
+    context.accountId,
+    context.userId,
+    { decisions, documents: allDocuments, exceptions },
+    { shipmentId }
+  );
 
   const serializedDecisions = JSON.parse(JSON.stringify(decisions));
   const serializedDocuments = JSON.parse(JSON.stringify(allDocuments));
