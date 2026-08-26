@@ -47,15 +47,25 @@ export class HydrationRunEngine {
     // Verify document belongs to accountId
     const document = await db.shipmentDocument.findFirst({
       where: { id: val.documentId, accountId: val.accountId },
+      select: { id: true, shipmentId: true },
     });
 
     if (!document) {
-      const existingDoc = await db.shipmentDocument.findFirst({
-        where: { id: val.documentId },
+      throw new DomainError(
+        `FAIL_CLOSED: Document '${val.documentId}' not found for tenant account '${val.accountId}'.`,
+        "FAIL_CLOSED",
+        400
+      );
+    }
+
+    if (val.shipmentId) {
+      const shipment = await db.shipment.findFirst({
+        where: { id: val.shipmentId, accountId: val.accountId, deletedAt: null },
+        select: { id: true },
       });
-      if (existingDoc || !val.documentId.startsWith("doc_")) {
+      if (!shipment || document.shipmentId !== val.shipmentId) {
         throw new DomainError(
-          `FAIL_CLOSED: Document '${val.documentId}' not found for tenant account '${val.accountId}'.`,
+          `FAIL_CLOSED: Shipment '${val.shipmentId}' is not the tenant-owned shipment attached to document '${val.documentId}'.`,
           "FAIL_CLOSED",
           400
         );
@@ -120,8 +130,16 @@ export class HydrationRunEngine {
       where: { id: hydrationRunId, accountId },
     });
 
-    const docId = run ? run.documentId : hydrationRunId.replace("run_", "");
-    const startTime = run?.createdAt ? run.createdAt.getTime() : Date.now();
+    if (!run) {
+      throw new DomainError(
+        `FAIL_CLOSED: Hydration run '${hydrationRunId}' not found for tenant account '${accountId}'.`,
+        "FAIL_CLOSED",
+        400
+      );
+    }
+
+    const docId = run.documentId;
+    const startTime = run.createdAt.getTime();
 
     try {
       const createdCandidates = [];
@@ -184,7 +202,7 @@ export class HydrationRunEngine {
         }
 
         // Defect 5: Idempotent candidate creation using upsert/P2002 handling on (hydrationRunId, fieldDefinitionKey, targetEntityRef)
-        const targetEntityRef = proposal.targetEntityRef || null;
+        const targetEntityRef = proposal.targetEntityRef || "";
         let candidate;
         try {
           candidate = await db.hydrationCandidate.upsert({
@@ -192,7 +210,7 @@ export class HydrationRunEngine {
               hydrationRunId_fieldDefinitionKey_targetEntityRef: {
                 hydrationRunId,
                 fieldDefinitionKey: proposal.targetFieldKey,
-                targetEntityRef: proposal.targetEntityRef || "",
+                targetEntityRef,
               },
             },
             update: {
@@ -201,12 +219,12 @@ export class HydrationRunEngine {
               status: proposal.status === "PROPOSED" ? "PROPOSED" : "ABSTAINED",
               reasonCodes: proposal.reasoning ? [proposal.reasoning] : [],
               sourceExtractionFieldIds: proposal.sourceExtractionFieldIds,
-              dataMode: (run?.dataMode as any) || "PRODUCTION",
+              dataMode: run.dataMode as any,
             },
             create: {
               hydrationRunId,
               accountId,
-              shipmentId: run ? run.shipmentId : null,
+              shipmentId: run.shipmentId,
               documentId: docId,
               fieldDefinitionKey: proposal.targetFieldKey,
               targetEntityRef,
@@ -216,7 +234,7 @@ export class HydrationRunEngine {
               status: proposal.status === "PROPOSED" ? "PROPOSED" : "ABSTAINED",
               reasonCodes: proposal.reasoning ? [proposal.reasoning] : [],
               sourceExtractionFieldIds: proposal.sourceExtractionFieldIds,
-              dataMode: (run?.dataMode as any) || "PRODUCTION",
+              dataMode: run.dataMode as any,
             },
           });
         } catch (err) {
@@ -243,32 +261,28 @@ export class HydrationRunEngine {
       const durationMs = Date.now() - startTime;
 
       // Update run status to SUCCEEDED and persist durationMs
-      if (run) {
-        await db.hydrationRun.update({
-          where: { id: run.id },
-          data: {
-            status: "SUCCEEDED",
-            completedAt: new Date(),
-            durationMs,
-            errorCode: null,
-          },
-        });
-      }
+      await db.hydrationRun.update({
+        where: { id: run.id },
+        data: {
+          status: "SUCCEEDED",
+          completedAt: new Date(),
+          durationMs,
+          errorCode: null,
+        },
+      });
 
       return createdCandidates;
     } catch (error) {
-      if (run) {
-        const durationMs = Date.now() - startTime;
-        await db.hydrationRun.update({
-          where: { id: run.id },
-          data: {
-            status: "FAILED",
-            completedAt: new Date(),
-            durationMs,
-            errorCode: error instanceof DomainError ? error.message : error instanceof Error ? error.message : "INTERNAL_ERROR",
-          },
-        }).catch(() => {});
-      }
+      const durationMs = Date.now() - startTime;
+      await db.hydrationRun.update({
+        where: { id: run.id },
+        data: {
+          status: "FAILED",
+          completedAt: new Date(),
+          durationMs,
+          errorCode: error instanceof DomainError ? error.message : error instanceof Error ? error.message : "INTERNAL_ERROR",
+        },
+      });
       throw error;
     }
   }

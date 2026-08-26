@@ -461,18 +461,20 @@ export async function promoteToActive(params: {
       },
     });
 
-    await ShipmentEventBus.logEvent({
-      shipmentId: document.shipmentId || params.documentId,
-      eventType: "DOCUMENT_PARSE_PROMOTED",
-      accountId: params.accountId,
-      payload: {
-        documentId: params.documentId,
-        parseVersionId: run.id,
-        version: run.version,
-      },
-    }).catch((err) => {
-      console.error("[processingRuns] Failed to log DOCUMENT_PARSE_PROMOTED event:", err);
-    });
+    if (document.shipmentId) {
+      await ShipmentEventBus.logEvent({
+        shipmentId: document.shipmentId,
+        eventType: "DOCUMENT_PARSE_PROMOTED",
+        accountId: params.accountId,
+        eventKey: `DOCUMENT_PARSE_PROMOTED:${run.id}`,
+        required: true,
+        payload: {
+          documentId: params.documentId,
+          parseVersionId: run.id,
+          version: run.version,
+        },
+      }, tx);
+    }
 
     return { promoted: true, reason: `Run version ${run.version} is now the active parse.` };
   });

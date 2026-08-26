@@ -20,6 +20,10 @@ export interface ResolvedCandidate {
   conflictReason?: string;
 }
 
+export function candidateIdentityKey(fieldKey: string, targetEntityRef: string | null): string {
+  return `${fieldKey}::${targetEntityRef || ""}`;
+}
+
 export class CorroborationConflictResolver {
   /**
    * Resolves candidates across multiple documents for a shipment packet.
@@ -64,7 +68,10 @@ export class CorroborationConflictResolver {
           corroborationScore: 0,
         });
 
-        const candId = candidateIdMap?.get(first.proposal.targetFieldKey) || (first.proposal as any).candidateId;
+        const candId = candidateIdMap?.get(candidateIdentityKey(
+          first.proposal.targetFieldKey,
+          first.proposal.targetEntityRef
+        ));
 
         results.push({
           candidateId: candId,
@@ -96,7 +103,10 @@ export class CorroborationConflictResolver {
           corroborationScore,
         });
 
-        const candId = candidateIdMap?.get(first.proposal.targetFieldKey) || (first.proposal as any).candidateId;
+        const candId = candidateIdMap?.get(candidateIdentityKey(
+          first.proposal.targetFieldKey,
+          first.proposal.targetEntityRef
+        ));
 
         results.push({
           candidateId: candId,
@@ -125,7 +135,10 @@ export class CorroborationConflictResolver {
         });
 
         for (const item of items) {
-          const candId = candidateIdMap?.get(item.proposal.targetFieldKey) || (item.proposal as any).candidateId;
+          const candId = candidateIdMap?.get(candidateIdentityKey(
+            item.proposal.targetFieldKey,
+            item.proposal.targetEntityRef
+          ));
           results.push({
             candidateId: candId,
             proposal: item.proposal,

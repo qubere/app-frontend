@@ -23,33 +23,23 @@ export class EvidenceLedgerService {
     });
 
     if (!doc) {
-      const existingDoc = await db.shipmentDocument.findFirst({
-        where: { id: ctx.documentId },
-      });
-      if (existingDoc || !ctx.documentId.startsWith("doc_")) {
-        throw new DomainError(
-          `FAIL_CLOSED: Document '${ctx.documentId}' not found for account '${accountId}'.`,
-          "FAIL_CLOSED",
-          400
-        );
-      }
+      throw new DomainError(
+        `FAIL_CLOSED: Document '${ctx.documentId}' not found for account '${accountId}'.`,
+        "FAIL_CLOSED",
+        400
+      );
+    }
+
+    if (doc.activeParseVersionId && doc.activeParseVersionId !== ctx.parseVersionId) {
+      throw new DomainError(
+        `FAIL_CLOSED: Parse version '${ctx.parseVersionId}' is not the active parse for document '${ctx.documentId}'.`,
+        "STALE_PARSE_VERSION",
+        409
+      );
     }
 
     const effectiveCtx = { ...ctx, source: ctx.source || "UNIVERSAL_HYDRATION" };
     const items = UniversalEvidenceExtractor.extractAtomicEvidence(effectiveCtx);
-    const itemSource = effectiveCtx.source;
-
-    // Defect 6: Deduplicate observations by deleting existing rows written for this document and source
-    try {
-      await db.extractionField.deleteMany({
-        where: {
-          documentId: ctx.documentId,
-          source: itemSource,
-        },
-      });
-    } catch {
-      // Best effort delete if DB unavailable in mock tests
-    }
 
     const createdFields = [];
 
@@ -59,23 +49,8 @@ export class EvidenceLedgerService {
         ? (item.bbox as unknown as Prisma.InputJsonValue)
         : Prisma.JsonNull;
 
-      try {
-        const field = await db.extractionField.create({
-          data: {
-            documentId: item.documentId,
-            fieldName: item.stableKey,
-            value: item.rawValue,
-            confidence: Math.round(item.confidence),
-            pageNumber: item.pageNumber,
-            bbox: bboxJson,
-            source: item.source,
-          },
-        });
-        createdFields.push(field);
-      } catch {
-        // Fallback for in-memory shadow/test runs when document row doesn't exist in DB
-        createdFields.push({
-          id: `in_memory_${item.stableKey}`,
+      const field = await db.extractionField.create({
+        data: {
           documentId: item.documentId,
           fieldName: item.stableKey,
           value: item.rawValue,
@@ -83,27 +58,20 @@ export class EvidenceLedgerService {
           pageNumber: item.pageNumber,
           bbox: bboxJson,
           source: item.source,
-          correctedFromValue: null,
-          correctedByUserId: null,
-          correctedAt: null,
-          createdAt: new Date(),
-        });
-      }
-    }
-
-    // Update ShipmentDocument active parse version & extractedJson compatibility projection
-    try {
-      const extractedJsonProjection = this.projectExtractedJson(effectiveCtx);
-      await db.shipmentDocument.update({
-        where: { id: ctx.documentId },
-        data: {
-          activeParseVersionId: ctx.parseVersionId,
-          extractedJson: JSON.stringify(extractedJsonProjection),
         },
       });
-    } catch {
-      // Best-effort update
+      createdFields.push(field);
     }
+
+    // Parse promotion owns activeParseVersionId. Hydration only refreshes the
+    // compatibility projection for the already-active parse and fails honestly.
+    const extractedJsonProjection = this.projectExtractedJson(effectiveCtx);
+    await db.shipmentDocument.update({
+      where: { id: ctx.documentId },
+      data: {
+        extractedJson: JSON.stringify(extractedJsonProjection),
+      },
+    });
 
     return createdFields;
   }
@@ -135,16 +103,11 @@ export class EvidenceLedgerService {
     });
 
     if (!doc) {
-      const existingDoc = await db.shipmentDocument.findFirst({
-        where: { id: documentId },
-      });
-      if (existingDoc || !documentId.startsWith("doc_")) {
-        throw new DomainError(
-          `FAIL_CLOSED: Document '${documentId}' not found for account '${accountId}'.`,
-          "FAIL_CLOSED",
-          400
-        );
-      }
+      throw new DomainError(
+        `FAIL_CLOSED: Document '${documentId}' not found for account '${accountId}'.`,
+        "FAIL_CLOSED",
+        400
+      );
     }
 
     return db.extractionField.findMany({

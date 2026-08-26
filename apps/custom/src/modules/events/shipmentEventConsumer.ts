@@ -16,14 +16,26 @@ export interface OutboxDispatchResult {
   errors: Array<{ eventId: string; error: string }>;
 }
 
+const OUTBOX_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
+function retryAt(attempt: number): Date {
+  return new Date(Date.now() + Math.min(5 * 60_000, 5_000 * 2 ** Math.max(0, attempt - 1)));
+}
+
 export class ShipmentEventConsumer {
   /**
    * Dispatches pending outbox events for aggregateType: "SHIPMENT".
    */
   public static async dispatchOutboxEvents(accountId?: string, limit: number = 50): Promise<OutboxDispatchResult> {
+    const now = new Date();
+    const staleLock = new Date(now.getTime() - OUTBOX_LOCK_TIMEOUT_MS);
     const whereClause: any = {
       aggregateType: "SHIPMENT",
-      status: "PENDING",
+      OR: [
+        { status: "PENDING", nextAttemptAt: { lte: now } },
+        { status: "FAILED", nextAttemptAt: { lte: now } },
+        { status: "DISPATCHING", lockedAt: { lt: staleLock } },
+      ],
     };
     if (accountId) {
       whereClause.accountId = accountId;
@@ -40,11 +52,62 @@ export class ShipmentEventConsumer {
     const errors: Array<{ eventId: string; error: string }> = [];
 
     for (const event of pendingEvents) {
+      if (event.attemptCount >= event.maxAttempts) continue;
+      const claimed = await db.workflowOutboxEvent.updateMany({
+        where: {
+          id: event.id,
+          attemptCount: { lt: event.maxAttempts },
+          OR: [
+            { status: "PENDING", nextAttemptAt: { lte: now } },
+            { status: "FAILED", nextAttemptAt: { lte: now } },
+            { status: "DISPATCHING", lockedAt: { lt: staleLock } },
+          ],
+        },
+        data: {
+          status: "DISPATCHING",
+          lockedAt: new Date(),
+          lastError: null,
+          attemptCount: { increment: 1 },
+        },
+      });
+      if (claimed.count !== 1) continue;
+
       try {
         if (event.eventType === "DOCUMENT_PARSE_PROMOTED") {
           const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : (event.payload as any) || {};
           const docId = payload.documentId || event.aggregateId;
           const parseVersionId = payload.parseVersionId || "latest";
+
+          const document = await db.shipmentDocument.findFirst({
+            where: {
+              id: docId,
+              accountId: event.accountId,
+              shipmentId: event.aggregateId,
+            },
+            select: { id: true, activeParseVersionId: true },
+          });
+          if (!document) {
+            throw new Error(`Document '${docId}' is not attached to the tenant-owned shipment '${event.aggregateId}'.`);
+          }
+
+          if (
+            parseVersionId !== "latest" &&
+            document.activeParseVersionId &&
+            document.activeParseVersionId !== parseVersionId
+          ) {
+            HydrationLogger.info(`Skipping superseded parse event ${event.id}`, {
+              eventId: event.id,
+              documentId: docId,
+              parseVersionId,
+              activeParseVersionId: document.activeParseVersionId,
+            });
+            await db.workflowOutboxEvent.update({
+              where: { id: event.id },
+              data: { status: "DISPATCHED", dispatchedAt: new Date(), lockedAt: null },
+            });
+            successCount++;
+            continue;
+          }
 
           HydrationLogger.info(`Dispatching outbox event ${event.id} for document ${docId}`, {
             eventId: event.id,
@@ -73,11 +136,11 @@ export class ShipmentEventConsumer {
           let parseVerRecord = null;
           if (parseVersionId !== "latest") {
             parseVerRecord = await db.documentParseVersion.findFirst({
-              where: { id: parseVersionId },
+              where: { id: parseVersionId, documentId: docId, accountId: event.accountId },
             });
           } else {
             parseVerRecord = await db.documentParseVersion.findFirst({
-              where: { documentId: docId },
+              where: { documentId: docId, accountId: event.accountId },
               orderBy: { version: "desc" },
             });
           }
@@ -127,6 +190,8 @@ export class ShipmentEventConsumer {
           data: {
             status: "DISPATCHED",
             dispatchedAt: new Date(),
+            lockedAt: null,
+            lastError: null,
           },
         });
 
@@ -148,14 +213,20 @@ export class ShipmentEventConsumer {
           data: {
             status: "FAILED",
             lastError: errMsg,
-            attemptCount: { increment: 1 },
+            lockedAt: null,
+            nextAttemptAt: retryAt(event.attemptCount + 1),
           },
-        }).catch(() => {});
+        }).catch((updateError) => {
+          HydrationLogger.error(`Failed to persist outbox failure state for ${event.id}`, updateError, {
+            eventId: event.id,
+            accountId: event.accountId,
+          });
+        });
       }
     }
 
     return {
-      processedCount: pendingEvents.length,
+      processedCount: successCount + failedCount,
       successCount,
       failedCount,
       errors,

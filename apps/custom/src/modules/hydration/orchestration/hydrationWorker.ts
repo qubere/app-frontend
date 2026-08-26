@@ -16,7 +16,10 @@ import type { RawExtractionContext } from "../evidence/universalEvidenceExtracto
 import { EvidenceLedgerService } from "../evidence/evidenceLedgerService";
 import { HydrationRunEngine } from "../engine/hydrationRunEngine";
 import { StructuredFieldMapper } from "../mapper/structuredFieldMapper";
-import { CorroborationConflictResolver } from "../resolution/corroborationConflictResolver";
+import {
+  CorroborationConflictResolver,
+  candidateIdentityKey,
+} from "../resolution/corroborationConflictResolver";
 import { PromotionPolicyEngine, type PromotionDecision } from "../promotion/promotionPolicyEngine";
 import { MaterializerRegistry, type MaterializationResult } from "../promotion/materializers";
 import { RolloutController } from "../rollout/rolloutController";
@@ -74,8 +77,8 @@ export class HydrationWorker {
       };
     }
 
-    const modelVer = options.mapperModelVersion || "gpt-4o";
-    const promptVer = options.mapperPromptVersion || "v1.0";
+    const modelVer = options.mapperModelVersion || "deterministic-alias-v1";
+    const promptVer = options.mapperPromptVersion || "none";
     const executionMode = options.mode || "live";
 
     // 1. Evidence Extraction & Persistence
@@ -110,7 +113,10 @@ export class HydrationWorker {
     // Persist proposals to HydrationCandidate table
     const createdCandidates = await HydrationRunEngine.persistProposals(run.id, accountId, proposals);
     const candidateIdMap = new Map<string, string>(
-      createdCandidates.map((c: any) => [c.fieldDefinitionKey, c.id])
+      createdCandidates.map((c: any) => [
+        candidateIdentityKey(c.fieldDefinitionKey, c.targetEntityRef || null),
+        c.id,
+      ])
     );
 
     // 4. Multi-document Corroboration & Conflict Resolution
@@ -160,6 +166,14 @@ export class HydrationWorker {
           { mode: executionMode, expectedVersion: currentShipmentVersion }
         );
         materializations.push(matRes);
+        if (
+          matRes.success &&
+          matRes.materialized !== false &&
+          matRes.materializer === "ShipmentScalarMaterializer" &&
+          typeof currentShipmentVersion === "number"
+        ) {
+          currentShipmentVersion += 1;
+        }
       }
     }
 

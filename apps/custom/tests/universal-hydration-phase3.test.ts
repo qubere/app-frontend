@@ -266,6 +266,10 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
         aggregateId: "shp_outbox_test",
         payload: { documentId: "doc_outbox_test", parseVersionId: "pv_outbox_test" },
         status: "PENDING",
+        attemptCount: 0,
+        maxAttempts: 12,
+        nextAttemptAt: new Date(0),
+        lockedAt: null,
       },
     ] as any);
 
@@ -289,6 +293,7 @@ describe("Universal Field Hydration — Phase 3 Mapping & Validation", () => {
     } as any);
 
     vi.spyOn(db.workflowOutboxEvent, "update").mockResolvedValue({ id: "evt_test_outbox_1", status: "DISPATCHED" } as any);
+    vi.spyOn(db.workflowOutboxEvent, "updateMany").mockResolvedValue({ count: 1 } as any);
 
     const result = await ShipmentEventConsumer.dispatchOutboxEvents("acc_outbox_test");
     expect(result.processedCount).toBe(1);

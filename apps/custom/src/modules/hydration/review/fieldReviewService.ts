@@ -175,6 +175,59 @@ export class FieldReviewService {
       expectedVersion,
     });
 
+    const definition = CANONICAL_FIELD_REGISTRY_V1[fieldKey];
+    if (!definition) {
+      return {
+        success: false,
+        status: 400,
+        errorCode: "UNKNOWN_FIELD",
+        message: `Field '${fieldKey}' is not registered.`,
+      };
+    }
+    const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
+
+    const document = await db.shipmentDocument.findFirst({
+      where: { id: documentId, accountId, shipmentId },
+      select: { id: true },
+    });
+    if (!document) {
+      return {
+        success: false,
+        status: 404,
+        errorCode: "DOCUMENT_NOT_FOUND",
+        message: "The document is not attached to this shipment.",
+      };
+    }
+
+    if (action === "SELECT_ALTERNATE" && !candidateId) {
+      return {
+        success: false,
+        status: 400,
+        errorCode: "CANDIDATE_REQUIRED",
+        message: "Selecting an alternate requires a candidateId.",
+      };
+    }
+
+    const selectedCandidate = action === "SELECT_ALTERNATE" && candidateId
+      ? await db.hydrationCandidate.findFirst({
+          where: {
+            id: candidateId,
+            accountId,
+            shipmentId,
+            documentId,
+            fieldDefinitionKey: fieldKey,
+          },
+        })
+      : null;
+    if (action === "SELECT_ALTERNATE" && !selectedCandidate) {
+      return {
+        success: false,
+        status: 404,
+        errorCode: "CANDIDATE_NOT_FOUND",
+        message: "The selected candidate does not belong to this shipment, document, and field.",
+      };
+    }
+
     // B2 check: Atomic compare-and-swap update on Shipment.version
     let updatedShipment: { version: number } | null = null;
     if (typeof expectedVersion === "number") {
@@ -269,20 +322,14 @@ export class FieldReviewService {
         });
       }
 
-      const selectedCandidate = await db.hydrationCandidate.findFirst({
-        where: { id: candidateId, accountId },
+      await db.hydrationCandidate.update({
+        where: { id: candidateId },
+        data: {
+          status: "PROMOTED",
+          supersedesCandidateId: currentWinner?.id || null,
+        },
       });
-
-      if (selectedCandidate) {
-        await db.hydrationCandidate.update({
-          where: { id: candidateId },
-          data: {
-            status: "PROMOTED",
-            supersedesCandidateId: currentWinner?.id || null,
-          },
-        });
-        value = String(selectedCandidate.rawValue ?? value);
-      }
+      value = String(selectedCandidate!.rawValue ?? value);
     }
 
     // 1. Audit log change event
@@ -321,7 +368,7 @@ export class FieldReviewService {
     // 4. Record human-locked Fact
     const fact = await FactService.record({
       shipmentId,
-      field: fieldKey,
+      field: factField,
       value,
       sourceType: "USER_ENTERED",
       documentId,

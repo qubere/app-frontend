@@ -114,9 +114,9 @@ describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
     ).rejects.toThrow(/FAIL_CLOSED: Document 'doc_cross_tenant_1' not found for account 'wrong_account'/);
   });
 
-  it("Defect #6: EvidenceLedgerService uses UNIVERSAL_HYDRATION source tag and deduplicates observations for document", async () => {
+  it("Defect #6: EvidenceLedgerService uses UNIVERSAL_HYDRATION source tag without deleting prior evidence", async () => {
     vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({ id: testDocument, accountId: testAccount } as any);
-    vi.spyOn(db.extractionField, "deleteMany").mockResolvedValue({ count: 2 } as any);
+    const deleteSpy = vi.spyOn(db.extractionField, "deleteMany");
     vi.spyOn(db.extractionField, "create").mockImplementation((async (args: any) => {
       return {
         id: `field_${args.data.fieldName}`,
@@ -124,6 +124,7 @@ describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
         createdAt: new Date(),
       };
     }) as any);
+    vi.spyOn(db.shipmentDocument, "update").mockResolvedValue({ id: testDocument } as any);
 
     const ctx = {
       documentId: testDocument,
@@ -134,12 +135,7 @@ describe("Universal Field Hydration — Phase 2 Evidence Persistence", () => {
     const fields = await EvidenceLedgerService.persistEvidenceLedger(ctx, testAccount);
     expect(fields.length).toBeGreaterThan(0);
     expect(fields[0].source).toBe("UNIVERSAL_HYDRATION");
-    expect(db.extractionField.deleteMany).toHaveBeenCalledWith({
-      where: {
-        documentId: testDocument,
-        source: "UNIVERSAL_HYDRATION",
-      },
-    });
+    expect(deleteSpy).not.toHaveBeenCalled();
   });
 
   it("Defect #8: EvidenceInspection matching does not cross-match line item fields whose names are substrings of each other", () => {

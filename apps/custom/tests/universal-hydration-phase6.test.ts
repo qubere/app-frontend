@@ -41,6 +41,7 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
     };
 
     vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue(mockDoc as any);
+    vi.spyOn(db.shipmentDocument, "update").mockResolvedValue(mockDoc as any);
     vi.spyOn(db.hydrationRun, "findFirst").mockResolvedValue(mockRun as any);
     vi.spyOn(db.hydrationRun, "findUnique").mockResolvedValue(mockRun as any);
     vi.spyOn(db.hydrationRun, "create").mockResolvedValue({ ...mockRun, candidates: [] } as any);

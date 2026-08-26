@@ -8,7 +8,7 @@
  * - Exception items are generated dynamically from registry required rules.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { FieldReviewService } from "../src/modules/hydration/review/fieldReviewService";
 import { FieldStateGenerator } from "../src/modules/hydration/review/fieldStateGenerator";
 import { MaterializerRegistry } from "../src/modules/hydration/promotion/materializers";
@@ -18,6 +18,10 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
   const testAccount = "acc_phase5_test_001";
   const testShipment = "shp_phase5_test_001";
   const testDocument = "doc_phase5_test_001";
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("generates document missing, conflict, and unreadable field exceptions dynamically from registry definitions", () => {
     const extractedKeys = new Set(["shipment.carrier.name"]);
@@ -39,6 +43,7 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
   });
 
   it("test-matrix #25: distinct review actions (APPROVE, REJECT, MARK_NOT_APPLICABLE, SELECT_ALTERNATE) produce distinct outcomes", async () => {
+    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({ id: testDocument, shipmentId: testShipment } as any);
     vi.spyOn(db.shipment, "findFirst").mockResolvedValue({ id: testShipment, accountId: testAccount, version: 1 } as any);
     vi.spyOn(db.shipment, "update").mockResolvedValue({ id: testShipment, version: 2 } as any);
     vi.spyOn(db.hydrationCandidate, "updateMany").mockResolvedValue({ count: 1 } as any);
@@ -76,6 +81,7 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
   });
 
   it("test-matrix #26: returns 409 STALE_SHIPMENT on atomic compare-and-swap version mismatch", async () => {
+    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({ id: testDocument, shipmentId: testShipment } as any);
     // Mock db.shipment.update failing with Prisma P2025 (Record not found due to version mismatch)
     vi.spyOn(db.shipment, "update").mockRejectedValue({ code: "P2025" } as any);
 
@@ -138,10 +144,28 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
   });
 
   it("test-matrix #28: SELECT_ALTERNATE demotes old candidate to SUPERSEDED and materializes selected candidate value", async () => {
+    vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({ id: testDocument, shipmentId: testShipment } as any);
     vi.spyOn(db.shipment, "findFirst").mockResolvedValue({ id: testShipment, accountId: testAccount, version: 1 } as any);
     vi.spyOn(db.shipment, "update").mockResolvedValue({ id: testShipment, version: 2 } as any);
     vi.spyOn(db.hydrationCandidate, "updateMany").mockResolvedValue({ count: 1 } as any);
     vi.spyOn(db.hydrationCandidate, "update").mockResolvedValue({ id: "cand_alt_2", status: "PROMOTED" } as any);
+    vi.spyOn(db.hydrationCandidate, "findFirst").mockImplementation((async (args: any) => {
+      if (args?.where?.id === "cand_alt_2") {
+        return {
+          id: "cand_alt_2",
+          accountId: testAccount,
+          shipmentId: testShipment,
+          documentId: testDocument,
+          fieldDefinitionKey: "shipment.carrier.name",
+          targetEntityRef: "",
+          rawValue: "MAERSK LINE",
+          mappingConfidence: 95,
+          sourceExtractionFieldIds: ["ev_alt_2"],
+          reasonCodes: [],
+        };
+      }
+      return null;
+    }) as any);
     vi.spyOn(db.fieldApproval, "create").mockResolvedValue({ id: "app_alt_1" } as any);
     vi.spyOn(db.fact, "create").mockResolvedValue({ id: "fact_approved_1" } as any);
     vi.spyOn(db.fact, "update").mockResolvedValue({ id: "fact_approved_1", isHumanLocked: true } as any);

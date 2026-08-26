@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { HydrationLogger } from "../hydration/logging/hydrationLogger";
+import type { Prisma } from "@prisma/client";
 
 export type ShipmentEventType =
   | "SHIPMENT_CREATED"
@@ -22,15 +23,17 @@ export interface LogEventParams {
   payload?: Record<string, unknown>;
   triggeredBy?: string;
   accountId?: string;
+  eventKey?: string;
+  required?: boolean;
 }
 
 export class ShipmentEventBus {
   /**
    * Logs a domain event durably in ShipmentEventLog and enqueues to WorkflowOutboxEvent
    */
-  static async logEvent(params: LogEventParams) {
-    try {
-      const eventLog = await db.shipmentEventLog.create({
+  static async logEvent(params: LogEventParams, tx?: Prisma.TransactionClient) {
+    const write = async (client: Prisma.TransactionClient) => {
+      const eventLog = await client.shipmentEventLog.create({
         data: {
           shipmentId: params.shipmentId,
           eventType: params.eventType,
@@ -39,11 +42,13 @@ export class ShipmentEventBus {
         },
       });
 
-      // Enqueue to durable workflow outbox queue
-      const accountId = params.accountId || (params.payload?.accountId as string) || "system";
-      const eventKey = `evt_${params.shipmentId}_${params.eventType}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const accountId = params.accountId || (params.payload?.accountId as string);
+      if (!accountId) {
+        throw new Error(`accountId is required for durable shipment event '${params.eventType}'.`);
+      }
+      const eventKey = params.eventKey || `evt_${params.shipmentId}_${params.eventType}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-      await db.workflowOutboxEvent.create({
+      await client.workflowOutboxEvent.create({
         data: {
           accountId,
           eventKey,
@@ -53,17 +58,19 @@ export class ShipmentEventBus {
           payload: params.payload ? JSON.parse(JSON.stringify(params.payload)) : {},
           status: "PENDING",
         },
-      }).catch((err) => {
-        HydrationLogger.warn(`Outbox event enqueue fallback for ${params.eventType}`, {
-          shipmentId: params.shipmentId,
-          eventType: params.eventType,
-          error: err instanceof Error ? err.message : String(err),
-        });
       });
 
       return eventLog;
+    };
+
+    try {
+      return tx ? await write(tx) : await db.$transaction(write);
     } catch (err) {
-      console.error(`Failed to log shipment event [${params.eventType}]:`, err);
+      HydrationLogger.error(`Failed to durably log shipment event [${params.eventType}]`, err, {
+        shipmentId: params.shipmentId,
+        eventType: params.eventType,
+      });
+      if (params.required) throw err;
       return null;
     }
   }
