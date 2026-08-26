@@ -8,7 +8,6 @@ import {
   AlertCircle,
   RefreshCw,
   Search,
-  Cpu,
   Activity,
   Info,
 } from "lucide-react";
@@ -83,7 +82,7 @@ export function CronPanel({ initialJobs }: CronPanelProps = {}) {
     if (!hasInitial) {
       fetchCronJobs();
     }
-  }, []);
+  }, [hasInitial]);
 
   const runJobManually = async (jobId: string, jobName: string) => {
     setRunningIds((prev) => ({ ...prev, [jobId]: true }));
