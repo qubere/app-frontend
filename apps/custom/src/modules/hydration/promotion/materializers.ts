@@ -31,6 +31,13 @@ export interface MaterializeOptions {
   expectedVersion?: number;
 }
 
+export class MaterializationError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = "MaterializationError";
+  }
+}
+
 export class MaterializerRegistry {
   /**
    * Materializes an approved promotion decision into canonical Fact and domain tables.
@@ -69,6 +76,13 @@ export class MaterializerRegistry {
         materialized: false,
         reason: "SHADOW_MODE_DRY_RUN",
       };
+    }
+
+    if (!shipmentId) {
+      throw new MaterializationError(
+        "SHIPMENT_REQUIRED",
+        `Live materialization for '${fieldKey}' requires a tenant-owned shipment.`
+      );
     }
 
     const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
@@ -128,12 +142,10 @@ export class MaterializerRegistry {
             if (ALLOWLISTED_COLUMNS.has(column)) {
               if (typeof options.expectedVersion !== "number") {
                 HydrationLogger.warn("Missing expectedVersion for ShipmentScalarMaterializer", { shipmentId, fieldKey });
-                return {
-                  fieldKey,
-                  materializer: materializerName,
-                  success: false,
-                  error: "MISSING_EXPECTED_VERSION",
-                };
+                throw new MaterializationError(
+                  "MISSING_EXPECTED_VERSION",
+                  `Shipment version is required to materialize '${fieldKey}'.`
+                );
               }
 
               // C2 check: Atomic optimistic concurrency check
@@ -150,12 +162,10 @@ export class MaterializerRegistry {
 
               if (!updated) {
                 HydrationLogger.warn("Stale shipment version on materialization", { shipmentId, fieldKey, expectedVersion: options.expectedVersion });
-                return {
-                  fieldKey,
-                  materializer: materializerName,
-                  success: false,
-                  error: "STALE_SHIPMENT_VERSION",
-                };
+                throw new MaterializationError(
+                  "STALE_SHIPMENT_VERSION",
+                  `Shipment '${shipmentId}' changed before '${fieldKey}' could be materialized.`
+                );
               }
             }
           }
@@ -184,6 +194,11 @@ export class MaterializerRegistry {
                 confidence: candidate.calibratedScore / 100,
                 isVerified: false,
               }, tx);
+            } else {
+              throw new MaterializationError(
+                "ENTITY_RESOLUTION_FAILED",
+                `No legal entity could be resolved for '${fieldKey}'.`
+              );
             }
           }
           return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
@@ -201,14 +216,7 @@ export class MaterializerRegistry {
               }, tx);
             } catch (err) {
               HydrationLogger.error("LineItemMaterializer failed during applyDiscoveries", err, { shipmentId, accountId, fieldKey });
-              return {
-                fieldKey,
-                materializer: materializerName,
-                success: false,
-                error: err instanceof Error ? err.message : String(err),
-                factId,
-                materialized: false,
-              };
+              throw err;
             }
           }
           return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };

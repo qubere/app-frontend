@@ -193,5 +193,11 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
     });
 
     expect(altRes.success).toBe(true);
+    expect(db.fact.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        field: "carrierName",
+        sourceType: "USER_ENTERED",
+      }),
+    }));
   });
 });
