@@ -52,12 +52,21 @@ export interface RecordUsageEventInput {
 
 export { DEFAULT_BILLING_EVENT_DEFINITIONS };
 
+const seededAccounts = new Set<string>();
+
 /**
  * Ensure the account-scoped platform billing-capability catalog exists and
  * reflects the current code definitions. eventCode remains stable inside a
  * product line, while the composite identity enforces tenant isolation.
+ *
+ * DEFAULT_BILLING_EVENT_DEFINITIONS is static for the life of the process, so
+ * once an account's catalog has been seeded here there is nothing left for a
+ * repeat call to change -- skip it to avoid re-upserting all 19 definitions
+ * on every recordUsageEvent call.
  */
 export async function seedBillingEventDefinitions(accountId: string): Promise<void> {
+  if (seededAccounts.has(accountId)) return;
+
   for (const def of DEFAULT_BILLING_EVENT_DEFINITIONS) {
     const productLine = def.productLine ?? "CUSTOMS";
     await db.billingEventDefinition.upsert({
@@ -81,6 +90,8 @@ export async function seedBillingEventDefinitions(accountId: string): Promise<vo
       },
     });
   }
+
+  seededAccounts.add(accountId);
 }
 
 /**

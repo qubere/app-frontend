@@ -14,6 +14,8 @@
 import { doEmbargoCheck } from "./doEmbargoCheck";
 import { parseClassification } from "./classificationParser";
 import { buildEmbargoAuditContext, createEmbargoUsageHeader, createEmbargoUsageLines } from "./embargoAudit";
+import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
+import crypto from "crypto";
 import type {
   CountryEmbargoScreeningInput,
   CountryEmbargoScreeningResult,
@@ -204,6 +206,24 @@ export async function runCountryEmbargoScreening(
       }
     }
   }
+
+  // ComplianceExecution envelope -- additive, alongside (never instead of) the
+  // legacy EmbargoUsageHeader/Line audit trail above. Shares the same
+  // correlationId so the two can be cross-referenced without a schema change
+  // to EmbargoUsageHeader. Never allowed to affect `status`/`hits`.
+  await recordComplianceExecution({
+    accountId: input.accountId,
+    executionType: "EMBARGO_SCREENING",
+    status: status === "ERROR" ? "FAILED" : status === "PARTIAL" ? "PARTIAL" : "COMPLETED",
+    correlationId: input.correlationId ?? crypto.randomUUID(),
+    shipmentId: input.shipmentId,
+    source: "SHIPMENT_PIPELINE",
+    countryChecked: input.shipToCountry ?? input.shipFromCountry ?? undefined,
+    responseSnapshot: { status, hitCount: hits.length, errorCount: errors.length, skippedCount: skippedChecks.length },
+    finalStatus: status,
+    resultRefType: usageId ? "EmbargoUsageHeader" : undefined,
+    resultRefId: usageId,
+  });
 
   return {
     status,

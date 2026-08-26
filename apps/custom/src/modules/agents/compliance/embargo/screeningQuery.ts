@@ -58,12 +58,19 @@ export function presentedStatus(screening: CountryEmbargoScreeningResult): Count
 }
 
 export function summarizeHit(hit: CountryEmbargoScreeningResult["hits"][number]) {
+  const isPrivate = hit.matcher === "PRIVATE";
   return {
     screeningLevel: hit.screeningLevel,
     type: hit.type,
     complianceCountry: hit.complianceCountry,
     country: hit.country,
     matcher: hit.matcher,
+    // A PRIVATE hit is this account's own configured embargo/watch-list rule,
+    // never a government sanction -- callers must not present it as one.
+    classification: isPrivate ? "PRIVATE_EMBARGO" : "PUBLIC_EMBARGO",
+    classificationNote: isPrivate
+      ? "Private, account-configured embargo/watch-list rule -- not a government sanction."
+      : null,
     reason: hit.reason,
     ruleId: hit.ruleId ?? null,
     partyId: hit.partyId ?? null,

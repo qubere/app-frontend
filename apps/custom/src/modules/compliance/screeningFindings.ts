@@ -1,5 +1,8 @@
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import type { AuditCheckResult } from "@/modules/agents/complianceAuditAgent";
+import { recordComplianceExecution, linkScreeningFinding } from "./executionHistory";
+import type { ComplianceExecutionType } from "@prisma/client";
 
 /**
  * The six screening categories the Compliance workspace organizes findings
@@ -9,6 +12,7 @@ import type { AuditCheckResult } from "@/modules/agents/complianceAuditAgent";
  */
 export type ScreeningBucket =
   | "COUNTRY_EMBARGO"
+  | "PRIVATE_EMBARGO"
   | "UFLPA"
   | "END_USE_RESTRICTION"
   | "END_USER_RESTRICTION"
@@ -18,6 +22,7 @@ export type ScreeningBucket =
 
 const DIRECT_CATEGORY_MAP: Partial<Record<AuditCheckResult["category"], ScreeningBucket>> = {
   COUNTRY_EMBARGO: "COUNTRY_EMBARGO",
+  PRIVATE_EMBARGO: "PRIVATE_EMBARGO",
   UFLPA: "UFLPA",
   END_USE_RESTRICTION: "END_USE_RESTRICTION",
   END_USER_RESTRICTION: "END_USER_RESTRICTION",
@@ -60,31 +65,43 @@ function resolveBucket(result: AuditCheckResult): ScreeningBucket | null {
  * lineNumber, category, ruleId) among still-OPEN findings: a re-run that
  * turns up the same open finding reuses the existing row instead of piling
  * another one into the unfiltered Screening workspace list.
+ *
+ * Additive step: for each of the five "thin-finding" domains (prompt §2)
+ * represented among the newly-created rows -- forced labor/UFLPA, end-use,
+ * end-user, military end-use/end-user, anti-boycott -- also records one
+ * ComplianceExecution envelope covering the whole screening invocation for
+ * that domain on this shipment, then links every finding row of that
+ * category back to it. Country Embargo / Private Embargo are deliberately
+ * excluded here -- those already get their own ComplianceExecution row from
+ * embargoAudit's caller (countryEmbargoScreening.ts), so recording them
+ * again here would double-count the same invocation under two envelopes.
+ * This bookkeeping never affects which findings get written or their
+ * content -- it's best-effort and layered on top.
  */
+const THIN_FINDING_EXECUTION_TYPE: Partial<Record<ScreeningBucket, ComplianceExecutionType>> = {
+  UFLPA: "FORCED_LABOR_SCREENING",
+  END_USE_RESTRICTION: "END_USE_SCREENING",
+  END_USER_RESTRICTION: "END_USER_SCREENING",
+  MILITARY_END_USE: "MILITARY_END_USE_SCREENING",
+  MILITARY_END_USER: "MILITARY_END_USE_SCREENING",
+  ANTI_BOYCOTT: "ANTI_BOYCOTT_SCREENING",
+};
+
 export async function persistComplianceScreeningFindings(
   accountId: string,
   shipmentId: string,
   auditResults: AuditCheckResult[]
 ): Promise<void> {
-  const rows = auditResults
+  const candidates = auditResults
     .filter((r) => !r.passed)
     .map((r) => {
       const category = resolveBucket(r);
       if (!category) return null;
-      return {
-        accountId,
-        shipmentId,
-        lineNumber: r.lineNumber ?? null,
-        category,
-        ruleId: r.ruleId,
-        ruleName: r.ruleName,
-        severity: r.severity,
-        details: r.details,
-      };
+      return { result: r, category };
     })
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+    .filter((r): r is { result: AuditCheckResult; category: ScreeningBucket } => r !== null);
 
-  if (rows.length === 0) return;
+  if (candidates.length === 0) return;
 
   const openFindings = await db.complianceScreeningFinding.findMany({
     where: { accountId, shipmentId, status: "OPEN" },
@@ -94,8 +111,71 @@ export async function persistComplianceScreeningFindings(
     `${r.lineNumber ?? "null"}::${r.category}::${r.ruleId}`;
   const openKeys = new Set(openFindings.map(openKey));
 
-  const newRows = rows.filter((r) => !openKeys.has(openKey(r)));
-  if (newRows.length === 0) return;
+  const newCandidates = candidates.filter(
+    ({ result: r, category }) =>
+      !openKeys.has(openKey({ lineNumber: r.lineNumber ?? null, category, ruleId: r.ruleId }))
+  );
+  if (newCandidates.length === 0) return;
 
-  await db.complianceScreeningFinding.createMany({ data: newRows });
+  const createdRows = await db.complianceScreeningFinding.createManyAndReturn({
+    data: newCandidates.map(({ result: r, category }) => ({
+      accountId,
+      shipmentId,
+      lineNumber: r.lineNumber ?? null,
+      category,
+      ruleId: r.ruleId,
+      ruleName: r.ruleName,
+      severity: r.severity,
+      details: r.details,
+    })),
+  }).catch(async () => {
+    // createManyAndReturn requires Prisma 5.14+ / a supporting connector;
+    // fall back to plain createMany (no ids, no execution linking) if
+    // unavailable rather than failing finding persistence outright.
+    await db.complianceScreeningFinding.createMany({
+      data: newCandidates.map(({ result: r, category }) => ({
+        accountId,
+        shipmentId,
+        lineNumber: r.lineNumber ?? null,
+        category,
+        ruleId: r.ruleId,
+        ruleName: r.ruleName,
+        severity: r.severity,
+        details: r.details,
+      })),
+    });
+    return [];
+  });
+
+  // Group the created finding ids by category so exactly one
+  // ComplianceExecution is recorded per thin-finding domain present in this
+  // batch (not one per finding row).
+  const idsByCategory = new Map<ScreeningBucket, string[]>();
+  createdRows.forEach((row, i) => {
+    const category = newCandidates[i]?.category;
+    if (!category) return;
+    const list = idsByCategory.get(category) ?? [];
+    list.push(row.id);
+    idsByCategory.set(category, list);
+  });
+
+  for (const [category, findingIds] of idsByCategory) {
+    const executionType = THIN_FINDING_EXECUTION_TYPE[category];
+    if (!executionType) continue; // COUNTRY_EMBARGO / PRIVATE_EMBARGO -- recorded elsewhere.
+
+    const executionId = await recordComplianceExecution({
+      accountId,
+      executionType,
+      status: "COMPLETED",
+      correlationId: crypto.randomUUID(),
+      shipmentId,
+      source: "SHIPMENT_PIPELINE",
+      finalStatus: "FINDINGS_RECORDED",
+      finalSummary: `${findingIds.length} finding(s) recorded for ${category}.`,
+      resultRefType: "ComplianceScreeningFinding",
+    });
+    if (!executionId) continue;
+
+    await Promise.all(findingIds.map((id) => linkScreeningFinding(id, executionId)));
+  }
 }

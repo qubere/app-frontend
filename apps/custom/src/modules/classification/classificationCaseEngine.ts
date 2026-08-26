@@ -9,6 +9,7 @@ import { PgQueue } from "@/lib/queue/pgQueue";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { HTSClassificationAgent } from "@/modules/agents/htsClassificationAgent";
 import { HtsNodeRepository } from "@/repositories/htsNodeRepository";
+import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
 
 export interface CreateCaseRequest {
   accountId: string;
@@ -295,6 +296,31 @@ export class ClassificationCaseEngine {
             completedAt: new Date(),
           },
         });
+
+    // ComplianceExecution envelope -- additive audit record alongside the
+    // authoritative ClassificationRun row created above; never affects the
+    // run's own status/result. Source is a judgment call: this path has no
+    // explicit UI/pipeline signal available at this call site, so it
+    // defaults to "UI" (case creation/trigger is user-initiated in the
+    // current caller graph) rather than guessing SHIPMENT_PIPELINE.
+    await recordComplianceExecution({
+      accountId,
+      executionType: "CLASSIFICATION",
+      status: run.status === "COMPLETED" ? "COMPLETED" : run.status === "FAILED" ? "FAILED" : "RUNNING",
+      correlationId: run.id,
+      source: "UI",
+      initiatedByUserId: userId,
+      resultRefType: "CLASSIFICATION",
+      resultRefId: run.id,
+      modelProvider: run.modelProvider,
+      modelVersion: run.modelVersion,
+      promptVersion: run.promptVersion,
+      rulesetVersion: run.rulesEngineVersion,
+      finalStatus: run.status,
+      finalSummary,
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+    });
 
     let proposal = null;
 

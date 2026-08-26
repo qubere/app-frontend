@@ -1,18 +1,44 @@
 // Country Embargo Screening -- Private account embargo matcher.
 //
-// KNOWN GAP: no private/account-specific embargo rule storage exists in the
-// Qubere schema today, and no supplied source material identifies where
-// such rules would live (CountryEmbargoScreening_Prompt.md section 18/26
-// explicitly forbids inventing this storage or its rules). When an account
-// has privateEmbargoEnabled=true, this matcher reports the capability gap
-// explicitly as SKIPPED (never CLEAR -- a skipped check must never be
-// mistaken for a passed one) so doEmbargoCheck.ts can fall through to the
-// next applicable matcher in the precedence chain.
+// Evaluates the account's PrivateEmbargoRule table (tenant-owned
+// country-pair embargo/watch-list policy) for the current check's
+// (complianceCountry -> targetCountry) pair. Per doEmbargoCheck.ts's
+// dispatch (`if (privateResult.result !== "SKIPPED") return privateResult`),
+// this matcher must NEVER return "CLEAR" -- a private non-match means "no
+// private hit", not "publicly clear", and must fall through to the next
+// matcher in the precedence chain rather than short-circuiting the check.
+// Only an actual rule match may short-circuit, and only as a HIT.
+import { resolvePrivateEmbargoRule } from "./embargoRepository";
 import type { EmbargoCheckContext, EmbargoCheckResult } from "./types";
 
 export async function privateEmbargoMatcher(ctx: EmbargoCheckContext): Promise<EmbargoCheckResult> {
+  const rule = await resolvePrivateEmbargoRule(
+    ctx.accountId,
+    ctx.complianceCountry,
+    ctx.targetCountry,
+    ctx.screeningDate
+  );
+
+  if (!rule) {
+    return {
+      result: "SKIPPED",
+      complianceCountry: ctx.complianceCountry,
+      screenedCountry: ctx.targetCountry,
+      screeningLevel: ctx.screeningLevel,
+      type: ctx.type,
+      matcher: "PRIVATE",
+      eccn: ctx.eccn,
+      militaryEndUse: ctx.militaryEndUse,
+      reason: "NO_PRIVATE_RULE_MATCH",
+      evidence: {
+        note: "No active private embargo rule matched this account/country pair -- continuing to the next applicable matcher.",
+      },
+      context: ctx,
+    };
+  }
+
   return {
-    result: "SKIPPED",
+    result: "HIT",
     complianceCountry: ctx.complianceCountry,
     screenedCountry: ctx.targetCountry,
     screeningLevel: ctx.screeningLevel,
@@ -20,9 +46,18 @@ export async function privateEmbargoMatcher(ctx: EmbargoCheckContext): Promise<E
     matcher: "PRIVATE",
     eccn: ctx.eccn,
     militaryEndUse: ctx.militaryEndUse,
-    reason: "PRIVATE_EMBARGO_RULES_UNAVAILABLE",
+    ruleId: rule.id,
+    reason: `Destination country "${ctx.targetCountry}" matched an active private embargo rule configured for this account (Private / Account-Configured Rule -- not a government sanction).`,
     evidence: {
-      note: "Private embargo rule storage is not implemented -- no supplied source material identifies it. Falling through to the next applicable matcher.",
+      scope: "ACCOUNT",
+      wildcardFromCountry: rule.appliesToAllFromCountries,
+      fromCountry: rule.appliesToAllFromCountries ? null : rule.fromCountryCode,
+      toCountry: rule.toCountryCode,
+      effectiveDate: rule.effectiveDate,
+      expirationDate: rule.expirationDate,
+      reason: rule.reason ?? null,
+      reference: rule.reference ?? null,
+      classification: "PRIVATE_EMBARGO",
     },
     context: ctx,
   };

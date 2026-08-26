@@ -39,6 +39,7 @@ export interface AuditCheckResult {
     | "DATA_MISSING"
     | "SCREENING_GAP"
     | "COUNTRY_EMBARGO"
+    | "PRIVATE_EMBARGO"
     | "END_USE_RESTRICTION"
     | "END_USER_RESTRICTION"
     | "ANTI_BOYCOTT"
@@ -425,13 +426,16 @@ export class ComplianceAuditAgent {
           });
         }
         for (const hit of countryEmbargoScreening.hits) {
+          const isPrivate = hit.matcher === "PRIVATE";
           auditResults.push({
-            ruleId: hit.ruleId ? `RULE-COUNTRY-EMBARGO-${hit.ruleId}` : "RULE-COUNTRY-EMBARGO",
-            ruleName: "Country Embargo Screening",
-            category: "COUNTRY_EMBARGO",
+            ruleId: hit.ruleId ? `RULE-${isPrivate ? "PRIVATE" : "COUNTRY"}-EMBARGO-${hit.ruleId}` : "RULE-COUNTRY-EMBARGO",
+            ruleName: isPrivate ? "Private Embargo Screening" : "Country Embargo Screening",
+            category: isPrivate ? "PRIVATE_EMBARGO" : "COUNTRY_EMBARGO",
             passed: false,
             severity: "CRITICAL",
-            details: `${hit.screeningLevel}/${hit.type === "D" ? "destination" : "origin"} screening: compliance country "${hit.complianceCountry}" embargoes "${hit.country}" (matcher: ${hit.matcher}).${hit.lineItemId ? ` Line ${hit.lineItemId}.` : ""}`,
+            details: isPrivate
+              ? `${hit.screeningLevel}/${hit.type === "D" ? "destination" : "origin"} screening: "${hit.country}" matched an active private/account-configured embargo rule (not a government sanction) for compliance country "${hit.complianceCountry}".${hit.lineItemId ? ` Line ${hit.lineItemId}.` : ""}`
+              : `${hit.screeningLevel}/${hit.type === "D" ? "destination" : "origin"} screening: compliance country "${hit.complianceCountry}" embargoes "${hit.country}" (matcher: ${hit.matcher}).${hit.lineItemId ? ` Line ${hit.lineItemId}.` : ""}`,
             lineNumber: hit.lineItemId ? Number(hit.lineItemId) || undefined : undefined,
           });
         }
@@ -734,6 +738,20 @@ export class ComplianceAuditAgent {
           passed: false,
           severity: "MEDIUM",
           details: `Restricted Party Screening encountered ${restrictedPartyScreening.errors.length} error(s) -- some checks did not complete.`,
+        });
+      }
+      // Pre-approved reuse means the local matcher was SKIPPED for this party
+      // (a valid PartyScreeningApproval covered it), not that a fresh
+      // watchlist check ran and found no match -- language here must never
+      // claim "no current watchlist match exists."
+      for (const reuse of restrictedPartyScreening.preApprovedReuses) {
+        auditResults.push({
+          ruleId: "RULE-RESTRICTED-PARTY-02",
+          ruleName: "Restricted Party Screening Pre-Approved Reuse",
+          category: "RESTRICTED_PARTY",
+          passed: true,
+          severity: "LOW",
+          details: `${reuse.role} "${reuse.partyName}" was not re-screened against the local watchlist matcher for this shipment -- a valid party-level pre-approval (approval ${reuse.approvalId}) was reused instead. This does not assert that no current watchlist match exists; force a rescreen to verify against current data.`,
         });
       }
     }

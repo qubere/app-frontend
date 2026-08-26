@@ -22,4 +22,17 @@ export {
   type RestrictedPartyShipmentRedFlagHit,
   type RestrictedPartyShipmentSkip,
   type RestrictedPartyShipmentError,
+  type RestrictedPartyShipmentPreApprovedReuse,
 } from "./shipmentScreening";
+export {
+  checkPreApprovalGate,
+  createPreApproval,
+  revokePreApproval,
+  PartyNotFoundForApprovalError,
+  PartyHasNoActiveIdentityForApprovalError,
+  PreApprovalNotFoundError,
+  type PreApprovalGateResult,
+  type CheckPreApprovalGateParams,
+  type CreatePreApprovalParams,
+  type RevokePreApprovalParams,
+} from "./preApproval";

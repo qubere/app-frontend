@@ -9,6 +9,7 @@
 import { db } from "@/lib/db";
 import type { Prisma, RestrictedPartyScreeningResult } from "@prisma/client";
 import type { RestrictedPartyScreeningInput, RestrictedPartyScreeningRunResult } from "./types";
+import { RPS_MATCHER_VERSION } from "./types";
 
 export type PersistedRestrictedPartyResult = RestrictedPartyScreeningResult & {
   matches: Prisma.RestrictedPartyMatchGetPayload<{ include: { screeningEntity: { select: { sourcePublishedAt: true } } } }>[];
@@ -34,6 +35,9 @@ export async function persistScreeningRun(
           externalReference: input.externalReference ?? null,
           passType: pass.passType,
           screenedName: pass.screenedName,
+          normalizedScreenedName: pass.normalizedScreenedName,
+          matcherVersion: RPS_MATCHER_VERSION,
+          referenceDataAsOf: pass.referenceDataAsOf,
           screenedAddress: pass.screenedAddress,
           screenedCity: pass.screenedCity,
           screenedCountry: pass.screenedCountry,
@@ -63,6 +67,8 @@ export async function persistScreeningRun(
               screeningEntityId: m.screeningEntityId,
               matchedName: m.matchedName,
               matchedAddress: m.matchedAddress,
+              normalizedMatchedName: m.normalizedMatchedName,
+              matchedTokens: m.matchedTokens,
               nameScore: m.nameScore,
               addressScore: m.addressScore,
               matchMethod: m.matchMethod,

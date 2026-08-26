@@ -21,6 +21,11 @@ vi.mock("@/modules/agents/compliance/restrictedParty/persistResult", () => ({
   persistScreeningRun,
 }));
 
+const checkPreApprovalGate = vi.fn();
+vi.mock("@/modules/agents/compliance/restrictedParty/preApproval", () => ({
+  checkPreApprovalGate,
+}));
+
 const { runRestrictedPartyScreeningForShipment } = await import(
   "@/modules/agents/compliance/restrictedParty/shipmentScreening"
 );
@@ -67,6 +72,7 @@ function match(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   persistScreeningRun.mockResolvedValue([]);
+  checkPreApprovalGate.mockResolvedValue({ applied: false, reason: "No active pre-approval exists for this party." });
 });
 
 describe("runRestrictedPartyScreeningForShipment: no shipment parties never resolves to CLEAR", () => {
@@ -172,5 +178,64 @@ describe("runRestrictedPartyScreeningForShipment: aggregation across parties", (
 
     await runRestrictedPartyScreeningForShipment("acct_1", "ship_1");
     expect(persistScreeningRun).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("runRestrictedPartyScreeningForShipment: party-level pre-approval reuse", () => {
+  it("skips the local matcher for a party with a valid pre-approval and records the reuse", async () => {
+    getShipmentPartiesForScreening.mockResolvedValue([shipmentParty()]);
+    checkPreApprovalGate.mockResolvedValue({ applied: true, reason: "Valid pre-approval found.", approvalId: "approval_1" });
+
+    const result = await runRestrictedPartyScreeningForShipment("acct_1", "ship_1");
+
+    expect(runRestrictedPartyScreening).not.toHaveBeenCalled();
+    expect(persistScreeningRun).not.toHaveBeenCalled();
+    expect(result.preApprovedReuses).toHaveLength(1);
+    expect(result.preApprovedReuses[0]).toMatchObject({
+      role: "Consignee",
+      partyId: "party_1",
+      approvalId: "approval_1",
+      screeningDisposition: "PRE_APPROVED",
+      executionMode: "PRE_APPROVED_REUSE",
+      localMatcherExecuted: false,
+    });
+  });
+
+  it("still runs the matcher for parties without a valid pre-approval, even when another party on the same shipment has one", async () => {
+    getShipmentPartiesForScreening.mockResolvedValue([
+      shipmentParty({ shipmentPartyId: "sp_1", role: "Consignee", partyId: "party_1" }),
+      shipmentParty({ shipmentPartyId: "sp_2", role: "Shipper", partyId: "party_2", name: "Other Corp" }),
+    ]);
+    checkPreApprovalGate.mockImplementation(async ({ partyId }: { partyId: string }) =>
+      partyId === "party_1"
+        ? { applied: true, reason: "Valid pre-approval found.", approvalId: "approval_1" }
+        : { applied: false, reason: "No active pre-approval exists for this party." }
+    );
+    runRestrictedPartyScreening.mockResolvedValue({ correlationId: "corr_2", passes: [pass({ status: "CLEAR" })] });
+
+    const result = await runRestrictedPartyScreeningForShipment("acct_1", "ship_1");
+
+    expect(runRestrictedPartyScreening).toHaveBeenCalledTimes(1);
+    expect(persistScreeningRun).toHaveBeenCalledTimes(1);
+    expect(result.preApprovedReuses).toHaveLength(1);
+    expect(result.preApprovedReuses[0]).toMatchObject({ role: "Consignee", partyId: "party_1" });
+  });
+
+  it("passes forceRescreen through to the gate so a forced rescreen always runs the local matcher", async () => {
+    getShipmentPartiesForScreening.mockResolvedValue([shipmentParty()]);
+    checkPreApprovalGate.mockResolvedValue({ applied: false, reason: "forceRescreen requested; pre-approval bypassed." });
+    runRestrictedPartyScreening.mockResolvedValue({ correlationId: "corr_1", passes: [pass({ status: "CLEAR" })] });
+
+    const result = await runRestrictedPartyScreeningForShipment("acct_1", "ship_1", { forceRescreen: true });
+
+    expect(checkPreApprovalGate).toHaveBeenCalledWith(expect.objectContaining({ forceRescreen: true }));
+    expect(runRestrictedPartyScreening).toHaveBeenCalledTimes(1);
+    expect(result.preApprovedReuses).toHaveLength(0);
+  });
+
+  it("never populates preApprovedReuses for the no-parties SKIPPED path", async () => {
+    getShipmentPartiesForScreening.mockResolvedValue([]);
+    const result = await runRestrictedPartyScreeningForShipment("acct_1", "ship_1");
+    expect(result.preApprovedReuses).toEqual([]);
   });
 });

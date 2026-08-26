@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const SCREENING_BUCKETS = [
   "COUNTRY_EMBARGO",
+  "PRIVATE_EMBARGO",
   "UFLPA",
   "END_USE_RESTRICTION",
   "END_USER_RESTRICTION",
@@ -24,10 +25,16 @@ export default async function CompliancePage(props: {
   if (!context) return null;
 
   const rawTab = typeof searchParams.tab === "string" ? searchParams.tab : "overview";
-  const activeTab = rawTab === "screening" || rawTab === "review" || rawTab === "audit" ? rawTab : "overview";
+  const activeTab =
+    rawTab === "screening" || rawTab === "review" || rawTab === "audit" || rawTab === "history" ? rawTab : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
   const mayReadAuditHistory = holdsPermission(context, "compliance.read");
-  const resolvedTab = activeTab === "audit" && !mayReadAuditHistory ? "overview" : activeTab;
+  const mayReadExecutionHistory =
+    holdsPermission(context, "audit.read") || holdsPermission(context, "compliance.read");
+  const resolvedTab =
+    (activeTab === "audit" && !mayReadAuditHistory) || (activeTab === "history" && !mayReadExecutionHistory)
+      ? "overview"
+      : activeTab;
 
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
     let findingsQuery: Promise<any[]> = Promise.resolve([]);
@@ -177,6 +184,8 @@ export default async function CompliancePage(props: {
         include: { filing: { select: { entryNumber: true } } },
       });
     }
+    // "history" tab needs no server query -- ExecutionHistoryPanel is fully
+    // self-fetching against /api/v1/compliance/executions*.
 
     const [findings, recentAudits, screeningFindings, partyScreeningResults, partySummaryGroups] = await Promise.all([
       findingsQuery,
@@ -284,6 +293,7 @@ export default async function CompliancePage(props: {
         mayReadAuditHistory={mayReadAuditHistory}
         partyScreeningResults={partyScreeningProps}
         partySummaryCounts={partySummaryCounts}
+        mayReadExecutionHistory={mayReadExecutionHistory}
       />
     </div>
   );

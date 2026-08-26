@@ -7,7 +7,7 @@
 // collect unique country values for a shipment up front rather than
 // resolving one at a time per check (avoids N+1 queries).
 import { db } from "@/lib/db";
-import type { Country, CountryByCountryMap, CountryGroupMap, CyCcgMap, CommerceControlList } from "@prisma/client";
+import type { Country, CountryByCountryMap, CountryGroupMap, CyCcgMap, CommerceControlList, PrivateEmbargoRule } from "@prisma/client";
 import type { AccountEmbargoConfig } from "./types";
 
 const DEFAULT_ACCOUNT_EMBARGO_CONFIG: AccountEmbargoConfig = {
@@ -164,4 +164,56 @@ export async function getCommerceControlListEntries(
       ...(country !== undefined ? { cclCountry: country.toUpperCase() } : {}),
     },
   });
+}
+
+/**
+ * Resolves the single applicable PrivateEmbargoRule (if any) for one
+ * (accountId, fromCountry, toCountry) pair on a given screening date.
+ *
+ * Precedence (no Account Group concept exists in this schema -- direct
+ * account ownership is the only scope): an exact fromCountryCode match
+ * always outranks an appliesToAllFromCountries=true wildcard row, and both
+ * require destination match, ACTIVE status, embargoed=true, and date
+ * validity (effectiveDate <= screeningDate <= expirationDate, expirationDate
+ * inclusive and nullable for open-ended rules).
+ *
+ * Returns null when no active rule matches -- callers must treat that as
+ * "no private hit", never as a public-embargo clear (privateEmbargoMatcher.ts).
+ */
+export async function resolvePrivateEmbargoRule(
+  accountId: string,
+  fromCountry: string,
+  toCountry: string,
+  screeningDate: Date
+): Promise<PrivateEmbargoRule | null> {
+  const to = toCountry.trim().toUpperCase();
+  const from = fromCountry.trim().toUpperCase();
+  if (!to || !from) return null;
+
+  const candidates = await db.privateEmbargoRule.findMany({
+    where: {
+      accountId,
+      status: "ACTIVE",
+      embargoed: true,
+      toCountryCode: { equals: to, mode: "insensitive" },
+      effectiveDate: { lte: screeningDate },
+      OR: [{ expirationDate: null }, { expirationDate: { gte: screeningDate } }],
+      AND: [
+        {
+          OR: [
+            { appliesToAllFromCountries: true },
+            { fromCountryCode: { equals: from, mode: "insensitive" } },
+          ],
+        },
+      ],
+    },
+    orderBy: [{ effectiveDate: "desc" }, { id: "asc" }],
+  });
+
+  if (candidates.length === 0) return null;
+
+  const exact = candidates.find(
+    (rule) => !rule.appliesToAllFromCountries && rule.fromCountryCode?.trim().toUpperCase() === from
+  );
+  return exact ?? candidates.find((rule) => rule.appliesToAllFromCountries) ?? null;
 }
