@@ -54,7 +54,7 @@ export default async function ActionsPage(props: {
   // isolation for any DEMO/SANDBOX account.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  const [decisions, allDocuments, exceptions, writable, mayWaive] = await Promise.all([
+  const [decisions, allDocuments, exceptions, filings, deadlines, writable, mayWaive] = await Promise.all([
     db.agentDecision.findMany({
       where: {
         accountId: context.accountId,
@@ -77,7 +77,7 @@ export default async function ActionsPage(props: {
         currentHtsCode: true,
         proposedHtsCode: true,
         proposedDescription: true,
-        evidenceItems: true,
+        // Omit evidenceItems from initial list payload
         shipmentId: true,
         documentId: true,
         lineNumber: true,
@@ -125,6 +125,38 @@ export default async function ActionsPage(props: {
       orderBy: { createdAt: "desc" },
       take: 200,
     }),
+    db.customsFiling.findMany({
+      where: {
+        accountId: context.accountId,
+        filingStatus: { in: ["DRAFT", "READY_TO_FILE", "PENDING_RESPONSE", "REJECTED"] },
+        ...(shipmentId ? { shipmentId } : {}),
+      },
+      select: {
+        id: true,
+        entryNumber: true,
+        filingStatus: true,
+        createdAt: true,
+        shipmentId: true,
+        shipment: { select: { shipmentNumber: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    }),
+    db.complianceDeadline.findMany({
+      where: {
+        accountId: context.accountId,
+        status: "OPEN",
+        dueAt: { not: null },
+        ...(shipmentId ? { shipmentId } : {}),
+      },
+      select: {
+        shipmentId: true,
+        type: true,
+        dueAt: true,
+        estimated: true,
+        penaltyEstimate: true,
+      },
+    }),
     Promise.resolve(canWrite(context)),
     hasPermission(RISK_ACCEPTANCE_PERMISSION).then((ok) => canWrite(context) && ok),
   ]);
@@ -136,9 +168,36 @@ export default async function ActionsPage(props: {
     { shipmentId }
   );
 
-  const serializedDecisions = JSON.parse(JSON.stringify(decisions));
-  const serializedDocuments = JSON.parse(JSON.stringify(allDocuments));
-  const serializedExceptions = JSON.parse(JSON.stringify(exceptions));
+  const serializedDecisions = decisions.map((d) => ({
+    ...d,
+    shipmentId: d.shipmentId ?? "",
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.updatedAt.toISOString(),
+    evidenceItems: null,
+    shipment: d.shipment
+      ? {
+          ...d.shipment,
+          filingDeadline: d.shipment.filingDeadline ? d.shipment.filingDeadline.toISOString() : null,
+        }
+      : null,
+  }));
+
+  const serializedDocuments = allDocuments.map((d) => ({
+    ...d,
+    createdAt: d.createdAt.toISOString(),
+  }));
+
+  const serializedExceptions = exceptions.map((e) => ({
+    ...e,
+    createdAt: e.createdAt.toISOString(),
+    resolvedAt: e.resolvedAt ? e.resolvedAt.toISOString() : null,
+    shipment: e.shipment
+      ? {
+          ...e.shipment,
+          filingDeadline: e.shipment.filingDeadline ? e.shipment.filingDeadline.toISOString() : null,
+        }
+      : null,
+  }));
 
   const decisionGroups = groupDecisions(serializedDecisions, serializedDocuments);
   const groups = buildShipmentActionGroups(decisionGroups, serializedExceptions);

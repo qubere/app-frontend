@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { LayoutDashboard, Search, ListChecks, Clock } from "lucide-react";
-import { ComplianceFindingsClient } from "./ComplianceFindingsClient";
-import { ScreeningPanel, type ScreeningFindingProps, type PartyScreeningResultProps } from "./ScreeningPanel";
-import { OverviewPanel } from "./OverviewPanel";
-import { AuditHistoryPanel, type AuditRecordProps } from "./AuditHistoryPanel";
+import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
+import type { AuditRecordProps } from "./AuditHistoryPanel";
+
+const OverviewPanel = dynamic(() => import("./OverviewPanel").then((m) => m.OverviewPanel), { ssr: false });
+const ScreeningPanel = dynamic(() => import("./ScreeningPanel").then((m) => m.ScreeningPanel), { ssr: false });
+const ComplianceFindingsClient = dynamic(() => import("./ComplianceFindingsClient").then((m) => m.ComplianceFindingsClient), { ssr: false });
+const AuditHistoryPanel = dynamic(() => import("./AuditHistoryPanel").then((m) => m.AuditHistoryPanel), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -35,6 +40,7 @@ interface FindingProps {
 }
 
 interface ComplianceWorkspaceClientProps {
+  initialTab?: string;
   findings: FindingProps[];
   recentAudits: AuditRecordProps[];
   screeningBuckets: Record<string, ScreeningBucketData>;
@@ -45,18 +51,8 @@ interface ComplianceWorkspaceClientProps {
 
 type WorkspaceTab = "overview" | "screening" | "review" | "audit";
 
-function normalizeTab(tab: string | null): WorkspaceTab {
-  return tab === "screening" || tab === "review" || tab === "audit" ? tab : "overview";
-}
-
-const TOP_TABS: { id: WorkspaceTab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "screening", label: "Screening", icon: Search },
-  { id: "review", label: "Review Queue", icon: ListChecks },
-  { id: "audit", label: "Audit History", icon: Clock },
-];
-
 export function ComplianceWorkspaceClient({
+  initialTab = "overview",
   findings,
   recentAudits,
   screeningBuckets,
@@ -64,17 +60,33 @@ export function ComplianceWorkspaceClient({
   partyScreeningResults,
   partySummaryCounts,
 }: ComplianceWorkspaceClientProps) {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
+    (initialTab as WorkspaceTab) || "overview"
+  );
+
+  const topTabs: { id: WorkspaceTab; label: string; icon: typeof LayoutDashboard }[] = [
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "screening", label: "Screening", icon: Search },
+    { id: "review", label: "Review Queue", icon: ListChecks },
+    { id: "audit", label: "Audit History", icon: Clock },
+  ];
 
   useEffect(() => {
-    setActiveTab(normalizeTab(new URLSearchParams(window.location.search).get("tab")));
-  }, []);
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "screening" || tabParam === "review" || tabParam === "audit") {
+      setActiveTab(tabParam);
+    } else if (!tabParam) {
+      setActiveTab("overview");
+    }
+  }, [searchParams]);
 
   const selectTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
-    const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab);
-    window.history.replaceState(null, "", url);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    router.push(`?${params.toString()}`);
   };
 
   const openFindingsCount = findings.filter((f) => f.status !== "Resolved").length;
@@ -84,7 +96,7 @@ export function ComplianceWorkspaceClient({
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-2 pt-2 border-t border-border">
-        {TOP_TABS.map(({ id, label, icon: Icon }) => (
+        {topTabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
