@@ -52,6 +52,7 @@ function SearchableShipmentSelect({
   searchQuery,
   onSearchChange,
   shipmentTotal,
+  shipmentsLoaded,
 }: {
   selectedId: string;
   onSelect: (id: string) => void;
@@ -59,6 +60,7 @@ function SearchableShipmentSelect({
   searchQuery: string;
   onSearchChange: (q: string) => void;
   shipmentTotal: number | null;
+  shipmentsLoaded: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -74,9 +76,17 @@ function SearchableShipmentSelect({
   }, []);
 
   const selectedShipment = availableShipments.find((s) => s.id === selectedId);
+  // Before the /api/shipments fetch resolves, availableShipments is empty and
+  // selectedShipment can't be found even though selectedId is a real
+  // shipment -- falling back to the raw id here flashed the internal cuid at
+  // the operator instead of the human-readable shipment number.
   const displayLabel = selectedShipment
     ? `${selectedShipment.shipmentNumber ?? selectedShipment.id}${selectedShipment.status ? ` (${selectedShipment.status})` : ""}`
-    : selectedId || "Select a Shipment";
+    : selectedId
+      ? shipmentsLoaded
+        ? selectedId
+        : "Loading shipment…"
+      : "Select a Shipment";
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -164,6 +174,7 @@ export function DocumentUploadModal({
   const [outcomes, setOutcomes] = useState<UploadOutcome[]>([]);
   const [shipmentSearch, setShipmentSearch] = useState<string>("");
   const [shipmentTotal, setShipmentTotal] = useState<number | null>(null);
+  const [shipmentsLoaded, setShipmentsLoaded] = useState<boolean>(shipments.length > 0);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [mode, setMode] = useState<"UPLOAD" | "ATTACH_EXISTING">("UPLOAD");
   const [unattachedDocs, setUnattachedDocs] = useState<ShipmentDocumentSummary[]>([]);
@@ -209,8 +220,12 @@ export function DocumentUploadModal({
               setSelectedShipmentId((prev) => prev || fetchedShipments[0].id);
             }
           }
+          setShipmentsLoaded(true);
         } catch (err) {
-          if (!controller.signal.aborted) console.error("Modal shipment fetch error:", err);
+          if (!controller.signal.aborted) {
+            console.error("Modal shipment fetch error:", err);
+            setShipmentsLoaded(true);
+          }
         }
       })();
     }, shipmentSearch ? 250 : 0);
@@ -477,6 +492,7 @@ export function DocumentUploadModal({
               searchQuery={shipmentSearch}
               onSearchChange={(q) => setShipmentSearch(q)}
               shipmentTotal={shipmentTotal}
+              shipmentsLoaded={shipmentsLoaded}
             />
           </FormField>
 
