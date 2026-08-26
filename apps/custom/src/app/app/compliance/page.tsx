@@ -26,6 +26,8 @@ export default async function CompliancePage(props: {
   const rawTab = typeof searchParams.tab === "string" ? searchParams.tab : "overview";
   const activeTab = rawTab === "screening" || rawTab === "review" || rawTab === "audit" ? rawTab : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
+  const mayReadAuditHistory = holdsPermission(context, "compliance.read");
+  const resolvedTab = activeTab === "audit" && !mayReadAuditHistory ? "overview" : activeTab;
 
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
     let findingsQuery: Promise<any[]> = Promise.resolve([]);
@@ -34,7 +36,7 @@ export default async function CompliancePage(props: {
     let partyResultQuery: Promise<any[]> = Promise.resolve([]);
     let partySummaryQuery: Promise<any> = Promise.resolve([]);
 
-    if (activeTab === "overview") {
+    if (resolvedTab === "overview") {
       findingsQuery = db.complianceFinding.findMany({
         where: { accountId: context.accountId },
         include: {
@@ -52,12 +54,14 @@ export default async function CompliancePage(props: {
         take: 10,
       });
 
-      auditQuery = db.complianceAuditRecord.findMany({
-        where: { accountId: context.accountId },
-        orderBy: { runAt: "desc" },
-        take: 5,
-        include: { filing: { select: { entryNumber: true } } },
-      });
+      if (mayReadAuditHistory) {
+        auditQuery = db.complianceAuditRecord.findMany({
+          where: { accountId: context.accountId },
+          orderBy: { runAt: "desc" },
+          take: 5,
+          include: { filing: { select: { entryNumber: true } } },
+        });
+      }
 
       screeningFindingQuery = db.complianceScreeningFinding.findMany({
         where: { accountId: context.accountId },
@@ -103,7 +107,7 @@ export default async function CompliancePage(props: {
           _count: true,
         });
       }
-    } else if (activeTab === "screening") {
+    } else if (resolvedTab === "screening") {
       screeningFindingQuery = db.complianceScreeningFinding.findMany({
         where: { accountId: context.accountId },
         include: { shipment: { select: { id: true, shipmentNumber: true, importerName: true } } },
@@ -148,7 +152,7 @@ export default async function CompliancePage(props: {
           _count: true,
         });
       }
-    } else if (activeTab === "review") {
+    } else if (resolvedTab === "review") {
       findingsQuery = db.complianceFinding.findMany({
         where: { accountId: context.accountId },
         include: {
@@ -165,7 +169,7 @@ export default async function CompliancePage(props: {
         orderBy: [{ status: "asc" }, { createdAt: "desc" }],
         take: 50,
       });
-    } else if (activeTab === "audit") {
+    } else if (resolvedTab === "audit") {
       auditQuery = db.complianceAuditRecord.findMany({
         where: { accountId: context.accountId },
         orderBy: { runAt: "desc" },
@@ -277,6 +281,7 @@ export default async function CompliancePage(props: {
         recentAudits={auditProps}
         screeningBuckets={screeningBuckets}
         mayReadPartyScreening={mayReadPartyScreening}
+        mayReadAuditHistory={mayReadAuditHistory}
         partyScreeningResults={partyScreeningProps}
         partySummaryCounts={partySummaryCounts}
       />

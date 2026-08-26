@@ -45,6 +45,7 @@ interface ComplianceWorkspaceClientProps {
   recentAudits: AuditRecordProps[];
   screeningBuckets: Record<string, ScreeningBucketData>;
   mayReadPartyScreening: boolean;
+  mayReadAuditHistory: boolean;
   partyScreeningResults: PartyScreeningResultProps[];
   partySummaryCounts: Record<string, number>;
 }
@@ -57,6 +58,7 @@ export function ComplianceWorkspaceClient({
   recentAudits,
   screeningBuckets,
   mayReadPartyScreening,
+  mayReadAuditHistory,
   partyScreeningResults,
   partySummaryCounts,
 }: ComplianceWorkspaceClientProps) {
@@ -66,21 +68,23 @@ export function ComplianceWorkspaceClient({
     (initialTab as WorkspaceTab) || "overview"
   );
 
-  const topTabs: { id: WorkspaceTab; label: string; icon: typeof LayoutDashboard }[] = [
+  const topTabs: { id: WorkspaceTab; label: string; icon: typeof LayoutDashboard; hidden?: boolean }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "screening", label: "Screening", icon: Search },
     { id: "review", label: "Review Queue", icon: ListChecks },
-    { id: "audit", label: "Audit History", icon: Clock },
+    { id: "audit", label: "Audit History", icon: Clock, hidden: !mayReadAuditHistory },
   ];
 
   useEffect(() => {
     const tabParam = searchParams.get("tab");
-    if (tabParam === "screening" || tabParam === "review" || tabParam === "audit") {
+    if (tabParam === "audit") {
+      setActiveTab(mayReadAuditHistory ? "audit" : "overview");
+    } else if (tabParam === "screening" || tabParam === "review") {
       setActiveTab(tabParam);
     } else if (!tabParam) {
       setActiveTab("overview");
     }
-  }, [searchParams]);
+  }, [searchParams, mayReadAuditHistory]);
 
   const selectTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
@@ -96,7 +100,7 @@ export function ComplianceWorkspaceClient({
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-2 pt-2 border-t border-border">
-        {topTabs.map(({ id, label, icon: Icon }) => (
+        {topTabs.filter((t) => !t.hidden).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -139,7 +143,7 @@ export function ComplianceWorkspaceClient({
           />
         )}
         {activeTab === "review" && <ComplianceFindingsClient findings={findings} recentAudits={[]} />}
-        {activeTab === "audit" && <AuditHistoryPanel recentAudits={recentAudits} />}
+        {activeTab === "audit" && mayReadAuditHistory && <AuditHistoryPanel recentAudits={recentAudits} />}
       </div>
     </div>
   );
