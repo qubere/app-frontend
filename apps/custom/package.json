@@ -24,6 +24,7 @@
     "@qubere/db": "*",
     "@qubere/decisions": "*",
     "@vercel/blob": "^2.6.1",
+    "@vercel/speed-insights": "^2.0.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "cheerio": "^1.2.0",
