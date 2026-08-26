@@ -19,6 +19,7 @@ import { ComplianceAuditAgent } from "@/modules/agents/complianceAuditAgent";
 import { FilingReadinessAgent } from "@/modules/agents/filingReadinessAgent";
 import { CustomsFilingAgent } from "@/modules/agents/customsFilingAgent";
 import { ResponseManagementAgent } from "@/modules/agents/responseManagementAgent";
+import { logEvent, logger } from "@/lib/logging/logger";
 import { z } from "zod";
 
 const paramsSchema = z.object({ agentId: z.string().min(1) });
@@ -262,6 +263,17 @@ export const POST = withAuthenticatedRoute<{ agentId: string }>(async ({ req, ct
         );
     }
 
+    logEvent({
+      action: "agent.executed",
+      message: `POST /api/agents/${agentId} ${agentName} ran for shipment ${targetShipmentId}`,
+      accountId,
+      userId,
+      resourceType: "shipment",
+      resourceId: targetShipmentId,
+      requestId,
+      metadata: { agentId, agentName },
+    });
+
     return NextResponse.json({
       success: true,
       agentId,
@@ -269,6 +281,15 @@ export const POST = withAuthenticatedRoute<{ agentId: string }>(async ({ req, ct
       result: agentResult,
     });
   } catch (error: unknown) {
+    logger.error(`Agent ${agentId} failed for shipment ${targetShipmentId}`, {
+      accountId,
+      userId,
+      resourceType: "shipment",
+      resourceId: targetShipmentId,
+      action: "agent.failed",
+      requestId,
+      agentId,
+    }, error);
     return handleApiError(error);
   }
 

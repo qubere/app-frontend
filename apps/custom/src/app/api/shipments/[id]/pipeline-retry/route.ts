@@ -4,6 +4,7 @@ import { checkIdempotency, persistIdempotency } from "@/lib/api/idempotency";
 import { createAuditLog } from "@/lib/audit";
 import { db, withAccountIdContext } from "@/lib/db";
 import { PipelineOrchestrator } from "@/modules/agents/pipelineOrchestrator";
+import { logApiRequest, logEvent } from "@/lib/logging/logger";
 import { NextResponse } from "next/server";
 import { after } from "next/server";
 
@@ -13,27 +14,44 @@ import { after } from "next/server";
  * Jobs can fail or stall mid-run (lockedAt older than 5 minutes). This endpoint
  * unlocks and re-queues the job so background workers or in-process execution
  * can resume the pipeline run from where it left off.
+ *
+ * This route predates `withAuthenticatedRoute` and hand-rolls auth, so it
+ * doesn't get that wrapper's automatic request logging -- logged explicitly
+ * here instead.
  */
 export async function POST(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const requestId = generateRequestId();
+  const startedAt = Date.now();
+  const { pathname } = new URL(req.url);
 
   try {
     const { ctx, errorResponse } = await authorizeWrite();
-    if (errorResponse) return errorResponse;
+    if (errorResponse) {
+      logApiRequest({ method: req.method, path: pathname, status: errorResponse.status, durationMs: Date.now() - startedAt, requestId });
+      return errorResponse;
+    }
     if (!ctx) {
-      return buildErrorResponse(401, "UNAUTHENTICATED", "Authentication required", requestId);
+      const response = buildErrorResponse(401, "UNAUTHENTICATED", "Authentication required", requestId);
+      logApiRequest({ method: req.method, path: pathname, status: response.status, durationMs: Date.now() - startedAt, requestId });
+      return response;
     }
 
     const { idempotencyKey, requestHash, cachedResponse, errorResponse: idempError } = await checkIdempotency(req, ctx.accountId, requestId);
-    if (cachedResponse) return cachedResponse;
-    if (idempError) return idempError;
+    if (cachedResponse) {
+      logApiRequest({ method: req.method, path: pathname, status: cachedResponse.status, durationMs: Date.now() - startedAt, accountId: ctx.accountId, userId: ctx.userId, requestId });
+      return cachedResponse;
+    }
+    if (idempError) {
+      logApiRequest({ method: req.method, path: pathname, status: idempError.status, durationMs: Date.now() - startedAt, accountId: ctx.accountId, userId: ctx.userId, requestId });
+      return idempError;
+    }
 
     const { id } = await context.params;
 
-    return await withAccountIdContext(ctx.accountId, async () => {
+    const response = await withAccountIdContext(ctx.accountId, async () => {
       const shipment = await db.shipment.findFirst({
         where: { accountId: ctx.accountId, id, deletedAt: null },
         select: { id: true },
@@ -112,6 +130,17 @@ export async function POST(
         requestId,
       });
 
+      logEvent({
+        action: "pipeline.retry_requested",
+        message: `POST /api/shipments/${shipment.id}/pipeline-retry job ${job.id} re-queued (was ${job.status}${isStalled ? ", stalled" : ""})`,
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        resourceType: "shipment",
+        resourceId: shipment.id,
+        requestId,
+        metadata: { jobId: job.id, previousStatus: job.status, wasStalled: isStalled },
+      });
+
       try {
         after(async () => {
           try {
@@ -137,7 +166,27 @@ export async function POST(
 
       return NextResponse.json(responsePayload);
     });
+
+    logApiRequest({
+      method: req.method,
+      path: pathname,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      requestId,
+    });
+    return response;
   } catch (error) {
-    return handleApiError(error, requestId);
+    const response = handleApiError(error, requestId);
+    logApiRequest({
+      method: req.method,
+      path: pathname,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      requestId,
+      error,
+    });
+    return response;
   }
 }

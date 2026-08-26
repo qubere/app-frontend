@@ -23,6 +23,7 @@ import { captureShipmentOutputFacts } from "./outputCapture";
 import { persistComplianceScreeningFindings } from "@/modules/compliance/screeningFindings";
 import { PgQueue } from "@/lib/queue/pgQueue";
 import { recordUsageEvent, AGENT_BILLING_EVENT_MAP } from "@/lib/billing/telemetry";
+import { logEvent, logger } from "@/lib/logging/logger";
 
 /**
  * Replaces ComplianceWorkflowEngine/AgentOrchestrator (the fixed 10-step
@@ -143,6 +144,16 @@ export class PipelineOrchestrator {
     const executedAgents: string[] = [];
     const scratch: RunScratch = {};
 
+    logEvent({
+      action: "pipeline.run_started",
+      message: `Agent pipeline started for shipment ${shipmentId}: ${agentsToRun.join(", ")} (trigger: ${triggerEvent}, invoked by ${invokedByLabel})`,
+      accountId,
+      userId,
+      resourceType: "shipment",
+      resourceId: shipmentId,
+      metadata: { runId, triggerEvent, invokedBy: invokedByLabel, agentsToRun, jobId },
+    });
+
     for (let i = 0; i < agentsToRun.length; i++) {
       const agentName = agentsToRun[i];
       const nextStep = i < agentsToRun.length - 1 ? agentsToRun[i + 1] : "Reconciliation";
@@ -177,7 +188,16 @@ export class PipelineOrchestrator {
       } catch (err) {
         status = "FAILED";
         error = err instanceof Error ? err.message : "Agent execution failed";
-        console.error(`[PipelineOrchestrator] ${agentName} failed:`, err);
+        logger.error(`Agent ${agentName} failed on shipment ${shipmentId}: ${error}`, {
+          accountId,
+          userId,
+          resourceType: "shipment",
+          resourceId: shipmentId,
+          action: "pipeline.agent_failed",
+          runId,
+          agentName,
+          triggerEvent,
+        }, err);
       } finally {
         await db.agentExecutionRecord
           .create({
@@ -248,12 +268,23 @@ export class PipelineOrchestrator {
     await ReconciliationEngine.reconcileShipment(shipmentId, accountId, triggerEvent);
 
     const canonicalState = await CanonicalShipmentService.getCanonicalState(shipmentId);
+    const totalDurationMs = Date.now() - startTime;
+
+    logEvent({
+      action: "pipeline.run_completed",
+      message: `Agent pipeline completed for shipment ${shipmentId}: ${executedAgents.length}/${agentsToRun.length} agents ran in ${totalDurationMs}ms (trigger: ${triggerEvent})`,
+      accountId,
+      userId,
+      resourceType: "shipment",
+      resourceId: shipmentId,
+      metadata: { runId, triggerEvent, agentsExecuted: executedAgents, durationMs: totalDurationMs, jobId },
+    });
 
     return {
       shipmentId,
       triggerEvent,
       agentsExecuted: executedAgents,
-      durationMs: Date.now() - startTime,
+      durationMs: totalDurationMs,
       canonicalState,
     };
   }
