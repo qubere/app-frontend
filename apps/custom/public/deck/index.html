@@ -2073,18 +2073,527 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy
   </div>
 </section>
 
+<!-- SLIDE 32: BILLING SECTION DIVIDER -->
+<section class="slide slide-dark" data-slide="32">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:700px;background:radial-gradient(circle,rgba(16,185,129,0.12) 0%,transparent 70%);pointer-events:none;"></div>
+  <div style="max-width:980px;width:100%;padding:0 72px;position:relative;z-index:1;">
+    <p class="eyebrow eyebrow-light">New Capability · Billing &amp; Unit Economics</p>
+    <div class="rule" style="background:rgba(16,185,129,0.6);"></div>
+    <h1 style="font-family:var(--font-display);font-size:46px;font-weight:800;line-height:1.18;color:white;text-wrap:balance;margin-bottom:26px;">"If I asked your billing team right now why a specific invoice line item is $28 &mdash; how long would it take them to answer with confidence?"</h1>
+    <p style="font-family:var(--font-body);font-size:17px;color:var(--slate-400);line-height:1.7;max-width:760px;margin-bottom:14px;text-wrap:balance;">And could you tell me, off the top of your head, which of your clients you're actually losing money on? Most brokers can't answer either question cleanly. That's the entire pitch in two questions.</p>
+    <div style="display:flex;gap:14px;margin-top:36px;flex-wrap:wrap;">
+      <span style="font-family:var(--font-body);font-size:11px;font-weight:600;color:var(--green);background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:5px 14px;">Real rating engine</span>
+      <span style="font-family:var(--font-body);font-size:11px;font-weight:600;color:var(--green);background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:5px 14px;">61/61 billing tests passing</span>
+      <span style="font-family:var(--font-body);font-size:11px;font-weight:600;color:var(--green);background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:5px 14px;">Maker-checker enforced, not decorative</span>
+      <span style="font-family:var(--font-body);font-size:11px;font-weight:600;color:var(--green);background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:20px;padding:5px 14px;">No manual billing entry</span>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 33: SCENE 1 - CHARGE AUDIT TRAIL -->
+<section class="slide slide-pale" data-slide="33">
+  <div class="feature-layout">
+    <div class="feature-left">
+      <p class="feature-eyebrow">Scene 1 &middot; Why This Charge Exists</p>
+      <h2 class="feature-headline">Click into any charge. Get the full audit trail instantly.</h2>
+      <p class="feature-desc">Open a shipment on Acme Manufacturing's ledger, click into a single charge, and walk the full trace: usage event &rarr; rate rule &rarr; rate card version &rarr; calculation &rarr; charge. No spreadsheet or legacy system gives an instant, auditable answer to "why is this $X."</p>
+      <div class="usecase-row">
+        <span class="usecase-label">Use Case</span>
+        <span class="usecase-text">A client disputes a $125 line item on their invoice. The billing coordinator needs to prove exactly why that number is correct &mdash; in the call, not after a spreadsheet reconstruction.</span>
+      </div>
+      <ul class="feature-bullets">
+        <li>Every charge links back to the exact usage event that generated it</li>
+        <li>The rate rule and the specific rate-card version in effect are both named</li>
+        <li>A raw calculation trace shows the math, not just the result</li>
+        <li>This is the single most differentiated moment in the demo</li>
+      </ul>
+      <div class="demo-tip">
+        <div class="demo-tip-label">How to on Qubere</div>
+        <div class="demo-tip-text">Billing &rarr; <strong>Shipment Economics</strong> &rarr; open a shipment &rarr; click <strong>Review</strong> on any charge line.</div>
+      </div>
+    </div>
+    <div class="feature-right">
+      <div class="app-frame" style="max-width:820px;">
+        <div class="app-topbar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 22 22" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><path d="M11 7v8M7 9.5l4 2.5 4-2.5"/></svg></div><span class="app-logo-name">Qubere</span></div>
+            <div class="app-breadcrumb"><span class="app-breadcrumb-ws">ABC Customs Brokers</span><span style="color:var(--slate-300);">/</span><span class="app-breadcrumb-chip">Billing</span></div>
+          </div>
+          <div class="app-topbar-right"><div class="app-notif">🔔<div class="app-notif-badge"></div></div><div class="app-avatar">FM</div><span class="app-username">Frank MultiAccountUser</span></div>
+        </div>
+        <div class="app-body" style="height:420px;">
+          <div class="app-sidebar">
+            <div class="sidebar-ask"><span class="sidebar-ask-star">✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+            <div class="sidebar-ws"><div class="sidebar-ws-avatar">AB</div><div><div class="sidebar-ws-name">ABC Customs Brokers</div><div class="sidebar-ws-role">ENTERPRISE · OWNER</div></div></div>
+            <div class="sidebar-section">Main Operations</div>
+            <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+            <div class="nav-item"><span class="nav-item-icon">⊞</span><span class="nav-item-label">Command Center</span></div>
+            <div class="nav-item"><span class="nav-item-icon">📦</span><span class="nav-item-label">Shipments</span></div>
+            <div class="sidebar-section" style="margin-top:4px;">Tooling &amp; Admin</div>
+            <div class="sidebar-grid">
+              <div class="nav-sub"><span class="nav-sub-icon">📄</span><span class="nav-sub-label">Docs</span></div>
+              <div class="nav-sub active"><span class="nav-sub-icon">$</span><span class="nav-sub-label">Billing</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">👥</span><span class="nav-sub-label">Clients</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">📊</span><span class="nav-sub-label">Trade Data</span></div>
+            </div>
+          </div>
+          <div class="app-main">
+            <div style="padding:10px 14px 6px;border-bottom:1px solid var(--slate-200);flex-shrink:0;">
+              <div style="font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--slate-900);">Charge Detail &amp; Audit Trail</div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">SHP-2026-ACM004 &middot; Acme Manufacturing</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 14px;flex-shrink:0;">
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Gross</div><div class="kpi-value default" style="font-size:16px;">$125.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Discounts / Credits</div><div class="kpi-value default" style="font-size:16px;">$0.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Current Billable</div><div class="kpi-value blue" style="font-size:16px;">$125.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Status</div><span class="chip chip-accepted" style="font-size:10px;">RATED</span></div>
+            </div>
+            <div style="padding:0 14px 12px;flex:1;overflow:hidden;">
+              <div style="border:1px solid var(--slate-200);border-radius:8px;padding:12px 14px;background:white;">
+                <div style="font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--slate-800);margin-bottom:8px;">Why this charge exists</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-family:var(--font-body);font-size:10.5px;margin-bottom:10px;">
+                  <div><div style="color:var(--slate-400);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;">Description</div><div style="color:var(--slate-800);font-weight:600;">Entry Processing</div></div>
+                  <div><div style="color:var(--slate-400);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;">Service Code</div><div style="color:var(--slate-800);font-weight:600;">ENTRY_PROCESSING</div></div>
+                  <div><div style="color:var(--slate-400);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;">Pricing Model</div><div style="color:var(--slate-800);font-weight:600;">FLAT_FEE</div></div>
+                  <div><div style="color:var(--slate-400);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;">Qty × Unit Price</div><div style="color:var(--slate-800);font-weight:600;">1 × $125.00</div></div>
+                  <div><div style="color:var(--slate-400);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;">Rate Card</div><div style="color:var(--blue);font-weight:600;">Acme Manufacturing 2026 Standard v1</div></div>
+                  <div><div style="color:var(--slate-400);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;">Usage Event</div><div style="color:var(--blue);font-weight:600;">CUSTOMS_ENTRY_COMPLETED</div></div>
+                </div>
+                <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--slate-500);background:var(--slate-50);border:1px solid var(--slate-200);border-radius:6px;padding:8px 10px;line-height:1.6;white-space:pre;">▾ Calculation trace
+{
+  "ruleId": "cmt913476...pxu1wl4",
+  "baseRate": 125,
+  "eventQty": 1,
+  "includedQty": 0,
+  "pricingModel": "FLAT_FEE",
+  "oncePerShipment": true,
+  "rateCardVersionId": "cmt913476...291303"
+}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 34: SCENE 2 - RATE CARD IMPORT -->
+<section class="slide slide-pale" data-slide="34">
+  <div class="feature-layout">
+    <div class="feature-left">
+      <p class="feature-eyebrow">Scene 2 &middot; Your Rate Card, Live</p>
+      <h2 class="feature-headline">Import your rate card. Map it. Activate it. In five minutes.</h2>
+      <p class="feature-desc">Upload the seeded sample CSV, map two or three line items live, and activate. This directly answers "how painful is onboarding" before they ask &mdash; and it's the real import flow, not a canned demo screen.</p>
+      <div class="usecase-row">
+        <span class="usecase-label">Use Case</span>
+        <span class="usecase-text">A brokerage's rate card lives in a spreadsheet today, with three copies floating around and no one certain which one is current.</span>
+      </div>
+      <ul class="feature-bullets">
+        <li>CSV or Excel, parsed live &mdash; no fixed template required</li>
+        <li>Each service line maps to a specific Qubere billing event code</li>
+        <li>Creates a reviewable <strong>draft</strong> &mdash; nothing goes live until activated</li>
+        <li>Be honest: mapping still benefits from someone who knows both sides &mdash; not zero-touch self-service on day one</li>
+      </ul>
+      <div class="demo-tip">
+        <div class="demo-tip-label">How to on Qubere</div>
+        <div class="demo-tip-text">Billing &rarr; <strong>Rate Cards</strong> &rarr; Import Rate Card &rarr; Browse File &mdash; sample file at <code style="font-family:var(--font-mono);font-size:11px;">apps/custom/public/demo/billing/</code>.</div>
+      </div>
+    </div>
+    <div class="feature-right">
+      <div class="app-frame" style="max-width:820px;">
+        <div class="app-topbar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 22 22" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><path d="M11 7v8M7 9.5l4 2.5 4-2.5"/></svg></div><span class="app-logo-name">Qubere</span></div>
+            <div class="app-breadcrumb"><span class="app-breadcrumb-ws">ABC Customs Brokers</span><span style="color:var(--slate-300);">/</span><span class="app-breadcrumb-chip">Billing</span></div>
+          </div>
+          <div class="app-topbar-right"><div class="app-notif">🔔<div class="app-notif-badge"></div></div><div class="app-avatar">FM</div><span class="app-username">Frank MultiAccountUser</span></div>
+        </div>
+        <div class="app-body" style="height:420px;">
+          <div class="app-sidebar">
+            <div class="sidebar-ask"><span class="sidebar-ask-star">✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+            <div class="sidebar-ws"><div class="sidebar-ws-avatar">AB</div><div><div class="sidebar-ws-name">ABC Customs Brokers</div><div class="sidebar-ws-role">ENTERPRISE · OWNER</div></div></div>
+            <div class="sidebar-section">Main Operations</div>
+            <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+            <div class="nav-item"><span class="nav-item-icon">⊞</span><span class="nav-item-label">Command Center</span></div>
+            <div class="sidebar-section" style="margin-top:4px;">Tooling &amp; Admin</div>
+            <div class="sidebar-grid">
+              <div class="nav-sub"><span class="nav-sub-icon">📄</span><span class="nav-sub-label">Docs</span></div>
+              <div class="nav-sub active"><span class="nav-sub-icon">$</span><span class="nav-sub-label">Billing</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">👥</span><span class="nav-sub-label">Clients</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">📊</span><span class="nav-sub-label">Trade Data</span></div>
+            </div>
+          </div>
+          <div class="app-main">
+            <div style="padding:10px 14px 6px;border-bottom:1px solid var(--slate-200);flex-shrink:0;">
+              <div style="font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--slate-900);">Import Customer Rate Card</div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Parse a customer CSV, map each service to a Qubere billing event, then create a reviewable draft.</div>
+            </div>
+            <div style="padding:10px 14px;flex:1;overflow:hidden;">
+              <div style="font-family:var(--font-body);font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--slate-400);margin-bottom:4px;">acme-manufacturing-rate-card.csv</div>
+              <table class="data-table" style="margin-bottom:10px;">
+                <thead><tr><th>Service</th><th>Price</th><th>Unit</th><th>Maps to Qubere Event</th></tr></thead>
+                <tbody>
+                  <tr><td style="font-weight:600;">Entry Fee</td><td>$125.00</td><td style="font-size:10px;">per shipment</td><td><span class="chip chip-progress" style="font-size:9px;">CUSTOMS_ENTRY_COMPLETED</span></td></tr>
+                  <tr><td style="font-weight:600;">Additional Line</td><td>$4.00</td><td style="font-size:10px;">per line</td><td><span class="chip chip-progress" style="font-size:9px;">HTS_CLASSIFICATION_COMPLETED</span></td></tr>
+                  <tr><td style="font-weight:600;">HTS Classification Review</td><td>$20.00</td><td style="font-size:10px;">per review</td><td><span class="chip chip-progress" style="font-size:9px;">HTS_MANUAL_REVIEW_COMPLETED</span></td></tr>
+                  <tr><td style="font-weight:600;">PGA Processing</td><td>$35.00</td><td style="font-size:10px;">per entry</td><td><span class="chip chip-progress" style="font-size:9px;">PGA_PROCESSING_COMPLETED</span></td></tr>
+                </tbody>
+              </table>
+              <div style="display:flex;justify-content:flex-end;">
+                <span class="btn-primary" style="cursor:default;">Create Draft Rate Card →</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 35: SCENE 3 - USAGE LEDGER -->
+<section class="slide slide-pale" data-slide="35">
+  <div class="feature-layout">
+    <div class="feature-left">
+      <p class="feature-eyebrow">Scene 3 &middot; Billing That Doesn't Wait</p>
+      <h2 class="feature-headline">Billing that doesn't wait for someone to remember to do it.</h2>
+      <p class="feature-desc">Walk through the Usage Ledger and show real classification, document, and filing events that automatically produced charges. No manual entry step exists in this flow &mdash; and that's the point.</p>
+      <div class="usecase-row">
+        <span class="usecase-label">Use Case</span>
+        <span class="usecase-text">A billing coordinator today reconstructs "what did we actually do for this client" from memory and email, days after the work happened.</span>
+      </div>
+      <ul class="feature-bullets">
+        <li>Every classification, document extraction, and filing action emits a usage record automatically</li>
+        <li>Charges appear in the ledger the moment the operational work happens</li>
+        <li>An idempotency key on every event prevents duplicate billing on retries</li>
+        <li>Manual work &mdash; a classification override, a human review &mdash; emits its own billable event too, not just automated work</li>
+      </ul>
+      <div class="demo-tip">
+        <div class="demo-tip-label">How to on Qubere</div>
+        <div class="demo-tip-text">Billing &rarr; <strong>Usage Ledger</strong>. Filter by module (CUSTOMS / TMS / WMS) to isolate a product line.</div>
+      </div>
+    </div>
+    <div class="feature-right">
+      <div class="app-frame" style="max-width:820px;">
+        <div class="app-topbar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 22 22" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><path d="M11 7v8M7 9.5l4 2.5 4-2.5"/></svg></div><span class="app-logo-name">Qubere</span></div>
+            <div class="app-breadcrumb"><span class="app-breadcrumb-ws">ABC Customs Brokers</span><span style="color:var(--slate-300);">/</span><span class="app-breadcrumb-chip">Billing</span></div>
+          </div>
+          <div class="app-topbar-right"><div class="app-notif">🔔<div class="app-notif-badge"></div></div><div class="app-avatar">FM</div><span class="app-username">Frank MultiAccountUser</span></div>
+        </div>
+        <div class="app-body" style="height:420px;">
+          <div class="app-sidebar">
+            <div class="sidebar-ask"><span class="sidebar-ask-star">✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+            <div class="sidebar-ws"><div class="sidebar-ws-avatar">AB</div><div><div class="sidebar-ws-name">ABC Customs Brokers</div><div class="sidebar-ws-role">ENTERPRISE · OWNER</div></div></div>
+            <div class="sidebar-section">Main Operations</div>
+            <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+            <div class="nav-item"><span class="nav-item-icon">⊞</span><span class="nav-item-label">Command Center</span></div>
+            <div class="sidebar-section" style="margin-top:4px;">Tooling &amp; Admin</div>
+            <div class="sidebar-grid">
+              <div class="nav-sub"><span class="nav-sub-icon">📄</span><span class="nav-sub-label">Docs</span></div>
+              <div class="nav-sub active"><span class="nav-sub-icon">$</span><span class="nav-sub-label">Billing</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">👥</span><span class="nav-sub-label">Clients</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">📊</span><span class="nav-sub-label">Trade Data</span></div>
+            </div>
+          </div>
+          <div class="app-main">
+            <div style="padding:10px 14px 6px;border-bottom:1px solid var(--slate-200);flex-shrink:0;">
+              <div style="font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--slate-900);">Usage Event Ledger</div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Immutable telemetry of economically meaningful operational work.</div>
+            </div>
+            <div style="padding:8px 14px;flex:1;overflow:hidden;">
+              <table class="data-table" style="font-size:10px;">
+                <thead><tr><th>Event</th><th>Shipment</th><th>Source Function</th><th>Rated</th><th>Cost</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Valuation &amp; Assists Analysis</strong><br><span style="font-size:9px;color:var(--slate-400);">CUSTOMS/VALUATION_COMPLETED</span></td><td>SHP-2026-000005</td><td style="font-family:var(--font-mono);font-size:9px;">PipelineOrchestrator.<br>processEvent</td><td><span class="chip chip-normal" style="font-size:9px;">Unrated</span></td><td>$0.02</td></tr>
+                  <tr><td><strong>Origin Rules Determination</strong><br><span style="font-size:9px;color:var(--slate-400);">CUSTOMS/ORIGIN_RULES_COMPLETED</span></td><td>SHP-2026-000005</td><td style="font-family:var(--font-mono);font-size:9px;">PipelineOrchestrator.<br>processEvent</td><td><span class="chip chip-normal" style="font-size:9px;">Unrated</span></td><td>$0.02</td></tr>
+                  <tr><td><strong>HTS Classification Completed</strong><br><span style="font-size:9px;color:var(--slate-400);">CUSTOMS/HTS_CLASSIFICATION</span></td><td>SHP-2026-000005</td><td style="font-family:var(--font-mono);font-size:9px;">PipelineOrchestrator.<br>processEvent</td><td><span class="chip chip-normal" style="font-size:9px;">Unrated</span></td><td>$0.02</td></tr>
+                  <tr><td><strong>Document Processing</strong><br><span style="font-size:9px;color:var(--slate-400);">CUSTOMS/DOCUMENT_PROCESSED</span></td><td>SHP-2026-000005</td><td style="font-family:var(--font-mono);font-size:9px;">PipelineOrchestrator.<br>processEvent</td><td><span class="chip chip-normal" style="font-size:9px;">Unrated</span></td><td>$0.38</td></tr>
+                  <tr><td><strong>Filing Readiness Assessed</strong><br><span style="font-size:9px;color:var(--slate-400);">CUSTOMS/FILING_READINESS</span></td><td>SHP-2026-NST003</td><td style="font-family:var(--font-mono);font-size:9px;">PipelineOrchestrator.<br>processEvent</td><td><span class="chip chip-normal" style="font-size:9px;">Unrated</span></td><td>$0.04</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 36: SCENE 4 - NEGATIVE MARGIN & EXCEPTIONS -->
+<section class="slide slide-pale" data-slide="36">
+  <div class="feature-layout">
+    <div class="feature-left">
+      <p class="feature-eyebrow">Scene 4 &middot; Revenue Leakage Detection</p>
+      <h2 class="feature-headline">We'll tell you when you're losing money &mdash; not your quarterly review.</h2>
+      <p class="feature-desc">Show the pre-seeded negative-margin client and the open exception it produced, then resolve it live with a reason. This is where "revenue leakage detection" stops being a bullet point and becomes something they just watched happen.</p>
+      <div class="usecase-row">
+        <span class="usecase-label">Use Case</span>
+        <span class="usecase-text">A rate card is underpriced relative to actual cost, and nobody finds out until a margin review months later &mdash; if ever.</span>
+      </div>
+      <ul class="feature-bullets">
+        <li>Shipment Economics surfaces gross margin per shipment, per client, live</li>
+        <li>Exceptions flag missing rate cards, unmapped events, and negative margins automatically</li>
+        <li>Resolving or waiving an exception requires a reason &mdash; tied to a user and timestamp, forever</li>
+        <li>This is genuinely actionable now, not a read-only report</li>
+      </ul>
+      <div class="demo-tip">
+        <div class="demo-tip-label">How to on Qubere</div>
+        <div class="demo-tip-text">Billing &rarr; <strong>Shipment Economics</strong> to spot the margin, then <strong>Exceptions &amp; Leakage</strong> to resolve it.</div>
+      </div>
+    </div>
+    <div class="feature-right">
+      <div class="app-frame" style="max-width:820px;">
+        <div class="app-topbar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 22 22" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><path d="M11 7v8M7 9.5l4 2.5 4-2.5"/></svg></div><span class="app-logo-name">Qubere</span></div>
+            <div class="app-breadcrumb"><span class="app-breadcrumb-ws">ABC Customs Brokers</span><span style="color:var(--slate-300);">/</span><span class="app-breadcrumb-chip">Billing</span></div>
+          </div>
+          <div class="app-topbar-right"><div class="app-notif">🔔<div class="app-notif-badge"></div></div><div class="app-avatar">FM</div><span class="app-username">Frank MultiAccountUser</span></div>
+        </div>
+        <div class="app-body" style="height:420px;">
+          <div class="app-sidebar">
+            <div class="sidebar-ask"><span class="sidebar-ask-star">✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+            <div class="sidebar-ws"><div class="sidebar-ws-avatar">AB</div><div><div class="sidebar-ws-name">ABC Customs Brokers</div><div class="sidebar-ws-role">ENTERPRISE · OWNER</div></div></div>
+            <div class="sidebar-section">Main Operations</div>
+            <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+            <div class="sidebar-section" style="margin-top:4px;">Tooling &amp; Admin</div>
+            <div class="sidebar-grid">
+              <div class="nav-sub"><span class="nav-sub-icon">📄</span><span class="nav-sub-label">Docs</span></div>
+              <div class="nav-sub active"><span class="nav-sub-icon">$</span><span class="nav-sub-label">Billing</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">👥</span><span class="nav-sub-label">Clients</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">📊</span><span class="nav-sub-label">Trade Data</span></div>
+            </div>
+          </div>
+          <div class="app-main">
+            <div style="padding:10px 14px 6px;border-bottom:1px solid var(--slate-200);flex-shrink:0;">
+              <div style="font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--slate-900);">Shipment Economics</div>
+            </div>
+            <div style="padding:8px 14px;flex-shrink:0;">
+              <table class="data-table" style="font-size:10.5px;">
+                <thead><tr><th>Shipment</th><th>Client</th><th>Revenue</th><th>Cost</th><th>Margin</th></tr></thead>
+                <tbody>
+                  <tr style="background:#FEF2F2;"><td class="link">SHP-2026-MER002</td><td>Meridian Apparel Group</td><td>$122.75</td><td>$173.00</td><td style="color:var(--red);font-weight:700;">-40.9%</td></tr>
+                  <tr><td class="link">SHP-2026-ACM004</td><td>Acme Manufacturing</td><td>$125.00</td><td>$6.87</td><td style="color:var(--green);font-weight:700;">94.5%</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="padding:6px 14px 10px;border-top:1px solid var(--slate-100);flex:1;overflow:hidden;">
+              <div style="font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--slate-800);margin:6px 0 6px;">Exceptions &amp; Revenue Leakage</div>
+              <div style="border:1px solid var(--slate-200);border-radius:7px;padding:9px 12px;background:white;margin-bottom:6px;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><span class="chip chip-high" style="font-size:9px;">MISSING_RATE_CARD</span><span style="font-family:var(--font-body);font-size:9px;color:var(--slate-400);">SHP-2026-MER002</span></div>
+                <div style="font-family:var(--font-body);font-size:10.5px;color:var(--slate-600);margin-bottom:6px;">No active, effective rate card found for client.</div>
+                <div style="display:flex;gap:6px;"><input placeholder="Resolution reason" style="flex:1;font-size:9.5px;border:1px solid var(--slate-200);border-radius:4px;padding:3px 6px;" disabled><span style="padding:3px 10px;background:var(--slate-900);color:white;border-radius:5px;font-family:var(--font-body);font-size:9.5px;font-weight:600;">Resolve</span></div>
+              </div>
+              <div style="border:1px solid var(--slate-200);border-radius:7px;padding:9px 12px;background:white;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><span class="chip chip-high" style="font-size:9px;background:#FEF3C7;color:#92400E;">CONDITION_FIELD_MISSING</span><span style="font-family:var(--font-body);font-size:9px;color:var(--slate-400);">SHP-2026-ACM004</span></div>
+                <div style="font-family:var(--font-body);font-size:10.5px;color:var(--slate-600);">CONDITIONAL rule fired against a usage event missing its referenced metadata field.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 37: SCENE 5 - INVOICE APPROVAL -->
+<section class="slide slide-pale" data-slide="37">
+  <div class="feature-layout">
+    <div class="feature-left">
+      <p class="feature-eyebrow">Scene 5 &middot; Real Approval, Not a Status Label</p>
+      <h2 class="feature-headline">Real approval. Not just a status label.</h2>
+      <p class="feature-desc">Create a draft invoice from unbilled Acme charges, and be explicit that sending or approving requires a <em>different</em> permission than drafting. This is a genuine control, backed by automated tests &mdash; not UI theater.</p>
+      <div class="usecase-row">
+        <span class="usecase-label">Use Case</span>
+        <span class="usecase-text">A billing coordinator drafts an invoice. Their manager, with a distinct permission, must approve it before it can send &mdash; the same person cannot do both.</span>
+      </div>
+      <ul class="feature-bullets">
+        <li>Invoice lines trace back to the exact usage events that produced them</li>
+        <li>Manual work &mdash; a Human Classification Review &mdash; shows up as its own billable line</li>
+        <li><code style="font-family:var(--font-mono);font-size:12px;">billing.invoices.approve</code> is a distinct permission from <code style="font-family:var(--font-mono);font-size:12px;">.create</code></li>
+        <li>8 automated permission-denial tests enforce this &mdash; worth saying out loud to a technical buyer</li>
+      </ul>
+      <div class="demo-tip">
+        <div class="demo-tip-label">How to on Qubere</div>
+        <div class="demo-tip-text">Billing &rarr; <strong>Invoices &amp; AR</strong> &rarr; Create New Invoice from unbilled charges &rarr; Approve.</div>
+      </div>
+    </div>
+    <div class="feature-right">
+      <div class="app-frame" style="max-width:820px;">
+        <div class="app-topbar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 22 22" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><path d="M11 7v8M7 9.5l4 2.5 4-2.5"/></svg></div><span class="app-logo-name">Qubere</span></div>
+            <div class="app-breadcrumb"><span class="app-breadcrumb-ws">ABC Customs Brokers</span><span style="color:var(--slate-300);">/</span><span class="app-breadcrumb-chip">Billing</span></div>
+          </div>
+          <div class="app-topbar-right"><div class="app-notif">🔔<div class="app-notif-badge"></div></div><div class="app-avatar">FM</div><span class="app-username">Frank MultiAccountUser</span></div>
+        </div>
+        <div class="app-body" style="height:420px;">
+          <div class="app-sidebar">
+            <div class="sidebar-ask"><span class="sidebar-ask-star">✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+            <div class="sidebar-ws"><div class="sidebar-ws-avatar">AB</div><div><div class="sidebar-ws-name">ABC Customs Brokers</div><div class="sidebar-ws-role">ENTERPRISE · OWNER</div></div></div>
+            <div class="sidebar-section">Main Operations</div>
+            <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+            <div class="sidebar-section" style="margin-top:4px;">Tooling &amp; Admin</div>
+            <div class="sidebar-grid">
+              <div class="nav-sub"><span class="nav-sub-icon">📄</span><span class="nav-sub-label">Docs</span></div>
+              <div class="nav-sub active"><span class="nav-sub-icon">$</span><span class="nav-sub-label">Billing</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">👥</span><span class="nav-sub-label">Clients</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">📊</span><span class="nav-sub-label">Trade Data</span></div>
+            </div>
+          </div>
+          <div class="app-main">
+            <div style="padding:10px 14px 6px;border-bottom:1px solid var(--slate-200);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <span class="chip chip-high" style="font-size:9px;">PENDING_APPROVAL</span>
+                <span style="font-family:var(--font-body);font-size:11px;color:var(--slate-400);margin-left:6px;">INV-202608-6314C61B</span>
+                <div style="font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--slate-900);margin-top:2px;">Invoice — Acme Manufacturing</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 14px;flex-shrink:0;">
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Subtotal</div><div class="kpi-value default" style="font-size:15px;">$149.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Total Amount</div><div class="kpi-value default" style="font-size:15px;">$149.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Paid</div><div class="kpi-value green" style="font-size:15px;">$0.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Balance Due</div><div class="kpi-value blue" style="font-size:15px;">$149.00</div></div>
+            </div>
+            <div style="padding:0 14px;flex:1;overflow:hidden;">
+              <table class="data-table" style="font-size:10.5px;">
+                <thead><tr><th>Description</th><th>Shipment</th><th>Qty</th><th>Amount</th></tr></thead>
+                <tbody>
+                  <tr><td>Entry Processing</td><td style="font-size:9px;">SHP-2026-ACM003</td><td>1.00</td><td>$125.00</td></tr>
+                  <tr><td>Additional Lines</td><td style="font-size:9px;">SHP-2026-ACM003</td><td>6.00</td><td>$4.00</td></tr>
+                  <tr><td>Human Classification Review</td><td style="font-size:9px;">SHP-2026-ACM003</td><td>1.00</td><td>$20.00</td></tr>
+                </tbody>
+              </table>
+              <div style="display:flex;justify-content:flex-end;padding:6px 0;font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--slate-900);">Total &nbsp; $149.00</div>
+              <div style="display:flex;gap:6px;align-items:center;padding-top:6px;border-top:1px solid var(--slate-100);">
+                <span style="padding:5px 12px;background:var(--slate-300);color:white;border-radius:5px;font-family:var(--font-body);font-size:10px;font-weight:600;">🔒 Approve</span>
+                <span style="padding:5px 12px;background:white;color:var(--slate-600);border:1px solid var(--slate-200);border-radius:5px;font-family:var(--font-body);font-size:10px;">Record Payment</span>
+                <span style="font-family:var(--font-body);font-size:9.5px;color:var(--slate-400);margin-left:4px;">requires <code style="font-family:var(--font-mono);">billing.invoices.approve</code> — different role than the drafter</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 38: SCENE 6 - RATE SIMULATION -->
+<section class="slide slide-pale" data-slide="38">
+  <div class="feature-layout">
+    <div class="feature-left">
+      <p class="feature-eyebrow">Scene 6 &middot; The Renewal Conversation</p>
+      <h2 class="feature-headline">"What if we raised this rate?" Answered in seconds, not a multi-day Excel exercise.</h2>
+      <p class="feature-desc">Open Acme's draft v2 rate card and run the simulation against real historical usage &mdash; current vs. proposed revenue and margin. This is the tool a team would use every renewal cycle, not just once at onboarding.</p>
+      <div class="usecase-row">
+        <span class="usecase-label">Use Case</span>
+        <span class="usecase-text">"What would we have made if we'd charged Acme our new proposed rate for the last quarter?" is a multi-day Excel exercise today, if anyone attempts it at all.</span>
+      </div>
+      <ul class="feature-bullets">
+        <li>Runs a proposed rate card against real historical usage events</li>
+        <li>No charges are created or modified &mdash; a pure simulation</li>
+        <li>Breaks the delta down service-by-service, not just a single number</li>
+        <li>Pivot point for expansion/renewal conversations, not just the first sale</li>
+      </ul>
+      <div class="demo-tip">
+        <div class="demo-tip-label">How to on Qubere</div>
+        <div class="demo-tip-text">Billing &rarr; <strong>Rate Cards</strong> &rarr; Acme Manufacturing 2026 Standard (v2 Draft) &rarr; Simulate &rarr; Run Simulation.</div>
+      </div>
+    </div>
+    <div class="feature-right">
+      <div class="app-frame" style="max-width:820px;">
+        <div class="app-topbar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 22 22" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><path d="M11 7v8M7 9.5l4 2.5 4-2.5"/></svg></div><span class="app-logo-name">Qubere</span></div>
+            <div class="app-breadcrumb"><span class="app-breadcrumb-ws">ABC Customs Brokers</span><span style="color:var(--slate-300);">/</span><span class="app-breadcrumb-chip">Billing</span></div>
+          </div>
+          <div class="app-topbar-right"><div class="app-notif">🔔<div class="app-notif-badge"></div></div><div class="app-avatar">FM</div><span class="app-username">Frank MultiAccountUser</span></div>
+        </div>
+        <div class="app-body" style="height:420px;">
+          <div class="app-sidebar">
+            <div class="sidebar-ask"><span class="sidebar-ask-star">✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+            <div class="sidebar-ws"><div class="sidebar-ws-avatar">AB</div><div><div class="sidebar-ws-name">ABC Customs Brokers</div><div class="sidebar-ws-role">ENTERPRISE · OWNER</div></div></div>
+            <div class="sidebar-section">Main Operations</div>
+            <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+            <div class="sidebar-section" style="margin-top:4px;">Tooling &amp; Admin</div>
+            <div class="sidebar-grid">
+              <div class="nav-sub"><span class="nav-sub-icon">📄</span><span class="nav-sub-label">Docs</span></div>
+              <div class="nav-sub active"><span class="nav-sub-icon">$</span><span class="nav-sub-label">Billing</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">👥</span><span class="nav-sub-label">Clients</span></div>
+              <div class="nav-sub"><span class="nav-sub-icon">📊</span><span class="nav-sub-label">Trade Data</span></div>
+            </div>
+          </div>
+          <div class="app-main">
+            <div style="padding:10px 14px 6px;border-bottom:1px solid var(--slate-200);flex-shrink:0;">
+              <div style="font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--slate-900);">Rate Card Simulation — Acme Manufacturing 2026 Standard</div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Simulating v2 (DRAFT) against 3 months of historical usage events. No charges created or modified.</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 14px;flex-shrink:0;">
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Proposed Revenue</div><div class="kpi-value default" style="font-size:16px;">$670.50</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Actual Revenue</div><div class="kpi-value default" style="font-size:16px;">$654.00</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Revenue Delta</div><div class="kpi-value green" style="font-size:16px;">+$16.50</div></div>
+              <div class="kpi-card" style="padding:8px 10px;"><div class="kpi-label" style="margin-bottom:2px;">Change</div><div class="kpi-value green" style="font-size:16px;">+2.5%</div><div class="kpi-sub">14 / 28 events matched</div></div>
+            </div>
+            <div style="padding:0 14px;flex:1;overflow:hidden;">
+              <div style="font-family:var(--font-body);font-size:10px;font-weight:700;color:var(--slate-500);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">By Service</div>
+              <table class="data-table" style="font-size:10.5px;">
+                <thead><tr><th>Service</th><th>Proposed</th><th>Actual</th><th>Delta</th></tr></thead>
+                <tbody>
+                  <tr><td>ENTRY_PROCESSING</td><td>$500.00</td><td>$500.00</td><td>$0.00</td></tr>
+                  <tr><td>PGA_PROCESSING</td><td>$70.00</td><td>$70.00</td><td>$0.00</td></tr>
+                  <tr><td>ADDL_LINES</td><td style="color:var(--green);font-weight:600;">$60.50</td><td>$44.00</td><td style="color:var(--green);font-weight:600;">+$16.50</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 39: OBJECTIONS + CLOSE -->
+<section class="slide slide-dark" data-slide="39">
+  <div style="max-width:1080px;width:100%;padding:0 72px;">
+    <p class="eyebrow eyebrow-light">Objection Handling</p>
+    <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+    <h2 style="font-family:var(--font-display);font-size:38px;font-weight:800;color:white;margin-bottom:24px;text-wrap:balance;">Every hard question, answered directly.</h2>
+    <table style="width:100%;border-collapse:collapse;font-family:var(--font-body);margin-bottom:28px;">
+      <tbody>
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);width:30%;font-size:13px;font-weight:700;color:white;vertical-align:top;">"Our current system already does billing."</td>
+          <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;vertical-align:top;">Ask what it takes today to answer "why is this charge $X" and "which clients are unprofitable" with confidence, in under a minute. Most legacy systems bill by transaction count, not capability or outcome.</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:13px;font-weight:700;color:white;vertical-align:top;">"How long does onboarding take?"</td>
+          <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;vertical-align:top;">Rate-card import and activation is fast and demoable live. Mapping commercial line items to Qubere's billing events benefits from someone who understands both sides &mdash; don't pitch it as fully zero-touch on the first call.</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;font-size:13px;font-weight:700;color:white;vertical-align:top;">"Is this just for customs, or freight/TMS too?"</td>
+          <td style="padding:12px 16px;font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;vertical-align:top;">Yes to both, on a shared platform. TMS carrier payments (AP) and customs/TMS client billing (AR) are intentionally separate ledgers by design &mdash; unified at the account and reporting level, not merged into one invoice type. Worth mentioning as platform direction, not overselling as fully unified today.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="background:rgba(0,113,227,0.08);border:1px solid rgba(0,113,227,0.25);border-radius:12px;padding:22px 26px;">
+      <p style="font-family:var(--font-display);font-size:19px;font-weight:600;color:white;line-height:1.5;text-wrap:balance;">"Every number you just saw traces back to real work, in real time, with a real audit trail. Nothing you saw was a mockup &mdash; it's the same engine that would be running your books from day one."</p>
+    </div>
+  </div>
+</section>
+
   </div>
   <nav class="dots-nav" id="dots">
-    <button class="dot" data-target="1" aria-label="Slide 1"></button><button class="dot" data-target="2" aria-label="Slide 2"></button><button class="dot" data-target="3" aria-label="Slide 3"></button><button class="dot" data-target="4" aria-label="Slide 4"></button><button class="dot" data-target="5" aria-label="Slide 5"></button><button class="dot" data-target="6" aria-label="Slide 6"></button><button class="dot" data-target="7" aria-label="Slide 7"></button><button class="dot" data-target="8" aria-label="Slide 8"></button><button class="dot" data-target="9" aria-label="Slide 9"></button><button class="dot" data-target="10" aria-label="Slide 10"></button><button class="dot" data-target="11" aria-label="Slide 11"></button><button class="dot" data-target="12" aria-label="Slide 12"></button><button class="dot" data-target="13" aria-label="Slide 13"></button><button class="dot" data-target="14" aria-label="Slide 14"></button><button class="dot" data-target="15" aria-label="Slide 15"></button><button class="dot" data-target="16" aria-label="Slide 16"></button><button class="dot" data-target="17" aria-label="Slide 17"></button><button class="dot" data-target="18" aria-label="Slide 18"></button><button class="dot" data-target="19" aria-label="Slide 19"></button><button class="dot" data-target="20" aria-label="Slide 20"></button><button class="dot" data-target="21" aria-label="Slide 21"></button><button class="dot" data-target="22" aria-label="Slide 22"></button><button class="dot" data-target="23" aria-label="Slide 23"></button><button class="dot" data-target="24" aria-label="Slide 24"></button><button class="dot" data-target="25" aria-label="Slide 25"></button><button class="dot" data-target="26" aria-label="Slide 26"></button><button class="dot" data-target="27" aria-label="Slide 27"></button><button class="dot" data-target="28" aria-label="Slide 28"></button><button class="dot" data-target="29" aria-label="Slide 29"></button><button class="dot" data-target="30" aria-label="Slide 30"></button><button class="dot" data-target="31" aria-label="Slide 31"></button>
+    <button class="dot" data-target="1" aria-label="Slide 1"></button><button class="dot" data-target="2" aria-label="Slide 2"></button><button class="dot" data-target="3" aria-label="Slide 3"></button><button class="dot" data-target="4" aria-label="Slide 4"></button><button class="dot" data-target="5" aria-label="Slide 5"></button><button class="dot" data-target="6" aria-label="Slide 6"></button><button class="dot" data-target="7" aria-label="Slide 7"></button><button class="dot" data-target="8" aria-label="Slide 8"></button><button class="dot" data-target="9" aria-label="Slide 9"></button><button class="dot" data-target="10" aria-label="Slide 10"></button><button class="dot" data-target="11" aria-label="Slide 11"></button><button class="dot" data-target="12" aria-label="Slide 12"></button><button class="dot" data-target="13" aria-label="Slide 13"></button><button class="dot" data-target="14" aria-label="Slide 14"></button><button class="dot" data-target="15" aria-label="Slide 15"></button><button class="dot" data-target="16" aria-label="Slide 16"></button><button class="dot" data-target="17" aria-label="Slide 17"></button><button class="dot" data-target="18" aria-label="Slide 18"></button><button class="dot" data-target="19" aria-label="Slide 19"></button><button class="dot" data-target="20" aria-label="Slide 20"></button><button class="dot" data-target="21" aria-label="Slide 21"></button><button class="dot" data-target="22" aria-label="Slide 22"></button><button class="dot" data-target="23" aria-label="Slide 23"></button><button class="dot" data-target="24" aria-label="Slide 24"></button><button class="dot" data-target="25" aria-label="Slide 25"></button><button class="dot" data-target="26" aria-label="Slide 26"></button><button class="dot" data-target="27" aria-label="Slide 27"></button><button class="dot" data-target="28" aria-label="Slide 28"></button><button class="dot" data-target="29" aria-label="Slide 29"></button><button class="dot" data-target="30" aria-label="Slide 30"></button><button class="dot" data-target="31" aria-label="Slide 31"></button><button class="dot" data-target="32" aria-label="Slide 32"></button><button class="dot" data-target="33" aria-label="Slide 33"></button><button class="dot" data-target="34" aria-label="Slide 34"></button><button class="dot" data-target="35" aria-label="Slide 35"></button><button class="dot" data-target="36" aria-label="Slide 36"></button><button class="dot" data-target="37" aria-label="Slide 37"></button><button class="dot" data-target="38" aria-label="Slide 38"></button><button class="dot" data-target="39" aria-label="Slide 39"></button>
   </nav>
-  <div class="slide-counter" id="counter">1 / 31</div>
+  <div class="slide-counter" id="counter">1 / 39</div>
 </div>
 <script>
 (function(){
   const sw = document.getElementById('sw');
   const dots = document.querySelectorAll('.dot');
   const counter = document.getElementById('counter');
-  const N = 31;
+  const N = 39;
   let cur = 1;
 
   function go(n){
