@@ -52,7 +52,7 @@ interface ShipmentDocumentItem {
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
-    matchReasons: string[];
+    matchReasons?: string[];
     shipment: { id: string; shipmentNumber: string; portOfEntry?: string | null };
   }>;
 }
@@ -84,7 +84,7 @@ interface ApiDocument {
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
-    matchReasons: string[];
+    matchReasons?: string[];
     shipment: { id: string; shipmentNumber: string; portOfEntry?: string | null };
   }>;
 }

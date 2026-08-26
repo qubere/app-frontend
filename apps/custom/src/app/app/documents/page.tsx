@@ -96,7 +96,6 @@ export default async function DocumentsPage() {
             select: {
               id: true,
               confidenceScore: true,
-              matchReasons: true,
               shipment: {
                 select: { id: true, shipmentNumber: true, portOfEntry: true },
               },
