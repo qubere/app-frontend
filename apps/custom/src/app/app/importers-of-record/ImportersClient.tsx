@@ -44,9 +44,16 @@ interface ImporterItem {
   createdAt?: string;
 }
 
-export function ImportersClient({ accountName }: { accountName: string }) {
-  const [importers, setImporters] = useState<ImporterItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export function ImportersClient({
+  accountName,
+  initialImporters,
+}: {
+  accountName: string;
+  initialImporters?: ImporterItem[];
+}) {
+  const hasInitial = Boolean(initialImporters);
+  const [importers, setImporters] = useState<ImporterItem[]>(() => initialImporters || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +81,9 @@ export function ImportersClient({ accountName }: { accountName: string }) {
   };
 
   useEffect(() => {
-    fetchImporters();
+    if (!hasInitial) {
+      fetchImporters();
+    }
   }, []);
 
   const handleCreateImporter = async (e: React.FormEvent) => {

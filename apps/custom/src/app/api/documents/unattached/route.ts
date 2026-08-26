@@ -14,10 +14,25 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       shipmentId: null,
       ...(cursor ? { id: { lt: cursor } } : {}),
     },
-    include: {
-      // E-2: Surface candidates so the UI can offer one-click attach.
+    select: {
+      // Return only fields consumed by the list and attachment picker; omit
+      // large extraction bodies from this summary endpoint.
+      id: true,
+      fileName: true,
+      docType: true,
+      documentType: true,
+      documentTypeConfidence: true,
+      status: true,
+      createdAt: true,
+      fileUrl: true,
+      confidence: true,
+      source: true,
       shipmentCandidates: {
-        include: { shipment: { select: { id: true, shipmentNumber: true, portOfEntry: true } } },
+        select: {
+          id: true,
+          confidenceScore: true,
+          shipment: { select: { id: true, shipmentNumber: true, portOfEntry: true } },
+        },
         orderBy: { confidenceScore: "desc" },
         take: 3,
       },

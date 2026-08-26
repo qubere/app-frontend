@@ -76,9 +76,14 @@ function WindowBadge({ days, label = "days left" }: { days: number; label?: stri
   return <span className="text-xs text-ink-muted">{days} {label}</span>;
 }
 
-export function ProtestListClient() {
-  const [protests, setProtests] = useState<ProtestRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface ProtestListClientProps {
+  initialProtests?: ProtestRecord[];
+}
+
+export function ProtestListClient({ initialProtests }: ProtestListClientProps = {}) {
+  const hasInitial = Boolean(initialProtests);
+  const [protests, setProtests] = useState<ProtestRecord[]>(() => initialProtests || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [groundsFilter, setGroundsFilter] = useState("ALL");
 
@@ -96,8 +101,10 @@ export function ProtestListClient() {
   }, [statusFilter, groundsFilter]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!hasInitial || statusFilter !== "ALL" || groundsFilter !== "ALL") {
+      load();
+    }
+  }, [load, hasInitial, statusFilter, groundsFilter]);
 
   const urgentCount = protests.filter((p) => {
     const days = daysRemaining(p.protestDeadline);

@@ -36,11 +36,28 @@ interface Section301Stat {
   dutyPaid: number;
 }
 
-export function VaultClient() {
+export interface VaultClientProps {
+  initialOpportunities?: RefundOpportunity[];
+  initialClaims?: any[];
+  initialLots?: DrawbackLot[];
+  initialSection301Data?: {
+    totalEntries: number;
+    totalDutyPaid: number;
+    byList: Section301Stat[];
+  };
+}
+
+export function VaultClient({
+  initialOpportunities,
+  initialClaims,
+  initialLots,
+  initialSection301Data,
+}: VaultClientProps = {}) {
+  const hasInitialData = Boolean(initialOpportunities && initialClaims && initialLots && initialSection301Data);
   const [activeTab, setActiveTab] = useState<"opportunities" | "drawback" | "section301">("opportunities");
-  
+
   // Opportunities state
-  const [opportunities, setOpportunities] = useState<RefundOpportunity[]>([]);
+  const [opportunities, setOpportunities] = useState<RefundOpportunity[]>(() => initialOpportunities || []);
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState("");
   const [updatingPscId, setUpdatingPscId] = useState<string | null>(null);
@@ -66,14 +83,14 @@ export function VaultClient() {
   };
 
   // Drawback state
-  const [lots, setLots] = useState<DrawbackLot[]>([]);
-  const [claims, setClaims] = useState<any[]>([]);
+  const [lots, setLots] = useState<DrawbackLot[]>(() => initialLots || []);
+  const [claims, setClaims] = useState<any[]>(() => initialClaims || []);
   const [isMatching, setIsMatching] = useState(false);
 
   // Section 301 state
-  const [section301Stats, setSection301Stats] = useState<Section301Stat[]>([]);
-  const [total301Entries, setTotal301Entries] = useState(0);
-  const [total301DutyPaid, setTotal301DutyPaid] = useState(0);
+  const [section301Stats, setSection301Stats] = useState<Section301Stat[]>(() => initialSection301Data?.byList || []);
+  const [total301Entries, setTotal301Entries] = useState(() => initialSection301Data?.totalEntries || 0);
+  const [total301DutyPaid, setTotal301DutyPaid] = useState(() => initialSection301Data?.totalDutyPaid || 0);
 
   const loadOpportunities = () => {
     fetch("/api/refunds/opportunities")
@@ -127,9 +144,11 @@ export function VaultClient() {
   };
 
   useEffect(() => {
-    loadOpportunities();
-    loadDrawbackData();
-    loadSection301Data();
+    if (!hasInitialData) {
+      loadOpportunities();
+      loadDrawbackData();
+      loadSection301Data();
+    }
   }, []);
 
   const triggerScan = async () => {

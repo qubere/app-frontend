@@ -35,9 +35,14 @@ function formatDate(isoString: string | null | undefined): string {
   }
 }
 
-export function DataAdminPanel() {
-  const [datasets, setDatasets] = useState<DatasetWithStatus[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface DataAdminPanelProps {
+  initialDatasets?: DatasetWithStatus[];
+}
+
+export function DataAdminPanel({ initialDatasets }: DataAdminPanelProps = {}) {
+  const hasInitial = Boolean(initialDatasets && initialDatasets.length > 0);
+  const [datasets, setDatasets] = useState<DatasetWithStatus[]>(() => initialDatasets || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "Public API" | "Structured Document">("ALL");
@@ -69,7 +74,9 @@ export function DataAdminPanel() {
   };
 
   useEffect(() => {
-    fetchDatasets();
+    if (!hasInitial) {
+      fetchDatasets();
+    }
   }, []);
 
   const handleRunNow = async (dataset: DatasetWithStatus) => {

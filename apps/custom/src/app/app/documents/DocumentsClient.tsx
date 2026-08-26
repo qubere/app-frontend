@@ -52,7 +52,7 @@ interface ShipmentDocumentItem {
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
-    matchReasons: string[];
+    matchReasons?: string[];
     shipment: { id: string; shipmentNumber: string; portOfEntry?: string | null };
   }>;
 }
@@ -84,7 +84,7 @@ interface ApiDocument {
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
-    matchReasons: string[];
+    matchReasons?: string[];
     shipment: { id: string; shipmentNumber: string; portOfEntry?: string | null };
   }>;
 }
@@ -120,9 +120,81 @@ interface DocumentsClientProps {
     firstName: string | null;
     lastName: string | null;
   }>;
+  initialShipments?: ApiShipment[];
+  initialUnattachedDocs?: ApiDocument[];
+  initialQuarantineCount?: number;
 }
 
-export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) {
+function buildDocumentItems(
+  apiShipments: ApiShipment[],
+  unattachedDocs: ApiDocument[]
+): ShipmentDocumentItem[] {
+  const docs: ShipmentDocumentItem[] = [];
+
+  apiShipments.forEach((shp) => {
+    if (shp.documents && Array.isArray(shp.documents)) {
+      shp.documents.forEach((d) => {
+        docs.push({
+          id: d.id,
+          name: d.fileName || d.name || "Trade_Document.pdf",
+          type: d.docType || d.type || "Commercial Invoice",
+          docType: d.docType || d.type || "COMMERCIAL_INVOICE",
+          documentType: d.documentType ?? null,
+          documentTypeConfidence: d.documentTypeConfidence ?? null,
+          status: d.status || "Received",
+          uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "Just now",
+          uploadedAtRaw: d.createdAt || "",
+          url: d.fileUrl || d.url || "#",
+          shipmentId: shp.id,
+          shipmentRef: shp.shipmentNumber || shp.id,
+          confidenceScore: d.confidence ?? null,
+          assignedBrokerId: shp.assignedBrokerId,
+          assignedBrokerName: shp.assignedBroker
+            ? `${shp.assignedBroker.firstName ?? ""} ${shp.assignedBroker.lastName ?? ""}`.trim() || shp.assignedBroker.email
+            : "Unassigned",
+          clientId: shp.clientId ?? null,
+          clientName: shp.client?.name || "No Client",
+          source: d.source ?? "UPLOAD",
+        });
+      });
+    }
+  });
+
+  unattachedDocs.forEach((d) => {
+    docs.push({
+      id: d.id,
+      name: d.fileName || "Trade_Document.pdf",
+      type: d.docType || "Commercial Invoice",
+      docType: d.docType || "COMMERCIAL_INVOICE",
+      documentType: d.documentType ?? null,
+      documentTypeConfidence: d.documentTypeConfidence ?? null,
+      status: d.status || "Received",
+      uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "Just now",
+      uploadedAtRaw: d.createdAt || "",
+      url: d.fileUrl || "#",
+      shipmentId: "",
+      shipmentRef: "Unattached",
+      confidenceScore: d.confidence ?? null,
+      assignedBrokerId: null,
+      assignedBrokerName: "Unassigned",
+      clientId: null,
+      clientName: "No Client",
+      unattached: true,
+      source: d.source ?? "UPLOAD",
+      shipmentCandidates: d.shipmentCandidates,
+    });
+  });
+
+  return docs;
+}
+
+export function DocumentsClient({
+  context,
+  teamMembers,
+  initialShipments,
+  initialUnattachedDocs,
+  initialQuarantineCount,
+}: DocumentsClientProps) {
   const isEnterpriseAdmin =
     context.accountType === "ENTERPRISE" &&
     (context.roleNames.includes("ADMIN") || context.roleNames.includes("OWNER"));
@@ -142,10 +214,15 @@ export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) 
     return list;
   }, [teamMembers, context]);
 
-  const [documents, setDocuments] = useState<ShipmentDocumentItem[]>([]);
-  const [shipments, setShipments] = useState<ApiShipment[]>([]);
+  const hasInitialData = Boolean(initialShipments && initialUnattachedDocs);
+  const [documents, setDocuments] = useState<ShipmentDocumentItem[]>(() =>
+    initialShipments && initialUnattachedDocs
+      ? buildDocumentItems(initialShipments, initialUnattachedDocs)
+      : []
+  );
+  const [shipments, setShipments] = useState<ApiShipment[]>(() => initialShipments || []);
   const [queueView, setQueueView] = useState<"NEEDS_ACTION" | "ALL" | "QUARANTINE">("NEEDS_ACTION");
-  const [quarantineCount, setQuarantineCount] = useState(0);
+  const [quarantineCount, setQuarantineCount] = useState<number>(() => initialQuarantineCount ?? 0);
 
   // Paginated over the filtered list, matching the shipments workbench: the six
   // filters and the search all read every document, so limiting the rows on screen
@@ -174,7 +251,7 @@ export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ShipmentDocumentItem | null>(null);
   const [targetShipmentId] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!hasInitialData);
   /** Tracks which doc's classification dropdown is open. */
   const [classifyingDocId, setClassifyingDocId] = useState<string | null>(null);
   /** In-flight classification overrides so the UI optimistically updates. */
@@ -345,13 +422,15 @@ export function DocumentsClient({ context, teamMembers }: DocumentsClientProps) 
   // Declared after fetchDocuments so the effect does not reference the const
   // before its initialiser runs. Still a mount-only load, as before.
   useEffect(() => {
-    // Sets the loading flag synchronously so the spinner shows on the same paint.
-    fetchDocuments();
-    if (context.isPlatformAdmin) {
-      fetch("/api/documents/quarantine", { cache: "no-store" })
-        .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load quarantine count")))
-        .then((body) => setQuarantineCount(Array.isArray(body.items) ? body.items.length : 0))
-        .catch((error) => console.error("Failed to fetch quarantine count:", error));
+    if (!hasInitialData) {
+      // Sets the loading flag synchronously so the spinner shows on the same paint.
+      fetchDocuments();
+      if (context.isPlatformAdmin) {
+        fetch("/api/documents/quarantine", { cache: "no-store" })
+          .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load quarantine count")))
+          .then((body) => setQuarantineCount(Array.isArray(body.items) ? body.items.length : 0))
+          .catch((error) => console.error("Failed to fetch quarantine count:", error));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

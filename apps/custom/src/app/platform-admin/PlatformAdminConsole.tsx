@@ -20,6 +20,9 @@ import { Badge } from "@/components/ui/Badge";
 import type { AiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import type { DocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
 import type { RolesPermissionsData } from "@/lib/admin/rolesData";
+import type { CronJob } from "./CronPanel";
+import type { DatasetWithStatus } from "@/lib/data/datasetRegistry";
+import type { RateReviewPanelProps } from "./RateReviewPanel";
 
 interface AccountItem {
   id: string;
@@ -37,6 +40,9 @@ interface PlatformAdminConsoleProps {
   documentProcessing: DocumentProcessingAnalytics;
   pendingKeywordRuleCount: number;
   rolesPermissions?: RolesPermissionsData;
+  initialCronJobs?: CronJob[];
+  initialDatasets?: DatasetWithStatus[];
+  initialRateReviews?: RateReviewPanelProps["initialItems"];
 }
 
 export function PlatformAdminConsole({
@@ -46,6 +52,9 @@ export function PlatformAdminConsole({
   documentProcessing,
   pendingKeywordRuleCount,
   rolesPermissions,
+  initialCronJobs,
+  initialDatasets,
+  initialRateReviews,
 }: PlatformAdminConsoleProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
@@ -289,9 +298,9 @@ export function PlatformAdminConsole({
         </button>
       </div>
 
-      {activeTab === "data" && <DataAdminPanel />}
+      {activeTab === "data" && <DataAdminPanel initialDatasets={initialDatasets} />}
 
-      {activeTab === "rate-review" && <RateReviewPanel />}
+      {activeTab === "rate-review" && <RateReviewPanel initialItems={initialRateReviews} />}
 
       {activeTab === "keyword-rules" && <KeywordRuleReviewPanel />}
 
@@ -303,7 +312,7 @@ export function PlatformAdminConsole({
 
       {activeTab === "api" && <ApiExplorerPanel />}
 
-      {activeTab === "cron" && <CronPanel />}
+      {activeTab === "cron" && <CronPanel initialJobs={initialCronJobs} />}
 
       {activeTab === "memory" && <AccountMemoryPanel accounts={accounts} />}
 
