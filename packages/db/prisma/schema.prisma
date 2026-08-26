@@ -287,12 +287,16 @@ model Account {
   embargoConfig       AccountEmbargoConfig?
   embargoUsageHeaders EmbargoUsageHeader[]
   embargoUsageLines   EmbargoUsageLine[]
+  privateEmbargoRules PrivateEmbargoRule[]
 
   restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
   restrictedPartyDispositions     RestrictedPartyDisposition[]
   partyScreeningSummaries         PartyScreeningSummary[]
+  partyScreeningApprovals         PartyScreeningApproval[]
   complianceScreeningFindings     ComplianceScreeningFinding[]
   restrictedPartyScreeningConfig  AccountScreeningConfig?
+  complianceExecutions            ComplianceExecution[]
+  complianceFormalOverrides       ComplianceFormalOverride[]
 
   @@index([type])
   @@index([slug])
@@ -347,6 +351,7 @@ model User {
   impersonatedSessions        ImpersonationSession[]  @relation("ImpersonationEffective")
   auditLogsAsActor            AuditLog[]              @relation("AuditActor")
   auditLogsAsEffective        AuditLog[]              @relation("AuditEffective")
+  initiatedComplianceExecutions ComplianceExecution[]
 
   @@index([clerkUserId])
   @@index([email])
@@ -630,6 +635,7 @@ model Shipment {
   complianceDeadlines             ComplianceDeadline[]
   restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
   complianceScreeningFindings     ComplianceScreeningFinding[]
+  complianceExecutions            ComplianceExecution[]
   trackingIdentifiers             ShipmentTrackingIdentifier[]
   transportLegs                   TransportLeg[]
   trackingStops                   ShipmentStop[]
@@ -1187,6 +1193,7 @@ model ShipmentLineItem {
   restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
   ftzDetails                      FtzDetail[]
   adcvdLineDetails                AdcvdLineDetail[]
+  complianceExecutions            ComplianceExecution[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -3039,6 +3046,50 @@ model AccountEmbargoConfig {
 }
 
 // =====================================================================
+// Private Embargo Screening -- account-owned country-pair embargo/
+// watch-list rules, evaluated by privateEmbargoMatcher.ts before the
+// public/system embargo engine (see AccountEmbargoConfig.privateEmbargoEnabled
+// above, which already gated dispatch in doEmbargoCheck.ts before this model
+// existed). Tenant-scoped: no Account Group / Tenant Group concept exists
+// anywhere else in this schema, so only direct account ownership is modeled
+// here (see privateEmbargoMatcher.ts for the resolution/precedence logic).
+// Rules never carry a legacy magic "all countries" sentinel id -- the
+// wildcard is the explicit appliesToAllFromCountries boolean below.
+// =====================================================================
+model PrivateEmbargoRule {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  /// Null when appliesToAllFromCountries is true.
+  fromCountryCode           String?
+  appliesToAllFromCountries Boolean @default(false)
+
+  toCountryCode String
+
+  /// Only embargoed=true rules produce a private hit; no override/exemption semantics.
+  embargoed Boolean @default(true)
+
+  effectiveDate  DateTime
+  expirationDate DateTime?
+
+  reason    String?
+  reference String?
+
+  status    String @default("ACTIVE") // ACTIVE | DISABLED -- soft lifecycle, never physically erased for audit retention
+
+  createdByUserId String?
+  updatedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId, toCountryCode])
+  @@index([fromCountryCode, toCountryCode])
+  @@index([effectiveDate, expirationDate])
+}
+
+// =====================================================================
 // Restricted / Denied Party Screening -- account-level matcher
 // configuration. Every field is nullable: unset means "no account
 // override," and runRestrictedPartyScreening resolves effective values as
@@ -4036,6 +4087,7 @@ model Product {
   revalidationFlags ProductRevalidationFlag[]
   shipmentLineItems ShipmentLineItem[]
   canonicalProducts CanonicalProduct[]
+  complianceExecutions ComplianceExecution[]
 
   /// Postgres treats NULLs as distinct, so any number of products may have no
   /// internal SKU while no two may share one.
@@ -4641,6 +4693,8 @@ model Party {
 
   restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
   screeningSummary                PartyScreeningSummary?
+  screeningApprovals              PartyScreeningApproval[]
+  complianceExecutions            ComplianceExecution[]
 
   /// Postgres treats NULLs as distinct, so any number of parties may have no
   /// internal code while no two may share one.
@@ -5846,6 +5900,17 @@ model RestrictedPartyScreeningResult {
   screeningDate       DateTime @default(now())
   screeningDurationMs Int?
 
+  /// Audit-evidence snapshot (additive; NULL on rows created before this
+  /// field existed, never backfilled). normalizedScreenedName is the exact
+  /// normalizeForMatching() output compared against candidates; matcherVersion
+  /// pins the deterministic ruleset (see RPS_MATCHER_VERSION in types.ts) so a
+  /// historical result stays attributable to the matcher logic that produced
+  /// it even after later matcher changes; referenceDataAsOf snapshots the
+  /// getLatestReferenceDataPublishedAt() watermark at screening time.
+  normalizedScreenedName String?
+  matcherVersion         String?
+  referenceDataAsOf      DateTime?
+
   matches     RestrictedPartyMatch[]
   redFlagHits RestrictedPartyRedFlagHit[]
   disposition RestrictedPartyDisposition?
@@ -5853,6 +5918,10 @@ model RestrictedPartyScreeningResult {
   /// Back-relation for PartyScreeningSummary.lastScreeningResult — a result
   /// can be "current" for at most one Party Master summary.
   currentForPartySummary PartyScreeningSummary?
+
+  /// Back-relation for PartyScreeningApproval.sourceScreeningResult — the
+  /// screening result a reviewer pointed to when granting reuse.
+  supportedApprovals PartyScreeningApproval[]
 
   createdAt DateTime @default(now())
 
@@ -5899,6 +5968,15 @@ model RestrictedPartyMatch {
 
   suppressedByApprovedParty Boolean @default(false)
   suppressingDispositionId  String?
+
+  /// Audit-evidence detail (additive; NULL/[] on rows created before this
+  /// field existed, never backfilled). normalizedMatchedName is the
+  /// normalizeForMatching() output of matchedName; matchedTokens are the
+  /// specific token(s) that triggered this candidate (RAW_WORD/
+  /// ALTERNATE_WHOLE_WORD) -- empty for EXACT/phonetic-only matches where no
+  /// single token is "the" trigger.
+  normalizedMatchedName String?
+  matchedTokens         String[] @default([])
 
   createdAt DateTime @default(now())
 
@@ -5973,6 +6051,71 @@ model PartyScreeningSummary {
   @@index([accountId, screeningStatus])
 }
 
+enum PartyScreeningApprovalStatus {
+  PRE_APPROVED
+  REVOKED
+}
+
+/// Explicit, reviewer-granted permission to reuse a Party's already-satisfied
+/// Restricted Party Screening obligation -- for the exact approved identity
+/// snapshot (partyVersion + screeningInputHash) -- instead of re-running the
+/// local matcher, in eligible reuse contexts (shipment/line screening) only.
+/// Distinct from RestrictedPartyDisposition, which records a reviewer's
+/// judgment about ONE candidate match, not a blanket approval of the whole
+/// Party (see suppression.ts) -- the two never substitute for each other.
+/// EXPIRED and STALE are derived at read time (expiresAt passed;
+/// partyVersion/screeningInputHash mismatch; a relevant ScreeningEntity
+/// published after referenceDataAsOf) and never physically written back onto
+/// this row, so approval history stays immutable -- only the explicit
+/// PRE_APPROVED -> REVOKED transition is a real state change.
+model PartyScreeningApproval {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  partyId String
+  party   Party  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  status PartyScreeningApprovalStatus @default(PRE_APPROVED)
+
+  /// Party.currentVersion at approval time -- a later mutation that bumps
+  /// currentVersion invalidates reuse even if the identity hash happened to
+  /// still match (defense in depth alongside screeningInputHash).
+  partyVersion Int
+
+  /// Same identity-hash formula as PartyScreeningSummary.currentInputHash
+  /// (name/address/city/country/contactName) -- reuse is invalid the moment
+  /// this stops matching the party's current-effective identity.
+  screeningInputHash String
+
+  sourceScreeningResultId String?
+  sourceScreeningResult   RestrictedPartyScreeningResult? @relation(fields: [sourceScreeningResultId], references: [id], onDelete: SetNull)
+
+  approvedByUserId String
+  approvedAt       DateTime @default(now())
+
+  revokedByUserId String?
+  revokedAt       DateTime?
+
+  reason String? @db.Text
+
+  /// ScreeningEntity.publishedAt watermark at approval time -- reuse becomes
+  /// invalid the moment a relevant list publishes a newer row than this,
+  /// since an unchanged Party identity says nothing about whether
+  /// OFAC/BIS/Dow Jones has since added a new denial-order entry.
+  referenceDataAsOf DateTime?
+
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId, partyId])
+  @@index([partyId, status])
+  @@index([expiresAt])
+  @@index([sourceScreeningResultId])
+}
+
 /// Generic, append-only compliance screening finding — one row per failing
 /// AuditCheckResult produced by ComplianceAuditAgent for the five screening
 /// categories that have no dedicated result table of their own (Country
@@ -6002,9 +6145,197 @@ model ComplianceScreeningFinding {
 
   createdAt DateTime @default(now())
 
+  /// Back-link to the unified ComplianceExecution envelope that produced this
+  /// finding, when one was recorded. Nullable only because rows created
+  /// before ComplianceExecution existed have no execution to point to.
+  executionId String?
+  execution   ComplianceExecution? @relation(fields: [executionId], references: [id], onDelete: SetNull)
+
   @@index([accountId, category, createdAt])
   @@index([accountId, status])
   @@index([shipmentId])
+  @@index([executionId])
+}
+
+enum ComplianceExecutionType {
+  RESTRICTED_PARTY_SCREENING
+  EMBARGO_SCREENING
+  CLASSIFICATION
+  FORCED_LABOR_SCREENING
+  END_USE_SCREENING
+  END_USER_SCREENING
+  MILITARY_END_USE_SCREENING
+  ANTI_BOYCOTT_SCREENING
+  LICENSE_DETERMINATION
+}
+
+enum ComplianceExecutionStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum ComplianceExecutionSource {
+  UI
+  API
+  CSV
+  JSON
+  XML
+  BATCH
+  PARTY_CREATE
+  PARTY_UPDATE
+  SHIPMENT_PIPELINE
+  MANUAL_RESCREEN
+  COPILOT
+  SYSTEM
+}
+
+/// Unified, cross-domain compliance execution audit envelope (prompt §2).
+/// Records ONE row per compliance check invocation (RPS, embargo,
+/// classification, forced labor, end-use/end-user, military end-use,
+/// anti-boycott) so a shipment's/party's full compliance timeline can be
+/// reconstructed and searched without moving any domain's matching logic
+/// here. Domain results remain authoritative and immutable in their own
+/// tables (RestrictedPartyScreeningResult, EmbargoUsageHeader,
+/// ClassificationRun, ComplianceScreeningFinding) — this table only records
+/// the envelope (who/when/source/status/duration/snapshots) and, where a
+/// precise link exists, which domain row it produced. Failed/incomplete
+/// executions are never marked COMPLETED; a status of FAILED/PARTIAL must
+/// never be presented to a reader as a clean/successful result.
+model ComplianceExecution {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  executionType ComplianceExecutionType
+  status        ComplianceExecutionStatus @default(COMPLETED)
+
+  /// Shared with the domain's own correlationId (RestrictedPartyScreeningResult.correlationId,
+  /// EmbargoUsageHeader.correlationId) when the domain already generates one for this
+  /// invocation, so cross-referencing never requires a schema change on the busiest tables.
+  correlationId String
+  requestId     String?
+
+  /// Links a manual/Copilot re-screen back to the execution it re-ran, without
+  /// ever overwriting the original row -- rescreening always creates a new
+  /// execution.
+  parentExecutionId String?
+  parentExecution   ComplianceExecution?  @relation("ComplianceExecutionRescreen", fields: [parentExecutionId], references: [id], onDelete: SetNull)
+  rescreens          ComplianceExecution[] @relation("ComplianceExecutionRescreen")
+
+  shipmentId String?
+  shipment   Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  lineItemId String?
+  lineItem   ShipmentLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  partyId    String?
+  party      Party?            @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  productId  String?
+  product    Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  /// Exact country role being checked, when this execution is a country-role
+  /// check (origin/export/ship-from/ship-to/compliance-country/Party country)
+  /// -- preserved verbatim rather than collapsed into a generic "country".
+  countryRole    String?
+  countryChecked String?
+
+  source ComplianceExecutionSource
+
+  initiatedByUserId String?
+  initiatedByUser   User?   @relation(fields: [initiatedByUserId], references: [id], onDelete: SetNull)
+
+  /// Sanitized, allow-listed structured snapshots -- never raw HTTP payloads,
+  /// authorization headers, session tokens, or secrets. Populated by
+  /// executionHistory.ts's redaction/size-bounding helpers only.
+  requestSnapshot  Json?
+  responseSnapshot Json?
+  inputHash        String?
+  outputHash       String?
+
+  rulesetVersion    String?
+  referenceDataAsOf DateTime?
+
+  agentName     String?
+  modelProvider String?
+  modelVersion  String?
+  promptVersion String?
+
+  /// Direct pointer to the authoritative domain result row, when a precise
+  /// one exists (e.g. RestrictedPartyScreeningResult.id, EmbargoUsageHeader.id,
+  /// ClassificationRun.id). Stored as a plain reference rather than a typed
+  /// relation to every current and future compliance domain table.
+  resultRefType String?
+  resultRefId   String?
+
+  finalStatus  String?
+  finalSummary String? @db.Text
+
+  errorCategory String?
+  errorCode     String?
+  failedStage   String?
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  screeningFindings       ComplianceScreeningFinding[]
+  overrides                ComplianceFormalOverride[]
+
+  @@index([accountId, startedAt])
+  @@index([accountId, executionType, startedAt])
+  @@index([accountId, status, startedAt])
+  @@index([accountId, shipmentId])
+  @@index([accountId, partyId])
+  @@index([accountId, initiatedByUserId, startedAt])
+  @@index([accountId, correlationId])
+  @@index([parentExecutionId])
+}
+
+/// Governed formal compliance override (prompt §6) -- explicitly distinct
+/// from a domain reviewer disposition (e.g. RestrictedPartyDisposition,
+/// ClassificationDecision.decisionStatus = OVERRIDDEN). A formal override
+/// never erases or edits the original result; it records a separate,
+/// reason-mandatory, RBAC-gated decision that layers on top of it. Never
+/// created by LLM inference -- only through an explicit, authenticated,
+/// permissioned user action.
+model ComplianceFormalOverride {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  executionId String?
+  execution   ComplianceExecution? @relation(fields: [executionId], references: [id], onDelete: SetNull)
+
+  /// Plain reference to the domain result being overridden -- never a typed
+  /// relation, since the domain varies (RESTRICTED_PARTY | EMBARGO |
+  /// CLASSIFICATION | FORCED_LABOR | END_USE | END_USER | MILITARY_END_USE |
+  /// ANTI_BOYCOTT) and this model must not grow a relation to every
+  /// compliance domain table.
+  resultRefType String
+  resultRefId   String
+
+  originalDecision String
+  overrideDecision String
+  reason           String @db.Text
+
+  overriddenByUserId String
+  overriddenAt       DateTime @default(now())
+
+  revokedByUserId String?
+  revokedAt       DateTime?
+  revokedReason   String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId, resultRefType, resultRefId])
+  @@index([accountId, executionId])
+  @@index([accountId, overriddenAt])
 }
 
 /// CBP ACE 4-digit port codes — reference table for pre-filing validation.

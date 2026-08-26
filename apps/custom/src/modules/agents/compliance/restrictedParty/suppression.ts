@@ -7,6 +7,11 @@
 // (accountId, partyId, screeningEntityId) pairing. A suppressed match is
 // never deleted or hidden -- it is flagged, so the full evidence trail
 // survives even when a human has already judged it a false positive.
+//
+// A disposition stops suppressing once the underlying ScreeningEntity is
+// republished after it -- see getApprovedDispositions in
+// restrictedPartyRepository.ts. This bounds how long a single reviewer's
+// call can silently hide a match against watchlist data they never saw.
 import type { RestrictedPartyMatchCandidate } from "./types";
 
 /** Map of screeningEntityId -> the disposition id that suppresses it, for one party. */

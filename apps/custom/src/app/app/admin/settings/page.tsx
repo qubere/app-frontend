@@ -5,6 +5,7 @@ import { SettingsAuditPanel } from "./SettingsAuditPanel";
 import { DocumentEmailPanel } from "./DocumentEmailPanel";
 import { AgentPoliciesPanel } from "./AgentPoliciesPanel";
 import { ApiKeyPanel } from "./ApiKeyPanel";
+import { PrivateEmbargoRulesPanel } from "./PrivateEmbargoRulesPanel";
 
 export default async function AdminSettingsPage() {
   const context = await getAccountContext();
@@ -18,7 +19,7 @@ export default async function AdminSettingsPage() {
   // this wrapper these queries silently default to PRODUCTION isolation.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  const [data, routes, memberships, agentPolicies, policyHistory, apiKeys] = await Promise.all([
+  const [data, routes, memberships, agentPolicies, policyHistory, apiKeys, embargoConfig, privateEmbargoRules] = await Promise.all([
     getSettingsAuditData(context),
     db.inboundSenderRoute.findMany({
       where: { accountId: context.accountId },
@@ -46,6 +47,11 @@ export default async function AdminSettingsPage() {
     db.accountApiKey.findMany({
       where: { accountId: context.accountId },
       orderBy: { createdAt: "desc" },
+    }),
+    db.accountEmbargoConfig.findUnique({ where: { accountId: context.accountId } }),
+    db.privateEmbargoRule.findMany({
+      where: { accountId: context.accountId },
+      orderBy: [{ status: "asc" }, { toCountryCode: "asc" }, { createdAt: "desc" }],
     }),
   ]);
 
@@ -100,6 +106,21 @@ export default async function AdminSettingsPage() {
             ? `${h.user.firstName ?? ""} ${h.user.lastName ?? ""}`.trim() || h.user.email
             : "System",
           createdAt: h.createdAt.toISOString(),
+        }))}
+      />
+      <PrivateEmbargoRulesPanel
+        initialEnabled={embargoConfig?.privateEmbargoEnabled ?? false}
+        initialRules={privateEmbargoRules.map((r) => ({
+          id: r.id,
+          fromCountryCode: r.fromCountryCode,
+          appliesToAllFromCountries: r.appliesToAllFromCountries,
+          toCountryCode: r.toCountryCode,
+          embargoed: r.embargoed,
+          effectiveDate: r.effectiveDate.toISOString(),
+          expirationDate: r.expirationDate ? r.expirationDate.toISOString() : null,
+          reason: r.reason,
+          reference: r.reference,
+          status: r.status,
         }))}
       />
       <SettingsAuditPanel accountName={context.accountName} {...data} />

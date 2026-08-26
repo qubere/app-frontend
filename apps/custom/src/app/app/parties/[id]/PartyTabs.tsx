@@ -35,6 +35,8 @@ import {
   RemoveRowButton,
   RescreenPartyButton,
   RestrictedPartyDispositionForm,
+  GrantPreApprovalForm,
+  RevokePreApprovalButton,
 } from "./PartyActions";
 
 const cellClass = "px-3 py-3 align-top";
@@ -66,6 +68,18 @@ interface HistoryEvent {
 interface ScreeningSummary {
   screeningStatus: string;
   lastScreenedAt: string | null;
+}
+
+interface PreApproval {
+  id: string;
+  status: "PRE_APPROVED" | "REVOKED";
+  approvedAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  reason: string | null;
+  /** Only present on the current PRE_APPROVED row -- a live re-check of the same gate real screening uses, not stored on the row itself. */
+  currentlyValidForReuse?: boolean;
+  validityReason?: string;
 }
 
 interface ScreeningMatch {
@@ -114,6 +128,8 @@ export function PartyTabs({
   mayReadScreening,
   mayScreen,
   mayDisposeScreening,
+  mayApprovePreScreening,
+  mayRevokePreScreening,
   reviewHint,
   activeNames,
   activeIdentifiers,
@@ -133,6 +149,8 @@ export function PartyTabs({
   mayReadScreening: boolean;
   mayScreen: boolean;
   mayDisposeScreening: boolean;
+  mayApprovePreScreening: boolean;
+  mayRevokePreScreening: boolean;
   reviewHint: string;
   activeNames: PartyDetail["names"];
   activeIdentifiers: PartyDetail["identifiers"];
@@ -152,6 +170,7 @@ export function PartyTabs({
   const historyRequestedRef = useRef(false);
   const [screeningSummary, setScreeningSummary] = useState<ScreeningSummary | null>(null);
   const [screeningResults, setScreeningResults] = useState<ScreeningResult[]>([]);
+  const [preApprovals, setPreApprovals] = useState<PreApproval[]>([]);
   const [screeningLoading, setScreeningLoading] = useState(false);
   const [screeningError, setScreeningError] = useState<string | null>(null);
   const screeningRequestedRef = useRef(false);
@@ -188,6 +207,7 @@ export function PartyTabs({
       .then((body) => {
         setScreeningSummary(body.summary ?? null);
         setScreeningResults(Array.isArray(body.results) ? body.results : []);
+        setPreApprovals(Array.isArray(body.preApprovals) ? body.preApprovals : []);
       })
       .catch(() => setScreeningError("Screening history could not be loaded."))
       .finally(() => setScreeningLoading(false));
@@ -850,6 +870,73 @@ export function PartyTabs({
                   denial-order lists and red-flag words. A name match and a contact-name match are
                   screened and reported independently.
                 </p>
+              </div>
+
+              <div className="rounded-2xl bg-white border border-border p-5 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-sm font-bold text-ink">Pre-approval</h2>
+                    <p className="text-xs text-[#6E6E73] mt-1 max-w-xl">
+                      A reviewer-granted permission to reuse this party&apos;s already-satisfied
+                      screening in shipment screening, instead of re-running the matcher. Distinct
+                      from a disposition on any single match above — pre-approval covers the whole
+                      party, not one candidate.
+                    </p>
+                  </div>
+                  {mayApprovePreScreening && (
+                    <GrantPreApprovalForm partyId={partyId} onDone={loadScreeningHistory} />
+                  )}
+                </div>
+                {!mayApprovePreScreening && (
+                  <p className="text-xs text-[#6E6E73]">
+                    Granting pre-approval needs compliance.restricted_party_approve.
+                  </p>
+                )}
+                {preApprovals.length === 0 ? (
+                  <p className="text-sm text-[#6E6E73]">No pre-approval has ever been granted.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {preApprovals.map((approval) => (
+                      <li
+                        key={approval.id}
+                        className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border p-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={approval.status === "PRE_APPROVED" ? "success" : "neutral"}>
+                              {approval.status === "PRE_APPROVED" ? "Pre-approved" : "Revoked"}
+                            </Badge>
+                            {approval.status === "PRE_APPROVED" && approval.currentlyValidForReuse !== undefined && (
+                              <Badge variant={approval.currentlyValidForReuse ? "success" : "warning"}>
+                                {approval.currentlyValidForReuse ? "Currently valid for reuse" : "Stale — normal screening will run"}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#6E6E73]">
+                            Granted {displayDate(approval.approvedAt)}
+                            {approval.expiresAt !== null && <> · expires {displayDate(approval.expiresAt)}</>}
+                            {approval.revokedAt !== null && <> · revoked {displayDate(approval.revokedAt)}</>}
+                          </p>
+                          {approval.reason !== null && (
+                            <p className="text-xs text-[#6E6E73]">{approval.reason}</p>
+                          )}
+                          {approval.status === "PRE_APPROVED" &&
+                            approval.currentlyValidForReuse === false &&
+                            approval.validityReason !== undefined && (
+                              <p className="text-xs text-amber-700">{approval.validityReason}</p>
+                            )}
+                        </div>
+                        {approval.status === "PRE_APPROVED" && mayRevokePreScreening && (
+                          <RevokePreApprovalButton
+                            partyId={partyId}
+                            approvalId={approval.id}
+                            onDone={loadScreeningHistory}
+                          />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               {screeningError && (

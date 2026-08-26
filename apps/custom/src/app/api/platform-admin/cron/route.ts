@@ -99,7 +99,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
 
   const datasetIdsToQuery = SYSTEM_CRON_JOBS.flatMap((j) => [`cron:${j.id}`, j.id]);
 
-  let logsMap = new Map<string, { completedAt: Date | null; startedAt: Date; status: string; errorMessage: string | null; summary: string | null }>();
+  const logsMap = new Map<string, { completedAt: Date | null; startedAt: Date; status: string; errorMessage: string | null; summary: string | null }>();
 
   try {
     const logs = await db.datasetRefreshLog.findMany({

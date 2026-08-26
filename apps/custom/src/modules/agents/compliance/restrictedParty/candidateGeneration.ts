@@ -26,6 +26,8 @@ export interface ScreeningCandidate {
   entity: ScreeningEntityWithAddresses;
   matchedAgainst: string; // the entity name/alternateName that triggered the shortlist
   reasons: Set<CandidateReason>;
+  /** The specific token(s) that triggered a RAW_WORD/ALTERNATE_WHOLE_WORD reason -- audit-evidence detail. Empty for candidates found only via EXACT/phonetic, where no single token is "the" trigger. */
+  matchedTokens: Set<string>;
 }
 
 export interface GenerateCandidatesOptions {
@@ -44,8 +46,19 @@ export interface GenerateCandidatesResult {
   alternateScreeningReason: string;
 }
 
+/** All name strings worth checking a target against for this entity: primary name, alternateNames, and ScreeningEntityAlias rows (Dow Jones AKA/FKA/spelling-variation records) -- de-duplicated case-insensitively since Dow Jones ingestion writes some alias strings into both alternateNames and ScreeningEntityAlias. Purely additive vs. the pre-alias candidate set: it can only add candidates, never remove one. */
 function candidateNames(entity: ScreeningEntityWithAddresses): string[] {
-  return [entity.name, ...entity.alternateNames];
+  const names = [entity.name, ...entity.alternateNames, ...(entity.aliases ?? []).map((a) => a.name)];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const name of names) {
+    if (!name) continue;
+    const key = name.trim().toUpperCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(name);
+  }
+  return result;
 }
 
 /** Shortlists reference entities worth scoring against `targetRawName`. Never returns duplicates per entity. */
@@ -66,12 +79,23 @@ export function generateCandidates(
   const targetTokens = new Set(tokenize(targetNormalized));
 
   const byEntityId = new Map<string, ScreeningCandidate>();
-  const addReason = (entity: ScreeningEntityWithAddresses, matchedAgainst: string, reason: CandidateReason) => {
+  const addReason = (
+    entity: ScreeningEntityWithAddresses,
+    matchedAgainst: string,
+    reason: CandidateReason,
+    token?: string,
+  ) => {
     const existing = byEntityId.get(entity.id);
     if (existing) {
       existing.reasons.add(reason);
+      if (token) existing.matchedTokens.add(token);
     } else {
-      byEntityId.set(entity.id, { entity, matchedAgainst, reasons: new Set([reason]) });
+      byEntityId.set(entity.id, {
+        entity,
+        matchedAgainst,
+        reasons: new Set([reason]),
+        matchedTokens: new Set(token ? [token] : []),
+      });
     }
   };
 
@@ -119,8 +143,14 @@ export function generateCandidates(
         const entityNormalized = normalizeForMatching(rawName);
         const entityTokens = tokenize(entityNormalized);
 
-        if (entityTokens.some((t) => t.length > 3 && targetTokens.has(t))) {
-          addReason(entity, rawName, "RAW_WORD");
+        // Floor is `> 2` (not `> 3`): 3-char tokens like ALI/IBM/ABB carry real
+        // matching signal and were being silently excluded from shortlisting
+        // entirely. Still excludes 2-char tokens (LI/WU/NG/3M) -- the noise
+        // risk from those is high enough to leave that narrower gap open and
+        // documented rather than closed here.
+        const sharedRawWord = entityTokens.find((t) => t.length > 2 && targetTokens.has(t));
+        if (sharedRawWord) {
+          addReason(entity, rawName, "RAW_WORD", sharedRawWord);
         }
 
         if (!excludeMetaphone) {
@@ -134,7 +164,7 @@ export function generateCandidates(
         }
 
         if (alternateToken && entityTokens.includes(alternateToken)) {
-          addReason(entity, rawName, "ALTERNATE_WHOLE_WORD");
+          addReason(entity, rawName, "ALTERNATE_WHOLE_WORD", alternateToken);
         }
       }
     }

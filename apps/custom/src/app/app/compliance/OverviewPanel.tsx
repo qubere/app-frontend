@@ -29,6 +29,7 @@ const SEVERITY_STYLES: Record<FindingProps["severity"], string> = {
 
 const SCREENING_LABELS: Record<string, string> = {
   COUNTRY_EMBARGO: "Country Embargo",
+  PRIVATE_EMBARGO: "Private Embargo",
   UFLPA: "Forced Labor / UFLPA",
   END_USE_RESTRICTION: "End-Use",
   END_USER_RESTRICTION: "End-User",

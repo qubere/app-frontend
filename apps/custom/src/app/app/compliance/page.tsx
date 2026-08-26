@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const SCREENING_BUCKETS = [
   "COUNTRY_EMBARGO",
+  "PRIVATE_EMBARGO",
   "UFLPA",
   "END_USE_RESTRICTION",
   "END_USER_RESTRICTION",
@@ -21,6 +22,8 @@ export default async function CompliancePage() {
   if (!context) return null;
 
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
+  const mayReadExecutionHistory =
+    holdsPermission(context, "audit.read") || holdsPermission(context, "compliance.read");
 
   // ComplianceFinding/ComplianceAuditRecord/ComplianceScreeningFinding/
   // RestrictedPartyScreeningResult/PartyScreeningSummary all carry an Account
@@ -188,6 +191,7 @@ export default async function CompliancePage() {
         mayReadPartyScreening={mayReadPartyScreening}
         partyScreeningResults={partyScreeningProps}
         partySummaryCounts={partySummaryCounts}
+        mayReadExecutionHistory={mayReadExecutionHistory}
       />
     </div>
   );
