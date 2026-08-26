@@ -7,6 +7,7 @@ import { PipelineOrchestrator } from "@/modules/agents/pipelineOrchestrator";
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
 import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
 import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service";
+import { logEvent } from "@/lib/logging/logger";
 import { z } from "zod";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
@@ -59,6 +60,17 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     source: "UI",
     metadata: { fileName: doc.fileName, previousShipmentId: doc.shipmentId, newShipmentId: shipmentId },
     success: true,
+  });
+
+  logEvent({
+    action: "document.attached",
+    message: `POST /api/documents/${id}/attach document ${id} (${doc.fileName}) attached to shipment ${shipmentId}`,
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    resourceType: "document",
+    resourceId: id,
+    requestId,
+    metadata: { previousShipmentId: doc.shipmentId, newShipmentId: shipmentId },
   });
 
   // Check whether the shipment has other documents that are already extracted.

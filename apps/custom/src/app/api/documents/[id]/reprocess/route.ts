@@ -12,6 +12,7 @@ import { advanceDocumentProcessing } from "@/modules/documents/processing/advanc
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
 import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
 import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service";
+import { logEvent } from "@/lib/logging/logger";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
 
@@ -167,6 +168,17 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         await recomputeShipmentDeadlines(shipmentId, ctx.accountId);
       }
 
+      logEvent({
+        action: "document.reprocess_requested",
+        message: `POST /api/documents/${document.id}/reprocess document ${document.id} (${document.fileName}) reconciliation re-run only`,
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        resourceType: "document",
+        resourceId: document.id,
+        requestId,
+        metadata: { fromStep: "reconcile", shipmentId: document.shipmentId },
+      });
+
       return NextResponse.json({
         status: "ACCEPTED",
         requestId,
@@ -240,6 +252,17 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     // Same reasoning as the upload route: the run is recorded, and this request
     // is what submits it. Cron runs once a day and would leave it queued.
     advanceDocumentProcessing({ reason: "document.reprocess" });
+
+    logEvent({
+      action: "document.reprocess_requested",
+      message: `POST /api/documents/${document.id}/reprocess document ${document.id} (${document.fileName}) queued for reprocessing (profile: ${parsed.profile}, fromStep: ${parsed.fromStep})`,
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      resourceType: "document",
+      resourceId: document.id,
+      requestId,
+      metadata: { profile: parsed.profile, fromStep: parsed.fromStep, runId: queued.runId, correlationId },
+    });
 
     return NextResponse.json(
       {
