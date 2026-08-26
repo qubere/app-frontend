@@ -6,6 +6,7 @@ import { buildErrorResponse, errorMessage } from "@/lib/api/error";
 import { parseAndValidateBody, validatePathParams } from "@/lib/api/validation";
 import { createAuditLog } from "@/lib/audit";
 import { recordUsageEvent } from "@/lib/billing/telemetry";
+import { logEvent } from "@/lib/logging/logger";
 import { ExceptionService } from "@/modules/exceptions/exception.service";
 import {
   RISK_ACCEPTANCE_PERMISSION,
@@ -63,6 +64,17 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
       entityId: id,
       source: auditSource,
       metadata: { newStatus: updated.status, version: updated.version, shipmentId: updated.shipmentId },
+    });
+
+    logEvent({
+      action: `exception.${(requestedState ?? updated.status).toLowerCase()}`,
+      message: `PATCH /api/exceptions/${id} exception ${id} moved to ${updated.status} by ${resolverName}`,
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      resourceType: "exception",
+      resourceId: id,
+      requestId,
+      metadata: { newStatus: updated.status, shipmentId: updated.shipmentId, resolutionReason: bodyVal.data.resolutionReason },
     });
 
     if (requestedState === "RESOLVED" && updated.shipmentId) {

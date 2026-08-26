@@ -26,6 +26,7 @@ import { inngest } from "@/lib/inngest/client";
 import { ACCOUNT_MEMORY_EXTRACTION_EVENT } from "@/lib/inngest/functions/accountMemoryExtraction";
 import type { MemoryExtractionInput } from "@/modules/memory";
 import { recordUsageEvent } from "@/lib/billing/telemetry";
+import { logEvent } from "@/lib/logging/logger";
 
 const REVIEWER_SELECT = {
   firstName: true,
@@ -464,6 +465,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       brokerLicenseNumber: reviewer.licenseNumber,
       permissionBypass: overrideCheck.bypass,
     },
+  });
+
+  logEvent({
+    action: `decision.${action.toLowerCase()}`,
+    message: `POST /api/decisions decision ${decisionId} (${decision.agentName ?? "unknown agent"}) ${newStatus.toLowerCase()} by ${reviewer.name || ctx.userId}`,
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    resourceType: "decision",
+    resourceId: decisionId,
+    metadata: { shipmentId: decision.shipmentId, newStatus, overridesClassification },
   });
 
   if (action === "APPROVE" && decision.shipmentId) {

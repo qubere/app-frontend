@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { AccountContext, getAccountContext, hasPermission, hasProductEntitlement } from "@/lib/auth";
 import { runWithAccountId, runWithDataMode } from "@/lib/db";
+import { logApiRequest } from "@/lib/logging/logger";
 import { buildErrorResponse, generateRequestId, handleApiError } from "./error";
 import { canWrite, READ_ONLY_MESSAGE } from "./write-access";
 
@@ -131,10 +132,21 @@ export function withAuthenticatedRoute<TParams = Record<string, never>>(
 ) {
   return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
+    const startedAt = Date.now();
+    const { pathname } = new URL(req.url);
     const { ctx, errorResponse } = options?.write
       ? await authorizeWrite(options?.permission, options?.product)
       : await authorizeRequest(options?.permission, options?.product);
-    if (errorResponse) return errorResponse;
+    if (errorResponse) {
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: errorResponse.status,
+        durationMs: Date.now() - startedAt,
+        requestId,
+      });
+      return errorResponse;
+    }
 
     try {
       const params = context ? await context.params : ({} as TParams);
@@ -153,18 +165,40 @@ export function withAuthenticatedRoute<TParams = Record<string, never>>(
       const runAccountScoped = (fn: () => Promise<Response>) =>
         typeof accountRunner === "function" ? accountRunner(ctx!.accountId, fn) : fn();
 
-      if (typeof runner === "function") {
-        return await runner(ctx!.dataMode, async () => {
-          return await runAccountScoped(async () => {
-            return await handler({ req, ctx: ctx!, requestId, params });
-          });
-        });
-      }
-      return await runAccountScoped(async () => {
-        return await handler({ req, ctx: ctx!, requestId, params });
+      const response =
+        typeof runner === "function"
+          ? await runner(ctx!.dataMode, async () => {
+              return await runAccountScoped(async () => {
+                return await handler({ req, ctx: ctx!, requestId, params });
+              });
+            })
+          : await runAccountScoped(async () => {
+              return await handler({ req, ctx: ctx!, requestId, params });
+            });
+
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        accountId: ctx!.accountId,
+        userId: ctx!.userId,
+        requestId,
       });
+      return response;
     } catch (error) {
-      return handleApiError(error, requestId);
+      const response = handleApiError(error, requestId);
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        accountId: ctx?.accountId,
+        userId: ctx?.userId,
+        requestId,
+        error,
+      });
+      return response;
     }
   };
 }
@@ -180,11 +214,30 @@ export function withPublicRoute<TParams = Record<string, never>>(
 ) {
   return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
+    const startedAt = Date.now();
+    const { pathname } = new URL(req.url);
     try {
       const params = context ? await context.params : ({} as TParams);
-      return await handler({ req, requestId, params });
+      const response = await handler({ req, requestId, params });
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestId,
+      });
+      return response;
     } catch (error) {
-      return handleApiError(error, requestId);
+      const response = handleApiError(error, requestId);
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestId,
+        error,
+      });
+      return response;
     }
   };
 }
@@ -223,14 +276,41 @@ export function withCronRoute<TParams = Record<string, never>>(
 ) {
   return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
+    const startedAt = Date.now();
+    const { pathname } = new URL(req.url);
     if (!verifyCronAuth(req)) {
-      return buildErrorResponse(401, "UNAUTHORIZED", "Missing or invalid cron authorization", undefined, requestId);
+      const response = buildErrorResponse(401, "UNAUTHORIZED", "Missing or invalid cron authorization", undefined, requestId);
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestId,
+      });
+      return response;
     }
     try {
       const params = context ? await context.params : ({} as TParams);
-      return await handler({ req, requestId, params });
+      const response = await handler({ req, requestId, params });
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestId,
+      });
+      return response;
     } catch (error) {
-      return handleApiError(error, requestId);
+      const response = handleApiError(error, requestId);
+      logApiRequest({
+        method: req.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestId,
+        error,
+      });
+      return response;
     }
   };
 }

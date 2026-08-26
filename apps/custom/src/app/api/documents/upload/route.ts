@@ -18,6 +18,7 @@ import { assertParseableFormat } from "@/modules/documents/processing/documentSo
 import { isDocumentParserError } from "@/modules/documents/parser/contracts";
 import { screenUploadForMalware } from "@/modules/documents/processing/malwarePolicy";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
+import { logEvent } from "@/lib/logging/logger";
 
 /**
  * Accepts a trade document and queues it for processing.
@@ -194,6 +195,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   // If the document is unattached (no shipment ID specified), we park it in
   // the document library without running extraction/pipeline processing.
   if (!targetShipmentId) {
+    logEvent({
+      action: "document.parked",
+      message: `POST /api/documents/upload document ${docRecord.id} (${file.name}) parked without a shipment`,
+      accountId,
+      userId,
+      resourceType: "document",
+      resourceId: docRecord.id,
+      requestId,
+      metadata: { fileName: file.name, docType: resolvedDocType },
+    });
     return NextResponse.json({
       status: "PARKED",
       parked: true,
@@ -280,6 +291,17 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       requestId,
     },
     requestId,
+  });
+
+  logEvent({
+    action: "document.uploaded",
+    message: `POST /api/documents/upload document ${docRecord.id} (${file.name}) uploaded to shipment ${targetShipmentId}`,
+    accountId,
+    userId,
+    resourceType: "document",
+    resourceId: docRecord.id,
+    requestId,
+    metadata: { fileName: file.name, docType: resolvedDocType, shipmentId: targetShipmentId, correlationId },
   });
 
   return NextResponse.json(
