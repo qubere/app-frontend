@@ -87,6 +87,13 @@ export interface AgentDecisionGroup {
   agentName: string;
   status: string;
   triageState: string | null;
+  /**
+   * Only meaningful when triageState is null -- one of the three blocked
+   * sentinel values triageDecision checks for, or null otherwise. Collapsing
+   * to sentinel-or-null (rather than the raw free-text proposedDescription)
+   * keeps this a real aggregate dimension instead of one group per row.
+   */
+  proposedDescription?: string | null;
   count: number;
 }
 
@@ -119,7 +126,7 @@ export function computeAgentOperationsFromGroups(
     }
     const row = byAgent.get(g.agentName)!;
     row.processed += g.count;
-    const triage = triageDecision({ status: g.status, triageState: g.triageState });
+    const triage = triageDecision({ status: g.status, triageState: g.triageState, proposedDescription: g.proposedDescription ?? null });
     if (triage === "blocked") row.blocked += g.count;
     else if (triage === "review") row.needsReview += g.count;
     else row.verified += g.count;

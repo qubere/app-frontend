@@ -7,7 +7,10 @@ import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck } from "lucide-
 import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
 import type { AuditRecordProps } from "./AuditHistoryPanel";
 
-const OverviewPanel = dynamic(() => import("./OverviewPanel").then((m) => m.OverviewPanel), { ssr: false });
+// OverviewPanel is the default tab (no ?tab= param) -- keep it SSR'd so the
+// most common landing view has real server-rendered content on first paint.
+// Only the non-default tabs defer to ssr:false for bundle-splitting.
+const OverviewPanel = dynamic(() => import("./OverviewPanel").then((m) => m.OverviewPanel));
 const ScreeningPanel = dynamic(() => import("./ScreeningPanel").then((m) => m.ScreeningPanel), { ssr: false });
 const ComplianceFindingsClient = dynamic(() => import("./ComplianceFindingsClient").then((m) => m.ComplianceFindingsClient), { ssr: false });
 const AuditHistoryPanel = dynamic(() => import("./AuditHistoryPanel").then((m) => m.AuditHistoryPanel), { ssr: false });

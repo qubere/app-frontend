@@ -286,6 +286,7 @@ export default async function CompliancePage(props: {
       </div>
 
       <ComplianceWorkspaceClient
+        initialTab={resolvedTab}
         findings={findingProps}
         recentAudits={auditProps}
         screeningBuckets={screeningBuckets}

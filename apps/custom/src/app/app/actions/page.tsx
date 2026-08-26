@@ -54,7 +54,7 @@ export default async function ActionsPage(props: {
   // isolation for any DEMO/SANDBOX account.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  const [decisions, allDocuments, exceptions, filings, deadlines, writable, mayWaive] = await Promise.all([
+  const [decisions, allDocuments, exceptions, writable, mayWaive] = await Promise.all([
     db.agentDecision.findMany({
       where: {
         accountId: context.accountId,
@@ -77,7 +77,7 @@ export default async function ActionsPage(props: {
         currentHtsCode: true,
         proposedHtsCode: true,
         proposedDescription: true,
-        // Omit evidenceItems from initial list payload
+        evidenceItems: true,
         shipmentId: true,
         documentId: true,
         lineNumber: true,
@@ -125,38 +125,6 @@ export default async function ActionsPage(props: {
       orderBy: { createdAt: "desc" },
       take: 200,
     }),
-    db.customsFiling.findMany({
-      where: {
-        accountId: context.accountId,
-        filingStatus: { in: ["DRAFT", "READY_TO_FILE", "PENDING_RESPONSE", "REJECTED"] },
-        ...(shipmentId ? { shipmentId } : {}),
-      },
-      select: {
-        id: true,
-        entryNumber: true,
-        filingStatus: true,
-        createdAt: true,
-        shipmentId: true,
-        shipment: { select: { shipmentNumber: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    }),
-    db.complianceDeadline.findMany({
-      where: {
-        accountId: context.accountId,
-        status: "OPEN",
-        dueAt: { not: null },
-        ...(shipmentId ? { shipmentId } : {}),
-      },
-      select: {
-        shipmentId: true,
-        type: true,
-        dueAt: true,
-        estimated: true,
-        penaltyEstimate: true,
-      },
-    }),
     Promise.resolve(canWrite(context)),
     hasPermission(RISK_ACCEPTANCE_PERMISSION).then((ok) => canWrite(context) && ok),
   ]);
@@ -173,7 +141,6 @@ export default async function ActionsPage(props: {
     shipmentId: d.shipmentId ?? "",
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
-    evidenceItems: null,
     shipment: d.shipment
       ? {
           ...d.shipment,

@@ -4,9 +4,24 @@ import { computeReadinessBreakdown, deriveReadinessDimensions } from "@/lib/ship
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";
 import { triageDecision } from "@/modules/decisions/decisionState";
 import { computeAttentionPriority } from "@/lib/dashboard/attentionPriority";
-import { computeAgentOperationsFromGroups } from "@/lib/dashboard/agentOperationsSummary";
+import { computeAgentOperationsFromGroups, type AgentOverrideGroup } from "@/lib/dashboard/agentOperationsSummary";
 import { CommandCenterClient } from "./CommandCenterClient";
 import type { TeamMember } from "@/lib/team";
+
+const SHIPMENT_ROW_CAP = 2000;
+
+const AUTO_CERTIFIED_STATUSES = new Set(["AUTO_VERIFIED", "Auto-Approved", "Verified"]);
+const HUMAN_REVIEWED_STATUSES = new Set(["Approved", "APPROVED", "Rejected", "REJECTED"]);
+
+const BLOCKED_SENTINELS = ["BLOCKED_DEPENDENCY", "WAITING_FOR_EXTRACTION", "BLOCKED_MISSING_DESCRIPTION"] as const;
+
+interface DedupedAgentDecisionGroup {
+  agentName: string;
+  status: string;
+  triageState: string | null;
+  blockedSentinel: string | null;
+  count: number;
+}
 
 export default async function CommandCenterPage() {
   const context = await getAccountContext();
@@ -26,8 +41,8 @@ export default async function CommandCenterPage() {
       shipments,
       shipmentTotalCount,
       clients,
-      decisionGroups,
-      decisionTotalCount,
+      dedupedAgentGroups,
+      overrideEligibleDecisions,
       classificationCaseCounts,
       classificationOverrideCount,
       openRevalidationFlags,
@@ -63,7 +78,7 @@ export default async function CommandCenterPage() {
           agentDecisions: { select: { id: true, agentName: true, status: true, triageState: true, proposedDescription: true, createdAt: true } },
         },
         orderBy: { createdAt: "desc" },
-        take: 25,
+        take: SHIPMENT_ROW_CAP,
       }),
       db.shipment.count({ where: { accountId, deletedAt: null } }),
       db.client.findMany({
@@ -71,12 +86,43 @@ export default async function CommandCenterPage() {
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
-      db.agentDecision.groupBy({
-        by: ["agentName", "status", "triageState"],
-        where: { accountId },
-        _count: { _all: true },
+      // $queryRaw bypasses the withDataModeContext Prisma extension (it only
+      // intercepts model CRUD, not raw SQL) -- safe here only because
+      // AgentDecision has no own dataMode column and is scoped solely via its
+      // accountId -> Account.dataMode relation, so filtering by this exact
+      // accountId already pins the query to that account's one dataMode.
+      // Dedup to the latest decision per (shipment, agent) before aggregating --
+      // agents rerun on every shipment edit, so a naive groupBy over all
+      // AgentDecision rows double-counts reruns. The outer GROUP BY stays a
+      // real aggregate dimension (bounded by agent x status x triageState x
+      // sentinel-or-not) by collapsing proposedDescription's free text down to
+      // just the three blocked sentinels triageDecision checks for.
+      db.$queryRaw<DedupedAgentDecisionGroup[]>`
+        SELECT "agentName", "status", "triageState",
+          CASE WHEN "proposedDescription" IN (${BLOCKED_SENTINELS[0]}, ${BLOCKED_SENTINELS[1]}, ${BLOCKED_SENTINELS[2]})
+            THEN "proposedDescription" ELSE NULL END AS "blockedSentinel",
+          COUNT(*)::int AS count
+        FROM (
+          SELECT DISTINCT ON ("shipmentId", "agentName") "agentName", "status", "triageState", "proposedDescription"
+          FROM "AgentDecision"
+          WHERE "accountId" = ${accountId}
+          ORDER BY "shipmentId", "agentName", "createdAt" DESC
+        ) latest
+        GROUP BY "agentName", "status", "triageState", "blockedSentinel"
+      `,
+      // Override rate is a historical rate over every human approval this
+      // agent ever received, so it's tallied over the full (non-deduped) set
+      // -- a superseded decision's override still happened.
+      db.agentDecision.findMany({
+        where: {
+          accountId,
+          status: "Approved",
+          autoApproved: false,
+          currentHtsCode: { not: null },
+          proposedHtsCode: { not: null },
+        },
+        select: { agentName: true, currentHtsCode: true, proposedHtsCode: true },
       }),
-      db.agentDecision.count({ where: { accountId } }),
       db.classificationCase.groupBy({
         by: ["status"],
         where: { accountId },
@@ -121,16 +167,40 @@ export default async function CommandCenterPage() {
         : Promise.resolve([]),
     ]);
 
-    const agentGroups = decisionGroups.map((g) => ({
+    const agentGroups = dedupedAgentGroups.map((g) => ({
       agentName: g.agentName,
       status: g.status,
       triageState: g.triageState,
-      count: g._count._all,
+      proposedDescription: g.blockedSentinel,
+      count: g.count,
     }));
-    const agentOperations = computeAgentOperationsFromGroups(agentGroups);
+
+    const overrideTally = new Map<string, { eligible: number; overridden: number }>();
+    for (const d of overrideEligibleDecisions) {
+      const tally = overrideTally.get(d.agentName) ?? { eligible: 0, overridden: 0 };
+      tally.eligible++;
+      if (d.currentHtsCode !== d.proposedHtsCode) tally.overridden++;
+      overrideTally.set(d.agentName, tally);
+    }
+    const overrideGroups: AgentOverrideGroup[] = Array.from(overrideTally, ([agentName, tally]) => ({
+      agentName,
+      eligible: tally.eligible,
+      overridden: tally.overridden,
+    }));
+
+    const agentOperations = computeAgentOperationsFromGroups(agentGroups, overrideGroups);
+
+    // Throughput tiles use the same "latest decision per shipment per agent"
+    // set as the Agent Operations table above -- both are exact counts (the
+    // dedup query above is never capped), so there's nothing to truncate.
+    const autoCertifiedCount = dedupedAgentGroups
+      .filter((g) => AUTO_CERTIFIED_STATUSES.has(g.status))
+      .reduce((sum, g) => sum + g.count, 0);
+    const humanReviewedCount = dedupedAgentGroups
+      .filter((g) => HUMAN_REVIEWED_STATUSES.has(g.status))
+      .reduce((sum, g) => sum + g.count, 0);
 
     const shipmentsTruncated = shipmentTotalCount > shipments.length;
-    const decisionsTruncated = decisionTotalCount > decisionGroups.reduce((acc, g) => acc + g._count._all, 0);
 
     const caseCountByStatus = new Map(classificationCaseCounts.map((c) => [c.status, c._count._all]));
     const classificationSignals = {
@@ -294,14 +364,6 @@ export default async function CommandCenterPage() {
       };
     });
 
-    const formattedDecisions = decisionGroups.flatMap((g, i) =>
-      Array.from({ length: Math.min(g._count._all, 50) }, (_, idx) => ({
-        id: `dec-${i}-${idx}`,
-        status: g.status,
-        assignedBrokerId: null,
-      }))
-    );
-
     const formattedRegUpdates = regUpdates.map((ru) => ({
       id: ru.id,
       title: ru.title,
@@ -314,15 +376,14 @@ export default async function CommandCenterPage() {
         accountName={context.accountName}
         initialShipments={formattedShipments}
         urgencyByShipment={urgencyByShipment}
-        initialDecisions={formattedDecisions}
+        autoCertifiedCount={autoCertifiedCount}
+        humanReviewedCount={humanReviewedCount}
         regUpdates={formattedRegUpdates}
         teamMembers={teamMembers}
         clients={clients}
         agentOperations={agentOperations}
         shipmentsTruncated={shipmentsTruncated}
         shipmentTotalCount={shipmentTotalCount}
-        decisionsTruncated={decisionsTruncated}
-        decisionTotalCount={decisionTotalCount}
         classificationSignals={classificationSignals}
         productIntelligenceSignals={productIntelligenceSignals}
         reviewQueue={reviewQueue}
