@@ -20,9 +20,9 @@ import { Badge } from "@/components/ui/Badge";
 import type { AiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import type { DocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
 import type { RolesPermissionsData } from "@/lib/admin/rolesData";
-
 import type { CronJob } from "./CronPanel";
 import type { DatasetWithStatus } from "@/lib/data/datasetRegistry";
+import type { RateReviewPanelProps } from "./RateReviewPanel";
 
 interface AccountItem {
   id: string;
@@ -42,6 +42,7 @@ interface PlatformAdminConsoleProps {
   rolesPermissions?: RolesPermissionsData;
   initialCronJobs?: CronJob[];
   initialDatasets?: DatasetWithStatus[];
+  initialRateReviews?: RateReviewPanelProps["initialItems"];
 }
 
 export function PlatformAdminConsole({
@@ -53,6 +54,7 @@ export function PlatformAdminConsole({
   rolesPermissions,
   initialCronJobs,
   initialDatasets,
+  initialRateReviews,
 }: PlatformAdminConsoleProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
@@ -298,7 +300,7 @@ export function PlatformAdminConsole({
 
       {activeTab === "data" && <DataAdminPanel initialDatasets={initialDatasets} />}
 
-      {activeTab === "rate-review" && <RateReviewPanel />}
+      {activeTab === "rate-review" && <RateReviewPanel initialItems={initialRateReviews} />}
 
       {activeTab === "keyword-rules" && <KeywordRuleReviewPanel />}
 

@@ -36,9 +36,14 @@ function rowKey(item: Pick<RateReviewItem, "type" | "id">) {
   return `${item.type}:${item.id}`;
 }
 
-export function RateReviewPanel() {
-  const [items, setItems] = useState<RateReviewItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface RateReviewPanelProps {
+  initialItems?: RateReviewItem[];
+}
+
+export function RateReviewPanel({ initialItems }: RateReviewPanelProps = {}) {
+  const hasInitial = Boolean(initialItems);
+  const [items, setItems] = useState<RateReviewItem[]>(() => initialItems || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reviewingKey, setReviewingKey] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -60,7 +65,9 @@ export function RateReviewPanel() {
   };
 
   useEffect(() => {
-    fetchItems();
+    if (!hasInitial) {
+      fetchItems();
+    }
   }, []);
 
   const handleReview = async (item: RateReviewItem, action: "APPROVE" | "REJECT") => {

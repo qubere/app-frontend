@@ -11,6 +11,7 @@ import { listPendingKeywordRuleReviews } from "@/modules/complianceKeywordRules/
 import { getRolesPermissionsData } from "@/lib/admin/rolesData";
 import { getSystemCronJobs } from "@/lib/admin/cronData";
 import { getAllDatasetsWithStatus } from "@/lib/data/datasetRegistry";
+import { listPendingRateReviews } from "@/modules/tradeRate/tradeRateReviewService";
 
 export default async function PlatformAdminPage() {
   const context = await getAccountContext();
@@ -102,7 +103,7 @@ export default async function PlatformAdminPage() {
     lastRefreshAt: mostRecentRelease?.retrievedAt.toISOString() || null,
   };
 
-  const [aiUsage, documentProcessing, pendingKeywordRules, rolesPermissions, cronJobs, datasets] =
+  const [aiUsage, documentProcessing, pendingKeywordRules, rolesPermissions, cronJobs, datasets, rateReviews] =
     await Promise.all([
       getAiUsageAnalytics(30),
       getDocumentProcessingAnalytics(30),
@@ -110,9 +111,19 @@ export default async function PlatformAdminPage() {
       getRolesPermissionsData(context),
       getSystemCronJobs(),
       getAllDatasetsWithStatus(),
+      listPendingRateReviews(),
     ]);
 
   const pendingKeywordRuleCount = pendingKeywordRules.length;
+
+  const formattedRateReviews = rateReviews.map((r) => ({
+    type: r.type,
+    id: r.id,
+    headline: r.headline,
+    citation: r.citation ?? null,
+    evidenceText: r.evidenceText ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }));
 
   return (
     <div className="min-h-screen bg-surface-muted text-ink p-8 selection:bg-brand/20 selection:text-brand">
@@ -150,8 +161,10 @@ export default async function PlatformAdminPage() {
           rolesPermissions={rolesPermissions}
           initialCronJobs={cronJobs}
           initialDatasets={datasets}
+          initialRateReviews={formattedRateReviews}
         />
       </div>
     </div>
   );
 }
+
