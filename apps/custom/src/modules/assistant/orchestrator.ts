@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient } from "@/lib/ai/geminiClient";
 import type { Content, Part } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AccountContext } from "@/lib/auth";
@@ -13,7 +13,7 @@ import {
 } from "@/modules/assistant/shared/audit";
 import type { CopilotStatus } from "@/modules/assistant/shared/contract";
 
-const aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const aiClient = getGeminiClient();
 const CHAT_SURFACE = "copilot" as const;
 export const ASSISTANT_PROMPT_VERSION = "2026-08-14.1" as const;
 
