@@ -33,18 +33,18 @@ export function getDocumentParserProvider(): DocumentParserProvider {
     return new MockDoclingProvider();
   }
 
+  if (isProductionEnvironment()) {
+    return new IbmHostedDoclingProvider();
+  }
+
   let primaryProvider: DocumentParserProvider | null = null;
   try {
     primaryProvider = new IbmHostedDoclingProvider();
   } catch (err) {
-    if (isProductionEnvironment()) {
-      throw err;
-    }
     console.warn("[DocumentParser] Primary parser (ibm-docling) unconfigured, using backup parser:", err);
   }
 
   const backupProvider = new MockDoclingProvider();
-
   if (primaryProvider) {
     return new FallbackDoclingProvider(primaryProvider, backupProvider);
   }

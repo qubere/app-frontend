@@ -4,7 +4,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse, errorMessage } from "@/lib/api/error";
 import { validatePathParams } from "@/lib/api/validation";
 import { db } from "@/lib/db";
-import { resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
+import { readStoredObject, StorageValidationError } from "@/lib/storage";
 import { createAuditLog } from "@/lib/audit";
 import {
   OVERRIDE_PERMISSION,
@@ -185,18 +185,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
 
     let fileBuffer: Buffer | null = null;
     try {
-      const origin = resolveStorageOrigin(doc.fileUrl);
-      if (origin) {
-        const res = await fetch(doc.fileUrl);
-        if (res.ok) fileBuffer = Buffer.from(await res.arrayBuffer());
-      } else {
-        const fs = await import("node:fs");
-        const { resolveLocalFilePath } = await import("@/lib/storage");
-        const localPath = resolveLocalFilePath(doc.fileUrl);
-        if (localPath && fs.existsSync(localPath)) {
-          fileBuffer = fs.readFileSync(localPath);
-        }
-      }
+      fileBuffer = (await readStoredObject(doc.fileUrl)).body;
     } catch (err) {
       if (err instanceof StorageValidationError) {
         return buildErrorResponse(

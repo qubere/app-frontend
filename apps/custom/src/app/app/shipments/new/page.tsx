@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Package, ShieldCheck, AlertCircle } from "lucide-react";
+import { ArrowLeft, Package, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
 import { Card, CardHeader, CardHeaderIcon } from "@/components/ui/Card";
 import { Button, buttonVariants } from "@/components/ui/Button";
 import { Input, Select, Label, FormField } from "@/components/ui/Input";
@@ -54,16 +54,16 @@ export default function NewShipmentPage() {
       } else {
         router.push("/app/shipments");
       }
+      // Note: Keep loading true while router.push performs transition so user sees transitioning state
     } catch (err: unknown) {
       console.error("Error creating shipment:", err);
       setError(err instanceof Error ? err.message : "Failed to create shipment. Please try again.");
-    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-6">
+    <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-6 relative">
       {/* Top Header */}
       <div className="flex items-center space-x-4">
         <Link
@@ -85,9 +85,9 @@ export default function NewShipmentPage() {
         </div>
       )}
 
-      {/* Form Card */}
-      <form onSubmit={handleSubmit}>
-        <Card>
+      {/* Form Card with Transition Overlay */}
+      <form onSubmit={handleSubmit} className="relative">
+        <Card className={loading ? "opacity-40 pointer-events-none transition-all duration-300" : "transition-all duration-300"}>
           <CardHeader>
             <CardHeaderIcon>
               <Package className="w-5 h-5" />
@@ -105,6 +105,7 @@ export default function NewShipmentPage() {
               <Label>Importer of Record Name *</Label>
               <Input
                 required
+                disabled={loading}
                 value={formData.importerName}
                 onChange={(e) => setFormData({ ...formData, importerName: e.target.value })}
                 placeholder="e.g. ABC Manufacturing India Pvt Ltd"
@@ -115,6 +116,7 @@ export default function NewShipmentPage() {
               <Label>Destination Country *</Label>
               <Select
                 required
+                disabled={loading}
                 value={formData.destinationCountry}
                 onChange={(e) => setFormData({ ...formData, destinationCountry: e.target.value })}
               >
@@ -130,6 +132,7 @@ export default function NewShipmentPage() {
             <FormField>
               <Label>Customs Entry Type</Label>
               <Select
+                disabled={loading}
                 value={formData.entryType}
                 onChange={(e) => setFormData({ ...formData, entryType: e.target.value })}
               >
@@ -145,6 +148,7 @@ export default function NewShipmentPage() {
             <FormField className="md:col-span-2">
               <Label>Client (Optional)</Label>
               <Select
+                disabled={loading}
                 value={formData.clientId}
                 onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
               >
@@ -163,13 +167,27 @@ export default function NewShipmentPage() {
             <Link href="/app/dashboard" className={buttonVariants({ variant: "secondary", size: "md" })}>
               Cancel
             </Link>
-            <Button type="submit" loading={loading}>
+            <Button type="submit" loading={loading} disabled={loading}>
               {!loading && <ShieldCheck className="w-4 h-4" />}
               <span>{loading ? "Creating Shipment..." : "Initialize Shipment"}</span>
             </Button>
           </div>
         </Card>
+
+        {/* Transition Overlay Banner */}
+        {loading && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-xs rounded-2xl flex flex-col items-center justify-center p-6 space-y-3 z-20 shadow-lg border border-border/50 animate-in fade-in duration-200">
+            <div className="p-3 bg-surface rounded-2xl border border-border shadow-xs">
+              <Loader2 className="w-8 h-8 text-ink animate-spin" />
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-sm font-semibold text-ink">Creating Shipment Workspace...</p>
+              <p className="text-xs text-ink-muted">Initializing compliance engine & redirecting to shipment details</p>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );
 }
+

@@ -68,11 +68,24 @@ export class PgQueue {
    * accounts, which is the wrong job for a caller that enqueued its own.
    */
   static async claimJob(jobId: string): Promise<boolean> {
+    const now = new Date();
     const claimed = await db.pipelineJob.updateMany({
-      where: { id: jobId, status: "PENDING" },
+      where: {
+        id: jobId,
+        attemptCount: { lt: db.pipelineJob.fields.maxAttempts },
+        OR: [
+          { status: "PENDING" },
+          { status: "FAILED", nextRetryAt: { lte: now } },
+          { status: "PROCESSING", lockedAt: { lt: new Date(now.getTime() - 5 * 60_000) } },
+        ],
+      },
       data: {
         status: "PROCESSING",
-        lockedAt: new Date(),
+        lockedAt: now,
+        heartbeatAt: now,
+        nextRetryAt: null,
+        completedAt: null,
+        attemptCount: { increment: 1 },
       },
     });
     if (claimed.count !== 1) return false;
@@ -165,13 +178,21 @@ export class PgQueue {
    * Marks a job as failed and stops it.
    */
   static async failJob(jobId: string, errorMsg: string, state: JobState = {}) {
+    const job = await db.pipelineJob.findUnique({
+      where: { id: jobId },
+      select: { attemptCount: true, maxAttempts: true },
+    });
+    const terminal = !job || job.attemptCount >= job.maxAttempts;
+    const delayMs = Math.min(5 * 60_000, 5_000 * 2 ** Math.max(0, (job?.attemptCount ?? 1) - 1));
     await db.pipelineJob.update({
       where: { id: jobId },
       data: {
         status: "FAILED",
         state: state as Prisma.InputJsonValue,
         errorMessage: errorMsg,
-        completedAt: new Date(),
+        completedAt: terminal ? new Date() : null,
+        nextRetryAt: terminal ? null : new Date(Date.now() + delayMs),
+        heartbeatAt: null,
         lockedAt: null,
       },
     });

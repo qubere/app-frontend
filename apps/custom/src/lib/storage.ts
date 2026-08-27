@@ -1,3 +1,4 @@
+import { Storage } from "@google-cloud/storage";
 import { put } from "@vercel/blob";
 import { createHash } from "crypto";
 import fs from "fs";
@@ -36,7 +37,79 @@ const ALLOWED_STORAGE_HOSTS = [
   "storage.qubere.ai",
 ];
 
-export type RemoteStorageOrigin = "vercel-blob";
+export type RemoteStorageOrigin = "vercel-blob" | "gcs";
+export type StorageProvider = RemoteStorageOrigin | "local-fs";
+
+let gcsClient: Storage | null = null;
+
+function selectedRemoteProvider(): RemoteStorageOrigin | null {
+  const explicit = (process.env.STORAGE_PROVIDER ?? "").trim().toLowerCase();
+  if (explicit === "gcs") {
+    if (!(process.env.GCS_BUCKET ?? "").trim()) {
+      throw new Error("[Storage] GCS_BUCKET must be set when STORAGE_PROVIDER=gcs.");
+    }
+    return "gcs";
+  }
+  if (explicit === "vercel-blob") {
+    if (!(process.env.BLOB_READ_WRITE_TOKEN ?? "").trim()) {
+      throw new Error(
+        "[Storage] BLOB_READ_WRITE_TOKEN must be set when STORAGE_PROVIDER=vercel-blob."
+      );
+    }
+    return "vercel-blob";
+  }
+  if (explicit && explicit !== "local-fs") {
+    throw new Error(`[Storage] Unsupported STORAGE_PROVIDER "${explicit}".`);
+  }
+  if (explicit === "local-fs") return null;
+
+  // Backwards compatibility for the existing Vercel deployment: it can keep
+  // using the token without adding STORAGE_PROVIDER. GCP must opt in explicitly
+  // so merely knowing a bucket name can never switch the active write backend.
+  if (process.env.BLOB_READ_WRITE_TOKEN) return "vercel-blob";
+  return null;
+}
+
+function gcsBucketName(): string {
+  const bucket = (process.env.GCS_BUCKET ?? "").trim();
+  if (!bucket) throw new Error("[Storage] GCS_BUCKET is not configured.");
+  return bucket;
+}
+
+function storageClient(): Storage {
+  gcsClient ??= new Storage();
+  return gcsClient;
+}
+
+function encodeObjectPath(objectPath: string): string {
+  return objectPath.split("/").map(encodeURIComponent).join("/");
+}
+
+function gcsObjectUrl(bucket: string, objectPath: string): string {
+  return `https://storage.googleapis.com/${encodeURIComponent(bucket)}/${encodeObjectPath(objectPath)}`;
+}
+
+function parseGcsObjectUrl(fileUrl: string): { bucket: string; objectPath: string } {
+  const parsed = new URL(fileUrl);
+  if (parsed.hostname.toLowerCase() !== "storage.googleapis.com") {
+    throw new StorageValidationError(
+      "UNTRUSTED_STORAGE_ORIGIN",
+      "Cloud Storage objects must use the storage.googleapis.com endpoint."
+    );
+  }
+
+  const segments = parsed.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const [bucket, ...objectSegments] = segments;
+  const expectedBucket = gcsBucketName();
+  if (!bucket || bucket !== expectedBucket || objectSegments.length === 0) {
+    throw new StorageValidationError(
+      "UNTRUSTED_STORAGE_ORIGIN",
+      "Cloud Storage URL does not point to the configured Qubere bucket."
+    );
+  }
+
+  return { bucket, objectPath: objectSegments.join("/") };
+}
 
 /**
  * Resolves a local document reference (e.g. "/uploads/...", "file://...", or a filename)
@@ -56,7 +129,10 @@ export function resolveLocalFilePath(fileUrl: string): string | null {
 
   for (const dir of allowedDirs) {
     const candidate = path.resolve(dir, fileName);
-    if (candidate.startsWith(dir + path.sep) && fs.existsSync(candidate)) {
+    if (
+      candidate.startsWith(dir + path.sep) &&
+      fs.existsSync(/* turbopackIgnore: true */ candidate)
+    ) {
       return candidate;
     }
   }
@@ -96,6 +172,10 @@ export function resolveStorageOrigin(fileUrl: string): RemoteStorageOrigin | nul
   }
 
   const host = parsed.hostname.toLowerCase();
+  if (host === "storage.googleapis.com") {
+    parseGcsObjectUrl(fileUrl);
+    return "gcs";
+  }
   const isAllowed = ALLOWED_STORAGE_HOSTS.some(
     (allowed) => host === allowed || host.endsWith(`.${allowed}`)
   );
@@ -116,7 +196,134 @@ export interface StorageUploadResult {
   size: number;
   /** SHA-256 hex digest of the file content for integrity verification. */
   checksum: string;
-  provider: "vercel-blob" | "local-fs";
+  provider: StorageProvider;
+}
+
+export interface StoredObject {
+  body: Buffer;
+  contentType: string | null;
+}
+
+export class StorageObjectReadError extends Error {
+  constructor(
+    message: string,
+    public readonly retryable: boolean
+  ) {
+    super(message);
+    this.name = "StorageObjectReadError";
+  }
+}
+
+async function writeGcsObject(
+  objectPath: string,
+  body: Buffer,
+  contentType: string
+): Promise<string> {
+  const bucket = gcsBucketName();
+  const file = storageClient().bucket(bucket).file(objectPath);
+  await file.save(body, {
+    resumable: false,
+    contentType,
+    metadata: { cacheControl: "private, no-store" },
+  });
+  return gcsObjectUrl(bucket, objectPath);
+}
+
+async function readGcsObject(fileUrl: string): Promise<StoredObject> {
+  const { bucket, objectPath } = parseGcsObjectUrl(fileUrl);
+  const file = storageClient().bucket(bucket).file(objectPath);
+  try {
+    const [[body], [metadata]] = await Promise.all([file.download(), file.getMetadata()]);
+    return {
+      body,
+      contentType: typeof metadata.contentType === "string" ? metadata.contentType : null,
+    };
+  } catch (error) {
+    const status = typeof (error as { code?: unknown }).code === "number"
+      ? (error as { code: number }).code
+      : 500;
+    throw new StorageObjectReadError(
+      `[Storage] Failed to read Cloud Storage object (HTTP ${status}).`,
+      status === 408 || status === 429 || status >= 500
+    );
+  }
+}
+
+async function writeRemoteObject(params: {
+  objectPath: string;
+  body: Buffer;
+  contentType: string;
+  allowOverwrite?: boolean;
+}): Promise<{ url: string; provider: RemoteStorageOrigin }> {
+  const provider = selectedRemoteProvider();
+  if (provider === "gcs") {
+    return {
+      url: await writeGcsObject(params.objectPath, params.body, params.contentType),
+      provider,
+    };
+  }
+  if (provider === "vercel-blob") {
+    const blob = await put(params.objectPath, params.body, {
+      access: "private",
+      contentType: params.contentType,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      addRandomSuffix: false,
+      allowOverwrite: params.allowOverwrite ?? false,
+    });
+    return { url: blob.url, provider };
+  }
+  throw new Error("[Storage] No durable remote storage provider is configured.");
+}
+
+/** Reads a trusted remote object with provider-appropriate credentials. */
+export async function readStoredObject(fileUrl: string): Promise<StoredObject> {
+  const origin = resolveStorageOrigin(fileUrl);
+  if (origin === null) {
+    const localPath = resolveLocalFilePath(fileUrl);
+    if (!localPath) {
+      throw new StorageObjectReadError("[Storage] Local object was not found.", false);
+    }
+    return {
+      body: fs.readFileSync(/* turbopackIgnore: true */ localPath),
+      contentType: null,
+    };
+  }
+  if (origin === "gcs") return readGcsObject(fileUrl);
+
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const response = await thirdPartyFetch("VERCEL_BLOB_STORAGE", fileUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new StorageObjectReadError(
+      `[Storage] Failed to read object (HTTP ${response.status}).`,
+      response.status === 408 || response.status === 429 || response.status >= 500
+    );
+  }
+  return {
+    body: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type"),
+  };
+}
+
+/** Creates a short-lived provider URL for parsers configured for URL delivery. */
+export async function createSignedReadUrl(fileUrl: string, expiresAt: Date): Promise<string> {
+  const origin = resolveStorageOrigin(fileUrl);
+  if (origin === "gcs") {
+    const { bucket, objectPath } = parseGcsObjectUrl(fileUrl);
+    const [signedUrl] = await storageClient().bucket(bucket).file(objectPath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: expiresAt,
+    });
+    return signedUrl;
+  }
+  if (origin === "vercel-blob") return fileUrl;
+  throw new StorageValidationError(
+    "UNTRUSTED_STORAGE_ORIGIN",
+    "Local files cannot be shared with a remote parser."
+  );
 }
 
 /**
@@ -179,24 +386,22 @@ export async function storeProcessingArtifact(params: {
   ].join("/");
 
   const checksum = createHash("sha256").update(params.body).digest("hex");
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const provider = selectedRemoteProvider();
 
-  if (token) {
-    const blob = await put(objectPath, params.body, {
-      access: "private",
+  if (provider) {
+    const stored = await writeRemoteObject({
+      objectPath,
+      body: params.body,
       contentType: params.contentType,
-      token,
-      // Artifact paths are already unique per run; a random suffix would break
-      // the "one artifact per run per type" uniqueness rule.
-      addRandomSuffix: false,
+      // Artifact paths are already unique per run.
       allowOverwrite: true,
     });
     return {
-      url: blob.url,
+      url: stored.url,
       filename: params.name,
       size: params.body.byteLength,
       checksum,
-      provider: "vercel-blob",
+      provider: stored.provider,
     };
   }
 
@@ -205,7 +410,7 @@ export async function storeProcessingArtifact(params: {
   );
   if (isServerless) {
     throw new Error(
-      "[Storage] BLOB_READ_WRITE_TOKEN is required to persist processing artifacts in a serverless environment."
+      "[Storage] Durable object storage is required to persist processing artifacts in a serverless environment."
     );
   }
 
@@ -242,16 +447,29 @@ export async function readProcessingArtifact(storageRef: string): Promise<Buffer
     return fs.readFileSync(resolved);
   }
 
-  assertQubereStorageUrl(storageRef);
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const response = await thirdPartyFetch("VERCEL_BLOB_STORAGE", storageRef, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: "no-store",
+  return (await readStoredObject(storageRef)).body;
+}
+
+/** Stores an application-generated export using the configured provider. */
+export async function storeGeneratedFile(params: {
+  objectPath: string;
+  filename: string;
+  contentType: string;
+  body: Buffer;
+}): Promise<StorageUploadResult> {
+  const checksum = createHash("sha256").update(params.body).digest("hex");
+  const stored = await writeRemoteObject({
+    objectPath: params.objectPath,
+    body: params.body,
+    contentType: params.contentType,
   });
-  if (!response.ok) {
-    throw new Error(`[Storage] Failed to read artifact (HTTP ${response.status}).`);
-  }
-  return Buffer.from(await response.arrayBuffer());
+  return {
+    url: stored.url,
+    filename: params.filename,
+    size: params.body.byteLength,
+    checksum,
+    provider: stored.provider,
+  };
 }
 
 import { MalwareScanner } from "@/lib/security/malwareScanner";
@@ -292,28 +510,29 @@ export async function storeDocumentFile(
   // QPR-004: Compute SHA-256 checksum for integrity verification and duplicate detection.
   const checksum = createHash("sha256").update(buffer).digest("hex");
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const provider = selectedRemoteProvider();
   const isServerless = Boolean(
     process.env.VERCEL ||
+    process.env.K_SERVICE ||
     process.env.AWS_LAMBDA_FUNCTION_NAME ||
     process.cwd().startsWith("/var/task")
   );
 
   const safeFilename = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
 
-  // Provider 1: Vercel Blob Storage
-  if (token) {
+  // Durable remote provider: GCS on Cloud Run, Vercel Blob on the existing host.
+  if (provider) {
     const startTime = Date.now();
     try {
-      console.log(`[Storage] Uploading ${safeFilename} (${file.size} bytes) sha256=${checksum} to Vercel Blob Storage (${folder}/)...`);
-      const blob = await put(`${folder}/${safeFilename}`, buffer, {
-        access: "private",
-        token,
+      const stored = await writeRemoteObject({
+        objectPath: `${folder}/${safeFilename}`,
+        body: buffer,
+        contentType: file.type || "application/octet-stream",
       });
       const durationMs = Date.now() - startTime;
       void logThirdPartyCall({
-        provider: "VERCEL_BLOB_STORAGE",
-        url: blob.url,
+        provider: stored.provider === "gcs" ? "GOOGLE_CLOUD_STORAGE" : "VERCEL_BLOB_STORAGE",
+        url: stored.url,
         method: "PUT",
         status: 200,
         statusText: "OK",
@@ -322,32 +541,30 @@ export async function storeDocumentFile(
       });
 
       return {
-        url: blob.url,
+        url: stored.url,
         filename,
         size: file.size,
         checksum,
-        provider: "vercel-blob",
+        provider: stored.provider,
       };
     } catch (err: unknown) {
       const durationMs = Date.now() - startTime;
       void logThirdPartyCall({
-        provider: "VERCEL_BLOB_STORAGE",
+        provider: provider === "gcs" ? "GOOGLE_CLOUD_STORAGE" : "VERCEL_BLOB_STORAGE",
         url: `${folder}/${safeFilename}`,
         method: "PUT",
         durationMs,
         error: err,
         metadata: `size=${file.size}B`,
       });
-      console.error("[Storage] Vercel Blob upload failed:", err);
-      // In serverless environments, local filesystem is read-only.
-      // Do not fall through silently; surface the Vercel Blob error directly.
+      console.error(`[Storage] ${provider} upload failed:`, err);
       if (isServerless) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`[Storage] Vercel Blob upload failed: ${message}`);
+        throw new Error(`[Storage] ${provider} upload failed: ${message}`);
       }
     }
   } else if (isServerless) {
-    throw new Error(`[Storage] BLOB_READ_WRITE_TOKEN environment variable is missing in Vercel production environment. Please set BLOB_READ_WRITE_TOKEN in Vercel Project Settings and redeploy.`);
+    throw new Error("[Storage] No durable object storage provider is configured.");
   }
 
   // Provider 2: Local Filesystem Storage (For local development ONLY)

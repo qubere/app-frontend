@@ -10,7 +10,11 @@
 
 import { createHash } from "crypto";
 import { DocumentParserError } from "../parser/contracts";
-import { resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
+import {
+  readStoredObject,
+  StorageObjectReadError,
+  StorageValidationError,
+} from "@/lib/storage";
 
 export interface DocumentBytes {
   bytes: Buffer;
@@ -52,18 +56,20 @@ export async function readOriginalDocument(params: {
 
   let bytes: Buffer;
   try {
-    const origin = resolveStorageOrigin(params.fileUrl);
-    if (origin === null) {
-      bytes = await readLocalUpload(params.fileUrl);
-    } else {
-      bytes = await readRemoteObject(params.fileUrl);
-    }
+    bytes = (await readStoredObject(params.fileUrl)).body;
   } catch (error) {
     if (error instanceof StorageValidationError) {
       throw new DocumentParserError(
         "SOURCE_FILE_UNAVAILABLE",
         "The document's storage location is not a trusted Qubere storage origin.",
         { retryable: false, cause: error }
+      );
+    }
+    if (error instanceof StorageObjectReadError) {
+      throw new DocumentParserError(
+        "SOURCE_FILE_UNAVAILABLE",
+        "The stored document could not be read.",
+        { retryable: error.retryable, cause: error }
       );
     }
     if (error instanceof DocumentParserError) throw error;
@@ -120,38 +126,4 @@ export function assertParseableFormat(bytes: Buffer): void {
       { retryable: false }
     );
   }
-}
-
-import { thirdPartyFetch } from "@/lib/api/thirdPartyLogger";
-
-async function readRemoteObject(fileUrl: string): Promise<Buffer> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const response = await thirdPartyFetch("VERCEL_BLOB_STORAGE", fileUrl, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new DocumentParserError(
-      "SOURCE_FILE_UNAVAILABLE",
-      `The document could not be retrieved from storage (HTTP ${response.status}).`,
-      // 4xx from storage means the object is gone; 5xx is worth another attempt.
-      { retryable: response.status >= 500 }
-    );
-  }
-  return Buffer.from(await response.arrayBuffer());
-}
-
-async function readLocalUpload(fileUrl: string): Promise<Buffer> {
-  const fs = await import("node:fs");
-  const { resolveLocalFilePath } = await import("@/lib/storage");
-
-  const resolved = resolveLocalFilePath(fileUrl);
-  if (!resolved) {
-    throw new DocumentParserError(
-      "SOURCE_FILE_UNAVAILABLE",
-      "The locally stored document could not be found.",
-      { retryable: false }
-    );
-  }
-  return fs.readFileSync(resolved);
 }

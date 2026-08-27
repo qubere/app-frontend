@@ -42,6 +42,7 @@ function resolveDeploymentLog(): string {
 }
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   // @qubere/db is a local TS workspace package (packages/db), not a pre-built
   // npm package -- Next must compile its TypeScript source rather than
   // treating it as opaque runtime code. App Router + Turbopack/webpack

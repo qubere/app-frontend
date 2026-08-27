@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
  * Readiness/liveness endpoint.
  * - Validates database connectivity.
  * - Reports which customs transmission provider is active.
- * - In production, rejects if the mock provider is still active (QPR-001 req 3).
+ * - In a production deployment, rejects if the mock provider is still active
+ *   (QPR-001 req 3). NODE_ENV is always "production" for an optimized Next.js
+ *   build, including demo/staging, so APP_ENV controls this product policy.
  * Returns 200 when healthy, 503 when not ready to serve production traffic.
  */
 export const GET = withPublicRoute(async () => {
@@ -34,8 +36,10 @@ export const GET = withPublicRoute(async () => {
     ? "RealAceProvider"
     : "MockCustomsTransmissionProvider";
 
-  const isProduction = process.env.NODE_ENV === "production";
-  if (isProduction && !hasCbpCredentials) {
+  const deploymentEnvironment =
+    process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV ?? "unknown";
+  const requiresRealCustomsProvider = deploymentEnvironment === "production";
+  if (requiresRealCustomsProvider && !hasCbpCredentials) {
     checks.customsProvider = {
       ok: false,
       detail:
@@ -58,7 +62,7 @@ export const GET = withPublicRoute(async () => {
   return NextResponse.json(
     {
       status: allOk ? "ok" : "degraded",
-      environment: process.env.NODE_ENV ?? "unknown",
+      environment: deploymentEnvironment,
       timestamp: new Date().toISOString(),
       activeCustomsProvider: activeProviderName,
       checks,

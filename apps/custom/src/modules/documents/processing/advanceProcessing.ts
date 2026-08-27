@@ -32,6 +32,7 @@
  */
 
 import { after } from "next/server";
+import { documentProcessingExecutor, triggerDocumentProcessingJob } from "@qubere/cloud-runtime";
 import { readProcessingLimits } from "../parser/config";
 import { runWorkerTick } from "./documentProcessingWorker";
 import { countUnfinishedRuns } from "./processingRuns";
@@ -82,12 +83,24 @@ export interface AdvanceOptions {
  * Returns immediately and never throws. Call it from a route handler that has
  * just enqueued work, or from one a client polls while it waits.
  */
-export function advanceDocumentProcessing(options: AdvanceOptions): void {
+export async function advanceDocumentProcessing(options: AdvanceOptions): Promise<void> {
   const { reason, budgetMs = DEFAULT_BUDGET_MS, minIntervalMs = 0 } = options;
 
   const now = Date.now();
   if (minIntervalMs > 0 && now - lastDrainStartedAt < minIntervalMs) return;
   lastDrainStartedAt = now;
+
+  if (documentProcessingExecutor() === "cloud-run-job") {
+    try {
+      await triggerDocumentProcessingJob();
+    } catch (error) {
+      console.error("[documents.advance] Cloud Run job trigger failed", {
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
 
   after(async () => {
     try {
