@@ -706,6 +706,10 @@ export function ChatClient({ context }: ChatClientProps) {
       const asstMsg = streamingAsstRef.current!;
       if (ev.type === "text") {
         streamingAsstRef.current = { ...asstMsg, text: asstMsg.text + (ev.delta as string) };
+      } else if (ev.type === "text_replace") {
+        // Grounding ledger caught one or more ungrounded citations in the
+        // streamed answer; swap the whole message for the annotated version.
+        streamingAsstRef.current = { ...asstMsg, text: ev.text as string };
       } else if (ev.type === "tool_call") {
         streamingAsstRef.current = { ...asstMsg, toolCalls: [...asstMsg.toolCalls, { name: ev.name as string, status: "running" as const }] };
       } else if (ev.type === "tool_result") {
