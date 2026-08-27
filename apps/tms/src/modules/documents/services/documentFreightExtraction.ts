@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
+import { readTmsDocument } from "@/lib/documentStorage";
 
 const nullableString = z.string().trim().min(1).nullable().default(null);
 const nullableNumber = z.number().finite().nullable().default(null);
@@ -217,34 +216,7 @@ Evidence.source must identify the visible label, table, or page containing each 
 Warnings must call out conflicts, illegible content, and fields that are operationally important but absent.`;
 
 async function loadDocumentBytes(fileUrl: string): Promise<Buffer> {
-  if (/^https:\/\//i.test(fileUrl)) {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    const response = await fetch(fileUrl, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error(`Stored document could not be read (${response.status}).`);
-    return Buffer.from(await response.arrayBuffer());
-  }
-
-  if (!fileUrl.startsWith("/uploads/")) {
-    throw new Error("Document storage reference is not supported by the TMS worker.");
-  }
-
-  const relative = fileUrl.replace(/^\/+/, "");
-  if (relative.includes("..")) throw new Error("Invalid document storage reference.");
-  const candidates = [
-    path.join(process.cwd(), "public", relative),
-    path.join(process.cwd(), "apps", "tms", "public", relative),
-  ];
-  for (const candidate of candidates) {
-    try {
-      return await readFile(/* turbopackIgnore: true */ candidate);
-    } catch {
-      // Try the next valid app-relative location.
-    }
-  }
-  throw new Error("Stored document bytes are unavailable.");
+  return (await readTmsDocument(fileUrl)).body;
 }
 
 async function parseWithDoclingIfAvailable(fileName: string, mimeType: string, bytes: Buffer): Promise<string | null> {
