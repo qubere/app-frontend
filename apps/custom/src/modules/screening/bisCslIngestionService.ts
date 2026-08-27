@@ -1,5 +1,9 @@
 import { db } from "@/lib/db";
 import { computeEntityHash } from "@/modules/screening/entityHash";
+import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import type { ReferenceDataChangeType } from "@prisma/client";
+
+const BIS_DATASET_ID = "bis-csl";
 
 export class BisCslIngestionService {
   static computeEntityHash = computeEntityHash;
@@ -17,6 +21,8 @@ export class BisCslIngestionService {
     let totalFetched = 0;
     let supersededCount = 0;
     const activeHashes = new Set<string>();
+    const ingestionRunId = crypto.randomUUID();
+    const changeInputs: { screeningEntityId: string; sourceList: string; changeType: ReferenceDataChangeType }[] = [];
 
     const apiKey = process.env.TRADE_GOV_API_KEY || "";
     const baseUrl = "https://api.trade.gov/v1/consolidated_screening_list/search";
@@ -44,6 +50,7 @@ export class BisCslIngestionService {
       if (results.length === 0) break;
 
       const dbOperations = [];
+      const opSourceLists: string[] = [];
 
       for (const item of results) {
         let sourceList = "ENTITY_LIST";
@@ -117,9 +124,19 @@ export class BisCslIngestionService {
             },
           })
         );
+        opSourceLists.push(sourceList);
       }
 
-      await Promise.all(dbOperations);
+      const opResults = await Promise.all(dbOperations);
+      if (targetStatus === "PUBLISHED") {
+        opResults.forEach((row, idx) => {
+          changeInputs.push({
+            screeningEntityId: row.id,
+            sourceList: opSourceLists[idx],
+            changeType: row.createdAt.getTime() === row.updatedAt.getTime() ? "ADDED" : "UPDATED",
+          });
+        });
+      }
       totalFetched += results.length;
       offset += pageSize;
 
@@ -135,7 +152,7 @@ export class BisCslIngestionService {
           publicationStatus: "PUBLISHED",
           sourceList: { in: activeCslSources },
         },
-        select: { id: true, entityHash: true },
+        select: { id: true, entityHash: true, sourceList: true },
       });
 
       const toSupersede = existingPublished.filter((e) => !activeHashes.has(e.entityHash));
@@ -148,7 +165,22 @@ export class BisCslIngestionService {
             supersededAt: now,
           },
         });
+        for (const e of toSupersede) {
+          changeInputs.push({ screeningEntityId: e.id, sourceList: e.sourceList, changeType: "SUPERSEDED" });
+        }
       }
+    }
+
+    if (targetStatus === "PUBLISHED") {
+      await recordReferenceDataChanges(
+        ingestionRunId,
+        changeInputs.map((c) => ({
+          screeningEntityId: c.screeningEntityId,
+          sourceList: c.sourceList,
+          changeType: c.changeType,
+          datasetId: BIS_DATASET_ID,
+        }))
+      );
     }
 
     return {
@@ -163,12 +195,29 @@ export class BisCslIngestionService {
    * Promotes all DRAFT CSL screening entities to PUBLISHED.
    */
   static async publishStagedEntities() {
-    return db.screeningEntity.updateMany({
+    const staged = await db.screeningEntity.findMany({
+      where: { publicationStatus: "DRAFT" },
+      select: { id: true, sourceList: true, createdAt: true, updatedAt: true },
+    });
+
+    const result = await db.screeningEntity.updateMany({
       where: { publicationStatus: "DRAFT" },
       data: {
         publicationStatus: "PUBLISHED",
         publishedAt: new Date(),
       },
     });
+
+    await recordReferenceDataChanges(
+      crypto.randomUUID(),
+      staged.map((e) => ({
+        screeningEntityId: e.id,
+        sourceList: e.sourceList,
+        changeType: e.createdAt.getTime() === e.updatedAt.getTime() ? "ADDED" : "UPDATED",
+        datasetId: BIS_DATASET_ID,
+      }))
+    );
+
+    return result;
   }
 }

@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import * as cheerio from "cheerio";
 import { computeEntityHash } from "@/modules/screening/entityHash";
+import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import type { ReferenceDataChangeType } from "@prisma/client";
+
+const UFLPA_DATASET_ID = "uflpa-entity-list";
 
 const UFLPA_PAGE_URL = "https://www.dhs.gov/uflpa-entity-list";
 
@@ -127,6 +131,8 @@ export class UflpaEntityListIngestionService {
     }
 
     const now = new Date();
+    const ingestionRunId = crypto.randomUUID();
+    const changeInputs: { screeningEntityId: string; changeType: ReferenceDataChangeType }[] = [];
     for (const entry of entries) {
       const entityHash = computeEntityHash("UFLPA_ENTITY_LIST", entry.name);
       const data = {
@@ -137,7 +143,7 @@ export class UflpaEntityListIngestionService {
         agency: AGENCY,
         effectiveDate: entry.effectiveDate,
       };
-      await db.screeningEntity.upsert({
+      const row = await db.screeningEntity.upsert({
         where: { entityHash },
         update: {
           ...data,
@@ -154,15 +160,38 @@ export class UflpaEntityListIngestionService {
           publishedAt: now,
         },
       });
+      changeInputs.push({
+        screeningEntityId: row.id,
+        changeType: row.createdAt.getTime() === row.updatedAt.getTime() ? "ADDED" : "UPDATED",
+      });
     }
 
     // Same point-in-time supersession convention as OFAC SDN: any
     // previously-PUBLISHED row for this sourceList not touched by this run
     // (older publishedAt) has been removed from the DHS list.
+    const aboutToSupersede = await db.screeningEntity.findMany({
+      where: { sourceList: "UFLPA_ENTITY_LIST", publicationStatus: "PUBLISHED", publishedAt: { lt: now } },
+      select: { id: true },
+    });
     const supersedeResult = await db.screeningEntity.updateMany({
       where: { sourceList: "UFLPA_ENTITY_LIST", publicationStatus: "PUBLISHED", publishedAt: { lt: now } },
       data: { publicationStatus: "SUPERSEDED", supersededAt: new Date() },
     });
+
+    await recordReferenceDataChanges(ingestionRunId, [
+      ...changeInputs.map((c) => ({
+        screeningEntityId: c.screeningEntityId,
+        sourceList: "UFLPA_ENTITY_LIST",
+        changeType: c.changeType,
+        datasetId: UFLPA_DATASET_ID,
+      })),
+      ...aboutToSupersede.map((e) => ({
+        screeningEntityId: e.id,
+        sourceList: "UFLPA_ENTITY_LIST",
+        changeType: "SUPERSEDED" as ReferenceDataChangeType,
+        datasetId: UFLPA_DATASET_ID,
+      })),
+    ]);
 
     return { parsedCount: entries.length, supersededCount: supersedeResult.count };
   }

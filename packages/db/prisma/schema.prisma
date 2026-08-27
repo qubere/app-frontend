@@ -4734,6 +4734,7 @@ model Party {
   screeningApprovals              PartyScreeningApproval[]
   complianceExecutions            ComplianceExecution[]
   communityScreeningResults       CommunityScreeningPartyResult[]
+  rdpsOutcomes                    RdpsPartyOutcome[]
 
   /// Postgres treats NULLs as distinct, so any number of parties may have no
   /// internal code while no two may share one.
@@ -5705,6 +5706,7 @@ model ScreeningEntity {
   addresses              ScreeningEntityAddress[]
   identifiers            ScreeningEntityIdentifier[]
   references             ScreeningEntityReference[]
+  changeSets             ReferenceDataChangeSet[]
 
   @@unique([provider, providerRecordId])
   @@index([name])
@@ -5967,6 +5969,10 @@ model RestrictedPartyScreeningResult {
   /// notification per ComplianceNotificationType (see the model's @@unique).
   notifications ComplianceNotification[]
 
+  /// Back-relation for RdpsPartyOutcome.screeningResult — the rescreenParty()
+  /// result an RDPS outcome row is evidenced by, when one was produced.
+  rdpsOutcomes RdpsPartyOutcome[]
+
   createdAt DateTime @default(now())
 
   @@index([accountId, screeningDate])
@@ -6006,6 +6012,9 @@ enum CommunityScreeningPartyStatus {
   FAILED
   INCOMPLETE
   ERROR
+  /// Reserved for a row whose enabled-checks set is empty. Never a false
+  /// PASSED -- see aggregatePartyStatus's fail-closed defensive branch.
+  NOT_EVALUATED
 }
 
 /// One batch "run" of Community Screening -- a single request to screen N
@@ -6088,6 +6097,19 @@ model CommunityScreeningPartyResult {
 
   restrictedPartyStatus   String?
   restrictedPartyResultId String?
+
+  /// True when the canonical RPS pass(es) surfaced at least one denied-party
+  /// candidate match (hitCount > 0), independent of red-flag findings.
+  restrictedPartyMatchFound Boolean?
+  /// True when the canonical RPS pass(es) surfaced at least one red-flag
+  /// word hit, independent of any denied-party match -- so a RED_FLAG_ONLY
+  /// finding is never lost when it co-occurs with, or is absent alongside, a
+  /// denied-party match.
+  restrictedPartyRedFlagFound Boolean?
+  /// One of CommunityScreeningFindingCategory (see types.ts) -- convenience
+  /// classification derived from the two booleans above plus the raw RPS
+  /// status/PAL gate outcome, for filtering/export/Ask Qubere.
+  restrictedPartyFindingCategory String?
 
   embargoStatus   String?
   embargoEvidence Json?
@@ -6285,6 +6307,159 @@ model PartyScreeningApproval {
   @@index([partyId, status])
   @@index([expiresAt])
   @@index([sourceScreeningResultId])
+}
+
+// ---------------------------------------------------------------------------
+// CONTINUOUS PARTY MONITORING (REVERSE DENIED-PARTY SCREENING / RDPS)
+//
+// Forward RPS only re-checks a Party when the Party itself changes. RDPS
+// closes the opposite gap: when reference-data (OFAC/BIS/UFLPA/Dow Jones)
+// changes, find which existing Parties are newly at risk and re-run the
+// *same* canonical rescreenParty() against just those candidates. This is a
+// thin orchestration layer -- no second matcher, no duplicated scoring --
+// see impactAnalysis.ts / rdpsRecallValidator.ts / modules/compliance/rdps/.
+// ---------------------------------------------------------------------------
+
+enum ReferenceDataChangeType {
+  ADDED
+  UPDATED
+  SUPERSEDED
+}
+
+/// One per-entity change record, written by an ingestion service immediately
+/// after its existing publish/supersede step succeeds. Rows are never
+/// deleted -- consumedAt is set, not the row removed -- so a recall
+/// validation run can always replay a past window. A missed write here is
+/// exactly what the daily recall-validation sample exists to catch, so the
+/// write is best-effort (never allowed to abort the underlying ingestion)
+/// but must be loud on failure.
+model ReferenceDataChangeSet {
+  id       String @id @default(cuid())
+  provider String? // e.g. "DOW_JONES"; null for OFAC/BIS/UFLPA rows
+  sourceList String
+
+  screeningEntityId String
+  screeningEntity   ScreeningEntity @relation(fields: [screeningEntityId], references: [id], onDelete: Cascade)
+
+  changeType ReferenceDataChangeType
+
+  /// Shared by every row written from one top-level ingestion invocation
+  /// (crypto.randomUUID() minted once per run), so a whole run's changes can
+  /// be queried/replayed together.
+  ingestionRunId String
+  datasetId      String // matches DatasetDefinition.id in datasetRegistry.ts
+
+  occurredAt DateTime @default(now())
+
+  /// Set by the dispatcher that claimed this row for a DELTA_IMPACT run.
+  /// Never cleared to "unclaim" except on the dispatcher's own whole-batch
+  /// failure rollback (see RdpsDeltaImpactDispatcher).
+  consumedAt      DateTime?
+  consumedByRunId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([consumedAt])
+  @@index([screeningEntityId])
+  @@index([ingestionRunId])
+  @@index([occurredAt])
+}
+
+enum RdpsRunType {
+  FULL_POPULATION
+  DELTA_IMPACT
+  TARGETED
+  MANUAL
+  SCHEDULED
+}
+
+enum RdpsRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+/// One batch run of RDPS monitoring -- a full-population sweep, a
+/// delta-impact pass over a batch of ReferenceDataChangeSet rows, or a
+/// manual/targeted scan. Mirrors CommunityScreeningRun's role as a thin
+/// aggregation record: it never duplicates rescreenParty()/matching logic.
+model RdpsRun {
+  id      String        @id @default(cuid())
+  runType RdpsRunType
+  status  RdpsRunStatus @default(QUEUED)
+
+  /// "CRON" | "MANUAL:<userId>" | "SYSTEM"
+  triggeredBy String
+
+  changeSetRangeStart DateTime?
+  changeSetRangeEnd   DateTime?
+  changeSetCount      Int?
+
+  /// FULL_POPULATION keyset-pagination cursor -- committed per-candidate so a
+  /// mid-batch crash resumes correctly on the next dispatcher tick.
+  cursorPartyId String?
+
+  candidatePartyCount Int @default(0)
+  screenedCount       Int @default(0)
+  worsenedCount       Int @default(0)
+  /// Non-zero erroredCount means this run can never be COMPLETED -- only
+  /// PARTIAL or FAILED. See outcomeRecorder.ts's fail-closed contract.
+  erroredCount Int @default(0)
+
+  errorMessage String? @db.Text
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  outcomes RdpsPartyOutcome[]
+
+  @@index([runType, status])
+  @@index([status])
+  @@index([startedAt])
+}
+
+/// One immutable evidence row per (run, party) rescreen RDPS performed.
+/// Never updated after create except to attach exceptionItemId/
+/// complianceNotificationId once the worsening-alert pipeline runs.
+model RdpsPartyOutcome {
+  id    String  @id @default(cuid())
+  runId String
+  run   RdpsRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  accountId String
+
+  partyId String
+  party   Party  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  /// Why this party was selected as a candidate -- CandidateReason strings
+  /// (EXACT/RAW_WORD/DOUBLE_METAPHONE/METAPHONE2/ALTERNATE_WHOLE_WORD), or
+  /// [] for a FULL_POPULATION baseline sweep row.
+  candidateReasons String[]
+
+  previousStatus RestrictedPartyScreeningStatus?
+  newStatus      RestrictedPartyScreeningStatus
+
+  isWorsening          Boolean @default(false)
+  hadActivePreApproval Boolean @default(false)
+
+  screeningResultId String?
+  screeningResult   RestrictedPartyScreeningResult? @relation(fields: [screeningResultId], references: [id], onDelete: SetNull)
+
+  exceptionItemId           String?
+  complianceNotificationId  String?
+
+  /// Set when rescreenParty() itself threw -- the row is still written
+  /// (fail-closed: never silently skipped, never treated as CLEAR).
+  errorMessage String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+  @@index([accountId, partyId])
+  @@index([partyId, isWorsening])
+  @@index([isWorsening])
 }
 
 enum RpsEmailFormat {

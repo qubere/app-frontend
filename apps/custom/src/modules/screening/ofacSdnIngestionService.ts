@@ -3,6 +3,10 @@ import { SaxesParser, SaxesTagPlain } from "saxes";
 import { parse as parseCsv } from "csv-parse";
 import { Readable } from "stream";
 import { computeEntityHash } from "@/modules/screening/entityHash";
+import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import type { ReferenceDataChangeType } from "@prisma/client";
+
+const OFAC_DATASET_ID = "ofac-sdn";
 
 export type OfacSourceList = "SDN" | "CONSOLIDATED_NON_SDN";
 
@@ -297,9 +301,11 @@ export class OfacSdnIngestionService {
     }
 
     const now = new Date();
+    const ingestionRunId = crypto.randomUUID();
+    const changeInputs: { screeningEntityId: string; changeType: ReferenceDataChangeType }[] = [];
     for (let i = 0; i < entries.length; i += UPSERT_BATCH_SIZE) {
       const batch = entries.slice(i, i + UPSERT_BATCH_SIZE);
-      await Promise.all(
+      const results = await Promise.all(
         batch.map((entry) => {
           const data = this.mapEntry(sourceList, entry);
           return db.screeningEntity.upsert({
@@ -338,7 +344,21 @@ export class OfacSdnIngestionService {
           });
         })
       );
+      for (const row of results) {
+        changeInputs.push({
+          screeningEntityId: row.id,
+          changeType: row.createdAt.getTime() === row.updatedAt.getTime() ? "ADDED" : "UPDATED",
+        });
+      }
     }
+
+    // Snapshot which rows are about to be delisted BEFORE the bulk
+    // updateMany below -- updateMany only returns a count, not the affected
+    // ids, and those ids are needed for the SUPERSEDED change-set rows.
+    const aboutToSupersede = await db.screeningEntity.findMany({
+      where: { sourceList, publicationStatus: "PUBLISHED", publishedAt: { lt: now } },
+      select: { id: true },
+    });
 
     // Every row touched this run shares the same `publishedAt: now`. Any
     // previously-PUBLISHED row for this sourceList with an older
@@ -348,6 +368,21 @@ export class OfacSdnIngestionService {
       where: { sourceList, publicationStatus: "PUBLISHED", publishedAt: { lt: now } },
       data: { publicationStatus: "SUPERSEDED", supersededAt: new Date() },
     });
+
+    await recordReferenceDataChanges(ingestionRunId, [
+      ...changeInputs.map((c) => ({
+        screeningEntityId: c.screeningEntityId,
+        sourceList,
+        changeType: c.changeType,
+        datasetId: OFAC_DATASET_ID,
+      })),
+      ...aboutToSupersede.map((e) => ({
+        screeningEntityId: e.id,
+        sourceList,
+        changeType: "SUPERSEDED" as ReferenceDataChangeType,
+        datasetId: OFAC_DATASET_ID,
+      })),
+    ]);
 
     let csvRowCount: number | null = null;
     try {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users } from "lucide-react";
+import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users, Radar } from "lucide-react";
 import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
 import type { AuditRecordProps } from "./AuditHistoryPanel";
 
@@ -17,6 +17,7 @@ const AuditHistoryPanel = dynamic(() => import("./AuditHistoryPanel").then((m) =
 const ExecutionHistoryPanel = dynamic(() => import("./ExecutionHistoryPanel").then((m) => m.ExecutionHistoryPanel), { ssr: false });
 const NotificationSettingsPanel = dynamic(() => import("./NotificationSettingsPanel").then((m) => m.NotificationSettingsPanel), { ssr: false });
 const CommunityScreeningPanel = dynamic(() => import("./CommunityScreeningPanel").then((m) => m.CommunityScreeningPanel), { ssr: false });
+const RdpsPanel = dynamic(() => import("./RdpsPanel").then((m) => m.RdpsPanel), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -73,9 +74,21 @@ interface ComplianceWorkspaceClientProps {
   mayReadCommunityScreening: boolean;
   /** Gates the override fields (name/address threshold, country-match, red-flag) in Community Screening -- true when the session holds `compliance.communityScreening.override`. */
   mayOverrideThresholds: boolean;
+  /** Gates the "Continuous Monitoring" (RDPS) tab -- true when the session holds `compliance.rdps.read`. */
+  mayReadRdps: boolean;
+  /** Gates scan-trigger/disposition actions within the RDPS tab -- true when the session holds `compliance.rdps.manage`. */
+  mayManageRdps: boolean;
 }
 
-type WorkspaceTab = "overview" | "screening" | "review" | "audit" | "history" | "notifications" | "community-screening";
+type WorkspaceTab =
+  | "overview"
+  | "screening"
+  | "review"
+  | "audit"
+  | "history"
+  | "notifications"
+  | "community-screening"
+  | "rdps";
 
 export function ComplianceWorkspaceClient({
   initialTab = "overview",
@@ -91,6 +104,8 @@ export function ComplianceWorkspaceClient({
   notificationSettings,
   mayReadCommunityScreening,
   mayOverrideThresholds,
+  mayReadRdps,
+  mayManageRdps,
 }: ComplianceWorkspaceClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -106,6 +121,7 @@ export function ComplianceWorkspaceClient({
     { id: "history", label: "Service Usage & History", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
     { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
     { id: "community-screening", label: "Community Screening", icon: Users, hidden: !mayReadCommunityScreening },
+    { id: "rdps", label: "Continuous Monitoring", icon: Radar, hidden: !mayReadRdps },
   ];
 
   useEffect(() => {
@@ -118,12 +134,21 @@ export function ComplianceWorkspaceClient({
       setActiveTab(mayManageNotificationSettings ? "notifications" : "overview");
     } else if (tabParam === "community-screening") {
       setActiveTab(mayReadCommunityScreening ? "community-screening" : "overview");
+    } else if (tabParam === "rdps") {
+      setActiveTab(mayReadRdps ? "rdps" : "overview");
     } else if (tabParam === "screening" || tabParam === "review") {
       setActiveTab(tabParam);
     } else if (!tabParam) {
       setActiveTab("overview");
     }
-  }, [searchParams, mayReadAuditHistory, mayReadExecutionHistory, mayManageNotificationSettings, mayReadCommunityScreening]);
+  }, [
+    searchParams,
+    mayReadAuditHistory,
+    mayReadExecutionHistory,
+    mayManageNotificationSettings,
+    mayReadCommunityScreening,
+    mayReadRdps,
+  ]);
 
   const selectTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
@@ -190,6 +215,7 @@ export function ComplianceWorkspaceClient({
         {activeTab === "community-screening" && mayReadCommunityScreening && (
           <CommunityScreeningPanel mayOverrideThresholds={mayOverrideThresholds} />
         )}
+        {activeTab === "rdps" && mayReadRdps && <RdpsPanel mayManageRdps={mayManageRdps} />}
       </div>
     </div>
   );

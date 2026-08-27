@@ -67,6 +67,18 @@ import { runRestrictedPartyScreening } from "@/modules/agents/compliance/restric
 import { persistScreeningRun } from "@/modules/agents/compliance/restrictedParty/persistResult";
 import { checkPreApprovalGate } from "@/modules/agents/compliance/restrictedParty/preApproval";
 import { getNotificationStatusForScreeningResult } from "@/modules/compliance/notifications/notificationQueries";
+import {
+  getRun,
+  listOutcomesForRun,
+  listAlerts,
+  listReferenceChanges,
+  getReportsSummary,
+  getPartyMonitoringHistory,
+  triggerManualScan,
+  RdpsFullPopulationAlreadyRunningError,
+} from "@/modules/compliance/rdps/rdpsQueryService";
+import { recordRdpsOutcome } from "@/modules/compliance/rdps/outcomeRecorder";
+import { createAuditLog, AuditAction } from "@/lib/audit";
 
 /**
  * Helper to convert Zod Object Schema into Gemini-compatible Schema object
@@ -840,6 +852,9 @@ const listFailedCommunityScreeningParties: AssistantTool = {
         aggregateStatus: string;
         failureReason: string | null;
         errorMessage: string | null;
+        restrictedPartyMatchFound: boolean | null;
+        restrictedPartyRedFlagFound: boolean | null;
+        restrictedPartyFindingCategory: string | null;
       }>;
       total: number;
     };
@@ -858,6 +873,11 @@ const listFailedCommunityScreeningParties: AssistantTool = {
         status: r.aggregateStatus,
         failureReason: r.failureReason,
         errorMessage: r.errorMessage,
+        // Independent findings -- a red flag never implies a denied-party
+        // match and vice versa; see CommunityScreeningFindingCategory.
+        restrictedPartyMatchFound: r.restrictedPartyMatchFound,
+        restrictedPartyRedFlagFound: r.restrictedPartyRedFlagFound,
+        restrictedPartyFindingCategory: r.restrictedPartyFindingCategory,
       })),
       licenseDeterminationNote: COMMUNITY_SCREENING_LICENSE_NOTE,
     };
@@ -916,6 +936,9 @@ const explainCommunityScreeningPartyFailure: AssistantTool = {
         aggregateStatus: string;
         failureReason: string | null;
         errorMessage: string | null;
+        restrictedPartyMatchFound: boolean | null;
+        restrictedPartyRedFlagFound: boolean | null;
+        restrictedPartyFindingCategory: string | null;
       }>;
     };
 
@@ -933,6 +956,12 @@ const explainCommunityScreeningPartyFailure: AssistantTool = {
       overallStatus: match.aggregateStatus,
       failureReason: match.failureReason,
       errorMessage: match.errorMessage,
+      // Independent findings -- a denied-party match and a red flag are
+      // never the same thing, and a PAL-suppressed row never ran the
+      // matcher at all. See CommunityScreeningFindingCategory.
+      restrictedPartyMatchFound: match.restrictedPartyMatchFound,
+      restrictedPartyRedFlagFound: match.restrictedPartyRedFlagFound,
+      restrictedPartyFindingCategory: match.restrictedPartyFindingCategory,
       licenseDeterminationNote: COMMUNITY_SCREENING_LICENSE_NOTE,
     };
   },
@@ -2688,6 +2717,443 @@ const getFormalOverridesForResult: AssistantTool = {
   },
 };
 
+// ---- Continuous Party Monitoring (RDPS) tools ----
+//
+// RdpsRun and ReferenceDataChangeSet are platform-level rows (no accountId --
+// a single DELTA_IMPACT/FULL_POPULATION run can span Parties across many
+// accounts), so tools that surface run/reference-change data return
+// aggregate metadata only, never Party-identifying detail from other
+// tenants. Everything at outcome/alert/Party level is filtered through
+// RdpsPartyOutcome, which IS tenant-scoped, exactly as rdpsQueryService.ts
+// itself is scoped.
+
+function serializeRunSummary(run: { id: string; status: string; completedAt: Date | null } | null) {
+  if (!run) return null;
+  return { runId: run.id, status: run.status, completedAt: run.completedAt?.toISOString() ?? null };
+}
+
+// ---- tool: get_rdps_overview ----
+
+const getRdpsOverviewSchema = z.object({});
+
+const getRdpsOverview: AssistantTool = {
+  schema: getRdpsOverviewSchema,
+  declaration: {
+    name: "get_rdps_overview",
+    description:
+      "High-level Continuous Party Monitoring (RDPS) status for this account: total monitored parties, open " +
+      "worsening alerts, how many parties worsened/were screened in the last 30 days, and the most recent " +
+      "DELTA_IMPACT/FULL_POPULATION/scheduled recall-validation run. Use as a first step for 'what's the state of " +
+      "party monitoring' questions.",
+    parameters: zodToGeminiSchema(getRdpsOverviewSchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (ctx) => {
+    const summary = await getReportsSummary(ctx.accountId);
+    return {
+      totalMonitoredParties: summary.totalMonitoredParties,
+      openAlerts: summary.openAlerts,
+      worseningLast30Days: summary.worseningLast30Days,
+      screenedLast30Days: summary.screenedLast30Days,
+      lastDeltaImpactRun: serializeRunSummary(summary.lastDeltaImpactRun),
+      lastFullPopulationRun: serializeRunSummary(summary.lastFullPopulationRun),
+      lastRecallValidation: serializeRunSummary(summary.lastRecallValidation),
+    };
+  },
+};
+
+// ---- tool: list_open_rdps_alerts ----
+
+const listOpenRdpsAlertsSchema = z.object({
+  page: z.number().int().min(1).optional().describe("Page number, defaults to 1."),
+  pageSize: z.number().int().min(1).max(200).optional().describe("Results per page, defaults to 50."),
+});
+
+const listOpenRdpsAlerts: AssistantTool = {
+  schema: listOpenRdpsAlertsSchema,
+  declaration: {
+    name: "list_open_rdps_alerts",
+    description:
+      "List open Continuous Party Monitoring (RDPS) alerts for this account -- parties whose restricted-party " +
+      "screening status worsened on a rescreen and have not yet been dispositioned. Each alert shows the party " +
+      "name, previous/new status, which run detected it, and when.",
+    parameters: zodToGeminiSchema(listOpenRdpsAlertsSchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = listOpenRdpsAlertsSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { page, pageSize } = parsed.data;
+
+    const { alerts, total } = await listAlerts(ctx.accountId, { dispositioned: false, page, pageSize });
+    return {
+      total,
+      alerts: alerts.map((a) => ({
+        outcomeId: a.id,
+        partyId: a.partyId,
+        partyName: a.partyDisplayName,
+        previousStatus: a.previousStatus,
+        newStatus: a.newStatus,
+        runId: a.runId,
+        runType: a.run?.runType ?? null,
+        detectedAt: a.createdAt.toISOString(),
+        exceptionStatus: a.exceptionItem?.status ?? null,
+      })),
+    };
+  },
+};
+
+// ---- tool: get_reference_data_changes ----
+
+const getReferenceDataChangesSchema = z.object({
+  datasetId: z.string().optional().describe("Restrict to one dataset, e.g. OFAC_SDN, BIS_DPL."),
+  changeType: z.string().optional().describe("Restrict to one change type, e.g. ADDED, REMOVED, MODIFIED."),
+  page: z.number().int().min(1).optional().describe("Page number, defaults to 1."),
+  pageSize: z.number().int().min(1).max(200).optional().describe("Results per page, defaults to 50."),
+});
+
+const getReferenceDataChanges: AssistantTool = {
+  schema: getReferenceDataChangesSchema,
+  declaration: {
+    name: "get_reference_data_changes",
+    description:
+      "Platform-level feed of restricted-party reference data changes (denial-order list additions/removals/" +
+      "modifications) that Continuous Party Monitoring (RDPS) reacts to. This is aggregate reference-data " +
+      "metadata only -- it never contains Party-identifying screening detail for any account.",
+    parameters: zodToGeminiSchema(getReferenceDataChangesSchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getReferenceDataChangesSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { datasetId, changeType, page, pageSize } = parsed.data;
+
+    const { changes, total } = await listReferenceChanges({ datasetId, changeType, page, pageSize });
+    return {
+      total,
+      changes: changes.map((c) => ({
+        id: c.id,
+        datasetId: c.datasetId,
+        provider: c.provider,
+        sourceList: c.sourceList,
+        changeType: c.changeType,
+        occurredAt: c.occurredAt.toISOString(),
+        entityName: c.screeningEntity?.name ?? null,
+        entitySourceList: c.screeningEntity?.sourceList ?? null,
+      })),
+    };
+  },
+};
+
+// ---- tool: explain_party_rdps_status_change ----
+//
+// Plain-language explanation layer over getPartyMonitoringHistory -- reads
+// persisted RdpsPartyOutcome rows only, never re-derives a status itself.
+
+const explainPartyRdpsStatusChangeSchema = z.object({
+  partyId: z.string().describe("Party UUID."),
+});
+
+const explainPartyRdpsStatusChange: AssistantTool = {
+  schema: explainPartyRdpsStatusChangeSchema,
+  declaration: {
+    name: "explain_party_rdps_status_change",
+    description:
+      "Plain-language explanation of a party's Continuous Party Monitoring (RDPS) history: what its screening " +
+      "status changed to, when, and why (which run detected it and what triggered the candidate selection). " +
+      "Use for 'why did this party's status change' or 'what happened to this party's screening' questions.",
+    parameters: zodToGeminiSchema(explainPartyRdpsStatusChangeSchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = explainPartyRdpsStatusChangeSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { partyId } = parsed.data;
+
+    const history = await getPartyMonitoringHistory(ctx.accountId, partyId);
+    if (history === null) return { error: "Party not found in this account." };
+    if (history.length === 0) {
+      return { partyId, explanation: "This party has no Continuous Party Monitoring history recorded yet." };
+    }
+
+    const latest = history[0];
+    const latestExplanation = latest.isWorsening
+      ? `On ${latest.createdAt.toISOString()}, a ${latest.run?.runType ?? "monitoring"} run found this party's ` +
+        `restricted-party screening status worsened from ${latest.previousStatus ?? "never screened"} to ` +
+        `${latest.newStatus}${latest.candidateReasons.length ? ` (candidate reasons: ${latest.candidateReasons.join(", ")})` : ""}.`
+      : latest.newStatus === "ERROR"
+        ? `On ${latest.createdAt.toISOString()}, a ${latest.run?.runType ?? "monitoring"} run errored while rescreening this party: ${latest.errorMessage ?? "no error detail recorded"}.`
+        : `On ${latest.createdAt.toISOString()}, a ${latest.run?.runType ?? "monitoring"} run rescreened this party and its status remained ${latest.newStatus} (not a worsening transition).`;
+
+    return {
+      partyId,
+      mostRecentStatus: latest.newStatus,
+      mostRecentChangeAt: latest.createdAt.toISOString(),
+      explanation: latestExplanation,
+      totalHistoryEvents: history.length,
+    };
+  },
+};
+
+// ---- tool: get_rdps_run_detail ----
+//
+// RdpsRun is platform-level (no accountId), so this returns aggregate run
+// metadata only. It reports how many of THIS account's outcomes came out of
+// the run as a count, never individual outcomes -- use list_open_rdps_alerts
+// or get_party_rdps_monitoring_history for tenant-scoped per-Party detail.
+
+const getRdpsRunDetailSchema = z.object({
+  runId: z.string().describe("RdpsRun id."),
+});
+
+const getRdpsRunDetail: AssistantTool = {
+  schema: getRdpsRunDetailSchema,
+  declaration: {
+    name: "get_rdps_run_detail",
+    description:
+      "Aggregate metadata for one Continuous Party Monitoring (RDPS) run: type, status, timing, and counts " +
+      "(candidates, screened, worsened, errored). Platform-level only -- does not include individual Party " +
+      "names or outcomes, only how many of this account's outcomes came out of the run.",
+    parameters: zodToGeminiSchema(getRdpsRunDetailSchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getRdpsRunDetailSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { runId } = parsed.data;
+
+    const run = await getRun(runId);
+    if (!run) return { error: "RDPS run not found." };
+
+    const tenantOutcomes = await listOutcomesForRun(ctx.accountId, runId, { pageSize: 1 });
+
+    return {
+      runId: run.id,
+      runType: run.runType,
+      status: run.status,
+      triggeredBy: run.triggeredBy,
+      candidatePartyCount: run.candidatePartyCount,
+      screenedCount: run.screenedCount,
+      worsenedCount: run.worsenedCount,
+      erroredCount: run.erroredCount,
+      startedAt: run.startedAt.toISOString(),
+      completedAt: run.completedAt?.toISOString() ?? null,
+      thisAccountOutcomeCount: tenantOutcomes.total,
+    };
+  },
+};
+
+// ---- tool: get_rdps_reports_summary ----
+//
+// Same underlying data as get_rdps_overview, described from the Reports tab
+// framing -- kept as a separate tool per the RDPS plan's tool list.
+
+const getRdpsReportsSummarySchema = z.object({});
+
+const getRdpsReportsSummary: AssistantTool = {
+  schema: getRdpsReportsSummarySchema,
+  declaration: {
+    name: "get_rdps_reports_summary",
+    description:
+      "The Continuous Party Monitoring (RDPS) Reports summary for this account: monitored party count, open " +
+      "alert count, 30-day worsening/screened counts, and last-run timestamps per run type. Use for 'give me the " +
+      "RDPS report' or 'summarize party monitoring for the reports page' questions.",
+    parameters: zodToGeminiSchema(getRdpsReportsSummarySchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (ctx) => {
+    const summary = await getReportsSummary(ctx.accountId);
+    return {
+      totalMonitoredParties: summary.totalMonitoredParties,
+      openAlerts: summary.openAlerts,
+      worseningLast30Days: summary.worseningLast30Days,
+      screenedLast30Days: summary.screenedLast30Days,
+      lastDeltaImpactRun: serializeRunSummary(summary.lastDeltaImpactRun),
+      lastFullPopulationRun: serializeRunSummary(summary.lastFullPopulationRun),
+      lastRecallValidation: serializeRunSummary(summary.lastRecallValidation),
+    };
+  },
+};
+
+// ---- tool: get_party_rdps_monitoring_history ----
+//
+// Raw structured history over the same source as
+// explain_party_rdps_status_change, for callers that want the data rather
+// than a plain-language narrative.
+
+const getPartyRdpsMonitoringHistorySchema = z.object({
+  partyId: z.string().describe("Party UUID."),
+});
+
+const getPartyRdpsMonitoringHistory: AssistantTool = {
+  schema: getPartyRdpsMonitoringHistorySchema,
+  declaration: {
+    name: "get_party_rdps_monitoring_history",
+    description:
+      "Raw Continuous Party Monitoring (RDPS) outcome history for one party: every recorded rescreen with " +
+      "previous/new status, worsening flag, candidate reasons, and which run produced it. Use when the caller " +
+      "wants structured history data rather than a narrative explanation (see explain_party_rdps_status_change).",
+    parameters: zodToGeminiSchema(getPartyRdpsMonitoringHistorySchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getPartyRdpsMonitoringHistorySchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { partyId } = parsed.data;
+
+    const history = await getPartyMonitoringHistory(ctx.accountId, partyId);
+    if (history === null) return { error: "Party not found in this account." };
+
+    return {
+      partyId,
+      count: history.length,
+      history: history.map((h) => ({
+        outcomeId: h.id,
+        runId: h.runId,
+        runType: h.run?.runType ?? null,
+        runStartedAt: h.run?.startedAt?.toISOString() ?? null,
+        previousStatus: h.previousStatus,
+        newStatus: h.newStatus,
+        isWorsening: h.isWorsening,
+        hadActivePreApproval: h.hadActivePreApproval,
+        candidateReasons: h.candidateReasons,
+        errorMessage: h.errorMessage,
+        createdAt: h.createdAt.toISOString(),
+      })),
+    };
+  },
+};
+
+// ---- tool: trigger_manual_rdps_scan ----
+//
+// Write tool -- requires explicit confirmation, same convention as
+// rescreen_failed_community_screening_parties. DELTA_IMPACT/FULL_POPULATION
+// delegate to triggerManualScan(); TARGETED replicates the synchronous
+// per-party recordRdpsOutcome loop from POST /api/compliance/rdps/runs
+// (small, caller-bounded partyIds set, tenant-validated via db.party).
+
+const triggerManualRdpsScanSchema = z.object({
+  jobType: z.enum(["DELTA_IMPACT", "FULL_POPULATION", "TARGETED"]).describe(
+    "DELTA_IMPACT nudges the pending reference-data-change dispatcher; FULL_POPULATION queues a full sweep " +
+      "(fails if one is already running); TARGETED synchronously rescreens the given partyIds now."
+  ),
+  partyIds: z.array(z.string()).optional().describe("Required for TARGETED. Party UUIDs, must belong to this account."),
+});
+
+const triggerManualRdpsScan: AssistantTool = {
+  schema: triggerManualRdpsScanSchema,
+  declaration: {
+    name: "trigger_manual_rdps_scan",
+    description:
+      "Trigger a manual Continuous Party Monitoring (RDPS) scan: DELTA_IMPACT, FULL_POPULATION, or a TARGETED " +
+      "rescreen of specific parties. Only call after explicit confirmation -- FULL_POPULATION and TARGETED scans " +
+      "screen real parties and can raise new worsening alerts.",
+    parameters: zodToGeminiSchema(triggerManualRdpsScanSchema),
+  },
+  access: { permission: "compliance.rdps.manage" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = triggerManualRdpsScanSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { jobType, partyIds } = parsed.data;
+
+    if (jobType === "TARGETED") {
+      if (!partyIds || partyIds.length === 0) {
+        return { error: "partyIds is required for a TARGETED scan." };
+      }
+
+      const parties = await db.party.findMany({
+        where: { id: { in: partyIds }, accountId: ctx.accountId },
+        select: { id: true },
+      });
+      if (parties.length === 0) {
+        return { error: "No matching parties found in this account." };
+      }
+
+      const run = await db.rdpsRun.create({
+        data: { runType: "TARGETED", status: "RUNNING", triggeredBy: `MANUAL:${ctx.userId}` },
+      });
+
+      let worsenedCount = 0;
+      let erroredCount = 0;
+      for (const party of parties) {
+        const outcome = await recordRdpsOutcome({
+          runId: run.id,
+          accountId: ctx.accountId,
+          partyId: party.id,
+          candidateReasons: [],
+        });
+        if (outcome.isWorsening) worsenedCount++;
+        if (outcome.errored) erroredCount++;
+      }
+
+      const completedRun = await db.rdpsRun.update({
+        where: { id: run.id },
+        data: {
+          status: erroredCount > 0 ? "PARTIAL" : "COMPLETED",
+          candidatePartyCount: parties.length,
+          screenedCount: parties.length,
+          worsenedCount,
+          erroredCount,
+          completedAt: new Date(),
+        },
+      });
+
+      await createAuditLog({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        action: AuditAction.RDPS_MANUAL_SCAN_TRIGGERED,
+        entity: "RdpsRun",
+        entityId: run.id,
+        source: "CHAT",
+        metadata: { jobType, partyIds },
+      });
+
+      return {
+        success: true,
+        run: {
+          runId: completedRun.id,
+          status: completedRun.status,
+          candidatePartyCount: completedRun.candidatePartyCount,
+          screenedCount: completedRun.screenedCount,
+          worsenedCount: completedRun.worsenedCount,
+          erroredCount: completedRun.erroredCount,
+          completedAt: completedRun.completedAt?.toISOString() ?? null,
+        },
+      };
+    }
+
+    try {
+      const run = await triggerManualScan(ctx.userId, { jobType });
+
+      await createAuditLog({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        action: AuditAction.RDPS_MANUAL_SCAN_TRIGGERED,
+        entity: "RdpsRun",
+        entityId: run?.id ?? "none",
+        source: "CHAT",
+        metadata: { jobType },
+      });
+
+      return {
+        success: true,
+        run: run
+          ? { runId: run.id, status: run.status, runType: run.runType }
+          : null,
+        note:
+          jobType === "DELTA_IMPACT" && !run
+            ? "No pending reference-data-change backlog for DELTA_IMPACT to act on right now."
+            : undefined,
+      };
+    } catch (error) {
+      if (error instanceof RdpsFullPopulationAlreadyRunningError) {
+        return { success: false, error: error.message };
+      }
+      throw error;
+    }
+  },
+};
+
 export const ASSISTANT_TOOLS: AssistantTool[] = [
   listShipments,
   getValueAtRisk,
@@ -2740,6 +3206,14 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   getShipmentComplianceExecutionHistory,
   getServiceUsageSummary,
   getFormalOverridesForResult,
+  getRdpsOverview,
+  listOpenRdpsAlerts,
+  getReferenceDataChanges,
+  explainPartyRdpsStatusChange,
+  getRdpsRunDetail,
+  getRdpsReportsSummary,
+  getPartyRdpsMonitoringHistory,
+  triggerManualRdpsScan,
 ];
 
 const TOOLS_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.declaration.name, t]));

@@ -336,6 +336,7 @@ export const PARTY_TABS = [
   { id: "evidence", label: "Evidence" },
   { id: "screening", label: "Restricted party screening" },
   { id: "history", label: "History" },
+  { id: "rdps", label: "Continuous Monitoring" },
 ] as const;
 
 export type PartyTabId = (typeof PARTY_TABS)[number]["id"];

@@ -46,8 +46,8 @@ export interface GenerateCandidatesResult {
   alternateScreeningReason: string;
 }
 
-/** All name strings worth checking a target against for this entity: primary name, alternateNames, and ScreeningEntityAlias rows (Dow Jones AKA/FKA/spelling-variation records) -- de-duplicated case-insensitively since Dow Jones ingestion writes some alias strings into both alternateNames and ScreeningEntityAlias. Purely additive vs. the pre-alias candidate set: it can only add candidates, never remove one. */
-function candidateNames(entity: ScreeningEntityWithAddresses): string[] {
+/** All name strings worth checking a target against for this entity: primary name, alternateNames, and ScreeningEntityAlias rows (Dow Jones AKA/FKA/spelling-variation records) -- de-duplicated case-insensitively since Dow Jones ingestion writes some alias strings into both alternateNames and ScreeningEntityAlias. Purely additive vs. the pre-alias candidate set: it can only add candidates, never remove one. Exported for reuse by impactAnalysis.ts's reverse candidate index -- never reimplemented there. */
+export function candidateNames(entity: ScreeningEntityWithAddresses): string[] {
   const names = [entity.name, ...entity.alternateNames, ...(entity.aliases ?? []).map((a) => a.name)];
   const seen = new Set<string>();
   const result: string[] = [];

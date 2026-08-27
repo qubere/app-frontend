@@ -105,6 +105,15 @@ interface ScreeningDisposition {
   notes: string | null;
 }
 
+interface RdpsMonitoringEvent {
+  id: string;
+  previousStatus: string | null;
+  newStatus: string;
+  isWorsening: boolean;
+  createdAt: string;
+  run: { id: string; runType: string; startedAt: string } | null;
+}
+
 interface ScreeningResult {
   id: string;
   passType: string;
@@ -174,6 +183,10 @@ export function PartyTabs({
   const [screeningLoading, setScreeningLoading] = useState(false);
   const [screeningError, setScreeningError] = useState<string | null>(null);
   const screeningRequestedRef = useRef(false);
+  const [rdpsHistory, setRdpsHistory] = useState<RdpsMonitoringEvent[]>([]);
+  const [rdpsLoading, setRdpsLoading] = useState(false);
+  const [rdpsError, setRdpsError] = useState<string | null>(null);
+  const rdpsRequestedRef = useRef(false);
 
   function selectTab(next: PartyTabId) {
     setTab(next);
@@ -219,6 +232,21 @@ export function PartyTabs({
     loadScreeningHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, partyId, mayReadScreening]);
+
+  useEffect(() => {
+    if (tab !== "rdps" || rdpsRequestedRef.current) return;
+    rdpsRequestedRef.current = true;
+    setRdpsLoading(true);
+    setRdpsError(null);
+    fetch(`/api/v1/parties/${partyId}/rdps-monitoring-history`)
+      .then((response) => {
+        if (!response.ok) throw new Error("rdps monitoring history request failed");
+        return response.json();
+      })
+      .then((body) => setRdpsHistory(Array.isArray(body.outcomes) ? body.outcomes : []))
+      .catch(() => setRdpsError("Continuous monitoring history could not be loaded."))
+      .finally(() => setRdpsLoading(false));
+  }, [tab, partyId]);
 
   return (
     <>
@@ -1137,6 +1165,54 @@ export function PartyTabs({
             Showing the most recent 500 changes. Values are superseded rather than overwritten, so a
             prior value stays readable here even after it stops being the one in force.
           </p>
+        </div>
+      )}
+
+      {tab === "rdps" && (
+        <div className="space-y-4">
+          {rdpsError && (
+            <p role="alert" className="text-sm text-red-700">
+              {rdpsError}
+            </p>
+          )}
+          <div className="rounded-2xl bg-white border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className={headClass}>When</th>
+                  <th className={headClass}>Run Type</th>
+                  <th className={headClass}>From</th>
+                  <th className={headClass}>To</th>
+                  <th className={headClass}>Worsening</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rdpsLoading ? (
+                  <EmptyRow colSpan={5}>Loading…</EmptyRow>
+                ) : rdpsHistory.length === 0 ? (
+                  <EmptyRow colSpan={5}>No continuous monitoring history yet.</EmptyRow>
+                ) : (
+                  rdpsHistory.map((event) => (
+                    <tr key={event.id}>
+                      <td className={`${cellClass} text-[#6E6E73] whitespace-nowrap`}>
+                        {displayDate(event.createdAt)}
+                      </td>
+                      <td className={`${cellClass} text-[#6E6E73]`}>{event.run?.runType ?? "—"}</td>
+                      <td className={`${cellClass} text-[#6E6E73]`}>
+                        {displayText(event.previousStatus, "—")}
+                      </td>
+                      <td className={`${cellClass} text-ink`}>{event.newStatus}</td>
+                      <td className={cellClass}>
+                        <Badge variant={event.isWorsening ? "warning" : "neutral"}>
+                          {event.isWorsening ? "Worsening" : "No change"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </>

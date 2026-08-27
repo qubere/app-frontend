@@ -31,7 +31,8 @@ export default async function CompliancePage(props: {
     rawTab === "audit" ||
     rawTab === "history" ||
     rawTab === "notifications" ||
-    rawTab === "community-screening"
+    rawTab === "community-screening" ||
+    rawTab === "rdps"
       ? rawTab
       : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
@@ -41,11 +42,14 @@ export default async function CompliancePage(props: {
   const mayManageNotificationSettings = holdsPermission(context, "compliance.restrictedParty.settings.manage");
   const mayReadCommunityScreening = holdsPermission(context, "compliance.communityScreening.read");
   const mayOverrideThresholds = holdsPermission(context, "compliance.communityScreening.override");
+  const mayReadRdps = holdsPermission(context, "compliance.rdps.read");
+  const mayManageRdps = holdsPermission(context, "compliance.rdps.manage");
   const resolvedTab =
     (activeTab === "audit" && !mayReadAuditHistory) ||
     (activeTab === "history" && !mayReadExecutionHistory) ||
     (activeTab === "notifications" && !mayManageNotificationSettings) ||
-    (activeTab === "community-screening" && !mayReadCommunityScreening)
+    (activeTab === "community-screening" && !mayReadCommunityScreening) ||
+    (activeTab === "rdps" && !mayReadRdps)
       ? "overview"
       : activeTab;
 
@@ -326,6 +330,8 @@ export default async function CompliancePage(props: {
         notificationSettings={notificationSettings}
         mayReadCommunityScreening={mayReadCommunityScreening}
         mayOverrideThresholds={mayOverrideThresholds}
+        mayReadRdps={mayReadRdps}
+        mayManageRdps={mayManageRdps}
       />
     </div>
   );

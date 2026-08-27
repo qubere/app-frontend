@@ -21,7 +21,8 @@ import { persistScreeningRun, type PersistedRestrictedPartyResult } from "./pers
 import { computeIdentityHash, loadCurrentIdentity, type Tx } from "./partyIdentity";
 import type { RestrictedPartyScreeningOptions, RestrictedPartyScreeningStatus } from "./types";
 
-const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
+/** Exported for reuse by the RDPS outcome recorder (modules/compliance/rdps/outcomeRecorder.ts), which needs the exact same worst-of-two-outcomes rollup rescreenParty already uses to decide whether a fresh rescreen is a worsening transition. */
+export const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
   HIT: 5,
   REVIEW_REQUIRED: 4,
   PARTIAL: 3,
@@ -30,7 +31,7 @@ const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
   CLEAR: 0,
 };
 
-function worseStatus(a: RestrictedPartyScreeningStatus, b: RestrictedPartyScreeningStatus): RestrictedPartyScreeningStatus {
+export function worseStatus(a: RestrictedPartyScreeningStatus, b: RestrictedPartyScreeningStatus): RestrictedPartyScreeningStatus {
   return STATUS_SEVERITY[a] >= STATUS_SEVERITY[b] ? a : b;
 }
 

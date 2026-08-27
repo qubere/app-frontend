@@ -3,6 +3,12 @@ import { SaxesParser, SaxesTagPlain } from "saxes";
 import { db } from "@qubere/db";
 import { parseSanctionsReferencesDictionary, type SanctionsReferenceDictionary } from "./dictionaryParser";
 import { transformEntity, type RawEntity, type RawNameDetail, type RawCompanyDetail, type RawCountryDetail, type RawIdNumberType, type RawSanctionsReference, type RawSource } from "./entityTransformer";
+import { recordReferenceDataChanges } from "../referenceDataChangeTracking";
+
+// Dow Jones has no scheduled cron entry in datasetRegistry.ts (it's a
+// manual, operator-triggered file upload, not a polled feed), so there is
+// no DatasetDefinition.id to reuse -- this is a locally-defined constant.
+const DOW_JONES_DATASET_ID = "dow-jones-full-feed";
 
 // Same batch size as ofacSdnIngestionService.ts -- tuned against the
 // Supabase pgbouncer pooler's connection_limit=10; a larger batch blows
@@ -316,6 +322,8 @@ export async function ingestDowJonesFullFeed(
   let skippedResume = 0;
   const unknownReferenceNames = new Set<string>();
   let entitiesWithMissingCountry = 0;
+  const ingestionRunId = crypto.randomUUID();
+  const changeInputs: { screeningEntityId: string; sourceList: string; changeType: "ADDED" | "UPDATED" }[] = [];
 
   const alreadyDone = loadProgress(filePath);
   if (alreadyDone.size > 0) {
@@ -337,7 +345,7 @@ export async function ingestDowJonesFullFeed(
           return;
         }
 
-        const wasCreated = await withTransientRetry(async () => {
+        const writeResult = await withTransientRetry(async () => {
           const existing = await db.screeningEntity.findUnique({
             where: { provider_providerRecordId: { provider: PROVIDER, providerRecordId: mapped.providerRecordId } },
             select: { id: true },
@@ -402,11 +410,16 @@ export async function ingestDowJonesFullFeed(
             });
           }
 
-          return !existing;
+          return { id: screeningEntity.id, sourceList: entityData.sourceList, wasCreated: !existing };
         }, `entity providerRecordId=${mapped.providerRecordId}`);
 
-        if (wasCreated) created++;
+        if (writeResult.wasCreated) created++;
         else updated++;
+        changeInputs.push({
+          screeningEntityId: writeResult.id,
+          sourceList: writeResult.sourceList,
+          changeType: writeResult.wasCreated ? "ADDED" : "UPDATED",
+        });
         markProgress(filePath, mapped.providerRecordId);
       })
     );
@@ -424,6 +437,17 @@ export async function ingestDowJonesFullFeed(
   if (associationsCount > 0) {
     console.log(`[dow-jones] Associations section contained ${associationsCount} record(s) -- not modeled/stored (documented MVP gap).`);
   }
+
+  await recordReferenceDataChanges(
+    ingestionRunId,
+    changeInputs.map((c) => ({
+      screeningEntityId: c.screeningEntityId,
+      sourceList: c.sourceList,
+      provider: PROVIDER,
+      changeType: c.changeType,
+      datasetId: DOW_JONES_DATASET_ID,
+    }))
+  );
 
   // A full run that reaches this point covers every entity in the file
   // (created, updated, or skipped-as-already-done) -- the resume cursor has

@@ -155,6 +155,11 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "compliance.override", description: "Waive or override compliance exception.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
   { name: "compliance.restricted_party_approve", description: "Approve a Party for restricted-party screening reuse (pre-approval).", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
   { name: "compliance.restricted_party_revoke", description: "Revoke a Party's restricted-party screening pre-approval.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "compliance.rdps.read", description: "View Continuous Party Monitoring (RDPS) runs, alerts, and reference-data changes.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
+  { name: "compliance.rdps.manage", description: "Trigger manual/targeted RDPS scans and disposition RDPS worsening alerts.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "compliance.communityScreening.read", description: "View Community Screening runs, results, and findings.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
+  { name: "compliance.communityScreening.screen", description: "Run new Community Screening batches and rescreen failed/error/incomplete rows.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "compliance.communityScreening.override", description: "Override Community Screening name/address thresholds, country-match, and red-flag settings for a run.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
 
   // PGA
   { name: "pga.read", description: "View PGA message set requirements.", category: "PGA", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
