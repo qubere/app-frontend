@@ -63,9 +63,8 @@ function selectedRemoteProvider(): RemoteStorageOrigin | null {
   }
   if (explicit === "local-fs") return null;
 
-  // Backwards compatibility for the existing Vercel deployment: it can keep
-  // using the token without adding STORAGE_PROVIDER. GCP must opt in explicitly
-  // so merely knowing a bucket name can never switch the active write backend.
+  // Default to GCS when running on GCP Cloud Run or GCS_BUCKET is configured.
+  if ((process.env.GCS_BUCKET ?? "").trim()) return "gcs";
   if (process.env.BLOB_READ_WRITE_TOKEN) return "vercel-blob";
   return null;
 }
@@ -406,7 +405,7 @@ export async function storeProcessingArtifact(params: {
   }
 
   const isServerless = Boolean(
-    process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.cwd().startsWith("/var/task")
+    process.env.K_SERVICE || process.env.GCP_PROJECT || process.env.AWS_LAMBDA_FUNCTION_NAME || process.cwd().startsWith("/var/task")
   );
   if (isServerless) {
     throw new Error(
@@ -512,8 +511,8 @@ export async function storeDocumentFile(
 
   const provider = selectedRemoteProvider();
   const isServerless = Boolean(
-    process.env.VERCEL ||
     process.env.K_SERVICE ||
+    process.env.GCP_PROJECT ||
     process.env.AWS_LAMBDA_FUNCTION_NAME ||
     process.cwd().startsWith("/var/task")
   );

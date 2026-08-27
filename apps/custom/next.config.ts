@@ -2,7 +2,10 @@ import type { NextConfig } from "next";
 import { execSync } from "child_process";
 
 function resolveGitCommitSha(): string {
-  if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA;
+  if (process.env.GIT_COMMIT_SHA) return process.env.GIT_COMMIT_SHA;
+  if (process.env.COMMIT_SHA) return process.env.COMMIT_SHA;
+  if (process.env.CONTAINER_SHA) return process.env.CONTAINER_SHA;
+  if (process.env.K_REVISION) return process.env.K_REVISION;
   try {
     return execSync("git rev-parse HEAD").toString().trim();
   } catch {
