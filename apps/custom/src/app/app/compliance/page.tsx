@@ -40,8 +40,8 @@ export default async function CompliancePage(props: {
   const mayReadExecutionHistory =
     holdsPermission(context, "audit.read") || holdsPermission(context, "compliance.read");
   const mayManageNotificationSettings = holdsPermission(context, "compliance.restrictedParty.settings.manage");
-  const mayReadCommunityScreening = holdsPermission(context, "compliance.communityScreening.read");
-  const mayOverrideThresholds = holdsPermission(context, "compliance.communityScreening.override");
+  const mayReadCommunityScreening = holdsPermission(context, "compliance.community_screening.read");
+  const mayOverrideThresholds = holdsPermission(context, "compliance.community_screening.override");
   const mayReadRdps = holdsPermission(context, "compliance.rdps.read");
   const mayManageRdps = holdsPermission(context, "compliance.rdps.manage");
   const resolvedTab =

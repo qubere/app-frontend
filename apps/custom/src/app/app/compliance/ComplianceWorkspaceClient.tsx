@@ -70,9 +70,9 @@ interface ComplianceWorkspaceClientProps {
   /** Gates the "Notifications" tab -- true when the session holds `compliance.restrictedParty.settings.manage`. */
   mayManageNotificationSettings: boolean;
   notificationSettings: NotificationSettingsProps;
-  /** Gates the "Community Screening" tab -- true when the session holds `compliance.communityScreening.read`. */
+  /** Gates the "Community Screening" tab -- true when the session holds `compliance.community_screening.read`. */
   mayReadCommunityScreening: boolean;
-  /** Gates the override fields (name/address threshold, country-match, red-flag) in Community Screening -- true when the session holds `compliance.communityScreening.override`. */
+  /** Gates the override fields (name/address threshold, country-match, red-flag) in Community Screening -- true when the session holds `compliance.community_screening.override`. */
   mayOverrideThresholds: boolean;
   /** Gates the "Continuous Monitoring" (RDPS) tab -- true when the session holds `compliance.rdps.read`. */
   mayReadRdps: boolean;

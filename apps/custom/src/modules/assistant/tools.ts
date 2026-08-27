@@ -794,7 +794,7 @@ const getLatestCommunityScreeningRun: AssistantTool = {
       "name a specific run id.",
     parameters: zodToGeminiSchema(getLatestCommunityScreeningRunSchema),
   },
-  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.community_screening.read" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getLatestCommunityScreeningRunSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -826,7 +826,7 @@ const listFailedCommunityScreeningParties: AssistantTool = {
       "candidates for rescreening or manual review.",
     parameters: zodToGeminiSchema(listFailedCommunityScreeningPartiesSchema),
   },
-  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.community_screening.read" },
   execute: async (_ctx, rawArgs) => {
     const parsed = listFailedCommunityScreeningPartiesSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -907,7 +907,7 @@ const explainCommunityScreeningPartyFailure: AssistantTool = {
       "of scope for this feature.",
     parameters: zodToGeminiSchema(explainCommunityScreeningPartyFailureSchema),
   },
-  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.community_screening.read" },
   execute: async (_ctx, rawArgs) => {
     const parsed = explainCommunityScreeningPartyFailureSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -982,7 +982,7 @@ const rescreenFailedCommunityScreeningParties: AssistantTool = {
       "Only call after explicit confirmation. License determination is not part of what runs.",
     parameters: zodToGeminiSchema(rescreenFailedCommunityScreeningPartiesSchema),
   },
-  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.screen" },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.community_screening.screen" },
   execute: async (_ctx, rawArgs) => {
     const parsed = rescreenFailedCommunityScreeningPartiesSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -1027,7 +1027,7 @@ const exportLatestCommunityScreeningRun: AssistantTool = {
       "download the file themselves.",
     parameters: zodToGeminiSchema(exportLatestCommunityScreeningRunSchema),
   },
-  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.community_screening.read" },
   execute: async (_ctx, rawArgs) => {
     const parsed = exportLatestCommunityScreeningRunSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };

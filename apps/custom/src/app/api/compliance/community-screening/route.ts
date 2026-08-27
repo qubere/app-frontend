@@ -122,7 +122,7 @@ export const POST = withAuthenticatedRoute(
         {
           userId: ctx.userId,
           requestId,
-          mayOverride: holdsPermission(ctx, "compliance.communityScreening.override"),
+          mayOverride: holdsPermission(ctx, "compliance.community_screening.override"),
         }
       );
 
@@ -155,7 +155,7 @@ export const POST = withAuthenticatedRoute(
       throw err;
     }
   },
-  { permission: "compliance.communityScreening.screen", write: true }
+  { permission: "compliance.community_screening.screen", write: true }
 );
 
 export const GET = withAuthenticatedRoute(
@@ -175,5 +175,5 @@ export const GET = withAuthenticatedRoute(
 
     return NextResponse.json({ ...result, requestId });
   },
-  { permission: "compliance.communityScreening.read" }
+  { permission: "compliance.community_screening.read" }
 );

@@ -11,10 +11,10 @@ export const revalidate = 0;
 export default async function CommunityScreeningRunPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAccountContext();
   if (!ctx) redirect("/sign-in");
-  if (!(await hasPermission("compliance.communityScreening.read"))) redirect("/app/compliance");
+  if (!(await hasPermission("compliance.community_screening.read"))) redirect("/app/compliance");
 
   const { id } = await params;
-  const mayScreen = await hasPermission("compliance.communityScreening.screen");
+  const mayScreen = await hasPermission("compliance.community_screening.screen");
 
   const initial = await CommunityScreeningService.getRunResults(ctx.accountId, id, { page: 1, pageSize: 50 });
   if (!initial) notFound();

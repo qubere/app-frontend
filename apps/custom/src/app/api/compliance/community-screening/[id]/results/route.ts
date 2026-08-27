@@ -26,5 +26,5 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
 
     return NextResponse.json({ ...result, requestId });
   },
-  { permission: "compliance.communityScreening.read" }
+  { permission: "compliance.community_screening.read" }
 );

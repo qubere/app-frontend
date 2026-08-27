@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { withCronRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
-import { validateRecallForWindow, recordRecallValidationResult } from "@/modules/agents/compliance/restrictedParty/rdpsRecallValidator";
+import {
+  validateRecallForWindow,
+  recordRecallValidationResult,
+  selectRecallValidationSample,
+} from "@/modules/agents/compliance/restrictedParty/rdpsRecallValidator";
 import { getRdpsRecallValidationSampleSize } from "@/modules/compliance/rdps/config";
 
 export const maxDuration = 120;
@@ -19,12 +23,7 @@ async function handleDispatch(requestId: string) {
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - 24 * 60 * 60 * 1000);
 
-    const sample = await db.party.findMany({
-      where: { deletedAt: null },
-      orderBy: { updatedAt: "asc" },
-      take: sampleSize,
-      select: { id: true },
-    });
+    const sample = await selectRecallValidationSample(sampleSize);
 
     const run = await db.rdpsRun.create({
       data: {
@@ -36,7 +35,7 @@ async function handleDispatch(requestId: string) {
       },
     });
 
-    const result = await validateRecallForWindow(windowStart, windowEnd, { partyIdSample: sample.map((p) => p.id) });
+    const result = await validateRecallForWindow(windowStart, windowEnd, { partyIdSample: sample });
     await recordRecallValidationResult(run.id, result);
 
     return NextResponse.json({ status: "SUCCESS", requestId, runId: run.id, ...result });

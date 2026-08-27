@@ -105,6 +105,9 @@ ALTER TABLE "ReferenceDataChangeSet" ADD CONSTRAINT "ReferenceDataChangeSet_scre
 ALTER TABLE "RdpsPartyOutcome" ADD CONSTRAINT "RdpsPartyOutcome_runId_fkey" FOREIGN KEY ("runId") REFERENCES "RdpsRun"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "RdpsPartyOutcome" ADD CONSTRAINT "RdpsPartyOutcome_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "RdpsPartyOutcome" ADD CONSTRAINT "RdpsPartyOutcome_partyId_fkey" FOREIGN KEY ("partyId") REFERENCES "Party"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey

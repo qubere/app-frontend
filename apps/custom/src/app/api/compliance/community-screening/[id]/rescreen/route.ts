@@ -32,5 +32,5 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
 
     return NextResponse.json({ run, requestId });
   },
-  { permission: "compliance.communityScreening.screen", write: true }
+  { permission: "compliance.community_screening.screen", write: true }
 );

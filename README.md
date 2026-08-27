@@ -354,7 +354,7 @@ Small/manual runs execute inline; large or file-sourced runs are claimed
 row-by-row by `CommunityScreeningDispatcher`, using the same optimistic
 per-row claim pattern as `ComplianceNotificationDispatcher` so a retried tick
 can never double-process a row. Gated by three permissions
-(`compliance.communityScreening.read`/`.screen`/`.override`), every route
+(`compliance.community_screening.read`/`.screen`/`.override`), every route
 tenant-scoped via `withAuthenticatedRoute`, with export (CSV/XLSX) and Ask
 Qubere assistant tools surfacing the same independent-findings evidence. See
 [docs/community-screening.md](docs/community-screening.md) for the full

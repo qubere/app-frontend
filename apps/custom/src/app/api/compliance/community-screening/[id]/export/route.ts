@@ -39,5 +39,5 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
       },
     });
   },
-  { permission: "compliance.communityScreening.read" }
+  { permission: "compliance.community_screening.read" }
 );

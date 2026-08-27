@@ -15,6 +15,7 @@ vi.mock("@/lib/db", () => ({
     },
     screeningEntity: {
       count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     ruling: {

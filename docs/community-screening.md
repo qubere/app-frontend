@@ -106,7 +106,7 @@ remain for it.
 ## RBAC, tenant isolation, audit
 
 Three permissions in the central catalogue
-(`packages/auth/src/permissions.ts`): `compliance.communityScreening.read`,
+(`packages/auth/src/permissions.ts`): `compliance.community_screening.read`,
 `.screen`, `.override`. Every API route under
 `src/app/api/compliance/community-screening/` is wrapped in
 `withAuthenticatedRoute`, so `accountId` always comes from the authenticated

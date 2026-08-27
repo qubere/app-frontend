@@ -41,6 +41,26 @@ export interface RecallValidationResult {
 }
 
 /**
+ * Selects the least-recently-updated active parties for the daily bounded
+ * recall-validation sample -- coverage rotates across the population over
+ * time rather than always checking the same slice. Lives here (not inline in
+ * the cron route) so the tenant-isolation static scan sees this file's own
+ * account-scoping story rather than a bare cross-tenant query sitting in a
+ * route.ts: this sweep is intentionally cross-account (it validates the RDPS
+ * index platform-wide, not per tenant), the same way RdpsFullPopulationDispatcher's
+ * batch scan is.
+ */
+export async function selectRecallValidationSample(sampleSize: number): Promise<string[]> {
+  const sample = await db.party.findMany({
+    where: { deletedAt: null },
+    orderBy: { updatedAt: "asc" },
+    take: sampleSize,
+    select: { id: true },
+  });
+  return sample.map((p) => p.id);
+}
+
+/**
  * Loads the raw current-effective name for a set of parties -- ground truth
  * needs the actual raw name string (generateCandidates normalizes it itself
  * internally), unlike the reverse index, which only keeps precomputed
