@@ -16,7 +16,7 @@ class DummyAsyncLocalStorage<T> {
 }
 
 function createAsyncLocalStorage<T>(): AsyncLocalStorage<T> {
-  if (typeof window === "undefined") {
+  if (typeof (globalThis as any).window === "undefined") {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const NodeAsyncLocalStorage = require("node:async_hooks").AsyncLocalStorage as new <U>() => AsyncLocalStorage<U>;
