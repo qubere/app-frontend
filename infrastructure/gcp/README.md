@@ -1,10 +1,10 @@
-# GCP demo deployment (Customs)
+# GCP demo deployment (Customs + TMS)
 
-This deploys the Customs Next.js application to Cloud Run while leaving the
+This deploys the Customs and TMS Next.js applications to Cloud Run while leaving the
 current Vercel deployment unchanged. The GCP deployment uses:
 
-- a Cloud Run service for the web application;
-- a Cloud Run worker pool for continuous document processing;
+- separate Cloud Run services for Customs and TMS;
+- an on-demand Cloud Run job that drains both applications' document queues;
 - a Cloud Run job for Prisma migrations;
 - a private Google Cloud Storage bucket for documents and generated artifacts;
 - Secret Manager for runtime credentials; and
@@ -15,7 +15,8 @@ below, then run the deployment script.
 
 ## 1. Choose an isolated demo environment
 
-Use a new hostname, for example `gcp-demo.example.com`, and a **separate demo
+Use two new hostnames, for example `customs-gcp.example.com` and
+`tms-gcp.example.com`, and a **separate demo
 database** cloned or seeded to approximately the same size as the existing
 environment.
 
@@ -173,7 +174,8 @@ export GCP_PROJECT_ID="your-project-id"
 export GCP_REGION="us-west1"
 export GCS_BUCKET="${GCP_PROJECT_ID}-qubere-demo-documents"
 export RUNTIME_SERVICE_ACCOUNT="qubere-demo-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
-export NEXT_PUBLIC_APP_URL="https://gcp-demo.example.com"
+export NEXT_PUBLIC_CUSTOMS_APP_URL="https://customs-gcp.example.com"
+export NEXT_PUBLIC_TMS_APP_URL="https://tms-gcp.example.com"
 export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_or_live_value"
 export DOCLING_API_BASE_URL="https://your-docling-service.example.com"
 
@@ -188,25 +190,25 @@ new image build.
 region, image tag, or secret names with the variables at the top of
 `deploy-demo.sh`.
 
-For a web-only performance baseline, set `DEPLOY_WORKER=false`. The migration
-job is still run, but no continuous worker pool is deployed. Use the default
-(`true`) for a functional document-processing demo.
-
-```bash
-DEPLOY_WORKER=false ./infrastructure/gcp/deploy-demo.sh
-```
+The migration image only runs `prisma migrate deploy`. The shared document image
+runs bounded Customs and TMS workers and exits when queues are empty. Web requests
+trigger it after committing durable queue records; Cloud Scheduler is a five-minute
+backstop, so there is no always-on worker pool.
 
 ## 6. Verify before adding DNS
 
 The script prints the generated `run.app` URL. Check it first:
 
 ```bash
-export SERVICE_URL="$(gcloud run services describe qubere-customs-demo \
+export CUSTOMS_URL="$(gcloud run services describe qubere-customs-demo \
   --region="${GCP_REGION}" \
   --format='value(status.url)')"
 
-curl -fsS "${SERVICE_URL}/api/health/live"
-curl -fsS "${SERVICE_URL}/api/health"
+export TMS_URL="$(gcloud run services describe qubere-tms-demo \
+  --region="${GCP_REGION}" --format='value(status.url)')"
+curl -fsS "${CUSTOMS_URL}/api/health/live"
+curl -fsS "${CUSTOMS_URL}/api/health"
+curl -fsS "${TMS_URL}/api/health"
 ```
 
 Then test sign-in, one ordinary page load, one database-backed page, one small
@@ -226,16 +228,19 @@ create a Cloud Run domain mapping:
 ```bash
 gcloud beta run domain-mappings create \
   --service=qubere-customs-demo \
-  --domain=gcp-demo.example.com \
+  --domain=customs-gcp.example.com \
   --region="${GCP_REGION}"
 
 gcloud beta run domain-mappings describe \
-  --domain=gcp-demo.example.com \
+  --domain=customs-gcp.example.com \
   --region="${GCP_REGION}"
 ```
 
 Add the DNS records shown by the `describe` command. Certificate issuance can
 take time. Do not change the existing deployment's DNS record.
+
+Repeat the two domain-mapping commands for service `qubere-tms-demo` and the TMS
+hostname.
 
 Direct Cloud Run domain mapping is a limited-availability preview feature. It is
 reasonable for this demo in a supported region; if your region or policy does
@@ -254,6 +259,7 @@ After the service is healthy, reproduce the schedules from
 ```bash
 export GCP_PROJECT_ID="your-project-id"
 export GCP_REGION="us-west1"
+export RUNTIME_SERVICE_ACCOUNT="qubere-demo-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
 ./infrastructure/gcp/configure-scheduler.sh
 ```
 
@@ -276,6 +282,6 @@ Deploy an earlier immutable `IMAGE_TAG` to roll back. Cloud Run keeps revision
 history, so traffic can also be reassigned in the console.
 
 When the comparison is finished, remove the domain mapping, Scheduler jobs,
-worker pool, web service, migration job, images, secrets, and bucket according
+document job, both web services, migration job, images, secrets, and bucket according
 to your organization's retention policy. Review the bucket before deleting it;
 uploaded demo documents are not recoverable after deletion.
