@@ -297,6 +297,7 @@ model Account {
   restrictedPartyScreeningConfig  AccountScreeningConfig?
   complianceExecutions            ComplianceExecution[]
   complianceFormalOverrides       ComplianceFormalOverride[]
+  complianceNotifications         ComplianceNotification[]
 
   @@index([type])
   @@index([slug])
@@ -3125,6 +3126,20 @@ model AccountScreeningConfig {
   continueOnExactMatch      Boolean?
   alternateScreeningEnabled Boolean?
 
+  /// Email notification preferences for RPS exceptions -- see
+  /// modules/compliance/notifications/eligibility.ts for how these combine.
+  /// All nullable/defaulted so an absent row (or absent field) means "alerts
+  /// off, no recipients" rather than an error.
+  rpsEmailAlertsEnabled    Boolean?
+  rpsGeneralRecipients     String[]        @default([])
+  rpsHitRecipients         String[]        @default([])
+  rpsPalRescreenRecipients String[]        @default([])
+  rpsEmailFormat           RpsEmailFormat?
+  rpsSecureEmailEnabled    Boolean?
+  /// Account-level kill switch, independent of rpsEmailAlertsEnabled -- lets
+  /// an admin silence alerts temporarily without discarding recipient config.
+  rpsSuppressEmailAlerts   Boolean?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -5932,6 +5947,10 @@ model RestrictedPartyScreeningResult {
   /// screening result a reviewer pointed to when granting reuse.
   supportedApprovals PartyScreeningApproval[]
 
+  /// Back-relation for ComplianceNotification.screeningResult — at most one
+  /// notification per ComplianceNotificationType (see the model's @@unique).
+  notifications ComplianceNotification[]
+
   createdAt DateTime @default(now())
 
   @@index([accountId, screeningDate])
@@ -6123,6 +6142,95 @@ model PartyScreeningApproval {
   @@index([partyId, status])
   @@index([expiresAt])
   @@index([sourceScreeningResultId])
+}
+
+enum RpsEmailFormat {
+  HTML
+  TEXT
+}
+
+/// What triggered a ComplianceNotification. RPS_HIT/RPS_REVIEW_REQUIRED are
+/// the default outcomes of any fresh screening; PAL_RESCREEN_HIT is the
+/// narrower case where a previously PRE_APPROVED party's re-screen produced a
+/// new exception (see rescreenParty/checkPreApprovalGate); PARTY_RESCREEN_HIT
+/// is any other Party Master re-screen exception with no pre-approval
+/// history. Exactly one of these applies per RestrictedPartyScreeningResult.
+enum ComplianceNotificationType {
+  RPS_HIT
+  RPS_REVIEW_REQUIRED
+  PAL_RESCREEN_HIT
+  PARTY_RESCREEN_HIT
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  SENT
+  RETRYABLE_FAILURE
+  FAILED
+  SUPPRESSED
+  CANCELLED
+}
+
+/// One durable, queued email notification for an RPS exception. Created
+/// transactionally alongside its RestrictedPartyScreeningResult (see
+/// ComplianceNotificationService.evaluateAndQueue in persistResult.ts) --
+/// never the other way around, and never a trigger for mutating the result
+/// it references. Delivery itself is asynchronous (ComplianceNotificationDispatcher,
+/// driven by the compliance-notification-dispatch cron), so this row's
+/// deliveryStatus is the only place send progress/outcome is recorded.
+/// The @@unique constraint on [screeningResultId, notificationType] is the
+/// sole duplicate-send guard -- concurrent evaluateAndQueue calls for the
+/// same result/type collide on it (caught as already-queued) instead of
+/// needing a separate idempotency key.
+model ComplianceNotification {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  notificationType ComplianceNotificationType
+  channel          String @default("EMAIL")
+
+  screeningResultId String?
+  screeningResult   RestrictedPartyScreeningResult? @relation(fields: [screeningResultId], references: [id], onDelete: Cascade)
+
+  complianceExecutionId String?
+  shipmentId            String?
+  partyId               String?
+
+  /// Resolved recipient addresses at queue time -- a later change to account
+  /// preferences must never alter what an already-queued notification sends to.
+  recipients Json
+
+  deliveryStatus NotificationDeliveryStatus @default(PENDING)
+
+  provider          String?
+  providerMessageId String?
+
+  attemptCount  Int       @default(0)
+  nextAttemptAt DateTime?
+  /// Set while a dispatcher worker holds this row in PROCESSING -- lets a
+  /// crashed/timed-out attempt be reclaimed (see ComplianceNotificationDispatcher),
+  /// mirroring WorkflowOutboxEvent.lockedAt.
+  lockedAt      DateTime?
+
+  lastErrorCode    String?
+  lastErrorMessage String?
+
+  createdAt DateTime  @default(now())
+  queuedAt  DateTime?
+  sentAt    DateTime?
+  failedAt  DateTime?
+
+  createdByUserId String?
+
+  @@unique([screeningResultId, notificationType])
+  @@index([accountId, deliveryStatus])
+  @@index([deliveryStatus, nextAttemptAt])
+  @@index([accountId, createdAt])
+  @@index([partyId])
+  @@index([shipmentId])
 }
 
 /// Generic, append-only compliance screening finding — one row per failing

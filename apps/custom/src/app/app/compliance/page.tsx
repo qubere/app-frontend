@@ -26,13 +26,18 @@ export default async function CompliancePage(props: {
 
   const rawTab = typeof searchParams.tab === "string" ? searchParams.tab : "overview";
   const activeTab =
-    rawTab === "screening" || rawTab === "review" || rawTab === "audit" || rawTab === "history" ? rawTab : "overview";
+    rawTab === "screening" || rawTab === "review" || rawTab === "audit" || rawTab === "history" || rawTab === "notifications"
+      ? rawTab
+      : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
   const mayReadAuditHistory = holdsPermission(context, "compliance.read");
   const mayReadExecutionHistory =
     holdsPermission(context, "audit.read") || holdsPermission(context, "compliance.read");
+  const mayManageNotificationSettings = holdsPermission(context, "compliance.restrictedParty.settings.manage");
   const resolvedTab =
-    (activeTab === "audit" && !mayReadAuditHistory) || (activeTab === "history" && !mayReadExecutionHistory)
+    (activeTab === "audit" && !mayReadAuditHistory) ||
+    (activeTab === "history" && !mayReadExecutionHistory) ||
+    (activeTab === "notifications" && !mayManageNotificationSettings)
       ? "overview"
       : activeTab;
 
@@ -42,6 +47,7 @@ export default async function CompliancePage(props: {
     let screeningFindingQuery: Promise<any[]> = Promise.resolve([]);
     let partyResultQuery: Promise<any[]> = Promise.resolve([]);
     let partySummaryQuery: Promise<any> = Promise.resolve([]);
+    let notificationConfigQuery: Promise<any> = Promise.resolve(null);
 
     if (resolvedTab === "overview") {
       findingsQuery = db.complianceFinding.findMany({
@@ -183,16 +189,19 @@ export default async function CompliancePage(props: {
         take: 50,
         include: { filing: { select: { entryNumber: true } } },
       });
+    } else if (resolvedTab === "notifications" && mayManageNotificationSettings) {
+      notificationConfigQuery = db.accountScreeningConfig.findUnique({ where: { accountId: context.accountId } });
     }
     // "history" tab needs no server query -- ExecutionHistoryPanel is fully
     // self-fetching against /api/v1/compliance/executions*.
 
-    const [findings, recentAudits, screeningFindings, partyScreeningResults, partySummaryGroups] = await Promise.all([
+    const [findings, recentAudits, screeningFindings, partyScreeningResults, partySummaryGroups, notificationConfig] = await Promise.all([
       findingsQuery,
       auditQuery,
       screeningFindingQuery,
       partyResultQuery,
       partySummaryQuery,
+      notificationConfigQuery,
     ]);
 
   const findingProps = findings.map((f) => ({
@@ -273,6 +282,16 @@ export default async function CompliancePage(props: {
     partySummaryCounts[group.screeningStatus] = group._count;
   }
 
+  const notificationSettings = {
+    rpsEmailAlertsEnabled: notificationConfig?.rpsEmailAlertsEnabled ?? false,
+    rpsGeneralRecipients: notificationConfig?.rpsGeneralRecipients ?? [],
+    rpsHitRecipients: notificationConfig?.rpsHitRecipients ?? [],
+    rpsPalRescreenRecipients: notificationConfig?.rpsPalRescreenRecipients ?? [],
+    rpsEmailFormat: (notificationConfig?.rpsEmailFormat ?? "HTML") as "HTML" | "TEXT",
+    rpsSecureEmailEnabled: notificationConfig?.rpsSecureEmailEnabled ?? false,
+    rpsSuppressEmailAlerts: notificationConfig?.rpsSuppressEmailAlerts ?? false,
+  };
+
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
       <div className="flex items-center gap-3">
@@ -295,6 +314,8 @@ export default async function CompliancePage(props: {
         partyScreeningResults={partyScreeningProps}
         partySummaryCounts={partySummaryCounts}
         mayReadExecutionHistory={mayReadExecutionHistory}
+        mayManageNotificationSettings={mayManageNotificationSettings}
+        notificationSettings={notificationSettings}
       />
     </div>
   );

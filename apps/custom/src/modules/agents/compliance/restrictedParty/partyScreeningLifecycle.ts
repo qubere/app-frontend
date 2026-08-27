@@ -50,9 +50,21 @@ export async function rescreenParty(accountId: string, partyId: string, options?
   const identity = await loadCurrentIdentity(db, accountId, partyId);
   if (!identity) throw new PartyHasNoActiveNameError(partyId);
 
+  // PARTY_MASTER is never eligible for pre-approval *reuse* (see
+  // REUSE_ELIGIBLE_SOURCES in preApproval.ts), but a party can still have a
+  // PRE_APPROVED approval on file from prior shipment/line reuse -- if so, a
+  // fresh HIT/REVIEW_REQUIRED here is a PAL re-screen exception, not an
+  // ordinary Party Master re-screen exception.
+  const activeApproval = await db.partyScreeningApproval.findFirst({
+    where: { accountId, partyId, status: "PRE_APPROVED" },
+    select: { id: true },
+  });
+
   const input = { accountId, source: "PARTY_MASTER" as const, partyId, identity, ...options };
   const runResult = await runRestrictedPartyScreening(input);
-  const persisted = await persistScreeningRun(input, runResult);
+  const persisted = await persistScreeningRun(input, runResult, {
+    notificationTypeOverride: activeApproval ? "PAL_RESCREEN_HIT" : undefined,
+  });
 
   const overallStatus = persisted.map((p) => p.status as RestrictedPartyScreeningStatus).reduce(worseStatus, "CLEAR");
   const primaryResult = persisted.find((p) => p.passType === "PARTY_NAME") ?? persisted[0];

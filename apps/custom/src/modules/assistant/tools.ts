@@ -61,6 +61,7 @@ import {
 import { runRestrictedPartyScreening } from "@/modules/agents/compliance/restrictedParty/restrictedPartyScreening";
 import { persistScreeningRun } from "@/modules/agents/compliance/restrictedParty/persistResult";
 import { checkPreApprovalGate } from "@/modules/agents/compliance/restrictedParty/preApproval";
+import { getNotificationStatusForScreeningResult } from "@/modules/compliance/notifications/notificationQueries";
 
 /**
  * Helper to convert Zod Object Schema into Gemini-compatible Schema object
@@ -2182,6 +2183,42 @@ const getPartyPreApprovalStatus: AssistantTool = {
   },
 };
 
+// ---- tool: get_restricted_party_notification_status ----
+//
+// Read-only: reports whether an RPS notification email was queued/sent for a
+// screening result, its delivery status, and why (if not sent) -- never the
+// recipient addresses themselves. Tenant-scoped via notificationQueries.ts.
+
+const getRestrictedPartyNotificationStatusSchema = z.object({
+  screeningId: z.string().describe("The restricted-party screening result id, from screen_restricted_party or a party's screening history."),
+});
+
+const getRestrictedPartyNotificationStatus: AssistantTool = {
+  schema: getRestrictedPartyNotificationStatusSchema,
+  declaration: {
+    name: "get_restricted_party_notification_status",
+    description:
+      "Whether an email alert was queued/sent for a restricted/denied-party screening result, its delivery status " +
+      "(queued, sent, retrying, failed, suppressed), notification type, and provider. Never returns recipient " +
+      "addresses. Use for 'was an email sent for this hit' or 'why didn't compliance get notified' questions.",
+    parameters: zodToGeminiSchema(getRestrictedPartyNotificationStatusSchema),
+  },
+  access: { permission: "compliance.restrictedParty.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getRestrictedPartyNotificationStatusSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { screeningId } = parsed.data;
+
+    const result = await db.restrictedPartyScreeningResult.findFirst({
+      where: { id: screeningId, accountId: ctx.accountId },
+      select: { id: true },
+    });
+    if (!result) return { error: "Screening result not found" };
+
+    return getNotificationStatusForScreeningResult(ctx.accountId, result.id);
+  },
+};
+
 export // ---- tool: get_shipment_compliance_execution_history ----
 //
 // Deterministic, evidence-grounded: reads only persisted ComplianceExecution
@@ -2376,6 +2413,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   getRestrictedPartyScreeningDetails,
   getPartyRestrictedPartyScreeningHistory,
   getPartyPreApprovalStatus,
+  getRestrictedPartyNotificationStatus,
   getShipmentComplianceExecutionHistory,
   getServiceUsageSummary,
   getFormalOverridesForResult,

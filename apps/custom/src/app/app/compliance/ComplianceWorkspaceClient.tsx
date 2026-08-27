@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail } from "lucide-react";
 import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
 import type { AuditRecordProps } from "./AuditHistoryPanel";
 
@@ -15,6 +15,7 @@ const ScreeningPanel = dynamic(() => import("./ScreeningPanel").then((m) => m.Sc
 const ComplianceFindingsClient = dynamic(() => import("./ComplianceFindingsClient").then((m) => m.ComplianceFindingsClient), { ssr: false });
 const AuditHistoryPanel = dynamic(() => import("./AuditHistoryPanel").then((m) => m.AuditHistoryPanel), { ssr: false });
 const ExecutionHistoryPanel = dynamic(() => import("./ExecutionHistoryPanel").then((m) => m.ExecutionHistoryPanel), { ssr: false });
+const NotificationSettingsPanel = dynamic(() => import("./NotificationSettingsPanel").then((m) => m.NotificationSettingsPanel), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -43,6 +44,16 @@ interface FindingProps {
   } | null;
 }
 
+interface NotificationSettingsProps {
+  rpsEmailAlertsEnabled: boolean;
+  rpsGeneralRecipients: string[];
+  rpsHitRecipients: string[];
+  rpsPalRescreenRecipients: string[];
+  rpsEmailFormat: "HTML" | "TEXT";
+  rpsSecureEmailEnabled: boolean;
+  rpsSuppressEmailAlerts: boolean;
+}
+
 interface ComplianceWorkspaceClientProps {
   initialTab?: string;
   findings: FindingProps[];
@@ -54,9 +65,12 @@ interface ComplianceWorkspaceClientProps {
   partySummaryCounts: Record<string, number>;
   /** Gates the "Service Usage & History" tab -- true when the session holds `audit.read` or `compliance.read`. */
   mayReadExecutionHistory: boolean;
+  /** Gates the "Notifications" tab -- true when the session holds `compliance.restrictedParty.settings.manage`. */
+  mayManageNotificationSettings: boolean;
+  notificationSettings: NotificationSettingsProps;
 }
 
-type WorkspaceTab = "overview" | "screening" | "review" | "audit" | "history";
+type WorkspaceTab = "overview" | "screening" | "review" | "audit" | "history" | "notifications";
 
 export function ComplianceWorkspaceClient({
   initialTab = "overview",
@@ -68,6 +82,8 @@ export function ComplianceWorkspaceClient({
   partyScreeningResults,
   partySummaryCounts,
   mayReadExecutionHistory,
+  mayManageNotificationSettings,
+  notificationSettings,
 }: ComplianceWorkspaceClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -81,6 +97,7 @@ export function ComplianceWorkspaceClient({
     { id: "review", label: "Review Queue", icon: ListChecks },
     { id: "audit", label: "Audit History", icon: Clock, hidden: !mayReadAuditHistory },
     { id: "history", label: "Service Usage & History", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
+    { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
   ];
 
   useEffect(() => {
@@ -89,12 +106,14 @@ export function ComplianceWorkspaceClient({
       setActiveTab(mayReadAuditHistory ? "audit" : "overview");
     } else if (tabParam === "history") {
       setActiveTab(mayReadExecutionHistory ? "history" : "overview");
+    } else if (tabParam === "notifications") {
+      setActiveTab(mayManageNotificationSettings ? "notifications" : "overview");
     } else if (tabParam === "screening" || tabParam === "review") {
       setActiveTab(tabParam);
     } else if (!tabParam) {
       setActiveTab("overview");
     }
-  }, [searchParams, mayReadAuditHistory, mayReadExecutionHistory]);
+  }, [searchParams, mayReadAuditHistory, mayReadExecutionHistory, mayManageNotificationSettings]);
 
   const selectTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
@@ -155,6 +174,9 @@ export function ComplianceWorkspaceClient({
         {activeTab === "review" && <ComplianceFindingsClient findings={findings} recentAudits={[]} />}
         {activeTab === "audit" && mayReadAuditHistory && <AuditHistoryPanel recentAudits={recentAudits} />}
         {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel />}
+        {activeTab === "notifications" && mayManageNotificationSettings && (
+          <NotificationSettingsPanel initialSettings={notificationSettings} mayManage={mayManageNotificationSettings} />
+        )}
       </div>
     </div>
   );

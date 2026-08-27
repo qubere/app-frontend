@@ -80,6 +80,14 @@ export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "detai
     description: "Re-evaluates FTA tariff shift and RVC origin determinations for products updated within the last 24 hours.",
   },
   {
+    id: "compliance-notification-dispatch",
+    name: "Compliance Notification Dispatcher",
+    endpoint: "/api/cron/compliance-notification-dispatch",
+    method: "POST",
+    schedule: "*/2 * * * * (Every 2 minutes)",
+    description: "Sends queued Restricted Party Screening email notifications (RPS hits, review-required, PAL/Party re-screen exceptions) with retry backoff.",
+  },
+  {
     id: "work-metric-snapshot",
     name: "Daily Work Metric Snapshot",
     endpoint: "/api/cron/work-metric-snapshot",

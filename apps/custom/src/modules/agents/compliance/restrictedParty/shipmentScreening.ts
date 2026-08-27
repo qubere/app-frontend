@@ -143,8 +143,18 @@ export async function runRestrictedPartyScreeningForShipment(
       },
     };
 
+    // A pre-approval row was found but failed validation (revoked/expired/
+    // version-or-identity-hash mismatch/stale reference data) -- this party
+    // was previously PRE_APPROVED, so a fresh HIT/REVIEW_REQUIRED here is a
+    // PAL re-screen exception, not an ordinary first-time RPS_HIT.
+    const wasPreviouslyPreApproved = !gate.applied && Boolean(gate.approvalId);
+
     const runResult = await runRestrictedPartyScreening(input);
-    await persistScreeningRun(input, runResult);
+    await persistScreeningRun(input, runResult, {
+      notificationTypeOverride: wasPreviouslyPreApproved ? "PAL_RESCREEN_HIT" : undefined,
+      createdByUserId: options?.userId,
+      requestId: options?.requestId,
+    });
 
     // ComplianceExecution envelope -- additive, alongside the authoritative
     // RestrictedPartyScreeningResult rows persisted above. Shares the same

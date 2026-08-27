@@ -7,18 +7,41 @@
 // every HIT/REVIEW_REQUIRED result so the reviewer queue has something to
 // pick up; CLEAR/SKIPPED/ERROR results get no disposition (nothing to review).
 import { db } from "@/lib/db";
-import type { Prisma, RestrictedPartyScreeningResult } from "@prisma/client";
+import type { ComplianceNotificationType, Prisma, RestrictedPartyScreeningResult } from "@prisma/client";
 import type { RestrictedPartyScreeningInput, RestrictedPartyScreeningRunResult } from "./types";
 import { RPS_MATCHER_VERSION } from "./types";
+import { evaluateAndQueue } from "@/modules/compliance/notifications/notificationService";
 
 export type PersistedRestrictedPartyResult = RestrictedPartyScreeningResult & {
   matches: Prisma.RestrictedPartyMatchGetPayload<{ include: { screeningEntity: { select: { sourcePublishedAt: true } } } }>[];
   redFlagHits: Prisma.RestrictedPartyRedFlagHitGetPayload<Record<string, never>>[];
 };
 
+export interface PersistScreeningRunOptions {
+  /**
+   * Overrides the default notification-type mapping. Set to PAL_RESCREEN_HIT
+   * by callers that already know the screened party was previously
+   * PRE_APPROVED (see shipmentScreening.ts / partyScreeningLifecycle.ts) --
+   * a strictly more specific alert than the default RPS_HIT/RPS_REVIEW_REQUIRED
+   * or PARTY_RESCREEN_HIT this function would otherwise pick.
+   */
+  notificationTypeOverride?: ComplianceNotificationType;
+  createdByUserId?: string | null;
+  requestId?: string;
+}
+
+function defaultNotificationType(
+  source: RestrictedPartyScreeningInput["source"],
+  status: "HIT" | "REVIEW_REQUIRED"
+): ComplianceNotificationType {
+  if (source === "PARTY_MASTER") return "PARTY_RESCREEN_HIT";
+  return status === "HIT" ? "RPS_HIT" : "RPS_REVIEW_REQUIRED";
+}
+
 export async function persistScreeningRun(
   input: RestrictedPartyScreeningInput,
-  runResult: RestrictedPartyScreeningRunResult
+  runResult: RestrictedPartyScreeningRunResult,
+  options?: PersistScreeningRunOptions
 ): Promise<PersistedRestrictedPartyResult[]> {
   return db.$transaction(async (tx) => {
     const created: PersistedRestrictedPartyResult[] = [];
@@ -100,6 +123,19 @@ export async function persistScreeningRun(
         },
       });
       created.push(row);
+
+      if (row.status === "HIT" || row.status === "REVIEW_REQUIRED") {
+        await evaluateAndQueue(tx, {
+          accountId: input.accountId,
+          screeningResultId: row.id,
+          status: row.status,
+          notificationType: options?.notificationTypeOverride ?? defaultNotificationType(input.source, row.status),
+          shipmentId: input.shipmentId ?? null,
+          partyId: input.partyId ?? null,
+          createdByUserId: options?.createdByUserId ?? null,
+          requestId: options?.requestId,
+        });
+      }
     }
 
     return created;
