@@ -9,7 +9,7 @@ import { Decimal, roundToCents } from "@/lib/tariff/decimal";
 import { calculateDutyStack, loadHtsCodesMap } from "@/lib/tariff/dutyEngine";
 import { z } from "zod";
 
-export const PscCorrectionTypeEnum = z.enum([
+const PscCorrectionTypeEnum = z.enum([
   "DUTY_RATE_CORRECTION",
   "VALUE_CORRECTION",
   "CLASSIFICATION_CORRECTION",

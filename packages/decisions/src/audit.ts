@@ -1,5 +1,4 @@
 import { db } from "@qubere/db";
-import { headers } from "next/headers";
 
 export type AuditSource = "UI" | "CHAT" | "SYSTEM" | "API" | "EMAIL" | "AGENT";
 
@@ -35,26 +34,29 @@ export async function createAuditLog(params: CreateAuditLogParams) {
     let headerSource: AuditSource | null = null;
 
     try {
-      const headerList = await headers();
-      if (!ipAddress) {
-        ipAddress =
-          headerList.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-          headerList.get("x-real-ip") ||
-          null;
-      }
-      if (!userAgent) {
-        userAgent = headerList.get("user-agent") || null;
-      }
-      const xSource = headerList.get("x-qubere-source") || headerList.get("x-audit-source");
-      if (
-        xSource === "CHAT" ||
-        xSource === "SYSTEM" ||
-        xSource === "API" ||
-        xSource === "UI" ||
-        xSource === "EMAIL" ||
-        xSource === "AGENT"
-      ) {
-        headerSource = xSource as AuditSource;
+      if (typeof window === "undefined") {
+        const { headers: getHeaders } = await import("next/headers");
+        const headerList = await getHeaders();
+        if (!ipAddress) {
+          ipAddress =
+            headerList.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+            headerList.get("x-real-ip") ||
+            null;
+        }
+        if (!userAgent) {
+          userAgent = headerList.get("user-agent") || null;
+        }
+        const xSource = headerList.get("x-qubere-source") || headerList.get("x-audit-source");
+        if (
+          xSource === "CHAT" ||
+          xSource === "SYSTEM" ||
+          xSource === "API" ||
+          xSource === "UI" ||
+          xSource === "EMAIL" ||
+          xSource === "AGENT"
+        ) {
+          headerSource = xSource as AuditSource;
+        }
       }
     } catch {
       // Ignore if called outside request context

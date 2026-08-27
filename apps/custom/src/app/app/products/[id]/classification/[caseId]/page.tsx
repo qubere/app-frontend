@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, ArrowLeft, Scale, ExternalLink, Check, AlertTriangle } from "lucide-react";
@@ -394,8 +394,9 @@ function DecisionModal({
 export default function ClassificationCasePage({
   params,
 }: {
-  params: { id: string; caseId: string };
+  params: Promise<{ id: string; caseId: string }>;
 }) {
+  const { id, caseId } = use(params);
   const router = useRouter();
   const [classificationCase, setClassificationCase] = useState<ClassificationCase | null>(null);
   const [loading, setLoading] = useState(true);
@@ -413,7 +414,7 @@ export default function ClassificationCasePage({
   const fetchCase = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/classification/cases/${params.caseId}`);
+      const res = await fetch(`/api/v1/classification/cases/${caseId}`);
       if (!res.ok) throw new Error("Failed to load case");
       const data = await res.json();
       setClassificationCase(data.classificationCase);
@@ -422,16 +423,16 @@ export default function ClassificationCasePage({
     } finally {
       setLoading(false);
     }
-  }, [params.caseId]);
+  }, [caseId]);
 
   const fetchImpact = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/classification/cases/${params.caseId}/impact`);
+      const res = await fetch(`/api/v1/classification/cases/${caseId}/impact`);
       if (!res.ok) return;
       const data = await res.json();
       setImpactSummary(data.summary);
     } catch {}
-  }, [params.caseId]);
+  }, [caseId]);
 
   useEffect(() => {
     fetchCase();
@@ -451,7 +452,7 @@ export default function ClassificationCasePage({
     const isOverride = topProposal?.proposedHtsNodeId !== selectedProposal.proposedHtsNodeId;
 
     try {
-      const res = await fetch(`/api/v1/classification/cases/${params.caseId}/decisions`, {
+      const res = await fetch(`/api/v1/classification/cases/${caseId}/decisions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -506,7 +507,7 @@ export default function ClassificationCasePage({
     <div className="space-y-6 pb-16">
       {/* Back link */}
       <Link
-        href={`/app/products/${params.id}`}
+        href={`/app/products/${id}`}
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand"
       >
         <ArrowLeft className="w-4 h-4" /> Back to product
@@ -515,7 +516,7 @@ export default function ClassificationCasePage({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-ink">Classification Case</h1>
-          <p className="text-sm text-[#6E6E73] mt-0.5 font-mono">{params.caseId}</p>
+          <p className="text-sm text-[#6E6E73] mt-0.5 font-mono">{caseId}</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={isApproved ? "success" : "neutral"}>{classificationCase.status}</Badge>

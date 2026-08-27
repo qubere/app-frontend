@@ -7,7 +7,7 @@ import { parseAndValidateBody } from "@/lib/api/validation";
 import { createAuditLog } from "@/lib/audit";
 import { db } from "@/lib/db";
 
-export const WEBHOOK_EVENT_TYPES = [
+const WEBHOOK_EVENT_TYPES = [
   "shipment.status_changed",
   "decision.approved",
   "exception.created",

@@ -23,7 +23,7 @@ vi.mock("@/lib/audit", () => ({
   AuditAction: { ORIGIN_DETERMINED: "origin.determined" },
 }));
 
-const { reevaluateProductLineItems } = await import("@/app/api/cron/origin-re-eval/route");
+const { reevaluateProductLineItems } = await import("@/lib/origin/originReEvalService");
 
 function lineItem(overrides: Record<string, unknown> = {}) {
   return {

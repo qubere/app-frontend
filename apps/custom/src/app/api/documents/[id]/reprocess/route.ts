@@ -23,7 +23,7 @@ const paramsSchema = z.object({ id: z.string().min(1) });
  *                  readiness score only. Use after a field correction where
  *                  extraction data is already fresh.
  */
-export const REPROCESS_STEPS = ["full", "reconcile"] as const;
+const REPROCESS_STEPS = ["full", "reconcile"] as const;
 export type ReprocessStep = (typeof REPROCESS_STEPS)[number];
 
 const bodySchema = z.object({

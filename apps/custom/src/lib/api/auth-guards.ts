@@ -130,7 +130,7 @@ export function withAuthenticatedRoute<TParams = Record<string, never>>(
   handler: (args: RouteHandlerArgs<TParams>) => Promise<Response>,
   options?: { permission?: PermissionRequirement; write?: boolean; product?: string }
 ) {
-  return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
+  return async (req: Request, context: any = {}): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
     const startedAt = Date.now();
     const { pathname } = new URL(req.url);
@@ -149,7 +149,7 @@ export function withAuthenticatedRoute<TParams = Record<string, never>>(
     }
 
     try {
-      const params = context ? await context.params : ({} as TParams);
+      const params = context && context.params ? await context.params : ({} as TParams);
       let runner: any = null;
       try {
         runner = runWithDataMode;
@@ -212,12 +212,12 @@ export function withAuthenticatedRoute<TParams = Record<string, never>>(
 export function withPublicRoute<TParams = Record<string, never>>(
   handler: (args: PublicRouteHandlerArgs<TParams>) => Promise<Response>
 ) {
-  return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
+  return async (req: Request, context: any = {}): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
     const startedAt = Date.now();
     const { pathname } = new URL(req.url);
     try {
-      const params = context ? await context.params : ({} as TParams);
+      const params = context && context.params ? await context.params : ({} as TParams);
       const response = await handler({ req, requestId, params });
       logApiRequest({
         method: req.method,
@@ -274,7 +274,7 @@ function verifyCronAuth(req: Request): boolean {
 export function withCronRoute<TParams = Record<string, never>>(
   handler: (args: PublicRouteHandlerArgs<TParams>) => Promise<Response>
 ) {
-  return async (req: Request, context?: NextRouteContext<TParams>): Promise<Response> => {
+  return async (req: Request, context: any = {}): Promise<Response> => {
     const requestId = req.headers.get("x-request-id") ?? generateRequestId();
     const startedAt = Date.now();
     const { pathname } = new URL(req.url);
@@ -290,7 +290,7 @@ export function withCronRoute<TParams = Record<string, never>>(
       return response;
     }
     try {
-      const params = context ? await context.params : ({} as TParams);
+      const params = context && context.params ? await context.params : ({} as TParams);
       const response = await handler({ req, requestId, params });
       logApiRequest({
         method: req.method,

@@ -1016,7 +1016,7 @@ export async function addCountryFact(
     });
   }).then(async (res) => {
     try {
-      const { reevaluateProductLineItems } = await import("@/app/api/cron/origin-re-eval/route");
+      const { reevaluateProductLineItems } = await import("@/lib/origin/originReEvalService");
       await reevaluateProductLineItems(productId, actor.accountId);
     } catch (e) {
       console.warn("Origin re-evaluation trigger after country fact update failed silently", e);
@@ -1080,7 +1080,7 @@ export async function reviewCountryFact(
   });
 
   try {
-    const { reevaluateProductLineItems } = await import("@/app/api/cron/origin-re-eval/route");
+    const { reevaluateProductLineItems } = await import("@/lib/origin/originReEvalService");
     await reevaluateProductLineItems(productId, actor.accountId);
   } catch (e) {
     console.warn("Origin re-evaluation trigger after reviewCountryFact failed silently", e);

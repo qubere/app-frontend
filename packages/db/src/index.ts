@@ -1,11 +1,32 @@
 import { PrismaClient, Prisma } from "@prisma/client";
-import { AsyncLocalStorage } from "node:async_hooks";
+import type { AsyncLocalStorage } from "node:async_hooks";
 import type { DataMode } from "./dataMode";
 
 export * from "./dataMode";
 export * from "./environment";
 export * from "./caseNumber";
-export * from "../prisma/seeds/authorizationSeed";
+
+class DummyAsyncLocalStorage<T> {
+  run<R>(_store: T, callback: () => R): R {
+    return callback();
+  }
+  getStore(): T | undefined {
+    return undefined;
+  }
+}
+
+function createAsyncLocalStorage<T>(): AsyncLocalStorage<T> {
+  if (typeof window === "undefined") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const NodeAsyncLocalStorage = require("node:async_hooks").AsyncLocalStorage as new <U>() => AsyncLocalStorage<U>;
+      return new NodeAsyncLocalStorage<T>();
+    } catch {
+      // Fallback if node:async_hooks is unavailable
+    }
+  }
+  return new DummyAsyncLocalStorage<T>() as unknown as AsyncLocalStorage<T>;
+}
 
 // Cached on globalThis, same reasoning as the PrismaClient singleton further
 // down this file: Turbopack/webpack HMR re-evaluates this module on
@@ -23,12 +44,12 @@ export * from "../prisma/seeds/authorizationSeed";
 // returns the right rows, but the same query against a dev server that had
 // been hot-reloading for a while silently dropped them.
 const globalForDbContext = globalThis as unknown as {
-  __qubereDataModeStorage?: AsyncLocalStorage<{ mode: DataMode | null }>;
-  __qubereAccountIdStorage?: AsyncLocalStorage<{ accountId: string | null }>;
+  __qubereDataModeStorage?: any;
+  __qubereAccountIdStorage?: any;
 };
 
 const dataModeStorage =
-  globalForDbContext.__qubereDataModeStorage ?? new AsyncLocalStorage<{ mode: DataMode | null }>();
+  globalForDbContext.__qubereDataModeStorage ?? createAsyncLocalStorage<{ mode: DataMode | null }>();
 if (process.env.NODE_ENV !== "production") {
   globalForDbContext.__qubereDataModeStorage = dataModeStorage;
 }
@@ -62,7 +83,7 @@ export function getDataModeContext(): DataMode | null | undefined {
 }
 
 const accountIdStorage =
-  globalForDbContext.__qubereAccountIdStorage ?? new AsyncLocalStorage<{ accountId: string | null }>();
+  globalForDbContext.__qubereAccountIdStorage ?? createAsyncLocalStorage<{ accountId: string | null }>();
 if (process.env.NODE_ENV !== "production") {
   globalForDbContext.__qubereAccountIdStorage = accountIdStorage;
 }
