@@ -3,6 +3,12 @@ import { createAuditLog, AuditAction } from "@/lib/audit";
 import { createExceptionItem } from "@/lib/exceptions/createException";
 import { ProviderMetadata } from "@/lib/providers";
 import {
+  decodeCursor,
+  encodeCursor,
+  keysetWhere,
+  KEYSET_ORDER_BY,
+} from "@/lib/api/keysetCursor";
+import {
   EXCEPTION_STATES,
   isRiskAcceptance,
   isTerminalExceptionState,
@@ -20,6 +26,74 @@ export interface ExceptionListQuery {
   severity?: string;
   assignedToMe?: boolean;
 }
+
+/** Canonical severity values as stored on ExceptionItem.severity. */
+export const EXCEPTION_SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
+export type ExceptionSeverity = (typeof EXCEPTION_SEVERITIES)[number];
+
+const SEVERITY_BY_LOWER = new Map(
+  EXCEPTION_SEVERITIES.map((s) => [s.toLowerCase(), s]),
+);
+
+/**
+ * Map a client-supplied severity onto its canonical stored form so the query
+ * can use an index-friendly exact match instead of `mode: "insensitive"`
+ * (which forces a sequential scan / `ILIKE`). Unknown values return null and
+ * the caller narrows the result to nothing rather than widening it.
+ */
+export function normalizeExceptionSeverity(
+  raw: string | null | undefined,
+): ExceptionSeverity | null {
+  if (typeof raw !== "string") return null;
+  return SEVERITY_BY_LOWER.get(raw.trim().toLowerCase()) ?? null;
+}
+
+export interface ExceptionListPagination {
+  /** Defaults to 25, hard-capped at 100. */
+  limit?: number;
+  cursor?: string;
+  /**
+   * Opt-in total count. Off by default: a `count` over every exception in the
+   * account is a second round trip the list UI does not need on each page.
+   */
+  withCount?: boolean;
+}
+
+/**
+ * Narrow projection for the exception *list*. Every scalar column is kept
+ * (they are all small), but related records are reduced to the identifiers
+ * and labels the list actually renders. Full `shipment` / `filing` /
+ * `assignedToUser` objects, and `resolutionReasonCode`, are intentionally
+ * excluded — callers that need them use `GET /api/exceptions/:id`.
+ */
+export const EXCEPTION_LIST_SELECT = {
+  id: true,
+  accountId: true,
+  shipmentId: true,
+  filingId: true,
+  documentId: true,
+  fieldKey: true,
+  code: true,
+  category: true,
+  type: true,
+  severity: true,
+  description: true,
+  status: true,
+  blocking: true,
+  requiredAction: true,
+  sourceAgent: true,
+  version: true,
+  assignedToUserId: true,
+  createdAt: true,
+  resolvedAt: true,
+  resolvedBy: true,
+  resolvedByName: true,
+  resolutionNote: true,
+  history: true,
+  shipment: { select: { id: true, shipmentNumber: true } },
+  filing: { select: { id: true, entryNumber: true } },
+  assignedToUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+} as const;
 
 export interface ExceptionUpdateInput {
   status?: string;
@@ -56,7 +130,7 @@ export class ExceptionService {
     accountId: string,
     userId: string,
     query: ExceptionListQuery,
-    pagination?: { limit: number; cursor?: string }
+    pagination?: ExceptionListPagination
   ) {
     const where: import("@prisma/client").Prisma.ExceptionItemWhereInput = { accountId };
 
@@ -65,37 +139,46 @@ export class ExceptionService {
       // An unrecognised status must not widen the result to everything.
       where.status = normalized ? { in: statusVariants(normalized) } : { in: [] };
     }
-    if (query.severity) {
-      where.severity = { equals: query.severity, mode: "insensitive" };
+    if (query.severity && query.severity !== "all") {
+      const normalized = normalizeExceptionSeverity(query.severity);
+      // Unknown severity narrows to nothing rather than widening to everything.
+      where.severity = normalized ? { equals: normalized } : { in: [] };
     }
     if (query.assignedToMe) {
       where.assignedToUserId = userId;
     }
-    if (pagination?.cursor) {
-      where.id = { lt: pagination.cursor };
+
+    // Keyset pagination on (createdAt DESC, id DESC). Throws InvalidCursorError
+    // for a malformed token — the route maps that to a 400.
+    const position = pagination?.cursor ? decodeCursor(pagination.cursor) : undefined;
+    const keyset = keysetWhere(position);
+    if (keyset) {
+      where.AND = [keyset];
     }
 
-    const limit = pagination?.limit ?? 50;
-    const [exceptions, total] = await Promise.all([
-      db.exceptionItem.findMany({
-        where,
-        omit: { resolutionReasonCode: true },
-        include: {
-          shipment: true,
-          filing: true,
-          assignedToUser: true,
-        },
-        orderBy: { createdAt: "desc" },
-        take: limit,
-      }),
-      db.exceptionItem.count({ where: { accountId } }),
-    ]);
+    const limit = Math.min(Math.max(1, pagination?.limit ?? 25), 100);
 
-    const nextCursor = exceptions.length === limit ? (exceptions[exceptions.length - 1]?.id ?? null) : null;
+    // Fetch one extra row to learn whether a further page exists without a
+    // second COUNT query.
+    const rows = await db.exceptionItem.findMany({
+      where,
+      select: EXCEPTION_LIST_SELECT,
+      orderBy: KEYSET_ORDER_BY,
+      take: limit + 1,
+    });
+
+    const hasMore = rows.length > limit;
+    const exceptions = hasMore ? rows.slice(0, limit) : rows;
+    const last = exceptions[exceptions.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor(last) : null;
+
+    const total = pagination?.withCount
+      ? await db.exceptionItem.count({ where })
+      : null;
 
     return {
       exceptions,
-      pagination: { nextCursor, hasMore: nextCursor !== null, total },
+      pagination: { nextCursor, hasMore, total },
       metadata: {
         providerName: "InternalExceptionEngine",
         datasetVersion: "2026.1",
