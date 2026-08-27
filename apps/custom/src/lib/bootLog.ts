@@ -13,7 +13,10 @@ import { execSync } from "node:child_process";
 
 export function logBootConnections() {
   const commit =
-    process.env.VERCEL_GIT_COMMIT_SHA ??
+    process.env.GIT_COMMIT_SHA ??
+    process.env.COMMIT_SHA ??
+    process.env.CONTAINER_SHA ??
+    process.env.K_REVISION ??
     gitCommitShaFromWorkingTree() ??
     "unknown";
 
