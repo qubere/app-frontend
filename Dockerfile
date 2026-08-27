@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM node:20-alpine AS source
 WORKDIR /app
-RUN apk add --no-cache libc6-compat openssl
+RUN apk add --no-cache libc6-compat openssl jq git
 COPY . .
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm ci
@@ -13,8 +13,10 @@ ARG NEXT_PUBLIC_APP_ENV=demo
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG GIT_COMMIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_URL=${CUSTOMS_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
-RUN npm run build --workspace=apps/custom
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA} NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+RUN export NEXT_PUBLIC_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
+    export NEXT_PUBLIC_DEPLOYMENT_LOG=$(git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
+    npm run build --workspace=apps/custom
 
 FROM node:20-alpine AS customs-web
 WORKDIR /app
@@ -33,8 +35,10 @@ ARG NEXT_PUBLIC_APP_ENV=demo
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG GIT_COMMIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_URL=${TMS_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
-RUN npm run build --workspace=apps/tms
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA} NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+RUN export NEXT_PUBLIC_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
+    export NEXT_PUBLIC_DEPLOYMENT_LOG=$(git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
+    npm run build --workspace=apps/tms
 
 FROM node:20-alpine AS tms-web
 WORKDIR /app
