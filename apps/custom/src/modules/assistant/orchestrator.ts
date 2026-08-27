@@ -12,12 +12,13 @@ import {
   auditToolExecuted,
 } from "@/modules/assistant/shared/audit";
 import type { CopilotStatus } from "@/modules/assistant/shared/contract";
-import { buildCopilotSystemPrompt } from "@/modules/assistant/shared/prompts/systemPrompt";
+import { buildCopilotSystemPrompt, COPILOT_PROMPT_VERSION } from "@/modules/assistant/shared/prompts/systemPrompt";
 import { CopilotGroundingLedger } from "@/modules/assistant/shared/copilotLedger";
 
 const aiClient = getGeminiClient();
 const CHAT_SURFACE = "copilot" as const;
-export const ASSISTANT_PROMPT_VERSION = "2026-08-27.1" as const;
+export { COPILOT_PROMPT_VERSION };
+export const ASSISTANT_PROMPT_VERSION = COPILOT_PROMPT_VERSION;
 
 export interface ChatTurnInput {
   message: string;

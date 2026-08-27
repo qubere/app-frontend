@@ -1,5 +1,6 @@
 import { Type, type FunctionDeclaration, type Schema } from "@google/genai";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import type { AccountContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getActiveTeamMembers } from "@/lib/team";
@@ -3172,7 +3173,7 @@ const getHtsCode: AssistantTool = {
     description: "Get full HTS code details including chapter notes, duty rates, units, and hierarchy.",
     parameters: zodToGeminiSchema(getHtsCodeSchema),
   },
-  access: { navHref: "/app/hts" },
+  access: { navHref: "/app/tariffs" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getHtsCodeSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -3198,7 +3199,7 @@ const getRuling: AssistantTool = {
     description: "Retrieve a specific CBP CROSS ruling by ruling number with full text fragments.",
     parameters: zodToGeminiSchema(getRulingSchema),
   },
-  access: { navHref: "/app/rulings" },
+  access: { navHref: "/app/tariffs" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getRulingSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -3223,26 +3224,35 @@ const getRuling: AssistantTool = {
 
 const lookupRestrictedPartyListsSchema = z.object({
   name: z.string().describe("Entity or company name to search across restricted party lists."),
-  listType: z.string().optional().describe("Filter list type (e.g., SDN, BIS_CSL, UFLPA, DOW_JONES)."),
+  listType: z.string().optional().describe("Filter by list source or authority (SDN, DPL, ENTITY_LIST, UNVERIFIED, ISN, SSI, FSE, PLC, NS_MBS, CONSOLIDATED_NON_SDN, DOW_JONES, UFLPA, OFAC, BIS)."),
 });
 
 const lookupRestrictedPartyLists: AssistantTool = {
   schema: lookupRestrictedPartyListsSchema,
   declaration: {
     name: "lookup_restricted_party_lists",
-    description: "Read-only lookup across global restricted party lists (SDN, BIS, UFLPA, CSL) without creating a screening record.",
+    description: "Read-only lookup across global published restricted party lists (SDN, BIS, UFLPA, CSL) without creating a screening record.",
     parameters: zodToGeminiSchema(lookupRestrictedPartyListsSchema),
   },
-  access: { navHref: "/app/party-screening" },
+  access: { permission: "compliance.restrictedParty.read", navHref: "/app/compliance" },
   execute: async (_ctx, rawArgs) => {
     const parsed = lookupRestrictedPartyListsSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
     const { name, listType } = parsed.data;
 
-    const where: any = {
+    const where: Prisma.ScreeningEntityWhereInput = {
       name: { contains: name.trim(), mode: "insensitive" },
+      publicationStatus: "PUBLISHED",
     };
-    if (listType) where.listType = listType;
+
+    if (listType) {
+      const upper = listType.trim().toUpperCase();
+      where.OR = [
+        { sourceList: upper },
+        { provider: upper },
+        { sourceAuthority: upper },
+      ];
+    }
 
     const entities = await db.screeningEntity.findMany({
       where,
@@ -3256,7 +3266,7 @@ const lookupRestrictedPartyLists: AssistantTool = {
 // ---- tool: get_adcvd_orders ----
 
 const getAdcvdOrdersSchema = z.object({
-  caseNumber: z.string().optional().describe("AD/CVD case number (e.g. A-570-893)."),
+  caseNumber: z.string().optional().describe("AD/CVD case number (e.g. A-570-601)."),
   htsCode: z.string().optional().describe("HTS code or 4-6 digit prefix."),
   country: z.string().optional().describe("Country code (e.g. CN, VN)."),
 });
@@ -3265,26 +3275,40 @@ const getAdcvdOrders: AssistantTool = {
   schema: getAdcvdOrdersSchema,
   declaration: {
     name: "get_adcvd_orders",
-    description: "Lookup Anti-Dumping / Countervailing Duty (AD/CVD) orders and company deposit rates.",
+    description: "Lookup Anti-Dumping / Countervailing Duty (AD/CVD) orders and approved company deposit rates.",
     parameters: zodToGeminiSchema(getAdcvdOrdersSchema),
   },
-  access: { navHref: "/app/adcvd" },
+  access: { navHref: "/app/tariffs" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getAdcvdOrdersSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
     const { caseNumber, htsCode, country } = parsed.data;
 
-    const where: any = {};
+    const where: Prisma.AdcvdOrderWhereInput = { status: "ACTIVE" };
     if (caseNumber) where.caseNumber = { contains: caseNumber.trim(), mode: "insensitive" };
-    if (country) where.country = country;
-    if (htsCode) where.htsNumber = { contains: htsCode.replace(/[^0-9]/g, "") };
+    if (country) where.respondentCountries = { has: country.toUpperCase() };
+    if (htsCode) {
+      const cleanHts = htsCode.replace(/[^0-9.]/g, "");
+      where.htsCodesInScope = { hasSome: [htsCode, cleanHts] };
+    }
 
     const orders = await db.adcvdOrder.findMany({
       where,
       take: 20,
-      include: { companyRates: true },
+      orderBy: { effectiveDate: "desc" },
     });
-    return { count: orders.length, orders };
+
+    const caseNumbers = orders.map((o) => o.caseNumber);
+    const companyRates = caseNumbers.length > 0
+      ? await db.adCvdCompanyRate.findMany({
+          where: {
+            caseNumber: { in: caseNumbers },
+            reviewStatus: "APPROVED",
+          },
+        })
+      : [];
+
+    return { count: orders.length, orders, companyRates };
   },
 };
 
@@ -3298,10 +3322,10 @@ const getSection301: AssistantTool = {
   schema: getSection301Schema,
   declaration: {
     name: "get_section_301",
-    description: "Lookup Section 301 China tariff tranche, rate, and active exclusion status for an HTS code.",
+    description: "Lookup approved Section 301 China tariff tranche, rate, and active exclusion status for an HTS code.",
     parameters: zodToGeminiSchema(getSection301Schema),
   },
-  access: { navHref: "/app/duty-calculator" },
+  access: { navHref: "/app/tariffs" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getSection301Schema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -3309,10 +3333,17 @@ const getSection301: AssistantTool = {
     const cleanHts = htsCode.replace(/[^0-9]/g, "");
 
     const rates = await db.section301Rate.findMany({
-      where: { htsNumber: { contains: cleanHts.slice(0, 8) } },
+      where: {
+        htsNumber: { contains: cleanHts.slice(0, 8) },
+        reviewStatus: "APPROVED",
+      },
     });
     const exclusions = await db.section301Exclusion.findMany({
-      where: { htsNumber: { contains: cleanHts.slice(0, 8) } },
+      where: {
+        htsNumber: { contains: cleanHts.slice(0, 8) },
+        reviewStatus: "APPROVED",
+        isExpired: false,
+      },
     });
     return { htsCode, rates, exclusions };
   },
@@ -3331,7 +3362,7 @@ const getPgaRequirements: AssistantTool = {
     description: "Lookup Partner Government Agency (FDA, EPA, DOT, USDA, TTB, FCC) filing requirements for an HTS code.",
     parameters: zodToGeminiSchema(getPgaRequirementsSchema),
   },
-  access: { navHref: "/app/pga" },
+  access: { navHref: "/app/tariffs" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getPgaRequirementsSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
@@ -3344,6 +3375,16 @@ const getPgaRequirements: AssistantTool = {
     return { htsCode, requirements };
   },
 };
+
+function toDecimalNumber(val: unknown): number | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "number") return val;
+  if (typeof val === "object" && val !== null && "toNumber" in (val as Record<string, unknown>)) {
+    return (val as { toNumber: () => number }).toNumber();
+  }
+  const num = Number(val);
+  return Number.isNaN(num) ? null : num;
+}
 
 // ---- tool: get_exchange_rate ----
 
@@ -3359,21 +3400,28 @@ const getExchangeRate: AssistantTool = {
     description: "Lookup official CBP / Treasury foreign exchange rates to USD.",
     parameters: zodToGeminiSchema(getExchangeRateSchema),
   },
-  access: { navHref: "/app/fx" },
+  access: { navHref: "/app/shipments" },
   execute: async (_ctx, rawArgs) => {
     const parsed = getExchangeRateSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
     const { currency, asOfDate } = parsed.data;
 
+    const where: Prisma.ExchangeRateWhereInput = {
+      currencyCode: currency.toUpperCase(),
+      ...(asOfDate ? { fetchedAt: { lte: new Date(asOfDate) } } : { isCurrent: true }),
+    };
+
     const rate = await db.exchangeRate.findFirst({
-      where: {
-        currency: currency.toUpperCase(),
-        ...(asOfDate ? { effectiveDate: { lte: new Date(asOfDate) } } : {}),
-      },
-      orderBy: { effectiveDate: "desc" },
+      where,
+      orderBy: { fetchedAt: "desc" },
     });
     if (!rate) return { error: `No exchange rate found for currency ${currency}.` };
-    return { rate };
+    return {
+      currencyCode: rate.currencyCode,
+      rateToUsd: toDecimalNumber(rate.rateToUsd),
+      fetchedAt: rate.fetchedAt.toISOString(),
+      isCurrent: rate.isCurrent,
+    };
   },
 };
 
@@ -3391,13 +3439,13 @@ const searchRegulatoryNotices: AssistantTool = {
     description: "Search Federal Register and CBP regulatory updates with full published text.",
     parameters: zodToGeminiSchema(searchRegulatoryNoticesSchema),
   },
-  access: { navHref: "/app/regulatory" },
+  access: { navHref: "/app/tariffs" },
   execute: async (_ctx, rawArgs) => {
     const parsed = searchRegulatoryNoticesSchema.safeParse(rawArgs);
     if (!parsed.success) return { error: parsed.error.message };
     const { query, jurisdiction } = parsed.data;
 
-    const where: any = {};
+    const where: Prisma.RegulatoryUpdateWhereInput = {};
     if (jurisdiction) where.jurisdiction = jurisdiction;
     if (query) {
       where.OR = [
@@ -3426,7 +3474,7 @@ const listDrawbackClaims: AssistantTool = {
     description: "List duty drawback claims, lot status, and estimated refund amounts.",
     parameters: zodToGeminiSchema(listDrawbackClaimsSchema),
   },
-  access: { navHref: "/app/drawback" },
+  access: { navHref: "/app/post-entry" },
   execute: async (ctx) => {
     const claims = await db.drawbackClaim.findMany({
       where: { accountId: ctx.accountId },
@@ -3448,13 +3496,13 @@ const listProtests: AssistantTool = {
     description: "List CBP 19 U.S.C. 1514 Customs Protests and refund claims.",
     parameters: zodToGeminiSchema(listProtestsSchema),
   },
-  access: { navHref: "/app/protests" },
+  access: { navHref: "/app/post-entry" },
   execute: async (ctx) => {
     const protests = await db.protest.findMany({
       where: { accountId: ctx.accountId },
       take: 20,
       orderBy: { createdAt: "desc" },
-      include: { entries: true },
+      include: { protestEntries: true },
     });
     return { count: protests.length, protests };
   },
@@ -3471,14 +3519,20 @@ const listRefundOpportunities: AssistantTool = {
     description: "List Post-Summary Correction (PSC) and Section 301 duty refund opportunities.",
     parameters: zodToGeminiSchema(listRefundOpportunitiesSchema),
   },
-  access: { navHref: "/app/refunds" },
+  access: { navHref: "/app/post-entry" },
   execute: async (ctx) => {
     const opportunities = await db.refundOpportunity.findMany({
       where: { accountId: ctx.accountId },
       take: 20,
-      orderBy: { potentialRefundUsd: "desc" },
+      orderBy: { estimatedRefundAmount: "desc" },
     });
-    return { count: opportunities.length, opportunities };
+    return {
+      count: opportunities.length,
+      opportunities: opportunities.map((o) => ({
+        ...o,
+        estimatedRefundAmountUsd: toDecimalNumber(o.estimatedRefundAmount),
+      })),
+    };
   },
 };
 

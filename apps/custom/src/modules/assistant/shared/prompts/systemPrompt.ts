@@ -28,7 +28,7 @@
 
 import { COPILOT_LIMITS } from "../config";
 
-export const COPILOT_PROMPT_VERSION = "2026-08-15.1" as const;
+export const COPILOT_PROMPT_VERSION = "2026-08-27.1" as const;
 
 /**
  * Written as prose rather than a bulleted rulebook: the failure this prompt is
