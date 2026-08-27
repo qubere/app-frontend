@@ -3272,6 +3272,18 @@ model PipelineJob {
   @@index([status, heartbeatAt])
 }
 
+/// Cross-instance mutex for burst-triggered Cloud Run document jobs. The
+/// lease expires automatically so a killed execution cannot stall processing.
+model DocumentWorkerLease {
+  name      String   @id
+  ownerId   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 model PipelineStepExecution {
   id           String    @id @default(cuid())
   jobId        String

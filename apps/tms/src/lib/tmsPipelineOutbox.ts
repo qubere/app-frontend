@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { documentProcessingExecutor, triggerDocumentProcessingJob } from "@qubere/cloud-runtime";
 import { db } from "@qubere/db";
 import {
   executeTmsPipelineJob,
@@ -14,6 +15,7 @@ export type TmsDispatchMode =
   | "INNGEST"
   | "NEXT_AFTER"
   | "LOCAL_DIRECT"
+  | "GCP_JOB"
   | "ALREADY_DISPATCHED"
   | "OUTBOX_PENDING"
   | "BUSY";
@@ -57,7 +59,10 @@ export async function dispatchTmsPipelineOutboxEvent(jobId: string): Promise<Tms
 
   try {
     let mode: TmsDispatchMode;
-    if (process.env.INNGEST_EVENT_KEY) {
+    if (documentProcessingExecutor() === "cloud-run-job") {
+      await triggerDocumentProcessingJob();
+      mode = "GCP_JOB";
+    } else if (process.env.INNGEST_EVENT_KEY) {
       await queueTmsPipelineJob(jobId);
       mode = "INNGEST";
     } else {
@@ -95,6 +100,7 @@ export async function dispatchTmsPipelineOutboxEvent(jobId: string): Promise<Tms
 }
 
 export async function scheduleTmsPipelineDispatch(jobId: string): Promise<TmsDispatchMode> {
+  if (documentProcessingExecutor() === "cloud-run-job") return dispatchTmsPipelineOutboxEvent(jobId);
   if (process.env.INNGEST_EVENT_KEY) return dispatchTmsPipelineOutboxEvent(jobId);
   if (process.env.NODE_ENV === "production") return dispatchTmsPipelineOutboxEvent(jobId);
   after(async () => {
@@ -159,7 +165,7 @@ export async function recoverTmsPipelineDispatches(): Promise<{
     });
     if (requeued.count !== 1) continue;
     const mode = await dispatchTmsPipelineOutboxEvent(job.id);
-    if (mode === "INNGEST" || mode === "LOCAL_DIRECT") redispatched += 1;
+    if (mode === "INNGEST" || mode === "LOCAL_DIRECT" || mode === "GCP_JOB") redispatched += 1;
   }
   return { inspected: jobs.length, redispatched };
 }

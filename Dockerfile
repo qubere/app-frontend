@@ -1,54 +1,56 @@
 # syntax=docker/dockerfile:1.7
-
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS source
 WORKDIR /app
-
-# Prisma and sharp both require native runtime libraries on Alpine.
 RUN apk add --no-cache libc6-compat openssl
-
 COPY . .
+ENV NODE_OPTIONS=--max-old-space-size=4096
+RUN npm ci
+RUN npx prisma generate --schema=packages/db/prisma/schema.prisma
 
-ARG NEXT_PUBLIC_APP_URL
+FROM source AS customs-builder
+ARG CUSTOMS_APP_URL
 ARG NEXT_PUBLIC_APP_ENV=demo
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG GIT_COMMIT_SHA=unknown
-
-# NEXT_PUBLIC values are intentionally provided at image build time because
-# Next.js freezes them into browser bundles during `next build`.
-ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
-ENV NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-ENV VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
-ENV NODE_OPTIONS=--max-old-space-size=4096
-
-RUN npm ci
-RUN npx prisma generate --schema=packages/db/prisma/schema.prisma
+ENV NEXT_PUBLIC_APP_URL=${CUSTOMS_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 RUN npm run build --workspace=apps/custom
 
-FROM node:20-alpine AS web
+FROM node:20-alpine AS customs-web
 WORKDIR /app
-
-RUN apk add --no-cache libc6-compat openssl \
-  && addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 nextjs
-
-ENV NODE_ENV=production
-ENV PORT=8080
-ENV HOSTNAME=0.0.0.0
-
-COPY --from=builder --chown=nextjs:nodejs /app/apps/custom/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/custom/.next/static ./apps/custom/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/custom/public ./apps/custom/public
-
+RUN apk add --no-cache libc6-compat openssl && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+ENV NODE_ENV=production PORT=8080 HOSTNAME=0.0.0.0
+COPY --from=customs-builder --chown=nextjs:nodejs /app/apps/custom/.next/standalone ./
+COPY --from=customs-builder --chown=nextjs:nodejs /app/apps/custom/.next/static ./apps/custom/.next/static
+COPY --from=customs-builder --chown=nextjs:nodejs /app/apps/custom/public ./apps/custom/public
 USER nextjs
 EXPOSE 8080
 CMD ["node", "apps/custom/server.js"]
 
-# Demo worker target. It intentionally retains the installed workspace because
-# the existing worker entry point is TypeScript and runs through tsx. This is
-# larger than the web image, but keeps the demo deployment deterministic while
-# the worker is later moved to a separately compiled package.
-FROM builder AS worker
+FROM source AS tms-builder
+ARG TMS_APP_URL
+ARG NEXT_PUBLIC_APP_ENV=demo
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG GIT_COMMIT_SHA=unknown
+ENV NEXT_PUBLIC_APP_URL=${TMS_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+RUN npm run build --workspace=apps/tms
+
+FROM node:20-alpine AS tms-web
+WORKDIR /app
+RUN apk add --no-cache libc6-compat openssl && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+ENV NODE_ENV=production PORT=8080 HOSTNAME=0.0.0.0
+COPY --from=tms-builder --chown=nextjs:nodejs /app/apps/tms/.next/standalone ./
+COPY --from=tms-builder --chown=nextjs:nodejs /app/apps/tms/.next/static ./apps/tms/.next/static
+COPY --from=tms-builder --chown=nextjs:nodejs /app/apps/tms/public ./apps/tms/public
+USER nextjs
+EXPOSE 8080
+CMD ["node", "apps/tms/server.js"]
+
+FROM source AS database
 ENV NODE_ENV=production
-ENV NODE_OPTIONS=--max-old-space-size=2048
-CMD ["npm", "run", "worker:documents", "--workspace=apps/custom"]
+CMD ["npx", "prisma", "migrate", "deploy", "--schema=packages/db/prisma/schema.prisma"]
+
+FROM source AS document-worker
+ENV NODE_ENV=production NODE_OPTIONS=--max-old-space-size=1536
+CMD ["sh", "infrastructure/gcp/run-document-job.sh"]

@@ -330,3 +330,35 @@ export const db = (globalForPrisma.prisma ??
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = db;
 }
+
+export async function acquireDocumentWorkerLease(
+  name: string,
+  ownerId: string,
+  ttlMs: number
+): Promise<boolean> {
+  const expiresAt = new Date(Date.now() + ttlMs);
+  const rows = await rawDb.$queryRaw<Array<{ name: string }>>`
+    INSERT INTO "DocumentWorkerLease" ("name", "ownerId", "expiresAt", "updatedAt")
+    VALUES (${name}, ${ownerId}, ${expiresAt}, NOW())
+    ON CONFLICT ("name") DO UPDATE
+      SET "ownerId" = EXCLUDED."ownerId", "expiresAt" = EXCLUDED."expiresAt", "updatedAt" = NOW()
+      WHERE "DocumentWorkerLease"."expiresAt" <= NOW()
+    RETURNING "name"
+  `;
+  return rows.length === 1;
+}
+
+export async function renewDocumentWorkerLease(name: string, ownerId: string, ttlMs: number): Promise<boolean> {
+  const expiresAt = new Date(Date.now() + ttlMs);
+  const changed = await rawDb.$executeRaw`
+    UPDATE "DocumentWorkerLease" SET "expiresAt" = ${expiresAt}, "updatedAt" = NOW()
+    WHERE "name" = ${name} AND "ownerId" = ${ownerId}
+  `;
+  return changed === 1;
+}
+
+export async function releaseDocumentWorkerLease(name: string, ownerId: string): Promise<void> {
+  await rawDb.$executeRaw`
+    DELETE FROM "DocumentWorkerLease" WHERE "name" = ${name} AND "ownerId" = ${ownerId}
+  `;
+}

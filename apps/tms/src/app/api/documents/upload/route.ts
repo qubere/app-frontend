@@ -1,7 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { put } from "@vercel/blob";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { createAuditLog } from "@qubere/decisions";
@@ -10,6 +7,7 @@ import { enqueueTmsDocumentPipeline } from "@/lib/tmsPipelineEngine";
 import {
   scheduleTmsPipelineDispatch,
 } from "@/lib/tmsPipelineOutbox";
+import { safeDocumentFileName, storeTmsDocument } from "@/lib/documentStorage";
 
 export const maxDuration = 60;
 
@@ -21,37 +19,6 @@ function fileSignatureMatches(bytes: Buffer, mimeType: string): boolean {
   if (mimeType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   if (mimeType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   return false;
-}
-
-function safeFileName(fileName: string): string {
-  const base = path.basename(fileName).replace(/[^a-zA-Z0-9._-]+/g, "-");
-  return base.slice(0, 180) || "freight-document";
-}
-
-async function storeOriginal(input: {
-  accountId: string;
-  fileName: string;
-  mimeType: string;
-  bytes: Buffer;
-}): Promise<{ url: string; provider: "VERCEL_BLOB" | "LOCAL_DEV" }> {
-  const storageName = `${Date.now()}-${randomUUID()}-${safeFileName(input.fileName)}`;
-  const blobPath = `tms/documents/${input.accountId}/${storageName}`;
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    const blob = await put(blobPath, input.bytes, {
-      access: "private",
-      contentType: input.mimeType,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
-    return { url: blob.url, provider: "VERCEL_BLOB" };
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Document storage is not configured. Set BLOB_READ_WRITE_TOKEN before accepting production uploads.");
-  }
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadDir, { recursive: true });
-  await writeFile(path.join(uploadDir, storageName), input.bytes, { flag: "wx" });
-  return { url: `/uploads/${storageName}`, provider: "LOCAL_DEV" };
 }
 
 export const POST = withAuthenticatedRoute(
@@ -98,11 +65,11 @@ export const POST = withAuthenticatedRoute(
     });
 
     let document = existing;
-    let storageProvider: "VERCEL_BLOB" | "LOCAL_DEV" | "EXISTING" = "EXISTING";
+    let storageProvider: "GCS" | "VERCEL_BLOB" | "LOCAL_DEV" | "EXISTING" = "EXISTING";
     if (!document) {
-      const stored = await storeOriginal({
+      const stored = await storeTmsDocument({
         accountId: ctx.accountId,
-        fileName: file.name,
+        storageName: `${Date.now()}-${randomUUID()}-${safeDocumentFileName(file.name)}`,
         mimeType,
         bytes,
       });
@@ -111,7 +78,7 @@ export const POST = withAuthenticatedRoute(
         data: {
           accountId: ctx.accountId,
           shipmentId,
-          fileName: safeFileName(file.name),
+          fileName: safeDocumentFileName(file.name),
           fileUrl: stored.url,
           checksum,
           byteSize: file.size,

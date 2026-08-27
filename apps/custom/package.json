@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "worker:documents": "tsx src/worker/documentWorker.ts",
+    "worker:documents:job": "tsx src/worker/documentJob.ts",
     "openapi": "tsx scripts/generate-openapi.ts"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@qubere/assistant": "*",
     "@qubere/auth": "*",
     "@qubere/billing": "*",
+    "@qubere/cloud-runtime": "*",
     "@qubere/db": "*",
     "@qubere/decisions": "*",
     "@vercel/blob": "^2.6.1",
