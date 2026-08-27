@@ -9,6 +9,8 @@ const EXPORT_COLUMNS = [
   "Country",
   "External Reference",
   "Restricted Party Status",
+  "Restricted Party Finding Category",
+  "Red Flag",
   "Embargo Status",
   "Overall Status",
   "Failure Reason",
@@ -21,6 +23,8 @@ function buildExportRows(results: Array<{
   snapshotCountry: string | null;
   externalReference: string | null;
   restrictedPartyStatus: string | null;
+  restrictedPartyFindingCategory: string | null;
+  restrictedPartyRedFlagFound: boolean | null;
   embargoStatus: string | null;
   aggregateStatus: string;
   failureReason: string | null;
@@ -32,6 +36,8 @@ function buildExportRows(results: Array<{
     r.snapshotCountry ?? "",
     r.externalReference ?? "",
     r.restrictedPartyStatus ?? "",
+    r.restrictedPartyFindingCategory ?? "",
+    r.restrictedPartyRedFlagFound === null ? "" : r.restrictedPartyRedFlagFound ? "YES" : "NO",
     r.embargoStatus ?? "",
     r.aggregateStatus,
     r.failureReason ?? "",

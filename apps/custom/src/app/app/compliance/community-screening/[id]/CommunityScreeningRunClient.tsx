@@ -46,6 +46,9 @@ interface PartyResult {
   embargoEnabled: boolean;
   restrictedPartyStatus: string | null;
   restrictedPartyResultId: string | null;
+  restrictedPartyMatchFound: boolean | null;
+  restrictedPartyRedFlagFound: boolean | null;
+  restrictedPartyFindingCategory: string | null;
   embargoStatus: string | null;
   embargoEvidence: Record<string, unknown> | null;
   aggregateStatus: string;
@@ -68,15 +71,21 @@ interface CommunityScreeningRunClientProps {
 function aggregateBadgeVariant(status: string): BadgeProps["variant"] {
   if (status === "PASSED") return "success";
   if (status === "FAILED" || status === "ERROR") return "danger";
-  if (status === "INCOMPLETE") return "warning";
+  if (status === "INCOMPLETE" || status === "NOT_EVALUATED") return "warning";
   return "neutral";
 }
 
 function screeningStatusBadgeVariant(status: string | null): BadgeProps["variant"] {
   if (status === null) return "neutral";
-  if (status === "CLEAR" || status === "PASS") return "success";
+  if (status === "CLEAR" || status === "PASS" || status === "PRE_APPROVED_REUSE") return "success";
   if (status === "HIT" || status === "FAIL") return "danger";
   if (status === "REVIEW_REQUIRED" || status === "PARTIAL") return "warning";
+  return "neutral";
+}
+
+function redFlagBadgeVariant(found: boolean | null): BadgeProps["variant"] {
+  if (found === true) return "warning";
+  if (found === false) return "success";
   return "neutral";
 }
 
@@ -227,7 +236,7 @@ export function CommunityScreeningRunClient({
             className="w-auto"
           >
             <option value="">All statuses</option>
-            {["PENDING", "PROCESSING", "PASSED", "FAILED", "INCOMPLETE", "ERROR"].map((s) => (
+            {["PENDING", "PROCESSING", "PASSED", "FAILED", "INCOMPLETE", "ERROR", "NOT_EVALUATED"].map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
@@ -247,6 +256,7 @@ export function CommunityScreeningRunClient({
                   <th className="py-2 pr-3">Party Name</th>
                   <th className="py-2 pr-3">Country</th>
                   <th className="py-2 pr-3">Restricted Party</th>
+                  <th className="py-2 pr-3">Red Flag</th>
                   <th className="py-2 pr-3">Embargo</th>
                   <th className="py-2 pr-3">Overall</th>
                   <th className="py-2 pr-3">Failure Reason</th>
@@ -266,6 +276,15 @@ export function CommunityScreeningRunClient({
                         </Badge>
                       ) : (
                         <span className="text-ink-muted">Not screened</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {r.restrictedPartyEnabled ? (
+                        <Badge variant={redFlagBadgeVariant(r.restrictedPartyRedFlagFound)}>
+                          {r.restrictedPartyRedFlagFound === null ? "—" : r.restrictedPartyRedFlagFound ? "YES" : "NO"}
+                        </Badge>
+                      ) : (
+                        <span className="text-ink-muted">—</span>
                       )}
                     </td>
                     <td className="py-2 pr-3">
@@ -336,13 +355,36 @@ export function CommunityScreeningRunClient({
                 <h4 className="text-[10px] font-extrabold uppercase text-ink-muted">Restricted Party Outcome</h4>
                 {selected.restrictedPartyEnabled ? (
                   <div className="text-xs space-y-1">
-                    <div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <Badge variant={screeningStatusBadgeVariant(selected.restrictedPartyStatus)}>
                         {selected.restrictedPartyStatus ?? "PENDING"}
                       </Badge>
+                      {selected.restrictedPartyFindingCategory === "PAL_SUPPRESSED" && (
+                        <Badge variant="success">Pre-Approved (Reuse) -- local matcher was not re-run</Badge>
+                      )}
                     </div>
+                    <div className="flex items-center gap-3 pt-1">
+                      <span>
+                        <span className="text-ink-muted">Denied-Party Match: </span>
+                        <Badge variant={redFlagBadgeVariant(selected.restrictedPartyMatchFound)}>
+                          {selected.restrictedPartyMatchFound === null ? "—" : selected.restrictedPartyMatchFound ? "YES" : "NO"}
+                        </Badge>
+                      </span>
+                      <span>
+                        <span className="text-ink-muted">Red Flag: </span>
+                        <Badge variant={redFlagBadgeVariant(selected.restrictedPartyRedFlagFound)}>
+                          {selected.restrictedPartyRedFlagFound === null ? "—" : selected.restrictedPartyRedFlagFound ? "YES" : "NO"}
+                        </Badge>
+                      </span>
+                    </div>
+                    {selected.restrictedPartyFindingCategory && (
+                      <p className="text-ink-muted">Finding category: {selected.restrictedPartyFindingCategory}</p>
+                    )}
                     {selected.restrictedPartyResultId && (
-                      <p className="text-ink-muted font-mono">Result ID: {selected.restrictedPartyResultId}</p>
+                      <p className="text-ink-muted font-mono">
+                        {selected.restrictedPartyFindingCategory === "PAL_SUPPRESSED" ? "Approval ID: " : "Result ID: "}
+                        {selected.restrictedPartyResultId}
+                      </p>
                     )}
                   </div>
                 ) : (

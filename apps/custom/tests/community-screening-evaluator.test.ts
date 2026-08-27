@@ -107,7 +107,7 @@ describe("evaluateParty: restrictedParty check", () => {
     expect(updateCall.data.aggregateStatus).toBe("FAILED");
   });
 
-  it("treats RPS as CLEAR without calling the RPS engine at all when the PAL gate applies", async () => {
+  it("treats RPS as PRE_APPROVED_REUSE (distinct from CLEAR) without calling the RPS engine at all when the PAL gate applies", async () => {
     checkPreApprovalGate.mockResolvedValue({ applied: true, reason: "Valid pre-approval found.", approvalId: "appr_1" });
 
     await evaluateParty(baseRow(), baseParams({ checksEnabled: { restrictedParty: true, embargo: false } }));
@@ -116,9 +116,36 @@ describe("evaluateParty: restrictedParty check", () => {
     expect(persistScreeningRun).not.toHaveBeenCalled();
 
     const updateCall = dbMock.communityScreeningPartyResult.update.mock.calls[0][0];
-    expect(updateCall.data.restrictedPartyStatus).toBe("CLEAR");
-    expect(updateCall.data.restrictedPartyResultId).toBeNull();
+    expect(updateCall.data.restrictedPartyStatus).toBe("PRE_APPROVED_REUSE");
+    expect(updateCall.data.restrictedPartyResultId).toBe("appr_1");
+    expect(updateCall.data.restrictedPartyFindingCategory).toBe("PAL_SUPPRESSED");
     expect(updateCall.data.aggregateStatus).toBe("PASSED");
+  });
+
+  it("marks a red-flag-only pass distinctly from a denied-party match, even though the RPS status tier is shared", async () => {
+    persistScreeningRun.mockResolvedValue([{ id: "psr_1", status: "REVIEW_REQUIRED", hitCount: 0, redFlagCount: 1 }]);
+
+    await evaluateParty(baseRow(), baseParams({ checksEnabled: { restrictedParty: true, embargo: false } }));
+
+    const updateCall = dbMock.communityScreeningPartyResult.update.mock.calls[0][0];
+    expect(updateCall.data.restrictedPartyStatus).toBe("REVIEW_REQUIRED");
+    expect(updateCall.data.restrictedPartyMatchFound).toBe(false);
+    expect(updateCall.data.restrictedPartyRedFlagFound).toBe(true);
+    expect(updateCall.data.restrictedPartyFindingCategory).toBe("RED_FLAG_ONLY");
+    expect(updateCall.data.aggregateStatus).toBe("FAILED");
+    expect(updateCall.data.failureReason).toBe("Restricted Party: Red Flag");
+  });
+
+  it("marks both a denied-party match and a red-flag hit independently when both are present on the same pass", async () => {
+    persistScreeningRun.mockResolvedValue([{ id: "psr_1", status: "HIT", hitCount: 1, redFlagCount: 1 }]);
+
+    await evaluateParty(baseRow(), baseParams({ checksEnabled: { restrictedParty: true, embargo: false } }));
+
+    const updateCall = dbMock.communityScreeningPartyResult.update.mock.calls[0][0];
+    expect(updateCall.data.restrictedPartyMatchFound).toBe(true);
+    expect(updateCall.data.restrictedPartyRedFlagFound).toBe(true);
+    expect(updateCall.data.restrictedPartyFindingCategory).toBe("CONFIRMED_MATCH");
+    expect(updateCall.data.failureReason).toBe("Restricted Party: Confirmed Match; Restricted Party: Red Flag");
   });
 });
 

@@ -12,7 +12,11 @@ import { getAccountEmbargoConfig } from "@/modules/agents/compliance/embargo/emb
 import { doEmbargoCheck } from "@/modules/agents/compliance/embargo/doEmbargoCheck";
 import type { EmbargoCheckContext } from "@/modules/agents/compliance/embargo/types";
 import { aggregatePartyStatus } from "./aggregation";
-import type { CommunityScreeningChecksEnabled, CommunityScreeningOverrides } from "./types";
+import type {
+  CommunityScreeningChecksEnabled,
+  CommunityScreeningFindingCategory,
+  CommunityScreeningOverrides,
+} from "./types";
 
 export interface EvaluatePartyRowParams {
   accountId: string;
@@ -28,6 +32,11 @@ interface RpsOutcome {
   enabled: boolean;
   status: string | null;
   resultId: string | null;
+  /** True when at least one denied-party candidate match was found, independent of any red-flag hit. */
+  matchFound: boolean;
+  /** True when at least one red-flag word hit was found, independent of any denied-party match. */
+  redFlagFound: boolean;
+  category: CommunityScreeningFindingCategory | null;
 }
 
 interface EmbargoOutcome {
@@ -49,7 +58,17 @@ async function evaluateRestrictedParty(
   });
 
   if (gate.applied) {
-    return { enabled: true, status: "CLEAR", resultId: null };
+    // Deliberately distinct from an ordinary CLEAR (no-match) result -- a
+    // PRE_APPROVED_REUSE never ran the local matcher for this identity, so
+    // it must never be presented as if it did. See preApproval.ts.
+    return {
+      enabled: true,
+      status: "PRE_APPROVED_REUSE",
+      resultId: gate.approvalId ?? null,
+      matchFound: false,
+      redFlagFound: false,
+      category: "PAL_SUPPRESSED",
+    };
   }
 
   const input: RestrictedPartyScreeningInput = {
@@ -84,7 +103,22 @@ async function evaluateRestrictedParty(
     if (!worst || (severity[p.status] ?? 0) > (severity[worst.status] ?? 0)) worst = p;
   }
 
-  return { enabled: true, status: worst?.status ?? "ERROR", resultId: worst?.id ?? null };
+  const status = worst?.status ?? "ERROR";
+  // Tracked across every pass (party-name + contact-name), not just the
+  // worst-severity pass -- a denied-party match or red-flag hit on either
+  // pass is a real finding and must never be dropped by the severity
+  // collapse above.
+  const matchFound = persisted.some((p) => ((p as { hitCount?: number }).hitCount ?? 0) > 0);
+  const redFlagFound = persisted.some((p) => ((p as { redFlagCount?: number }).redFlagCount ?? 0) > 0);
+
+  let category: CommunityScreeningFindingCategory;
+  if (status === "ERROR") category = "SYSTEM_ERROR";
+  else if (status === "SKIPPED") category = "SKIPPED";
+  else if (matchFound) category = status === "HIT" ? "CONFIRMED_MATCH" : "POTENTIAL_DENIED_PARTY_MATCH";
+  else if (redFlagFound) category = "RED_FLAG_ONLY";
+  else category = "NO_MATCH";
+
+  return { enabled: true, status, resultId: worst?.id ?? null, matchFound, redFlagFound, category };
 }
 
 async function evaluateEmbargo(
@@ -132,11 +166,29 @@ async function evaluateEmbargo(
   };
 }
 
+/**
+ * A denied-party match and a red-flag hit are independent findings (see
+ * types.ts) -- when both are present on the same failed row, both must be
+ * named, never collapsed to a single generic "Restricted Party: HIT".
+ */
+function describeRestrictedPartyFailure(rps: RpsOutcome): string | null {
+  if (!rps.status || !["HIT", "REVIEW_REQUIRED"].includes(rps.status)) return null;
+
+  const parts: string[] = [];
+  if (rps.matchFound) {
+    parts.push(rps.status === "HIT" ? "Restricted Party: Confirmed Match" : "Restricted Party: Potential Match (Review Required)");
+  }
+  if (rps.redFlagFound) {
+    parts.push("Restricted Party: Red Flag");
+  }
+  return parts.length > 0 ? parts.join("; ") : `Restricted Party: ${rps.status}`;
+}
+
 export async function evaluateParty(
   row: CommunityScreeningPartyResult,
   params: EvaluatePartyRowParams
 ): Promise<void> {
-  let rps: RpsOutcome = { enabled: false, status: null, resultId: null };
+  let rps: RpsOutcome = { enabled: false, status: null, resultId: null, matchFound: false, redFlagFound: false, category: null };
   let embargo: EmbargoOutcome = { enabled: false, status: null, evidence: null };
   let errorMessage: string | null = null;
 
@@ -163,16 +215,16 @@ export async function evaluateParty(
     data: {
       restrictedPartyStatus: rps.status,
       restrictedPartyResultId: rps.resultId,
+      restrictedPartyMatchFound: rps.enabled ? rps.matchFound : null,
+      restrictedPartyRedFlagFound: rps.enabled ? rps.redFlagFound : null,
+      restrictedPartyFindingCategory: rps.category,
       embargoStatus: embargo.status,
       embargoEvidence: (embargo.evidence ?? undefined) as Prisma.InputJsonValue | undefined,
       aggregateStatus,
       errorMessage,
       failureReason:
         aggregateStatus === "FAILED"
-          ? [
-              rps.status && ["HIT", "REVIEW_REQUIRED"].includes(rps.status) ? `Restricted Party: ${rps.status}` : null,
-              embargo.status === "HIT" ? "Embargo: HIT" : null,
-            ]
+          ? [describeRestrictedPartyFailure(rps), embargo.status === "HIT" ? "Embargo: HIT" : null]
               .filter(Boolean)
               .join("; ") || null
           : null,

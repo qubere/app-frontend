@@ -94,6 +94,22 @@ export interface CommunityScreeningRowEvidence {
   };
 }
 
+/**
+ * Independent finding categories for the Restricted Party check. Derived
+ * from the canonical RPS pass(es) -- never re-derived by guessing at a
+ * match. A denied-party match and a red-flag hit are tracked independently
+ * (see redFlagFound/matchFound below) so a RED_FLAG_ONLY finding is never
+ * conflated with, or erased by, a denied-party match on the same row.
+ */
+export type CommunityScreeningFindingCategory =
+  | "NO_MATCH"
+  | "CONFIRMED_MATCH"
+  | "POTENTIAL_DENIED_PARTY_MATCH"
+  | "RED_FLAG_ONLY"
+  | "PAL_SUPPRESSED"
+  | "SKIPPED"
+  | "SYSTEM_ERROR";
+
 export const LICENSE_DETERMINATION_NOTICE =
   "License determination was not performed as part of this screening. This result reflects Restricted Party and Embargo screening only.";
 
