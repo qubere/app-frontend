@@ -16,6 +16,11 @@ const getDocumentExtractionsRoute = () => import("@/app/api/documents/[id]/extra
 const getDecisionsRoute = () => import("@/app/api/decisions/route");
 const getExceptionsRoute = () => import("@/app/api/exceptions/[id]/route");
 const getFilingRoute = () => import("@/app/api/filing/[id]/route");
+const getCommunityScreeningListRoute = () => import("@/app/api/compliance/community-screening/route");
+const getCommunityScreeningDetailRoute = () => import("@/app/api/compliance/community-screening/[id]/route");
+const getCommunityScreeningResultsRoute = () => import("@/app/api/compliance/community-screening/[id]/results/route");
+const getCommunityScreeningRescreenRoute = () => import("@/app/api/compliance/community-screening/[id]/rescreen/route");
+const getCommunityScreeningExportRoute = () => import("@/app/api/compliance/community-screening/[id]/export/route");
 import { ExceptionService } from "@/modules/exceptions/exception.service";
 import { HtsSearchService } from "@/modules/hts/htsSearchService";
 import { RulingService } from "@/modules/classification/rulingService";
@@ -717,6 +722,319 @@ const getEmbargoScreeningDetails: AssistantTool = {
 
     const evidence = await latestEmbargoScreening(ctx, shipment.id);
     return buildScreeningDetails(shipment, evidence, { lineItemId, partyId, screeningLevel, type, result });
+  },
+};
+
+// ---- shared: Community Screening lookups ----
+//
+// Community Screening (backend module already complete; routes built in
+// parallel) screens restricted-party and embargo status for a bulk set of
+// parties supplied via a spreadsheet/API upload. License Determination is
+// explicitly out of scope for this feature -- any tool below that surfaces a
+// screening outcome must make that clear rather than let the assistant imply
+// a license check ran.
+
+const COMMUNITY_SCREENING_LICENSE_NOTE =
+  "License determination was not evaluated for this screening.";
+
+interface CommunityScreeningRunSummary {
+  id: string;
+  status: string;
+  source: string;
+  inputMode: string;
+  totalParties: number;
+  passedCount: number;
+  failedCount: number;
+  incompleteCount: number;
+  errorCount: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+async function resolveLatestCommunityScreeningRun(
+  status?: string
+): Promise<CommunityScreeningRunSummary | null> {
+  const listGET = (await getCommunityScreeningListRoute()).GET;
+  const params = new URLSearchParams({ page: "1", pageSize: "1" });
+  if (status) params.set("status", status);
+
+  const res = await listGET(
+    new Request(`http://internal.local/api/compliance/community-screening?${params.toString()}`)
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { runs: CommunityScreeningRunSummary[] };
+  return data.runs?.[0] ?? null;
+}
+
+// ---- tool: get_latest_community_screening_run ----
+
+const getLatestCommunityScreeningRunSchema = z.object({
+  status: z.string().optional().describe("Optional run status filter, e.g. COMPLETED, RUNNING, FAILED."),
+});
+
+const getLatestCommunityScreeningRun: AssistantTool = {
+  schema: getLatestCommunityScreeningRunSchema,
+  declaration: {
+    name: "get_latest_community_screening_run",
+    description:
+      "Get the most recent Community Screening run for the account (bulk restricted-party/embargo screening of a " +
+      "party list), including totals passed/failed/incomplete/error. Use as a first step when the user doesn't " +
+      "name a specific run id.",
+    parameters: zodToGeminiSchema(getLatestCommunityScreeningRunSchema),
+  },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getLatestCommunityScreeningRunSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+
+    const run = await resolveLatestCommunityScreeningRun(parsed.data.status);
+    if (!run) return { error: "No community screening runs found" };
+    return { run };
+  },
+};
+
+// ---- tool: list_failed_community_screening_parties ----
+
+const FAILED_COMMUNITY_SCREENING_STATUSES = new Set(["FAILED", "ERROR", "INCOMPLETE"]);
+// Fetched with a single large page rather than one call per status to avoid
+// three round trips; if a run's party count can plausibly exceed this, raise
+// pageSize or paginate instead of relying on a single page.
+const COMMUNITY_SCREENING_RESULTS_FETCH_PAGE_SIZE = 500;
+
+const listFailedCommunityScreeningPartiesSchema = z.object({
+  runId: z.string().describe("Community Screening run UUID; use get_latest_community_screening_run first if the user doesn't specify one."),
+});
+
+const listFailedCommunityScreeningParties: AssistantTool = {
+  schema: listFailedCommunityScreeningPartiesSchema,
+  declaration: {
+    name: "list_failed_community_screening_parties",
+    description:
+      "List the parties in a Community Screening run whose aggregate status is FAILED, ERROR, or INCOMPLETE -- the " +
+      "candidates for rescreening or manual review.",
+    parameters: zodToGeminiSchema(listFailedCommunityScreeningPartiesSchema),
+  },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = listFailedCommunityScreeningPartiesSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { runId } = parsed.data;
+
+    const resultsGET = (await getCommunityScreeningResultsRoute()).GET;
+    const res = await resultsGET(
+      new Request(
+        `http://internal.local/api/compliance/community-screening/${runId}/results?page=1&pageSize=${COMMUNITY_SCREENING_RESULTS_FETCH_PAGE_SIZE}`
+      ),
+      { params: Promise.resolve({ id: runId }) }
+    );
+    if (!res.ok) return { error: "Community screening run not found" };
+
+    const data = (await res.json()) as {
+      run: unknown;
+      results: Array<{
+        id: string;
+        rowNumber: number;
+        snapshotName: string;
+        snapshotCountry: string | null;
+        externalReference: string | null;
+        aggregateStatus: string;
+        failureReason: string | null;
+        errorMessage: string | null;
+      }>;
+      total: number;
+    };
+
+    const failed = (data.results ?? []).filter((r) => FAILED_COMMUNITY_SCREENING_STATUSES.has(r.aggregateStatus));
+    return {
+      runId,
+      totalInRun: data.total,
+      failedCount: failed.length,
+      parties: failed.map((r) => ({
+        partyRowId: r.id,
+        rowNumber: r.rowNumber,
+        name: r.snapshotName,
+        country: r.snapshotCountry,
+        externalReference: r.externalReference,
+        status: r.aggregateStatus,
+        failureReason: r.failureReason,
+        errorMessage: r.errorMessage,
+      })),
+      licenseDeterminationNote: COMMUNITY_SCREENING_LICENSE_NOTE,
+    };
+  },
+};
+
+// ---- tool: explain_community_screening_party_failure ----
+//
+// Evidence-only, same convention as get_embargo_screening_details: reads a
+// persisted CommunityScreeningPartyResult row and returns it verbatim. Never
+// re-derives or guesses a determination.
+
+const explainCommunityScreeningPartyFailureSchema = z.object({
+  runId: z.string().describe("Community Screening run UUID."),
+  partyRowId: z.string().optional().describe("The CommunityScreeningPartyResult id. Provide this or partyName."),
+  partyName: z.string().optional().describe("Party name to match case-insensitively against the run's results. Provide this or partyRowId."),
+});
+
+const explainCommunityScreeningPartyFailure: AssistantTool = {
+  schema: explainCommunityScreeningPartyFailureSchema,
+  declaration: {
+    name: "explain_community_screening_party_failure",
+    description:
+      "Evidence-only explanation of why one party in a Community Screening run failed, errored, or was incomplete: " +
+      "restricted-party status, embargo status, overall status, and any failure/error message. Reads persisted " +
+      "results only -- never re-derives or guesses a determination, and license determination is explicitly out " +
+      "of scope for this feature.",
+    parameters: zodToGeminiSchema(explainCommunityScreeningPartyFailureSchema),
+  },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = explainCommunityScreeningPartyFailureSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { runId, partyRowId, partyName } = parsed.data;
+
+    if (!partyRowId && !partyName) {
+      return { error: "Either partyRowId or partyName must be provided." };
+    }
+
+    const resultsGET = (await getCommunityScreeningResultsRoute()).GET;
+    const res = await resultsGET(
+      new Request(
+        `http://internal.local/api/compliance/community-screening/${runId}/results?page=1&pageSize=${COMMUNITY_SCREENING_RESULTS_FETCH_PAGE_SIZE}`
+      ),
+      { params: Promise.resolve({ id: runId }) }
+    );
+    if (!res.ok) return { error: "Community screening run not found" };
+
+    const data = (await res.json()) as {
+      results: Array<{
+        id: string;
+        snapshotName: string;
+        snapshotCountry: string | null;
+        restrictedPartyStatus: string | null;
+        embargoStatus: string | null;
+        aggregateStatus: string;
+        failureReason: string | null;
+        errorMessage: string | null;
+      }>;
+    };
+
+    const match = partyRowId
+      ? data.results.find((r) => r.id === partyRowId)
+      : data.results.find((r) => r.snapshotName?.toLowerCase() === partyName!.toLowerCase());
+
+    if (!match) return { error: "Party result not found in this community screening run." };
+
+    return {
+      partyName: match.snapshotName,
+      country: match.snapshotCountry,
+      restrictedPartyStatus: match.restrictedPartyStatus,
+      embargoStatus: match.embargoStatus,
+      overallStatus: match.aggregateStatus,
+      failureReason: match.failureReason,
+      errorMessage: match.errorMessage,
+      licenseDeterminationNote: COMMUNITY_SCREENING_LICENSE_NOTE,
+    };
+  },
+};
+
+// ---- tool: rescreen_failed_community_screening_parties ----
+
+const rescreenFailedCommunityScreeningPartiesSchema = z.object({
+  runId: z.string().describe("Community Screening run UUID to rescreen. Only its FAILED/ERROR/INCOMPLETE rows are re-run, in place."),
+});
+
+const rescreenFailedCommunityScreeningParties: AssistantTool = {
+  schema: rescreenFailedCommunityScreeningPartiesSchema,
+  declaration: {
+    name: "rescreen_failed_community_screening_parties",
+    description:
+      "Re-run screening for only the FAILED/ERROR/INCOMPLETE rows of a Community Screening run, in place. " +
+      "Only call after explicit confirmation. License determination is not part of what runs.",
+    parameters: zodToGeminiSchema(rescreenFailedCommunityScreeningPartiesSchema),
+  },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.screen" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = rescreenFailedCommunityScreeningPartiesSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { runId } = parsed.data;
+
+    const rescreenPOST = (await getCommunityScreeningRescreenRoute()).POST;
+    const res = await rescreenPOST(
+      new Request(`http://internal.local/api/compliance/community-screening/${runId}/rescreen`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      { params: Promise.resolve({ id: runId }) }
+    );
+    if (!res.ok) return { error: "Community screening run not found" };
+    const data = await res.json();
+    return { run: data.run, licenseDeterminationNote: COMMUNITY_SCREENING_LICENSE_NOTE };
+  },
+};
+
+// ---- tool: export_latest_community_screening_run ----
+//
+// The underlying export route returns a raw file body (Content-Disposition
+// attachment), not JSON with a link -- unlike export_compliance_record's
+// route, which returns JSON containing a downloadUrl. A tool result can't
+// hand the user a literal file, so this returns file metadata plus the bytes
+// base64-encoded; the description tells the assistant to point users at the
+// results page's Export button for an actual download.
+
+const exportLatestCommunityScreeningRunSchema = z.object({
+  format: z.enum(["csv", "xlsx"]).optional().describe("Export file format. Defaults to csv."),
+  runId: z.string().optional().describe("Community Screening run UUID. Defaults to the latest run if omitted."),
+});
+
+const exportLatestCommunityScreeningRun: AssistantTool = {
+  schema: exportLatestCommunityScreeningRunSchema,
+  declaration: {
+    name: "export_latest_community_screening_run",
+    description:
+      "Export a Community Screening run's results as CSV or XLSX. Returns export metadata (file name, content " +
+      "type, size) rather than a downloadable file -- direct users to the results page's Export button to " +
+      "download the file themselves.",
+    parameters: zodToGeminiSchema(exportLatestCommunityScreeningRunSchema),
+  },
+  access: { navHref: "/app/compliance?tab=community-screening", permission: "compliance.communityScreening.read" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = exportLatestCommunityScreeningRunSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { format, runId: providedRunId } = parsed.data;
+
+    let runId = providedRunId;
+    if (!runId) {
+      const latest = await resolveLatestCommunityScreeningRun();
+      if (!latest) return { error: "No community screening runs found" };
+      runId = latest.id;
+    }
+
+    const exportGET = (await getCommunityScreeningExportRoute()).GET;
+    const res = await exportGET(
+      new Request(
+        `http://internal.local/api/compliance/community-screening/${runId}/export?format=${format ?? "csv"}`
+      ),
+      { params: Promise.resolve({ id: runId }) }
+    );
+    if (!res.ok) return { error: "Community screening run not found" };
+
+    const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+    const disposition = res.headers.get("content-disposition") ?? "";
+    const fileNameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const fileName = fileNameMatch?.[1] ?? `community-screening-${runId}.${format ?? "csv"}`;
+    const bytes = Buffer.from(await res.arrayBuffer());
+
+    return {
+      runId,
+      fileName,
+      contentType,
+      sizeBytes: bytes.length,
+      contentBase64: bytes.toString("base64"),
+      downloadNote: "This tool cannot hand you the file directly -- use the Export button on the community screening results page to download it.",
+      licenseDeterminationNote: COMMUNITY_SCREENING_LICENSE_NOTE,
+    };
   },
 };
 
@@ -2383,6 +2701,11 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   getShipment,
   screenShipmentEmbargo,
   getEmbargoScreeningDetails,
+  getLatestCommunityScreeningRun,
+  listFailedCommunityScreeningParties,
+  explainCommunityScreeningPartyFailure,
+  rescreenFailedCommunityScreeningParties,
+  exportLatestCommunityScreeningRun,
   listExceptions,
   getDocument,
   listDecisions,

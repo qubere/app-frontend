@@ -298,6 +298,8 @@ model Account {
   complianceExecutions            ComplianceExecution[]
   complianceFormalOverrides       ComplianceFormalOverride[]
   complianceNotifications         ComplianceNotification[]
+  communityScreeningRuns          CommunityScreeningRun[]
+  communityScreeningPartyResults  CommunityScreeningPartyResult[]
 
   @@index([type])
   @@index([slug])
@@ -4719,6 +4721,7 @@ model Party {
   screeningSummary                PartyScreeningSummary?
   screeningApprovals              PartyScreeningApproval[]
   complianceExecutions            ComplianceExecution[]
+  communityScreeningResults       CommunityScreeningPartyResult[]
 
   /// Postgres treats NULLs as distinct, so any number of parties may have no
   /// internal code while no two may share one.
@@ -5822,6 +5825,7 @@ enum RestrictedPartyScreeningSource {
   PUBLIC_API
   COPILOT
   MANUAL
+  COMMUNITY_SCREENING
 }
 
 enum RestrictedPartyScreeningStatus {
@@ -5960,6 +5964,133 @@ model RestrictedPartyScreeningResult {
   @@index([accountId, status])
   @@index([correlationId])
   @@index([screeningInputHash])
+}
+
+enum CommunityScreeningSource {
+  UI
+  API
+}
+
+enum CommunityScreeningInputMode {
+  DIRECT_ENTRY
+  PARTY_MASTER
+  FILE_UPLOAD
+}
+
+enum CommunityScreeningRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+/// PENDING is only ever held by a row on an in-flight (QUEUED/RUNNING) run --
+/// a terminal run never leaves a row PENDING (see CommunityScreeningDispatcher).
+enum CommunityScreeningPartyStatus {
+  PENDING
+  PROCESSING
+  PASSED
+  FAILED
+  INCOMPLETE
+  ERROR
+}
+
+/// One batch "run" of Community Screening -- a single request to screen N
+/// parties (direct entry, Party Master selection, or file upload) against
+/// the enabled checks. This is a thin orchestration record: it never
+/// duplicates RPS/Embargo matching logic, it only fans out to the canonical
+/// engines per party (CommunityScreeningPartyResult) and aggregates outcomes.
+model CommunityScreeningRun {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  source    CommunityScreeningSource
+  inputMode CommunityScreeningInputMode
+  status    CommunityScreeningRunStatus @default(QUEUED)
+
+  transactionReference String?
+  complianceCountry    String?
+
+  /// { restrictedParty: boolean, embargo: boolean } -- at least one must be
+  /// true at creation time; disabled checks are ignored entirely by
+  /// aggregation, never treated as a pass.
+  checksEnabled Json
+
+  /// Caller-supplied threshold/country-match/red-flag overrides, if any
+  /// (elevated permission required to set, audited when used).
+  overrides Json?
+
+  fileName String?
+  fileType String?
+
+  requestedByUserId String?
+
+  totalParties    Int @default(0)
+  passedCount     Int @default(0)
+  failedCount     Int @default(0)
+  incompleteCount Int @default(0)
+  errorCount      Int @default(0)
+
+  correlationId String
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partyResults CommunityScreeningPartyResult[]
+
+  @@index([accountId, createdAt])
+  @@index([accountId, status])
+}
+
+/// One party's row within a CommunityScreeningRun. Snapshot fields
+/// (snapshotName/snapshotCountry/...) are captured at screening time so the
+/// row remains self-explaining even if the underlying Party record later
+/// changes -- this table never mutates Party or reference/matching data, it
+/// only records what the canonical RPS/Embargo engines returned.
+model CommunityScreeningPartyResult {
+  id        String                @id @default(cuid())
+  runId     String
+  run       CommunityScreeningRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  rowNumber Int
+
+  partyId String?
+  party   Party?  @relation(fields: [partyId], references: [id], onDelete: SetNull)
+
+  externalReference String?
+
+  snapshotName    String
+  snapshotCountry String?
+  snapshotAddress String?
+  snapshotCity    String?
+
+  restrictedPartyEnabled Boolean
+  embargoEnabled         Boolean
+
+  restrictedPartyStatus   String?
+  restrictedPartyResultId String?
+
+  embargoStatus   String?
+  embargoEvidence Json?
+
+  aggregateStatus CommunityScreeningPartyStatus @default(PENDING)
+
+  failureReason String?
+  errorMessage  String?
+
+  evaluatedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([runId, rowNumber])
+  @@index([runId, aggregateStatus])
+  @@index([accountId, partyId])
 }
 
 /// One denial-order candidate match. Immutable — corrections are recorded

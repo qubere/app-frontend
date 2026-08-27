@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail } from "lucide-react";
+import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users } from "lucide-react";
 import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
 import type { AuditRecordProps } from "./AuditHistoryPanel";
 
@@ -16,6 +16,7 @@ const ComplianceFindingsClient = dynamic(() => import("./ComplianceFindingsClien
 const AuditHistoryPanel = dynamic(() => import("./AuditHistoryPanel").then((m) => m.AuditHistoryPanel), { ssr: false });
 const ExecutionHistoryPanel = dynamic(() => import("./ExecutionHistoryPanel").then((m) => m.ExecutionHistoryPanel), { ssr: false });
 const NotificationSettingsPanel = dynamic(() => import("./NotificationSettingsPanel").then((m) => m.NotificationSettingsPanel), { ssr: false });
+const CommunityScreeningPanel = dynamic(() => import("./CommunityScreeningPanel").then((m) => m.CommunityScreeningPanel), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -68,9 +69,13 @@ interface ComplianceWorkspaceClientProps {
   /** Gates the "Notifications" tab -- true when the session holds `compliance.restrictedParty.settings.manage`. */
   mayManageNotificationSettings: boolean;
   notificationSettings: NotificationSettingsProps;
+  /** Gates the "Community Screening" tab -- true when the session holds `compliance.communityScreening.read`. */
+  mayReadCommunityScreening: boolean;
+  /** Gates the override fields (name/address threshold, country-match, red-flag) in Community Screening -- true when the session holds `compliance.communityScreening.override`. */
+  mayOverrideThresholds: boolean;
 }
 
-type WorkspaceTab = "overview" | "screening" | "review" | "audit" | "history" | "notifications";
+type WorkspaceTab = "overview" | "screening" | "review" | "audit" | "history" | "notifications" | "community-screening";
 
 export function ComplianceWorkspaceClient({
   initialTab = "overview",
@@ -84,6 +89,8 @@ export function ComplianceWorkspaceClient({
   mayReadExecutionHistory,
   mayManageNotificationSettings,
   notificationSettings,
+  mayReadCommunityScreening,
+  mayOverrideThresholds,
 }: ComplianceWorkspaceClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,6 +105,7 @@ export function ComplianceWorkspaceClient({
     { id: "audit", label: "Audit History", icon: Clock, hidden: !mayReadAuditHistory },
     { id: "history", label: "Service Usage & History", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
     { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
+    { id: "community-screening", label: "Community Screening", icon: Users, hidden: !mayReadCommunityScreening },
   ];
 
   useEffect(() => {
@@ -108,12 +116,14 @@ export function ComplianceWorkspaceClient({
       setActiveTab(mayReadExecutionHistory ? "history" : "overview");
     } else if (tabParam === "notifications") {
       setActiveTab(mayManageNotificationSettings ? "notifications" : "overview");
+    } else if (tabParam === "community-screening") {
+      setActiveTab(mayReadCommunityScreening ? "community-screening" : "overview");
     } else if (tabParam === "screening" || tabParam === "review") {
       setActiveTab(tabParam);
     } else if (!tabParam) {
       setActiveTab("overview");
     }
-  }, [searchParams, mayReadAuditHistory, mayReadExecutionHistory, mayManageNotificationSettings]);
+  }, [searchParams, mayReadAuditHistory, mayReadExecutionHistory, mayManageNotificationSettings, mayReadCommunityScreening]);
 
   const selectTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
@@ -176,6 +186,9 @@ export function ComplianceWorkspaceClient({
         {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel />}
         {activeTab === "notifications" && mayManageNotificationSettings && (
           <NotificationSettingsPanel initialSettings={notificationSettings} mayManage={mayManageNotificationSettings} />
+        )}
+        {activeTab === "community-screening" && mayReadCommunityScreening && (
+          <CommunityScreeningPanel mayOverrideThresholds={mayOverrideThresholds} />
         )}
       </div>
     </div>

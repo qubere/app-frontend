@@ -23,7 +23,14 @@ export type RestrictedPartyMatchMethod =
 
 export type RestrictedPartyPhoneticAlgorithm = "DOUBLE_METAPHONE" | "METAPHONE2";
 
-export type RestrictedPartyScreeningSource = "PARTY_MASTER" | "SHIPMENT" | "LINE" | "PUBLIC_API" | "COPILOT" | "MANUAL";
+export type RestrictedPartyScreeningSource =
+  | "PARTY_MASTER"
+  | "SHIPMENT"
+  | "LINE"
+  | "PUBLIC_API"
+  | "COPILOT"
+  | "MANUAL"
+  | "COMMUNITY_SCREENING";
 
 /** The identity actually being screened -- richer than EmbargoParty (which lacks address/contact). */
 export interface RestrictedPartyIdentity {

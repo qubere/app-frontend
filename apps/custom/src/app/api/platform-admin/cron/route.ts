@@ -88,6 +88,14 @@ export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "detai
     description: "Sends queued Restricted Party Screening email notifications (RPS hits, review-required, PAL/Party re-screen exceptions) with retry backoff.",
   },
   {
+    id: "community-screening-dispatch",
+    name: "Community Screening Dispatcher",
+    endpoint: "/api/cron/community-screening-dispatch",
+    method: "POST",
+    schedule: "*/1 * * * * (Every 1 minute)",
+    description: "Processes queued async Community Screening runs -- claims pending party rows in bounded batches and evaluates each against Restricted Party and Embargo screening.",
+  },
+  {
     id: "work-metric-snapshot",
     name: "Daily Work Metric Snapshot",
     endpoint: "/api/cron/work-metric-snapshot",

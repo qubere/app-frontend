@@ -26,7 +26,12 @@ export default async function CompliancePage(props: {
 
   const rawTab = typeof searchParams.tab === "string" ? searchParams.tab : "overview";
   const activeTab =
-    rawTab === "screening" || rawTab === "review" || rawTab === "audit" || rawTab === "history" || rawTab === "notifications"
+    rawTab === "screening" ||
+    rawTab === "review" ||
+    rawTab === "audit" ||
+    rawTab === "history" ||
+    rawTab === "notifications" ||
+    rawTab === "community-screening"
       ? rawTab
       : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
@@ -34,10 +39,13 @@ export default async function CompliancePage(props: {
   const mayReadExecutionHistory =
     holdsPermission(context, "audit.read") || holdsPermission(context, "compliance.read");
   const mayManageNotificationSettings = holdsPermission(context, "compliance.restrictedParty.settings.manage");
+  const mayReadCommunityScreening = holdsPermission(context, "compliance.communityScreening.read");
+  const mayOverrideThresholds = holdsPermission(context, "compliance.communityScreening.override");
   const resolvedTab =
     (activeTab === "audit" && !mayReadAuditHistory) ||
     (activeTab === "history" && !mayReadExecutionHistory) ||
-    (activeTab === "notifications" && !mayManageNotificationSettings)
+    (activeTab === "notifications" && !mayManageNotificationSettings) ||
+    (activeTab === "community-screening" && !mayReadCommunityScreening)
       ? "overview"
       : activeTab;
 
@@ -316,6 +324,8 @@ export default async function CompliancePage(props: {
         mayReadExecutionHistory={mayReadExecutionHistory}
         mayManageNotificationSettings={mayManageNotificationSettings}
         notificationSettings={notificationSettings}
+        mayReadCommunityScreening={mayReadCommunityScreening}
+        mayOverrideThresholds={mayOverrideThresholds}
       />
     </div>
   );

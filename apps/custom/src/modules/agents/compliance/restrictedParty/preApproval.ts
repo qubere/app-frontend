@@ -27,7 +27,10 @@ import type { RestrictedPartyScreeningSource } from "./types";
  * always-fresh absent an explicit account policy, and Copilot must never
  * infer/bypass on its own) -- NOT_APPLICABLE rather than force-fit.
  */
-const REUSE_ELIGIBLE_SOURCES: ReadonlySet<RestrictedPartyScreeningSource> = new Set(["SHIPMENT"]);
+const REUSE_ELIGIBLE_SOURCES: ReadonlySet<RestrictedPartyScreeningSource> = new Set([
+  "SHIPMENT",
+  "COMMUNITY_SCREENING",
+]);
 
 export interface PreApprovalGateResult {
   applied: boolean;
