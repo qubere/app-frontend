@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+vi.mock("nodemailer", () => ({
+  default: {
+    createTransport: vi.fn(() => ({
+      sendMail: vi.fn().mockResolvedValue({ messageId: "msg_mock" }),
+    })),
+  },
+}));
 
 // EmailProvider abstraction: getEmailConfig() env validation and
 // createEmailProvider()'s transport dispatch. ZOHO/GOOGLE_WORKSPACE/

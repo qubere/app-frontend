@@ -71,10 +71,20 @@ describe("Phase 4 Regulatory Intelligence & Ingestion Test Suite", () => {
         pdf_url: "https://www.federalregister.gov/documents/2026-9999.pdf",
       };
 
-      vi.spyOn(global, "fetch").mockResolvedValue({
-        ok: true,
-        json: async () => ({ results: [mockDocument] }),
-      } as any);
+      vi.spyOn(global, "fetch").mockImplementation(async (urlStr) => {
+        const u = String(urlStr);
+        if (u.includes("documents.json")) {
+          return { ok: true, json: async () => ({ results: [mockDocument] }) } as any;
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            title: mockDocument.title,
+            abstract: mockDocument.abstract,
+            description: `CBP announces tariff rate revision under HTS 8541.43.0010`,
+          }),
+        } as any;
+      });
 
       dbMock.regulatoryUpdate.findUnique.mockResolvedValue(null);
       dbMock.regulatoryUpdate.create.mockResolvedValue({
@@ -174,10 +184,20 @@ describe("Phase 4 Regulatory Intelligence & Ingestion Test Suite", () => {
         pdf_url: "https://example.com/pdf",
       };
 
-      vi.spyOn(global, "fetch").mockResolvedValue({
-        ok: true,
-        json: async () => ({ results: [mockDocument] }),
-      } as any);
+      vi.spyOn(global, "fetch").mockImplementation(async (urlStr) => {
+        const u = String(urlStr);
+        if (u.includes("documents.json")) {
+          return { ok: true, json: async () => ({ results: [mockDocument] }) } as any;
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            title: mockDocument.title,
+            abstract: mockDocument.abstract,
+            description: `Extension of Section 301 Exclusion for HTS 8541.40.60`,
+          }),
+        } as any;
+      });
 
       dbMock.regulatoryUpdate.findUnique.mockResolvedValue(null);
       dbMock.regulatoryUpdate.create.mockResolvedValue({

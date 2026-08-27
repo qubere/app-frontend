@@ -24,6 +24,32 @@ const extractionSchema: Schema = {
   required: ["type", "affectedHtsCodes", "effectiveDate", "summary", "actionRequired"],
 };
 
+function performHeuristicExtraction(fullNoticeText: string, doc: any) {
+  const fullTextLower = fullNoticeText.toLowerCase();
+  const matchedHts = Array.from(
+    new Set(fullNoticeText.match(/\b\d{4}\.\d{2}\.\d{2,4}\b|\b\d{10}\b/g) || [])
+  );
+  let type = "POLICY";
+  let actionRequired = false;
+
+  if (fullTextLower.includes("exclusion")) {
+    type = "EXCLUSION_GRANTED";
+    actionRequired = true;
+  } else if (fullTextLower.includes("rate") || fullTextLower.includes("tariff") || fullTextLower.includes("duties")) {
+    type = "TARIFF_RATE_CHANGE";
+    actionRequired = true;
+  }
+
+  return {
+    type,
+    affectedHtsCodes: matchedHts,
+    effectiveDate: doc.publication_date || new Date().toISOString(),
+    summary: doc.abstract || doc.title,
+    actionRequired,
+    fullNoticeText: fullNoticeText.slice(0, 10000),
+  };
+}
+
 export const POST = withCronRoute(async ({ req, requestId }) => {
   // 1. Fetch Federal Register documents for Customs and Border Protection
   const url = "https://www.federalregister.gov/api/v1/documents.json?conditions[agencies][]=u-s-customs-and-border-protection&per_page=20&order=newest";
@@ -77,14 +103,7 @@ export const POST = withCronRoute(async ({ req, requestId }) => {
     }
 
     // AI Structured Extraction over full document text
-    let extracted: any = {
-      type: "POLICY",
-      affectedHtsCodes: [],
-      effectiveDate: new Date().toISOString(),
-      summary: doc.abstract || doc.title,
-      actionRequired: false,
-      fullNoticeText: fullNoticeText.slice(0, 10000),
-    };
+    let extracted: any = null;
 
     if (process.env.GEMINI_API_KEY) {
       try {
@@ -115,22 +134,10 @@ Extract matching type, affected HTS codes, effective date, short summary, and if
         extracted = { ...JSON.parse(aiResponse.text || "{}"), fullNoticeText: fullNoticeText.slice(0, 10000) };
       } catch (err) {
         console.error("AI extraction failed, using heuristic fallback:", err);
+        extracted = performHeuristicExtraction(fullNoticeText, doc);
       }
     } else {
-      // Heuristic extraction for local/test runs
-      const fullTextLower = fullNoticeText.toLowerCase();
-      const matchedHts = Array.from(
-        new Set(fullNoticeText.match(/\b\d{4}\.\d{2}\.\d{2,4}\b|\b\d{10}\b/g) || [])
-      );
-      extracted.affectedHtsCodes = matchedHts;
-
-      if (fullTextLower.includes("exclusion")) {
-        extracted.type = "EXCLUSION_GRANTED";
-        extracted.actionRequired = true;
-      } else if (fullTextLower.includes("rate") || fullTextLower.includes("tariff")) {
-        extracted.type = "TARIFF_RATE_CHANGE";
-        extracted.actionRequired = true;
-      }
+      extracted = performHeuristicExtraction(fullNoticeText, doc);
     }
 
     // Create Regulatory Update with full legal notice text stored
