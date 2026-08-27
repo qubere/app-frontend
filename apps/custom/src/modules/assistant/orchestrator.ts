@@ -14,6 +14,7 @@ import {
 import type { CopilotStatus } from "@/modules/assistant/shared/contract";
 import { buildCopilotSystemPrompt, COPILOT_PROMPT_VERSION } from "@/modules/assistant/shared/prompts/systemPrompt";
 import { CopilotGroundingLedger } from "@/modules/assistant/shared/copilotLedger";
+import { COPILOT_LIMITS } from "@/modules/assistant/shared/config";
 
 const aiClient = getGeminiClient();
 const CHAT_SURFACE = "copilot" as const;
@@ -28,13 +29,18 @@ export interface ChatTurnInput {
 
 export type AssistantStreamEvent =
   | { type: "text"; delta: string }
+  | { type: "text_replace"; text: string }
   | { type: "tool_call"; name: string }
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "error"; message: string }
   | { type: "history"; turns: Content[] }
   | { type: "done" };
 
-const MAX_TOOL_ROUNDS = 6;
+// Kept in lockstep with the "Retrieval budget" clause the system prompt shows
+// the model (systemPrompt.ts / COPILOT_LIMITS) so the two never disagree on how
+// many rounds and tool calls a question gets.
+const MAX_TOOL_ROUNDS = COPILOT_LIMITS.maxToolIterations;
+const MAX_TOOL_CALLS = COPILOT_LIMITS.maxToolCalls;
 
 function toolResultFailed(output: unknown): boolean {
   return Boolean(output && typeof output === "object" && "error" in (output as Record<string, unknown>));
@@ -79,12 +85,41 @@ export async function* runAssistantTurn(
   let fullText = "";
 
   const today = new Date().toISOString().split("T")[0];
-  const systemPrompt = buildCopilotSystemPrompt({ resolvedContext: null, today });
+  const systemPrompt = buildCopilotSystemPrompt({ resolvedContext: null, today, mode: "stream" });
 
+  // Gemini is the primary provider for this surface (aiModel("copilot")). The
+  // Anthropic branch below is a configured-key fallback only; its default model
+  // is kept current but the path is not exercised in normal operation.
   const providerName = useAnthropic ? "anthropic" : "google-genai";
   const model = useAnthropic
-    ? (process.env.COPILOT_MODEL || process.env.CLAUDE_MODEL || "claude-3-7-sonnet-20250219")
+    ? (process.env.COPILOT_MODEL || process.env.CLAUDE_MODEL || "claude-sonnet-5")
     : aiModel(CHAT_SURFACE);
+
+  // Run at every turn-exit point, before `finish`: annotate any citation the
+  // model produced that no tool result grounded, and tell the client to swap
+  // the finished message text for the corrected version.
+  async function* emitSanitizedReplace(): AsyncGenerator<AssistantStreamEvent> {
+    const sanitized = groundingLedger.sanitizeGroundedText(fullText);
+    if (sanitized !== fullText) {
+      fullText = sanitized;
+      yield { type: "text_replace", text: sanitized };
+    }
+  }
+
+  // The replayed history is the model's own words from prior turns. Annotate
+  // ungrounded citations there too, so a fabricated reference from one turn is
+  // not laundered into trusted context on the next.
+  const sanitizeHistory = (turns: Content[]): Content[] =>
+    turns.map((turn) =>
+      turn.role === "model"
+        ? {
+            ...turn,
+            parts: (turn.parts ?? []).map((part) =>
+              part.text ? { ...part, text: groundingLedger.sanitizeGroundedText(part.text) } : part
+            ),
+          }
+        : turn
+    );
 
   const finish = async (status: CopilotStatus, round: number) => {
     const { entitiesCited, evidenceCited, droppedCitations } = groundingLedger.validate(fullText);
@@ -132,6 +167,7 @@ export async function* runAssistantTurn(
     messages.push({ role: "user", content: input.message });
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      if (toolCallsMade >= MAX_TOOL_CALLS) break;
       let stream;
       try {
         stream = anthropic.messages.stream({
@@ -165,6 +201,7 @@ export async function* runAssistantTurn(
       messages.push({ role: "assistant", content: responseMessage.content });
 
       if (toolCalls.length === 0) {
+        yield* emitSanitizedReplace();
         yield { type: "done" };
         await finish("ANSWERED", round);
         return;
@@ -207,8 +244,9 @@ export async function* runAssistantTurn(
       messages.push({ role: "user", content: toolResultBlocks });
     }
 
+    yield* emitSanitizedReplace();
     await finish("PARTIAL", MAX_TOOL_ROUNDS - 1);
-    yield { type: "error", message: "Stopped after too many tool calls in a single turn." };
+    yield { type: "error", message: "Stopped after using this question's retrieval budget." };
     return;
   }
 
@@ -226,6 +264,7 @@ export async function* runAssistantTurn(
   let nextMessage: string | Part[] = input.message;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    if (toolCallsMade >= MAX_TOOL_CALLS) break;
     let stream: AsyncGenerator<{
       text?: string;
       functionCalls?: { name?: string; args?: Record<string, unknown> }[];
@@ -294,7 +333,8 @@ export async function* runAssistantTurn(
     }
 
     if (!sawFunctionCall) {
-      yield { type: "history", turns: chat.getHistory() };
+      yield { type: "history", turns: sanitizeHistory(chat.getHistory()) };
+      yield* emitSanitizedReplace();
       await finish("ANSWERED", round);
       yield { type: "done" };
       return;
@@ -302,7 +342,8 @@ export async function* runAssistantTurn(
     nextMessage = functionResponseParts;
   }
 
-  yield { type: "history", turns: chat.getHistory() };
+  yield { type: "history", turns: sanitizeHistory(chat.getHistory()) };
+  yield* emitSanitizedReplace();
   await finish("PARTIAL", MAX_TOOL_ROUNDS - 1);
-  yield { type: "error", message: "Stopped after too many tool calls in a single turn." };
+  yield { type: "error", message: "Stopped after using this question's retrieval budget." };
 }

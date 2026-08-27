@@ -5,13 +5,13 @@ import { CopilotGroundingLedger, normalizeRulingNumber } from "@/modules/assista
 import type { AccountContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-const mockContext: AccountContext = {
+const mockContext = {
   accountId: "acct_test_123",
   userId: "user_test_456",
   roleNames: ["OWNER"],
   permissions: ["compliance.restrictedParty.read", "regulatory.review"],
   isPlatformAdmin: false,
-};
+} as unknown as AccountContext;
 
 describe("CopilotGroundingLedger P0 Grounding & Citation Validation", () => {
   it("normalizes ruling numbers consistently", () => {

@@ -1,13 +1,60 @@
 /**
  * Grounding ledger for Qubere AI Copilot.
  *
- * Tracks every citation (shipment numbers, CBP CROSS ruling numbers, HTS codes,
- * Federal Register citations, evidence IDs, and record IDs) returned by tools
- * during a conversation turn, and intercepts/redacts ungrounded references.
+ * Records every citation a tool actually returned during a conversation turn —
+ * shipment numbers, CBP CROSS ruling numbers, HTS codes, Federal Register
+ * citations, evidence IDs and record IDs — and, once the turn's text is
+ * complete, annotates any citation in that text the ledger never saw.
+ *
+ * The annotation happens after the model's text has finished streaming, not
+ * before: a streamed token cannot be un-sent. `runAssistantTurn` calls
+ * `sanitizeGroundedText` at the end of the turn and, when it changes the text,
+ * emits a `text_replace` event so the client swaps the final message. That is a
+ * detect-and-correct guarantee, not a pre-display filter — the window between a
+ * bad citation streaming and the replacement arriving is small but non-zero.
  */
 
 export function normalizeRulingNumber(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** SHP-YYYY-NNNNNN. */
+const SHIPMENT_RE = /\bSHP-\d{4}-\d{6}\b/g;
+
+/**
+ * CBP CROSS ruling numbers: HQ H301234, NY N123456, bare H301234 / N123456, or
+ * RUL-12345. The H/N prefix on the 6-digit forms is what keeps "NY 10001" (a
+ * zip code) from matching.
+ */
+const RULING_RE = /\b(?:HQ\s*H\d{6}|NY\s*N\d{6}|H\d{6}|N\d{6}|RUL-\d{5,7})\b/gi;
+
+/**
+ * HTS codes. Two patterns on purpose:
+ *
+ *  - RECORD is permissive (6/8/10-digit dotted forms) — over-recording a token
+ *    from a tool result costs nothing.
+ *  - CITE, used to validate and annotate the model's text, requires the 8- or
+ *    10-digit form ("8541.40.60", "8541.40.6025", "8541.40.60.25"). The bare
+ *    6-digit "1234.56" shape is left out here because it collides with money
+ *    and decimals in ordinary prose. A dotted date ("2024.08.15") can still
+ *    match the 8-digit shape; annotation (not deletion) keeps that cosmetic.
+ */
+const HTS_RECORD_RE = /\b\d{4}\.\d{2}(?:\.\d{2}(?:\.\d{2})?|\.\d{4})?\b/g;
+const HTS_CITE_RE = /\b\d{4}\.\d{2}\.\d{2}(?:\.\d{2}|\d{2})?\b/g;
+
+/** Federal Register citations, e.g. "88 FR 12345". */
+const FR_RE = /\b\d{2,3}\s+FR\s+\d{4,6}\b/gi;
+
+/** Evidence IDs, e.g. "EVI-abc123". */
+const EVIDENCE_RE = /\bEVI-[A-Za-z0-9_-]+\b/gi;
+
+function normalizeFrCite(raw: string): string {
+  return raw.toUpperCase().replace(/\s+/g, " ");
+}
+
+/** Compare HTS codes by digits only, so "8541.40.6025" and "8541.40.60.25" match. */
+function normalizeHts(raw: string): string {
+  return raw.replace(/\D/g, "");
 }
 
 export class CopilotGroundingLedger {
@@ -25,40 +72,24 @@ export class CopilotGroundingLedger {
     if (!output) return;
     const jsonString = typeof output === "string" ? output : JSON.stringify(output);
 
-    // 1. Shipment numbers (SHP-YYYY-XXXXXX)
-    const shpMatches = jsonString.matchAll(/\bSHP-\d{4}-\d{6}\b/g);
-    for (const match of shpMatches) {
+    for (const match of jsonString.matchAll(SHIPMENT_RE)) {
       this.shipmentNumbers.add(match[0]);
       this.entityIds.add(match[0]);
     }
-
-    // 2. CBP CROSS Ruling numbers (e.g. HQ H301234, NY N123456, H301234, N123456)
-    // Guard against zip codes (e.g., "NY 10001") by requiring H or N prefix for 6-digit numbers.
-    const rulingMatches = jsonString.matchAll(/\b(?:HQ\s*H\d{6}|NY\s*N\d{6}|H\d{6}|N\d{6}|RUL-\d{5,7})\b/gi);
-    for (const match of rulingMatches) {
-      const normalized = normalizeRulingNumber(match[0]);
-      this.rulingNumbers.add(normalized);
+    for (const match of jsonString.matchAll(RULING_RE)) {
+      this.rulingNumbers.add(normalizeRulingNumber(match[0]));
     }
-
-    // 3. HTS codes (e.g. 8541.40.6025, 8541.40.60, 8541.40)
-    const htsMatches = jsonString.matchAll(/\b\d{4}\.\d{2}(?:\.\d{2}(?:\.\d{2})?)?\b/g);
-    for (const match of htsMatches) {
-      this.htsCodes.add(match[0]);
+    for (const match of jsonString.matchAll(HTS_RECORD_RE)) {
+      this.htsCodes.add(normalizeHts(match[0]));
     }
-
-    // 4. Federal Register citations (e.g. 88 FR 12345)
-    const frMatches = jsonString.matchAll(/\b\d{2,3}\s+FR\s+\d{4,6}\b/gi);
-    for (const match of frMatches) {
-      this.frCites.add(match[0].toUpperCase().replace(/\s+/g, " "));
+    for (const match of jsonString.matchAll(FR_RE)) {
+      this.frCites.add(normalizeFrCite(match[0]));
     }
-
-    // 5. Evidence IDs (EVI-...)
-    const eviMatches = jsonString.matchAll(/\bEVI-[A-Za-z0-9_-]+\b/gi);
-    for (const match of eviMatches) {
+    for (const match of jsonString.matchAll(EVIDENCE_RE)) {
       this.evidenceIds.add(match[0]);
     }
 
-    // 6. Record IDs (uuid or prefixed IDs)
+    // Record IDs (uuid or prefixed IDs) reached only through the object form.
     if (typeof output === "object" && output !== null) {
       this.extractEntityIds(output as Record<string, unknown>);
     }
@@ -83,7 +114,10 @@ export class CopilotGroundingLedger {
   }
 
   /**
-   * Comprehensive validation across all citation types.
+   * Counts grounded vs ungrounded citations in the finished text, for the audit
+   * trail. `entitiesCited` covers shipment / ruling / HTS / FR references;
+   * `evidenceCited` covers evidence IDs; `droppedCitations` is everything the
+   * ledger never saw.
    */
   public validate(text: string): {
     entitiesCited: number;
@@ -94,89 +128,50 @@ export class CopilotGroundingLedger {
     let evidenceCited = 0;
     let droppedCitations = 0;
 
-    // Check shipment numbers
-    const mentionedShipments = new Set(Array.from(text.matchAll(/\bSHP-\d{4}-\d{6}\b/g), (m) => m[0]));
-    for (const shp of mentionedShipments) {
-      if (this.shipmentNumbers.has(shp)) {
-        entitiesCited++;
-      } else {
-        droppedCitations++;
+    const tally = (mentioned: Iterable<string>, ledger: Set<string>, bucket: "entity" | "evidence") => {
+      for (const value of new Set(mentioned)) {
+        if (ledger.has(value)) {
+          if (bucket === "entity") entitiesCited++;
+          else evidenceCited++;
+        } else {
+          droppedCitations++;
+        }
       }
-    }
-
-    // Check ruling numbers
-    const mentionedRulings = new Set(
-      Array.from(
-        text.matchAll(/\b(?:HQ\s*H\d{6}|NY\s*N\d{6}|H\d{6}|N\d{6}|RUL-\d{5,7})\b/gi),
-        (m) => normalizeRulingNumber(m[0])
-      )
-    );
-    for (const r of mentionedRulings) {
-      if (this.rulingNumbers.has(r)) {
-        entitiesCited++;
-      } else {
-        droppedCitations++;
-      }
-    }
-
-    // Check HTS codes
-    const mentionedHts = new Set(Array.from(text.matchAll(/\b\d{4}\.\d{2}(?:\.\d{2}(?:\.\d{2})?)?\b/g), (m) => m[0]));
-    for (const code of mentionedHts) {
-      if (this.htsCodes.has(code)) {
-        entitiesCited++;
-      } else {
-        droppedCitations++;
-      }
-    }
-
-    // Check FR citations
-    const mentionedFr = new Set(
-      Array.from(text.matchAll(/\b\d{2,3}\s+FR\s+\d{4,6}\b/gi), (m) => m[0].toUpperCase().replace(/\s+/g, " "))
-    );
-    for (const fr of mentionedFr) {
-      if (this.frCites.has(fr)) {
-        entitiesCited++;
-      } else {
-        droppedCitations++;
-      }
-    }
-
-    // Check evidence IDs
-    const mentionedEvidence = new Set(Array.from(text.matchAll(/\bEVI-[A-Za-z0-9_-]+\b/gi), (m) => m[0]));
-    for (const evi of mentionedEvidence) {
-      if (this.evidenceIds.has(evi)) {
-        evidenceCited++;
-      } else {
-        droppedCitations++;
-      }
-    }
-
-    return {
-      entitiesCited,
-      evidenceCited,
-      droppedCitations,
     };
+
+    tally(Array.from(text.matchAll(SHIPMENT_RE), (m) => m[0]), this.shipmentNumbers, "entity");
+    tally(Array.from(text.matchAll(RULING_RE), (m) => normalizeRulingNumber(m[0])), this.rulingNumbers, "entity");
+    tally(Array.from(text.matchAll(HTS_CITE_RE), (m) => normalizeHts(m[0])), this.htsCodes, "entity");
+    tally(Array.from(text.matchAll(FR_RE), (m) => normalizeFrCite(m[0])), this.frCites, "entity");
+    tally(Array.from(text.matchAll(EVIDENCE_RE), (m) => m[0]), this.evidenceIds, "evidence");
+
+    return { entitiesCited, evidenceCited, droppedCitations };
   }
 
   /**
-   * Intercepts ungrounded shipment or ruling citations in response text.
-   * Replaces ungrounded citations with an explicit notice to prevent hallucinated data from reaching the user.
+   * Annotates every citation in `text` the ledger never recorded with an
+   * explicit "[Unverified …]" marker, so a hallucinated shipment, ruling, HTS
+   * code, Federal Register cite or evidence ID cannot reach the user reading as
+   * fact. Grounded citations are returned untouched. This never deletes text.
    */
   public sanitizeGroundedText(text: string): string {
     let sanitized = text;
 
-    // Sanitize ungrounded shipment numbers
-    sanitized = sanitized.replace(/\bSHP-\d{4}-\d{6}\b/g, (shp) => {
-      if (this.shipmentNumbers.has(shp)) return shp;
-      return `${shp} [Unverified Shipment]`;
-    });
-
-    // Sanitize ungrounded ruling numbers
-    sanitized = sanitized.replace(/\b(?:HQ\s*H\d{6}|NY\s*N\d{6}|H\d{6}|N\d{6}|RUL-\d{5,7})\b/gi, (rulingStr) => {
-      const norm = normalizeRulingNumber(rulingStr);
-      if (this.rulingNumbers.has(norm)) return rulingStr;
-      return `${rulingStr} [Unverified Ruling Citation]`;
-    });
+    sanitized = sanitized.replace(SHIPMENT_RE, (shp) =>
+      this.shipmentNumbers.has(shp) ? shp : `${shp} [Unverified Shipment]`
+    );
+    sanitized = sanitized.replace(RULING_RE, (ruling) =>
+      this.rulingNumbers.has(normalizeRulingNumber(ruling)) ? ruling : `${ruling} [Unverified Ruling Citation]`
+    );
+    sanitized = sanitized.replace(HTS_CITE_RE, (code) =>
+      this.htsCodes.has(normalizeHts(code)) ? code : `${code} [Unverified HTS Code]`
+    );
+    sanitized = sanitized.replace(FR_RE, (cite) =>
+      this.frCites.has(normalizeFrCite(cite)) ? cite : `${cite} [Unverified Citation]`
+    );
+    sanitized = sanitized.replace(EVIDENCE_RE, (evi) =>
+      this.evidenceIds.has(evi) ? evi : `${evi} [Unverified Evidence]`
+    );
 
     return sanitized;
   }

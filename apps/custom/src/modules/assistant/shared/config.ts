@@ -59,8 +59,12 @@ export interface CopilotLimits {
 }
 
 export const COPILOT_LIMITS: CopilotLimits = {
-  maxToolIterations: 4,
-  maxToolCalls: 8,
+  // The live orchestrator loop (orchestrator.ts) is bounded by these two, and
+  // the system prompt quotes them to the model. A grounded customs question
+  // routinely needs search -> get -> duty/ruling lookups, so the ceiling is set
+  // to accommodate a multi-step retrieval rather than a single hop.
+  maxToolIterations: 6,
+  maxToolCalls: 12,
   maxSearchResults: 10,
   maxToolResultChars: 6000,
   maxHistoryTurns: 8,
