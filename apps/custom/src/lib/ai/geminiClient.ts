@@ -13,7 +13,7 @@ export function getGeminiClient(): GoogleGenAI {
 
   const projectId = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "qubere-demo";
   return new GoogleGenAI({
-    vertexAI: true,
+    vertexai: true,
     project: projectId,
     location: process.env.VERTEX_AI_LOCATION || "us-central1",
   });
