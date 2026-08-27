@@ -1091,10 +1091,15 @@ const listExceptions: AssistantTool = {
     if (!parsed.success) return { error: parsed.error.message };
     const { shipmentId } = parsed.data;
 
-    const { exceptions: items } = await ExceptionService.listExceptions(ctx.accountId, ctx.userId, {
-      ...(shipmentId && { shipmentId }),
-      status: "OPEN",
-    });
+    const { exceptions: items } = await ExceptionService.listExceptions(
+      ctx.accountId,
+      ctx.userId,
+      {
+        ...(shipmentId && { shipmentId }),
+        status: "OPEN",
+      },
+      { limit: 50 },
+    );
     return {
       count: items.length,
       exceptions: items.map((e) => ({

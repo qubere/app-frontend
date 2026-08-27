@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "worker:documents": "tsx src/worker/documentWorker.ts",
     "worker:documents:job": "tsx src/worker/documentJob.ts",
-    "openapi": "tsx scripts/generate-openapi.ts"
+    "openapi": "tsx scripts/generate-openapi.ts",
+    "bench:actions": "tsx scripts/bench-actions.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
