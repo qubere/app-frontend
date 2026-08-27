@@ -53,6 +53,17 @@ Every administrative action (role change, status toggle, account modification, u
 - `ipAddress`, `userAgent`, `requestId`
 - `success` outcome status (`true` / `false`)
 
+`createAuditLog` is a single, best-effort write path — a logging failure never
+blocks or rolls back the action it was about — shared by every compliance
+module (private embargo, RDPS, PAL, Community Screening, settings) against a
+~104-entry `AuditAction` catalogue (`src/lib/audit/auditActions.ts`); the
+`action` parameter itself is a loose `string`, not type-checked against that
+enum. Compliance events additionally queue outbox-pattern emails
+(`ComplianceNotification` → `ComplianceNotificationDispatcher`) over SMTP,
+currently scoped to RPS hit/review/rescreen notification types only. See
+[docs/compliance-notifications-and-audit.md](docs/compliance-notifications-and-audit.md)
+for the full mechanism, audit-history UI surfaces, export, and known gaps.
+
 ### 6. Row-Level Security & Capability Gating
 
 To ensure data privacy within multi-tenant accounts:
@@ -198,6 +209,15 @@ CLEAR run that had to skip a check (e.g. a party with no country on file) is
 presented as `PARTIAL`, not `CLEAR`, even though the engine's own stored
 status doesn't make that distinction.
 
+A tenant can additionally layer its own **Private Embargo Screening**
+country-pair rules (`PrivateEmbargoRule`) in front of these government-source
+matchers via `privateEmbargoMatcher.ts` — a private rule can only add a
+`HIT`, never manufacture a `CLEAR`, and is gated by the `settings.manage`
+permission with its own audit actions. See
+[docs/private-embargo-screening.md](docs/private-embargo-screening.md) for
+the rule model, admin UI, and known gaps (no edit UI, no allow-list
+exemption, unverified matcher-precedence ordering).
+
 Every consumer of this evidence — the chat assistant's `screen_shipment_embargo`
 / `get_embargo_screening_details` tools and the partner API below — reads and
 presents it through one shared module,
@@ -280,7 +300,67 @@ matching beyond the Double Metaphone/Metaphone2 shortlist — see
 `docs/party-master.md` and Sections K/N of the implementation report for the
 full list of known gaps.
 
-### 13. Qubere Autonomous Freight Execution TMS (`apps/tms`)
+A **Pre-Approved Party List (PAL)** lets a prior clearance be reused instead
+of re-running RPS, but only through a fail-closed gate
+(`checkPreApprovalGate`) that requires an identity-hash match, matching party
+version, fresh-enough reference data, no expiry, and no revocation — any gap
+in that chain falls straight through to a normal screening run. The same gate
+is shared verbatim by Community Screening below. See
+[docs/pre-approved-party-list.md](docs/pre-approved-party-list.md) for the
+full lifecycle and known gaps (no scheduled expiry sweep, no bulk approval).
+
+### 13. RDPS — Reverse Denied-Party Screening / Continuous Party Monitoring
+
+RDPS re-screens previously-cleared parties so that a change in the party's
+own data, or in the denied-party reference data, gets caught rather than
+persisting behind a stale one-time clearance. A **delta-impact dispatcher**
+reacts to a specific reference-data change; a **full-population dispatcher**
+proactively re-screens the whole account on a schedule — both funnel into one
+shared `outcomeRecorder.ts`, which reuses the canonical `rescreenParty()`
+lifecycle rather than reimplementing it, and both persist an
+`RdpsPartyOutcome` row that records whether a result worsened. Surfaced via
+`RdpsPanel.tsx` inside the Compliance workspace and eight tenant-scoped API
+routes. **Known gap**: neither dispatcher is wired into `vercel.json`'s cron
+schedule today (the same class of gap as `community-screening-dispatch`
+below) — both are manual-trigger-only until a cron entry is added. See
+[docs/rdps-continuous-monitoring.md](docs/rdps-continuous-monitoring.md) for
+the full design.
+
+### 14. Community Screening — Multi-Party Batch RPS + Embargo Orchestration
+
+Community Screening (`src/modules/compliance/communityScreening/`) lets a
+compliance user submit a batch of parties (manual entry or file upload) and
+runs the *canonical* Restricted Party Screening and Country Embargo engines
+against every row — it orchestrates, it never reimplements matching. A
+denied-party match and a red-flag keyword hit are tracked as independent
+findings (`restrictedPartyMatchFound` / `restrictedPartyRedFlagFound`), never
+collapsed into one shared status tier, and a
+`restrictedPartyFindingCategory` (`NO_MATCH` / `CONFIRMED_MATCH` /
+`POTENTIAL_DENIED_PARTY_MATCH` / `RED_FLAG_ONLY` / `PAL_SUPPRESSED` / …) gives
+every row one human-readable label without losing that independence. A valid
+pre-approval (PAL) short-circuits the RPS engine entirely and is its own
+status (`PRE_APPROVED_REUSE`), deliberately distinct from an ordinary `CLEAR`.
+
+The internal uniqueness key for a screened party is `(runId, rowNumber)` on
+`CommunityScreeningPartyResult`, never the Party ID alone — the same Party ID
+can appear more than once in a batch, and each occurrence keeps its own
+result. `deriveLegacyPartyStatusMap()` is the one place that collapses
+occurrences down to a Party-ID-keyed view for legacy-compatible consumers,
+and it is most-severe-wins by construction: a later `PASSED` occurrence can
+never overwrite an earlier `FAILED`/`ERROR`/`INCOMPLETE` one for the same
+Party ID, regardless of arrival order.
+
+Small/manual runs execute inline; large or file-sourced runs are claimed
+row-by-row by `CommunityScreeningDispatcher`, using the same optimistic
+per-row claim pattern as `ComplianceNotificationDispatcher` so a retried tick
+can never double-process a row. Gated by three permissions
+(`compliance.communityScreening.read`/`.screen`/`.override`), every route
+tenant-scoped via `withAuthenticatedRoute`, with export (CSV/XLSX) and Ask
+Qubere assistant tools surfacing the same independent-findings evidence. See
+[docs/community-screening.md](docs/community-screening.md) for the full
+design, data model, and known gaps.
+
+### 15. Qubere Autonomous Freight Execution TMS (`apps/tms`)
 
 **Qubere TMS** (`apps/tms`, running on **`http://localhost:3001`**) is an autonomous freight execution application built for logistics operators, freight forwarders, and dispatchers.
 
@@ -405,6 +485,11 @@ provenance cannot claim one model while another did the reading.
 │   ├── product-master.md    # Global Product / Item Master domain reference
 │   ├── party-master.md      # Global Party Master domain reference
 │   ├── document-intelligence.md # Document parsing pipeline reference
+│   ├── community-screening.md # Multi-party batch RPS + Embargo orchestration reference
+│   ├── private-embargo-screening.md # Tenant country-pair overlay in front of the embargo engine
+│   ├── pre-approved-party-list.md # PAL fail-closed reuse gate reference
+│   ├── rdps-continuous-monitoring.md # Reverse/continuous denied-party re-screening reference
+│   ├── compliance-notifications-and-audit.md # Email notification pipeline + audit logging reference
 │   ├── ai-chat-interface.md # AI assistant design spec — see "AI Chat Assistant" above for the built shape
 │   └── customs-filing-canonical-messaging-changelog.md # Multi-country filing/messaging implementation history
 ├── prisma/
