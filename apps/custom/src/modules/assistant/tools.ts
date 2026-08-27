@@ -300,16 +300,20 @@ const getValueAtRisk: AssistantTool = {
   schema: getValueAtRiskSchema,
   declaration: {
     name: "get_value_at_risk",
-    description: "Total declared value across shipments currently at risk (readiness score below 85).",
+    description: "Total declared value across shipments currently at risk (readiness score below 85) aligned with Command Center metrics.",
     parameters: zodToGeminiSchema(getValueAtRiskSchema),
   },
   access: { navHref: "/app/shipments" },
-  execute: async () => {
+  execute: async (ctx) => {
     const shipments = await fetchAllShipments();
     const atRisk = shipments.filter(isAtRisk);
+    const computeAnalyticsMetrics = (await import("@/lib/analytics/metricComputer")).computeAnalyticsMetrics;
+    const analytics = await computeAnalyticsMetrics(ctx.accountId);
     return {
       shipmentCount: atRisk.length,
       totalValueAtRisk: atRisk.reduce((sum, s) => sum + shipmentValue(s), 0),
+      openExceptions: analytics.openExceptions,
+      filedEntries: analytics.filedEntries,
       shipments: atRisk.map((s) => ({
         shipmentNumber: s.shipmentNumber,
         importerName: s.importerName,
@@ -3154,6 +3158,349 @@ const triggerManualRdpsScan: AssistantTool = {
   },
 };
 
+// ---- tool: get_hts_code ----
+
+const getHtsCodeSchema = z.object({
+  code: z.string().describe("HTS code (8 or 10 digits)."),
+  asOfDate: z.string().optional().describe("Effective as-of date (ISO format YYYY-MM-DD)."),
+});
+
+const getHtsCode: AssistantTool = {
+  schema: getHtsCodeSchema,
+  declaration: {
+    name: "get_hts_code",
+    description: "Get full HTS code details including chapter notes, duty rates, units, and hierarchy.",
+    parameters: zodToGeminiSchema(getHtsCodeSchema),
+  },
+  access: { navHref: "/app/hts" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getHtsCodeSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { code, asOfDate } = parsed.data;
+
+    const node = await HtsSearchService.getCodeDetail(code, asOfDate);
+    if (!node) return { error: `HTS code '${code}' not found.` };
+    const hierarchy = await HtsSearchService.getHierarchy(code, asOfDate);
+    return { node, hierarchy };
+  },
+};
+
+// ---- tool: get_ruling ----
+
+const getRulingSchema = z.object({
+  rulingNumber: z.string().describe("CBP CROSS Ruling number (e.g. HQ H301234 or NY N123456)."),
+});
+
+const getRuling: AssistantTool = {
+  schema: getRulingSchema,
+  declaration: {
+    name: "get_ruling",
+    description: "Retrieve a specific CBP CROSS ruling by ruling number with full text fragments.",
+    parameters: zodToGeminiSchema(getRulingSchema),
+  },
+  access: { navHref: "/app/rulings" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getRulingSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { rulingNumber } = parsed.data;
+
+    const ruling = await db.ruling.findUnique({
+      where: { rulingNumber: rulingNumber.trim() },
+      include: {
+        fragments: { orderBy: { id: "asc" } },
+        htsReferences: true,
+        fromRelations: {
+          include: { toRuling: { select: { rulingNumber: true, title: true } } },
+        },
+      },
+    });
+    if (!ruling) return { error: `Ruling '${rulingNumber}' not found in CBP CROSS database.` };
+    return { ruling };
+  },
+};
+
+// ---- tool: lookup_restricted_party_lists ----
+
+const lookupRestrictedPartyListsSchema = z.object({
+  name: z.string().describe("Entity or company name to search across restricted party lists."),
+  listType: z.string().optional().describe("Filter list type (e.g., SDN, BIS_CSL, UFLPA, DOW_JONES)."),
+});
+
+const lookupRestrictedPartyLists: AssistantTool = {
+  schema: lookupRestrictedPartyListsSchema,
+  declaration: {
+    name: "lookup_restricted_party_lists",
+    description: "Read-only lookup across global restricted party lists (SDN, BIS, UFLPA, CSL) without creating a screening record.",
+    parameters: zodToGeminiSchema(lookupRestrictedPartyListsSchema),
+  },
+  access: { navHref: "/app/party-screening" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = lookupRestrictedPartyListsSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { name, listType } = parsed.data;
+
+    const where: any = {
+      name: { contains: name.trim(), mode: "insensitive" },
+    };
+    if (listType) where.listType = listType;
+
+    const entities = await db.screeningEntity.findMany({
+      where,
+      take: 20,
+      include: { aliases: true, addresses: true, identifiers: true },
+    });
+    return { count: entities.length, entities };
+  },
+};
+
+// ---- tool: get_adcvd_orders ----
+
+const getAdcvdOrdersSchema = z.object({
+  caseNumber: z.string().optional().describe("AD/CVD case number (e.g. A-570-893)."),
+  htsCode: z.string().optional().describe("HTS code or 4-6 digit prefix."),
+  country: z.string().optional().describe("Country code (e.g. CN, VN)."),
+});
+
+const getAdcvdOrders: AssistantTool = {
+  schema: getAdcvdOrdersSchema,
+  declaration: {
+    name: "get_adcvd_orders",
+    description: "Lookup Anti-Dumping / Countervailing Duty (AD/CVD) orders and company deposit rates.",
+    parameters: zodToGeminiSchema(getAdcvdOrdersSchema),
+  },
+  access: { navHref: "/app/adcvd" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getAdcvdOrdersSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { caseNumber, htsCode, country } = parsed.data;
+
+    const where: any = {};
+    if (caseNumber) where.caseNumber = { contains: caseNumber.trim(), mode: "insensitive" };
+    if (country) where.country = country;
+    if (htsCode) where.htsNumber = { contains: htsCode.replace(/[^0-9]/g, "") };
+
+    const orders = await db.adcvdOrder.findMany({
+      where,
+      take: 20,
+      include: { companyRates: true },
+    });
+    return { count: orders.length, orders };
+  },
+};
+
+// ---- tool: get_section_301 ----
+
+const getSection301Schema = z.object({
+  htsCode: z.string().describe("HTS 8 or 10 digit code."),
+});
+
+const getSection301: AssistantTool = {
+  schema: getSection301Schema,
+  declaration: {
+    name: "get_section_301",
+    description: "Lookup Section 301 China tariff tranche, rate, and active exclusion status for an HTS code.",
+    parameters: zodToGeminiSchema(getSection301Schema),
+  },
+  access: { navHref: "/app/duty-calculator" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getSection301Schema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { htsCode } = parsed.data;
+    const cleanHts = htsCode.replace(/[^0-9]/g, "");
+
+    const rates = await db.section301Rate.findMany({
+      where: { htsNumber: { contains: cleanHts.slice(0, 8) } },
+    });
+    const exclusions = await db.section301Exclusion.findMany({
+      where: { htsNumber: { contains: cleanHts.slice(0, 8) } },
+    });
+    return { htsCode, rates, exclusions };
+  },
+};
+
+// ---- tool: get_pga_requirements ----
+
+const getPgaRequirementsSchema = z.object({
+  htsCode: z.string().describe("HTS 8 or 10 digit code."),
+});
+
+const getPgaRequirements: AssistantTool = {
+  schema: getPgaRequirementsSchema,
+  declaration: {
+    name: "get_pga_requirements",
+    description: "Lookup Partner Government Agency (FDA, EPA, DOT, USDA, TTB, FCC) filing requirements for an HTS code.",
+    parameters: zodToGeminiSchema(getPgaRequirementsSchema),
+  },
+  access: { navHref: "/app/pga" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getPgaRequirementsSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { htsCode } = parsed.data;
+    const cleanHts = htsCode.replace(/[^0-9]/g, "");
+
+    const requirements = await db.htsPgaRequirement.findMany({
+      where: { htsNumber: { contains: cleanHts.slice(0, 8) } },
+    });
+    return { htsCode, requirements };
+  },
+};
+
+// ---- tool: get_exchange_rate ----
+
+const getExchangeRateSchema = z.object({
+  currency: z.string().describe("3-letter ISO currency code (e.g. EUR, CAD, RMB, JPY)."),
+  asOfDate: z.string().optional().describe("Date YYYY-MM-DD for historical rate lookup."),
+});
+
+const getExchangeRate: AssistantTool = {
+  schema: getExchangeRateSchema,
+  declaration: {
+    name: "get_exchange_rate",
+    description: "Lookup official CBP / Treasury foreign exchange rates to USD.",
+    parameters: zodToGeminiSchema(getExchangeRateSchema),
+  },
+  access: { navHref: "/app/fx" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = getExchangeRateSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { currency, asOfDate } = parsed.data;
+
+    const rate = await db.exchangeRate.findFirst({
+      where: {
+        currency: currency.toUpperCase(),
+        ...(asOfDate ? { effectiveDate: { lte: new Date(asOfDate) } } : {}),
+      },
+      orderBy: { effectiveDate: "desc" },
+    });
+    if (!rate) return { error: `No exchange rate found for currency ${currency}.` };
+    return { rate };
+  },
+};
+
+// ---- tool: search_regulatory_notices ----
+
+const searchRegulatoryNoticesSchema = z.object({
+  query: z.string().optional().describe("Keyword search term."),
+  jurisdiction: z.string().optional().describe("Jurisdiction filter (e.g., US, EU)."),
+});
+
+const searchRegulatoryNotices: AssistantTool = {
+  schema: searchRegulatoryNoticesSchema,
+  declaration: {
+    name: "search_regulatory_notices",
+    description: "Search Federal Register and CBP regulatory updates with full published text.",
+    parameters: zodToGeminiSchema(searchRegulatoryNoticesSchema),
+  },
+  access: { navHref: "/app/regulatory" },
+  execute: async (_ctx, rawArgs) => {
+    const parsed = searchRegulatoryNoticesSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { query, jurisdiction } = parsed.data;
+
+    const where: any = {};
+    if (jurisdiction) where.jurisdiction = jurisdiction;
+    if (query) {
+      where.OR = [
+        { title: { contains: query, mode: "insensitive" } },
+        { publishedText: { contains: query, mode: "insensitive" } },
+      ];
+    }
+
+    const updates = await db.regulatoryUpdate.findMany({
+      where,
+      take: 10,
+      orderBy: { effectiveDate: "desc" },
+    });
+    return { count: updates.length, updates };
+  },
+};
+
+// ---- tool: list_drawback_claims ----
+
+const listDrawbackClaimsSchema = z.object({});
+
+const listDrawbackClaims: AssistantTool = {
+  schema: listDrawbackClaimsSchema,
+  declaration: {
+    name: "list_drawback_claims",
+    description: "List duty drawback claims, lot status, and estimated refund amounts.",
+    parameters: zodToGeminiSchema(listDrawbackClaimsSchema),
+  },
+  access: { navHref: "/app/drawback" },
+  execute: async (ctx) => {
+    const claims = await db.drawbackClaim.findMany({
+      where: { accountId: ctx.accountId },
+      take: 20,
+      orderBy: { createdAt: "desc" },
+    });
+    return { count: claims.length, claims };
+  },
+};
+
+// ---- tool: list_protests ----
+
+const listProtestsSchema = z.object({});
+
+const listProtests: AssistantTool = {
+  schema: listProtestsSchema,
+  declaration: {
+    name: "list_protests",
+    description: "List CBP 19 U.S.C. 1514 Customs Protests and refund claims.",
+    parameters: zodToGeminiSchema(listProtestsSchema),
+  },
+  access: { navHref: "/app/protests" },
+  execute: async (ctx) => {
+    const protests = await db.protest.findMany({
+      where: { accountId: ctx.accountId },
+      take: 20,
+      orderBy: { createdAt: "desc" },
+      include: { entries: true },
+    });
+    return { count: protests.length, protests };
+  },
+};
+
+// ---- tool: list_refund_opportunities ----
+
+const listRefundOpportunitiesSchema = z.object({});
+
+const listRefundOpportunities: AssistantTool = {
+  schema: listRefundOpportunitiesSchema,
+  declaration: {
+    name: "list_refund_opportunities",
+    description: "List Post-Summary Correction (PSC) and Section 301 duty refund opportunities.",
+    parameters: zodToGeminiSchema(listRefundOpportunitiesSchema),
+  },
+  access: { navHref: "/app/refunds" },
+  execute: async (ctx) => {
+    const opportunities = await db.refundOpportunity.findMany({
+      where: { accountId: ctx.accountId },
+      take: 20,
+      orderBy: { potentialRefundUsd: "desc" },
+    });
+    return { count: opportunities.length, opportunities };
+  },
+};
+
+// ---- tool: get_dashboard_metrics ----
+
+const getDashboardMetricsSchema = z.object({});
+
+const getDashboardMetrics: AssistantTool = {
+  schema: getDashboardMetricsSchema,
+  declaration: {
+    name: "get_dashboard_metrics",
+    description: "Fetch live Command Center operational metrics (open exceptions, median cycle time, first pass rate, PSC count).",
+    parameters: zodToGeminiSchema(getDashboardMetricsSchema),
+  },
+  access: { navHref: "/app/dashboard" },
+  execute: async (ctx) => {
+    const computeAnalyticsMetrics = (await import("@/lib/analytics/metricComputer")).computeAnalyticsMetrics;
+    const metrics = await computeAnalyticsMetrics(ctx.accountId);
+    return { metrics };
+  },
+};
+
 export const ASSISTANT_TOOLS: AssistantTool[] = [
   listShipments,
   getValueAtRisk,
@@ -3214,6 +3561,18 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   getRdpsReportsSummary,
   getPartyRdpsMonitoringHistory,
   triggerManualRdpsScan,
+  getHtsCode,
+  getRuling,
+  lookupRestrictedPartyLists,
+  getAdcvdOrders,
+  getSection301,
+  getPgaRequirements,
+  getExchangeRate,
+  searchRegulatoryNotices,
+  listDrawbackClaims,
+  listProtests,
+  listRefundOpportunities,
+  getDashboardMetrics,
 ];
 
 const TOOLS_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.declaration.name, t]));
