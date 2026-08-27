@@ -10,6 +10,10 @@ COPY apps/tms/package*.json ./apps/tms/
 # Copy all source files
 COPY . .
 
+# Build args & env for Git Commit SHA
+ARG GIT_COMMIT_SHA=unknown
+ENV NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA} VERCEL_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
 # Install dependencies, generate Prisma client, and build TMS app
 RUN npm ci
 RUN npx prisma generate --schema=packages/db/prisma/schema.prisma

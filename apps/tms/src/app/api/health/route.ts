@@ -11,7 +11,7 @@ export async function GET() {
   return NextResponse.json(
     {
       status: "ok",
-      service: "qubere-customs-app",
+      service: "qubere-tms-app",
       gitCommit: commit,
       timestamp: new Date().toISOString(),
     },
