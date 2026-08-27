@@ -12,6 +12,7 @@ const partyContactFindFirst = vi.fn();
 const partyScreeningSummaryUpsert = vi.fn();
 const partyScreeningSummaryFindUnique = vi.fn();
 const partyScreeningSummaryUpdate = vi.fn();
+const partyScreeningApprovalFindFirst = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -23,6 +24,7 @@ vi.mock("@/lib/db", () => ({
       findUnique: partyScreeningSummaryFindUnique,
       update: partyScreeningSummaryUpdate,
     },
+    partyScreeningApproval: { findFirst: partyScreeningApprovalFindFirst },
   },
 }));
 
@@ -42,6 +44,7 @@ const { rescreenParty, markStaleIfChanged, PartyHasNoActiveNameError } = await i
 
 beforeEach(() => {
   vi.clearAllMocks();
+  partyScreeningApprovalFindFirst.mockResolvedValue(null);
 });
 
 describe("rescreenParty: current-effective identity resolution", () => {
