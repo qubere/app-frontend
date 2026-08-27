@@ -4,10 +4,18 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useDecisionActions } from "@/lib/decisions/useDecisionActions";
 import { ExceptionQuickActions } from "./ExceptionQuickActions";
-import { ExceptionSlideOver } from "./ExceptionSlideOver";
-import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
+
+const ExceptionSlideOver = dynamic(
+  () => import("./ExceptionSlideOver").then((mod) => mod.ExceptionSlideOver),
+  { ssr: false }
+);
+const DocumentReviewPanel = dynamic(
+  () => import("@/components/DocumentReviewPanel").then((mod) => mod.DocumentReviewPanel),
+  { ssr: false }
+);
 import { Modal, ModalHeader, ModalBody } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor } from "@/modules/decisions/editableFields";
@@ -460,22 +468,22 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
                         : "bg-surface-muted border-border hover:border-brand hover:bg-white"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <Link
                         href={`/app/shipments/${g.shipmentId}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="font-mono font-bold text-brand text-sm hover:underline cursor-pointer"
+                        className="font-mono font-bold text-brand text-sm hover:underline cursor-pointer shrink-0"
                       >
                         {g.shipmentNumber}
                       </Link>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {isFilingBlocked && (
-                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200 shrink-0">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200 shrink-0 whitespace-nowrap">
                             FILING BLOCKED
                           </span>
                         )}
                         <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[g.priority]}`} />
-                        <span className={`text-[10px] font-semibold ${PRIORITY_TEXT[g.priority]}`}>
+                        <span className={`text-[10px] font-semibold whitespace-nowrap ${PRIORITY_TEXT[g.priority]}`}>
                           {PRIORITY_LABEL[g.priority]}
                         </span>
                       </div>

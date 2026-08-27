@@ -78,9 +78,14 @@ function WindowBadge({ days }: { days: number | null }) {
   return <span className="text-xs text-ink-muted">{days}d left</span>;
 }
 
-export function PscListClient() {
-  const [pscs, setPscs] = useState<PscRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+export interface PscListClientProps {
+  initialPscs?: PscRecord[];
+}
+
+export function PscListClient({ initialPscs }: PscListClientProps = {}) {
+  const hasInitial = Boolean(initialPscs);
+  const [pscs, setPscs] = useState<PscRecord[]>(() => initialPscs || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
 
@@ -96,7 +101,11 @@ export function PscListClient() {
       .finally(() => setLoading(false));
   }, [statusFilter, typeFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!hasInitial || statusFilter !== "ALL" || typeFilter !== "ALL") {
+      load();
+    }
+  }, [load, hasInitial, statusFilter, typeFilter]);
 
   const urgentCount = pscs.filter((p) => {
     const days = daysRemaining(p.originalFiling?.shipment?.complianceDeadlines?.[0]?.dueAt ?? null);

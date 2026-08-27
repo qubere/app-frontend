@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
-import { resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
+import { readStoredObject, resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
 
 /**
  * Streams a stored document back to the browser.
@@ -57,33 +57,12 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
     return streamLocalFile(document.fileUrl, contentDisposition);
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    console.error("[documents/proxy] BLOB_READ_WRITE_TOKEN not configured", {
-      accountId: ctx.accountId,
-      documentId,
-    });
-    return new NextResponse("Document storage unavailable", { status: 404 });
-  }
-
   try {
-    const upstream = await fetch(document.fileUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!upstream.ok || !upstream.body) {
-      console.error("[documents/proxy] upstream fetch failed", {
-        accountId: ctx.accountId,
-        documentId,
-        status: upstream.status,
-      });
-      return new NextResponse("Document not found", { status: 404 });
-    }
-
-    return new NextResponse(upstream.body, {
+    const stored = await readStoredObject(document.fileUrl);
+    return new NextResponse(new Uint8Array(stored.body), {
       status: 200,
       headers: {
-        "Content-Type": upstream.headers.get("Content-Type") ?? "application/octet-stream",
+        "Content-Type": stored.contentType ?? "application/octet-stream",
         "Content-Disposition": contentDisposition,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

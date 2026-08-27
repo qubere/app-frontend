@@ -9,8 +9,22 @@ import type { ScreeningEntityWithAddresses } from "@/modules/agents/compliance/r
 // eligibility rule (multi-word raw name, exactly one meaningful token after
 // common-word stripping, effective nameThreshold > 50).
 
-function entity(id: string, name: string, alternateNames: string[] = []): ScreeningEntityWithAddresses {
-  return { id, name, alternateNames, addresses: [] } as unknown as ScreeningEntityWithAddresses;
+function entity(
+  id: string,
+  name: string,
+  alternateNames: string[] = [],
+  aliasNames: string[] = [],
+): ScreeningEntityWithAddresses {
+  const aliases = aliasNames.map((aliasName, i) => ({
+    id: `${id}-alias-${i}`,
+    screeningEntityId: id,
+    providerSubId: null,
+    name: aliasName,
+    aliasType: "Also Known As",
+    isPrimary: false,
+    createdAt: new Date(),
+  }));
+  return { id, name, alternateNames, addresses: [], aliases } as unknown as ScreeningEntityWithAddresses;
 }
 
 describe("generateCandidates: exact phase", () => {
@@ -91,12 +105,12 @@ describe("generateCandidates: phoneticAlgorithm + excludeMetaphone", () => {
 });
 
 describe("generateCandidates: alternate whole-word screening", () => {
-  // "ABC Trading Co" strips to the single 3-char token "ABC" -- too short for
-  // RAW_WORD (which requires token length > 3), so a candidate produced only
+  // "MK Trading Co" strips to the single 2-char token "MK" -- too short for
+  // RAW_WORD (which requires token length > 2), so a candidate produced only
   // via the alternate path proves it is a genuinely additional signal, not a
   // RAW_WORD duplicate.
-  const target = "ABC Trading Co";
-  const referenceList = [entity("e_alt", "ABC Global Metals")];
+  const target = "MK Trading Co";
+  const referenceList = [entity("e_alt", "MK Global Metals")];
 
   it("is not eligible when alternate screening is disabled", () => {
     const result = generateCandidates(target, referenceList, { nameThreshold: 80 });
@@ -133,11 +147,11 @@ describe("generateCandidates: alternate whole-word screening", () => {
   });
 
   it("is eligible but skipped when an exact match was already found and continueOnExactMatch is false", () => {
-    // "ABC Enterprises" strips to the same single token "ABC" as `target`
-    // ("ABC Trading Co" -> strips "Trading"/"Co"), so it's an EXACT match via
+    // "MK Enterprises" strips to the same single token "MK" as `target`
+    // ("MK Trading Co" -> strips "Trading"/"Co"), so it's an EXACT match via
     // common-word-stripped comparison while still leaving `target` eligible
     // for alternate screening (multi-word, strips to exactly one token).
-    const result = generateCandidates(target, [entity("e_exact", "ABC Enterprises")], {
+    const result = generateCandidates(target, [entity("e_exact", "MK Enterprises")], {
       alternateScreeningEnabled: true,
       nameThreshold: 80,
     });
@@ -156,5 +170,28 @@ describe("generateCandidates: alternate whole-word screening", () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0].reasons.has("ALTERNATE_WHOLE_WORD")).toBe(true);
     expect(result.candidates[0].reasons.has("RAW_WORD")).toBe(false);
+  });
+});
+
+describe("generateCandidates: ScreeningEntityAlias wiring", () => {
+  it("finds an exact match via a ScreeningEntityAlias name absent from both name and alternateNames", () => {
+    const referenceList = [entity("e_alias", "Consolidated Metals Group", [], ["Acme Trading Co"])];
+    const result = generateCandidates("Acme Trading Co", referenceList);
+    expect(result.exactMatchFound).toBe(true);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].reasons.has("EXACT")).toBe(true);
+    expect(result.candidates[0].matchedAgainst).toBe("Acme Trading Co");
+  });
+
+  it("does not double-count or inflate candidates when an alias duplicates an existing alternateNames entry", () => {
+    const referenceList = [entity("e_dup", "Acme Trading Co", ["Acme Traders"], ["Acme Traders", "acme traders"])];
+    const result = generateCandidates("Acme Traders", referenceList);
+    expect(result.candidates).toHaveLength(1);
+  });
+
+  it("does not throw when aliases is absent (mocked/legacy fixtures without the field)", () => {
+    const bareEntity = { id: "e_bare", name: "Acme Trading Co", alternateNames: [], addresses: [] } as unknown as ScreeningEntityWithAddresses;
+    const result = generateCandidates("Acme Trading Co", [bareEntity]);
+    expect(result.exactMatchFound).toBe(true);
   });
 });

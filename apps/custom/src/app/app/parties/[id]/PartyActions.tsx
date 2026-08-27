@@ -994,6 +994,117 @@ export function RestrictedPartyDispositionForm({
 }
 
 // ---------------------------------------------------------------------------
+// Party-level pre-approval (screening reuse) -- distinct from a candidate's
+// FALSE_POSITIVE disposition above. Grants/revokes reuse of this party's
+// already-satisfied Restricted Party Screening obligation; never itself
+// screens or clears a candidate match.
+// ---------------------------------------------------------------------------
+
+export function GrantPreApprovalForm({ partyId, onDone }: { partyId: string; onDone?: () => void }) {
+  const { busy, error, run } = useAction();
+  const [reason, setReason] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [open, setOpen] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const ok = await run(`/api/v1/parties/${partyId}/restricted-party-screening/pre-approval`, "POST", {
+      reason: reason.trim() === "" ? undefined : reason.trim(),
+      expiresAt: expiresAt === "" ? undefined : new Date(expiresAt).toISOString(),
+    });
+    if (ok) {
+      setReason("");
+      setExpiresAt("");
+      setOpen(false);
+      onDone?.();
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className={buttonClass}>
+        Grant pre-approval
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-xl border border-border p-3 bg-surface-muted">
+      <div>
+        <label htmlFor={`pre-approval-reason-${partyId}`} className={labelClass}>
+          Reason
+        </label>
+        <input
+          id={`pre-approval-reason-${partyId}`}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Why is this party pre-approved for reuse? (optional)"
+          maxLength={2000}
+          className={`${inputClass} w-full`}
+        />
+      </div>
+      <div>
+        <label htmlFor={`pre-approval-expires-${partyId}`} className={labelClass}>
+          Expires (optional)
+        </label>
+        <input
+          id={`pre-approval-expires-${partyId}`}
+          type="date"
+          value={expiresAt}
+          onChange={(e) => setExpiresAt(e.target.value)}
+          className={`${inputClass} w-full bg-white`}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={busy} className={primaryClass}>
+          {busy ? "Saving…" : "Grant pre-approval"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={buttonClass}>
+          Cancel
+        </button>
+      </div>
+      <p className="text-xs text-[#6E6E73]">
+        Applies only to this party&apos;s current name/address/contact snapshot. Any later change to
+        those fields, or a newer watchlist publication, invalidates reuse and normal screening resumes.
+      </p>
+      <ErrorNote message={error} />
+    </form>
+  );
+}
+
+export function RevokePreApprovalButton({
+  partyId,
+  approvalId,
+  onDone,
+}: {
+  partyId: string;
+  approvalId: string;
+  onDone?: () => void;
+}) {
+  const { busy, error, run } = useAction();
+  return (
+    <span className="inline-flex flex-col items-start">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          const ok = await run(
+            `/api/v1/parties/${partyId}/restricted-party-screening/pre-approval/${approvalId}`,
+            "PATCH",
+            {}
+          );
+          if (ok) onDone?.();
+        }}
+        className={buttonClass}
+      >
+        {busy ? "Revoking…" : "Revoke"}
+      </button>
+      <ErrorNote message={error} />
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Revalidation flags
 // ---------------------------------------------------------------------------
 

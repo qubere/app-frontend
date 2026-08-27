@@ -48,6 +48,7 @@ import {
   type DueRun,
 } from "./processingRuns";
 import { readOriginalDocument, resolveMimeType } from "./documentSource";
+import { createSignedReadUrl } from "@/lib/storage";
 
 export interface WorkerTickResult {
   submitted: number;
@@ -242,6 +243,7 @@ async function submitRun(
     // and therefore has no SSRF surface at all. Signed-url delivery is only used
     // when configured, and only ever with a Qubere-minted storage URL (asserted
     // inside the provider).
+    const signedUrlExpiresAt = new Date(Date.now() + limits.signedUrlTtlSeconds * 1000);
     const source =
       provider.sourceDelivery === "inline"
         ? ({
@@ -254,8 +256,8 @@ async function submitRun(
             kind: "signed-url" as const,
             filename: run.document.fileName,
             mimeType,
-            url: run.document.fileUrl ?? "",
-            expiresAt: new Date(Date.now() + limits.signedUrlTtlSeconds * 1000),
+            url: await createSignedReadUrl(run.document.fileUrl ?? "", signedUrlExpiresAt),
+            expiresAt: signedUrlExpiresAt,
           });
 
     const ack = await provider.submit({ runId: run.id, correlationId, profile, source });

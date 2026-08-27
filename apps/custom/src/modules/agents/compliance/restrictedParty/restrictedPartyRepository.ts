@@ -6,15 +6,15 @@
 // UFLPA_ENTITY_LIST (forcedLabor), and MEU_LIST (militaryEndUse) -- those
 // are already screened by other modules and must not be double-counted here.
 import { db } from "@/lib/db";
-import type { AccountScreeningConfig, ComplianceKeywordRule, ScreeningEntity, ScreeningEntityAddress } from "@prisma/client";
+import type { AccountScreeningConfig, ComplianceKeywordRule, ScreeningEntity, ScreeningEntityAddress, ScreeningEntityAlias } from "@prisma/client";
 import type { ApprovedDispositionMap } from "./suppression";
 
 export const RESTRICTED_PARTY_SOURCE_LISTS = ["SDN", "CONSOLIDATED_NON_SDN", "DPL", "ISN", "SSI", "FSE", "PLC", "NS_MBS"];
 
 export const RESTRICTED_PARTY_RED_FLAG_CATEGORY = "RESTRICTED_PARTY_RED_FLAG";
 
-/** A reference entity plus every address on file (Dow Jones entities can carry several; OFAC/BIS rows have none beyond the flat address/city/country columns). */
-export type ScreeningEntityWithAddresses = ScreeningEntity & { addresses: ScreeningEntityAddress[] };
+/** A reference entity plus every address and alias on file (Dow Jones entities can carry several of each; OFAC/BIS rows have neither beyond the flat address/city/country columns and alternateNames array). */
+export type ScreeningEntityWithAddresses = ScreeningEntity & { addresses: ScreeningEntityAddress[]; aliases: ScreeningEntityAlias[] };
 
 /** Published denial-order reference rows this module owns. Empty result must be treated as SKIPPED, never CLEAR. */
 export async function getRestrictedPartyReferenceList(): Promise<ScreeningEntityWithAddresses[]> {
@@ -23,8 +23,34 @@ export async function getRestrictedPartyReferenceList(): Promise<ScreeningEntity
       publicationStatus: "PUBLISHED",
       OR: [{ sourceList: { in: RESTRICTED_PARTY_SOURCE_LISTS } }, { provider: "DOW_JONES" }],
     },
-    include: { addresses: true },
+    include: { addresses: true, aliases: true },
   });
+}
+
+/** Most recent publishedAt among the relevant reference lists -- the "reference-data as of" watermark used by pre-approval freshness checks. Null when nothing is published yet. */
+export async function getLatestReferenceDataPublishedAt(): Promise<Date | null> {
+  const row = await db.screeningEntity.findFirst({
+    where: {
+      publicationStatus: "PUBLISHED",
+      OR: [{ sourceList: { in: RESTRICTED_PARTY_SOURCE_LISTS } }, { provider: "DOW_JONES" }],
+    },
+    orderBy: { publishedAt: "desc" },
+    select: { publishedAt: true },
+  });
+  return row?.publishedAt ?? null;
+}
+
+/** True when a relevant reference list has published a row after `since` -- used to invalidate pre-approval reuse when the watchlist itself has moved on, independent of whether the Party's own identity changed. */
+export async function hasNewerPublishedReferenceData(since: Date): Promise<boolean> {
+  const row = await db.screeningEntity.findFirst({
+    where: {
+      publicationStatus: "PUBLISHED",
+      publishedAt: { gt: since },
+      OR: [{ sourceList: { in: RESTRICTED_PARTY_SOURCE_LISTS } }, { provider: "DOW_JONES" }],
+    },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
 /** Tenant-level RPS matcher config, or null when the account has never configured one -- callers fall back to module defaults per field. */
@@ -39,7 +65,21 @@ export async function getRedFlagRules(): Promise<ComplianceKeywordRule[]> {
   });
 }
 
-/** Most-recent APPROVED/FALSE_POSITIVE disposition per screeningEntityId for this party -- the suppression map. Only meaningful when partyId is known (Party Master screening); ad-hoc/API/Copilot screenings with no partyId get an empty map. */
+/**
+ * Most-recent APPROVED/FALSE_POSITIVE disposition per screeningEntityId for
+ * this party -- the suppression map. Only meaningful when partyId is known
+ * (Party Master screening); ad-hoc/API/Copilot screenings with no partyId
+ * get an empty map.
+ *
+ * A disposition only speaks to the ScreeningEntity data the reviewer actually
+ * saw. If that entity has been republished since the reviewer's decision
+ * (e.g. a watchlist refresh added new identifiers/addresses to the same
+ * record), the decision is stale and must not go on suppressing future
+ * matches against it forever -- normal matching resumes for that entity
+ * until it is reviewed again. Same freshness principle as
+ * checkPreApprovalGate's referenceDataAsOf check, applied per-entity instead
+ * of per-party.
+ */
 export async function getApprovedDispositions(accountId: string, partyId: string): Promise<ApprovedDispositionMap> {
   const dispositions = await db.restrictedPartyDisposition.findMany({
     where: {
@@ -47,16 +87,22 @@ export async function getApprovedDispositions(accountId: string, partyId: string
       status: { in: ["APPROVED", "FALSE_POSITIVE"] },
       result: { partyId },
     },
-    include: { result: { include: { matches: true } } },
+    include: {
+      result: {
+        include: { matches: { include: { screeningEntity: { select: { publishedAt: true } } } } },
+      },
+    },
     orderBy: { updatedAt: "desc" },
   });
 
   const map: ApprovedDispositionMap = new Map();
   for (const disposition of dispositions) {
     for (const match of disposition.result.matches) {
-      if (!map.has(match.screeningEntityId)) {
-        map.set(match.screeningEntityId, disposition.id);
+      if (map.has(match.screeningEntityId)) continue;
+      if (match.screeningEntity.publishedAt && match.screeningEntity.publishedAt > disposition.updatedAt) {
+        continue;
       }
+      map.set(match.screeningEntityId, disposition.id);
     }
   }
   return map;

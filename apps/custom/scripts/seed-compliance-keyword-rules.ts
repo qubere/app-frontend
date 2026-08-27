@@ -104,6 +104,37 @@ const RULES: Array<{
   { category: "RESTRICTED_PARTY_RED_FLAG", phrase: "customer declines routine installation or training services", citation: "15 CFR Part 732, Supp. No. 3", severity: "MEDIUM" },
   { category: "RESTRICTED_PARTY_RED_FLAG", phrase: "requests to omit shipping insurance", citation: "15 CFR Part 732, Supp. No. 3", severity: "MEDIUM" },
   { category: "RESTRICTED_PARTY_RED_FLAG", phrase: "transaction involves a country of diversion concern", citation: "15 CFR Part 732, Supp. No. 3", severity: "HIGH" },
+
+  // ---- Restricted Party Screening: legacy Oracle COMMON_WORDS CW_SUB_TYPE=REDFLAG ----
+  // Single-word export-control/sanctions/WMD-proliferation vocabulary from the
+  // legacy PartyScreening COMMON_WORDS reference table (87 words total, read
+  // from the source CSV -- see normalize.ts's ADDRESS_TERMS/LEGAL_FORM_WORDS
+  // comments for the same source). These are single-word CONTAINS matches --
+  // meaningfully higher false-positive risk than the curated multi-word
+  // phrases above (e.g. "SPACE", "TARGET", "ORGANIC", "AGENTS" will match a
+  // large number of unrelated shipment descriptions). Seeded as DRAFT like
+  // every other row here; a compliance/legal reviewer must evaluate
+  // false-positive rate before promoting any of these to PUBLISHED.
+  ...[
+    "PLUTONIUM", "PRECURSOR", "PROLIFERATION", "PROPELLANT", "PROPULSION", "RADIATION",
+    "RADIOACTIVE", "REACTOR", "ROCKET", "TOXIC", "ULTRACENTRIFUGE", "URANIUM", "WARFARE", "WEAPONS",
+    "AUTOCLAVE", "AEROSOL", "AGENTS", "BREEDER", "CENTRIFUGE", "CONTAINMENT", "CRUISE", "DRONES",
+    "FERMENTATION", "FERMENTER", "FISSION", "FUSION", "GUIDED", "HASTELLOY", "INSECTICIDE",
+    "IRRADIATED", "MICROENCAPSULATION", "MONEL", "NICKEL", "NONORGANIC", "ORGANIC", "PARTICULATE",
+    "PILOTED", "PROTECTIVE", "RADIOLOGICAL", "REACTIVE", "RECONNAISSANCE", "REPROCESSING",
+    "SATELLITE", "SPACE", "TARGET", "TELEMETRY", "TRACKING", "UNMANNED", "UNSAFEGUARDED",
+    "CUBA", "CUBAN", "IRAN", "IRANIAN", "IRAQ", "IRAQI", "SYRIA", "SYRIAN", "SUDAN", "SUDANESE",
+    "AERIAL", "AERONAUTICS", "AEROSPACE", "AMMONIA", "AMMUNITION", "ARMAMENT", "ASTROPHYSICS",
+    "ATMOSPHERIC", "ATOMIC", "BACTERIOLOGICAL", "BALLISTIC", "BIOLOGICAL", "CHEMICAL", "DESTRUCTION",
+    "EXPERIMENTAL", "EXPLOSIVE", "FERTILIZER", "INERTIAL", "ISOTOPE", "LASER", "LAUNCH",
+    "MICROBIOLOGY", "MILITARY", "MISSILE", "MUNITIONS", "NITROGEN", "NUCLEAR", "PARTICLE",
+  ].map((word) => ({
+    category: "RESTRICTED_PARTY_RED_FLAG",
+    phrase: word,
+    citation: "Legacy COMMON_WORDS reference table (Oracle PartyScreening_Tables, CW_SUB_TYPE=REDFLAG)",
+    severity: "MEDIUM",
+    authority: "Legacy PartyScreening COMMON_WORDS reference data",
+  })),
 ];
 
 async function main() {

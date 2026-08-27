@@ -34,9 +34,16 @@ interface BondItem {
   createdAt?: string;
 }
 
-export function BondsClient({ accountName }: { accountName: string }) {
-  const [bonds, setBonds] = useState<BondItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export function BondsClient({
+  accountName,
+  initialBonds,
+}: {
+  accountName: string;
+  initialBonds?: BondItem[];
+}) {
+  const hasInitial = Boolean(initialBonds);
+  const [bonds, setBonds] = useState<BondItem[]>(() => initialBonds || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -67,7 +74,9 @@ export function BondsClient({ accountName }: { accountName: string }) {
   };
 
   useEffect(() => {
-    fetchBonds();
+    if (!hasInitial) {
+      fetchBonds();
+    }
   }, []);
 
   const handleCreateBond = async (e: React.FormEvent) => {

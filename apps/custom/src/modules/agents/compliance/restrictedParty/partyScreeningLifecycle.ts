@@ -14,14 +14,12 @@
 // a mismatch flips screeningStatus to STALE (an async re-screen is triggered
 // on next read/explicit trigger, never forced synchronously into the write
 // path that's calling this).
-import crypto from "crypto";
 import { db } from "@/lib/db";
-import type { Prisma, PrismaClient, RestrictedPartyScreeningStatus as PrismaRPSStatus } from "@prisma/client";
+import type { RestrictedPartyScreeningStatus as PrismaRPSStatus } from "@prisma/client";
 import { runRestrictedPartyScreening } from "./restrictedPartyScreening";
 import { persistScreeningRun, type PersistedRestrictedPartyResult } from "./persistResult";
-import type { RestrictedPartyIdentity, RestrictedPartyScreeningOptions, RestrictedPartyScreeningStatus } from "./types";
-
-type Tx = Prisma.TransactionClient | PrismaClient;
+import { computeIdentityHash, loadCurrentIdentity, type Tx } from "./partyIdentity";
+import type { RestrictedPartyScreeningOptions, RestrictedPartyScreeningStatus } from "./types";
 
 const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
   HIT: 5,
@@ -34,40 +32,6 @@ const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
 
 function worseStatus(a: RestrictedPartyScreeningStatus, b: RestrictedPartyScreeningStatus): RestrictedPartyScreeningStatus {
   return STATUS_SEVERITY[a] >= STATUS_SEVERITY[b] ? a : b;
-}
-
-async function loadCurrentIdentity(tx: Tx, accountId: string, partyId: string): Promise<RestrictedPartyIdentity | null> {
-  const [name, address, contact] = await Promise.all([
-    tx.partyName.findFirst({
-      where: { partyId, accountId, status: "ACTIVE" },
-      orderBy: [{ isPrimary: "desc" }, { updatedAt: "desc" }],
-    }),
-    tx.partyAddress.findFirst({
-      where: { partyId, accountId, status: "ACTIVE" },
-      orderBy: [{ isPrimary: "desc" }, { updatedAt: "desc" }],
-    }),
-    tx.partyContact.findFirst({
-      where: { partyId, accountId, status: "ACTIVE" },
-      orderBy: [{ isPrimary: "desc" }, { updatedAt: "desc" }],
-    }),
-  ]);
-
-  if (!name) return null;
-
-  return {
-    name: name.rawName,
-    address: address?.addressLine1 ?? null,
-    city: address?.city ?? null,
-    country: address?.country ?? null,
-    contactName: contact?.name ?? null,
-  };
-}
-
-function computeIdentityHash(identity: RestrictedPartyIdentity): string {
-  const normalized = [identity.name, identity.address ?? "", identity.city ?? "", identity.country ?? "", identity.contactName ?? ""]
-    .map((v) => v.trim().toLowerCase())
-    .join("|");
-  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
 export class PartyHasNoActiveNameError extends Error {

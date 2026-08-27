@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
-import { resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
+import { readStoredObject, resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
 
 export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   const attachmentId = new URL(req.url).searchParams.get("attachmentId");
@@ -32,15 +32,11 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   const disposition = buildContentDisposition(attachment.originalFilename);
   if (origin === null) return streamLocalFile(attachment.quarantinedFileUrl, disposition);
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return new NextResponse("Document storage unavailable", { status: 404 });
-
   try {
-    const upstream = await fetch(attachment.quarantinedFileUrl, { headers: { Authorization: `Bearer ${token}` } });
-    if (!upstream.ok || !upstream.body) return new NextResponse("Document not found", { status: 404 });
-    return new NextResponse(upstream.body, {
+    const stored = await readStoredObject(attachment.quarantinedFileUrl);
+    return new NextResponse(new Uint8Array(stored.body), {
       headers: {
-        "Content-Type": upstream.headers.get("Content-Type") ?? "application/octet-stream",
+        "Content-Type": stored.contentType ?? "application/octet-stream",
         "Content-Disposition": disposition,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

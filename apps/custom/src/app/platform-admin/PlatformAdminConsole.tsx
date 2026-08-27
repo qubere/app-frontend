@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate, cn } from "@/lib/utils";
-import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck, ShieldCheck } from "lucide-react";
+import { Building2, UserPlus, Shield, CheckCircle2, AlertCircle, Search, Globe2, Rocket, Bot, Code2, Database, Gavel, Brain, ShieldAlert, UserCheck, ShieldCheck, Clock } from "lucide-react";
 import { HtsAdminPanel, HtsAdminData } from "./HtsAdminPanel";
 import { DeploymentsPanel } from "./DeploymentsPanel";
 import { AgentsAnalyticsPanel } from "./AgentsAnalyticsPanel";
@@ -20,6 +20,9 @@ import { Badge } from "@/components/ui/Badge";
 import type { AiUsageAnalytics } from "@/lib/ai/aiUsageAnalytics";
 import type { DocumentProcessingAnalytics } from "@/lib/documents/documentProcessingAnalytics";
 import type { RolesPermissionsData } from "@/lib/admin/rolesData";
+import type { CronJob } from "./CronPanel";
+import type { DatasetWithStatus } from "@/lib/data/datasetRegistry";
+import type { RateReviewPanelProps } from "./RateReviewPanel";
 
 interface AccountItem {
   id: string;
@@ -37,6 +40,9 @@ interface PlatformAdminConsoleProps {
   documentProcessing: DocumentProcessingAnalytics;
   pendingKeywordRuleCount: number;
   rolesPermissions?: RolesPermissionsData;
+  initialCronJobs?: CronJob[];
+  initialDatasets?: DatasetWithStatus[];
+  initialRateReviews?: RateReviewPanelProps["initialItems"];
 }
 
 export function PlatformAdminConsole({
@@ -46,6 +52,9 @@ export function PlatformAdminConsole({
   documentProcessing,
   pendingKeywordRuleCount,
   rolesPermissions,
+  initialCronJobs,
+  initialDatasets,
+  initialRateReviews,
 }: PlatformAdminConsoleProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
@@ -270,6 +279,15 @@ export function PlatformAdminConsole({
           <span>API</span>
         </button>
         <button
+          onClick={() => setActiveTab("cron")}
+          className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center space-x-2 ${
+            activeTab === "cron" ? "bg-brand text-white" : "bg-white border border-border text-ink-muted hover:text-ink"
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          <span>Cron</span>
+        </button>
+        <button
           onClick={() => setActiveTab("memory")}
           className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center space-x-2 ${
             activeTab === "memory" ? "bg-brand text-white" : "bg-white border border-border text-ink-muted hover:text-ink"
@@ -280,9 +298,9 @@ export function PlatformAdminConsole({
         </button>
       </div>
 
-      {activeTab === "data" && <DataAdminPanel />}
+      {activeTab === "data" && <DataAdminPanel initialDatasets={initialDatasets} />}
 
-      {activeTab === "rate-review" && <RateReviewPanel />}
+      {activeTab === "rate-review" && <RateReviewPanel initialItems={initialRateReviews} />}
 
       {activeTab === "keyword-rules" && <KeywordRuleReviewPanel />}
 
@@ -294,7 +312,7 @@ export function PlatformAdminConsole({
 
       {activeTab === "api" && <ApiExplorerPanel />}
 
-      {activeTab === "cron" && <CronPanel />}
+      {activeTab === "cron" && <CronPanel initialJobs={initialCronJobs} />}
 
       {activeTab === "memory" && <AccountMemoryPanel accounts={accounts} />}
 

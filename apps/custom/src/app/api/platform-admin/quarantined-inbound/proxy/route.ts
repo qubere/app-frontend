@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
-import { resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
+import { readStoredObject, resolveStorageOrigin, resolveLocalFilePath, StorageValidationError } from "@/lib/storage";
 
 /**
  * Streams a quarantined (stored-but-unassigned) attachment back to the
@@ -48,26 +48,12 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
     return streamLocalFile(attachment.quarantinedFileUrl, contentDisposition);
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    console.error("[quarantined-inbound/proxy] BLOB_READ_WRITE_TOKEN not configured", { attachmentId });
-    return new NextResponse("Document storage unavailable", { status: 404 });
-  }
-
   try {
-    const upstream = await fetch(attachment.quarantinedFileUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!upstream.ok || !upstream.body) {
-      console.error("[quarantined-inbound/proxy] upstream fetch failed", { attachmentId, status: upstream.status });
-      return new NextResponse("Document not found", { status: 404 });
-    }
-
-    return new NextResponse(upstream.body, {
+    const stored = await readStoredObject(attachment.quarantinedFileUrl);
+    return new NextResponse(new Uint8Array(stored.body), {
       status: 200,
       headers: {
-        "Content-Type": upstream.headers.get("Content-Type") ?? "application/octet-stream",
+        "Content-Type": stored.contentType ?? "application/octet-stream",
         "Content-Disposition": contentDisposition,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

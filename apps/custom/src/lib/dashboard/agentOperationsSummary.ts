@@ -82,3 +82,61 @@ export function computeAgentOperations(decisions: AgentDecisionRow[]): AgentOper
 
   return Array.from(byAgent.values()).sort((a, b) => b.processed - a.processed);
 }
+
+export interface AgentDecisionGroup {
+  agentName: string;
+  status: string;
+  triageState: string | null;
+  /**
+   * Only meaningful when triageState is null -- one of the three blocked
+   * sentinel values triageDecision checks for, or null otherwise. Collapsing
+   * to sentinel-or-null (rather than the raw free-text proposedDescription)
+   * keeps this a real aggregate dimension instead of one group per row.
+   */
+  proposedDescription?: string | null;
+  count: number;
+}
+
+export interface AgentOverrideGroup {
+  agentName: string;
+  eligible: number;
+  overridden: number;
+}
+
+export function computeAgentOperationsFromGroups(
+  groups: AgentDecisionGroup[],
+  overrides: AgentOverrideGroup[] = []
+): AgentOperationsRow[] {
+  const byAgent = new Map<string, AgentOperationsRow>();
+  const overrideMap = new Map<string, AgentOverrideGroup>();
+  for (const o of overrides) {
+    overrideMap.set(o.agentName, o);
+  }
+
+  for (const g of groups) {
+    if (!byAgent.has(g.agentName)) {
+      byAgent.set(g.agentName, {
+        agentName: g.agentName,
+        processed: 0,
+        needsReview: 0,
+        blocked: 0,
+        verified: 0,
+        overrideRate: null,
+      });
+    }
+    const row = byAgent.get(g.agentName)!;
+    row.processed += g.count;
+    const triage = triageDecision({ status: g.status, triageState: g.triageState, proposedDescription: g.proposedDescription ?? null });
+    if (triage === "blocked") row.blocked += g.count;
+    else if (triage === "review") row.needsReview += g.count;
+    else row.verified += g.count;
+  }
+
+  for (const row of byAgent.values()) {
+    const o = overrideMap.get(row.agentName);
+    row.overrideRate = o && o.eligible > 0 ? o.overridden / o.eligible : null;
+  }
+
+  return Array.from(byAgent.values()).sort((a, b) => b.processed - a.processed);
+}
+

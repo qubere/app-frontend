@@ -1,11 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Search, ListChecks, Clock } from "lucide-react";
-import { ComplianceFindingsClient } from "./ComplianceFindingsClient";
-import { ScreeningPanel, type ScreeningFindingProps, type PartyScreeningResultProps } from "./ScreeningPanel";
-import { OverviewPanel } from "./OverviewPanel";
-import { AuditHistoryPanel, type AuditRecordProps } from "./AuditHistoryPanel";
+import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck } from "lucide-react";
+import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
+import type { AuditRecordProps } from "./AuditHistoryPanel";
+
+// OverviewPanel is the default tab (no ?tab= param) -- keep it SSR'd so the
+// most common landing view has real server-rendered content on first paint.
+// Only the non-default tabs defer to ssr:false for bundle-splitting.
+const OverviewPanel = dynamic(() => import("./OverviewPanel").then((m) => m.OverviewPanel));
+const ScreeningPanel = dynamic(() => import("./ScreeningPanel").then((m) => m.ScreeningPanel), { ssr: false });
+const ComplianceFindingsClient = dynamic(() => import("./ComplianceFindingsClient").then((m) => m.ComplianceFindingsClient), { ssr: false });
+const AuditHistoryPanel = dynamic(() => import("./AuditHistoryPanel").then((m) => m.AuditHistoryPanel), { ssr: false });
+const ExecutionHistoryPanel = dynamic(() => import("./ExecutionHistoryPanel").then((m) => m.ExecutionHistoryPanel), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -35,46 +44,63 @@ interface FindingProps {
 }
 
 interface ComplianceWorkspaceClientProps {
+  initialTab?: string;
   findings: FindingProps[];
   recentAudits: AuditRecordProps[];
   screeningBuckets: Record<string, ScreeningBucketData>;
   mayReadPartyScreening: boolean;
+  mayReadAuditHistory: boolean;
   partyScreeningResults: PartyScreeningResultProps[];
   partySummaryCounts: Record<string, number>;
+  /** Gates the "Service Usage & History" tab -- true when the session holds `audit.read` or `compliance.read`. */
+  mayReadExecutionHistory: boolean;
 }
 
-type WorkspaceTab = "overview" | "screening" | "review" | "audit";
-
-function normalizeTab(tab: string | null): WorkspaceTab {
-  return tab === "screening" || tab === "review" || tab === "audit" ? tab : "overview";
-}
-
-const TOP_TABS: { id: WorkspaceTab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "screening", label: "Screening", icon: Search },
-  { id: "review", label: "Review Queue", icon: ListChecks },
-  { id: "audit", label: "Audit History", icon: Clock },
-];
+type WorkspaceTab = "overview" | "screening" | "review" | "audit" | "history";
 
 export function ComplianceWorkspaceClient({
+  initialTab = "overview",
   findings,
   recentAudits,
   screeningBuckets,
   mayReadPartyScreening,
+  mayReadAuditHistory,
   partyScreeningResults,
   partySummaryCounts,
+  mayReadExecutionHistory,
 }: ComplianceWorkspaceClientProps) {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
+    (initialTab as WorkspaceTab) || "overview"
+  );
+
+  const topTabs: { id: WorkspaceTab; label: string; icon: typeof LayoutDashboard; hidden?: boolean }[] = [
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "screening", label: "Screening", icon: Search },
+    { id: "review", label: "Review Queue", icon: ListChecks },
+    { id: "audit", label: "Audit History", icon: Clock, hidden: !mayReadAuditHistory },
+    { id: "history", label: "Service Usage & History", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
+  ];
 
   useEffect(() => {
-    setActiveTab(normalizeTab(new URLSearchParams(window.location.search).get("tab")));
-  }, []);
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "audit") {
+      setActiveTab(mayReadAuditHistory ? "audit" : "overview");
+    } else if (tabParam === "history") {
+      setActiveTab(mayReadExecutionHistory ? "history" : "overview");
+    } else if (tabParam === "screening" || tabParam === "review") {
+      setActiveTab(tabParam);
+    } else if (!tabParam) {
+      setActiveTab("overview");
+    }
+  }, [searchParams, mayReadAuditHistory, mayReadExecutionHistory]);
 
   const selectTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
-    const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab);
-    window.history.replaceState(null, "", url);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    router.push(`?${params.toString()}`);
   };
 
   const openFindingsCount = findings.filter((f) => f.status !== "Resolved").length;
@@ -84,7 +110,7 @@ export function ComplianceWorkspaceClient({
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-2 pt-2 border-t border-border">
-        {TOP_TABS.map(({ id, label, icon: Icon }) => (
+        {topTabs.filter((t) => !t.hidden).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -127,7 +153,8 @@ export function ComplianceWorkspaceClient({
           />
         )}
         {activeTab === "review" && <ComplianceFindingsClient findings={findings} recentAudits={[]} />}
-        {activeTab === "audit" && <AuditHistoryPanel recentAudits={recentAudits} />}
+        {activeTab === "audit" && mayReadAuditHistory && <AuditHistoryPanel recentAudits={recentAudits} />}
+        {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel />}
       </div>
     </div>
   );

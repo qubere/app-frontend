@@ -227,6 +227,19 @@ export function getActionableDecisionWhereFilter() {
 }
 
 /**
+ * In-memory equivalent of `getActionableDecisionWhereFilter` -- for filtering
+ * rows already loaded by a broader query instead of issuing a second
+ * Prisma call. Keep the two in sync.
+ */
+export function isDecisionActionable(row: { status: string; triageState: string | null }): boolean {
+  if (row.triageState != null) {
+    return (ACTIONABLE_TRIAGE_STATES as readonly string[]).includes(row.triageState);
+  }
+  const state = normalizeDecisionStatus(row.status);
+  return state ? isActionableDecisionState(state) : false;
+}
+
+/**
  * Canonical Prisma WHERE condition for querying all reviewable decisions in human queues.
  */
 export function getAllReviewableDecisionWhereFilter() {

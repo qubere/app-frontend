@@ -14,8 +14,15 @@ import crypto from "crypto";
 import { generateCandidates } from "./candidateGeneration";
 import { scoreCandidate } from "./scoring";
 import { checkRedFlags } from "./redFlagCheck";
+import { normalizeForMatching } from "./normalize";
 import { applySuppressions, type ApprovedDispositionMap } from "./suppression";
-import { getAccountScreeningConfig, getApprovedDispositions, getRedFlagRules, getRestrictedPartyReferenceList } from "./restrictedPartyRepository";
+import {
+  getAccountScreeningConfig,
+  getApprovedDispositions,
+  getLatestReferenceDataPublishedAt,
+  getRedFlagRules,
+  getRestrictedPartyReferenceList,
+} from "./restrictedPartyRepository";
 import type { ScreeningEntityWithAddresses } from "./restrictedPartyRepository";
 import { DEFAULT_NAME_THRESHOLD, MAX_PERSISTED_MATCHES } from "./types";
 import type {
@@ -83,6 +90,8 @@ interface PassContext {
   redFlagRules: ComplianceKeywordRule[] | null;
   redFlagError: string | null;
   approvedDispositions: ApprovedDispositionMap;
+  /** getLatestReferenceDataPublishedAt() watermark, snapshotted once per run for audit-evidence purposes. Null when nothing is published yet, or when the lookup itself failed (indistinguishable -- best-effort, never blocks screening). */
+  referenceDataAsOf: Date | null;
 }
 
 function runOnePass(
@@ -102,6 +111,8 @@ function runOnePass(
   const base = {
     passType,
     screenedName: name,
+    normalizedScreenedName: normalizeForMatching(name),
+    referenceDataAsOf: ctx.referenceDataAsOf,
     screenedAddress: address,
     screenedCity: city,
     screenedCountry: country,
@@ -236,7 +247,14 @@ export async function runRestrictedPartyScreening(input: RestrictedPartyScreenin
     // No stored config is indistinguishable from a lookup failure here -- both fall back to module defaults, never to a hard error.
   }
 
-  const ctx: PassContext = { referenceList, referenceError, redFlagRules, redFlagError, approvedDispositions };
+  let referenceDataAsOf: Date | null = null;
+  try {
+    referenceDataAsOf = await getLatestReferenceDataPublishedAt();
+  } catch {
+    // Audit-evidence-only snapshot -- a lookup failure never blocks screening, it just leaves the watermark null.
+  }
+
+  const ctx: PassContext = { referenceList, referenceError, redFlagRules, redFlagError, approvedDispositions, referenceDataAsOf };
   const options = resolveEffectiveOptions(input, accountConfig);
 
   const passes: RestrictedPartyPassOutcome[] = [

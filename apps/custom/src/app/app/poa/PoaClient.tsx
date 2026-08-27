@@ -37,9 +37,16 @@ interface ImporterItem {
   } | null;
 }
 
-export function PoaClient({ accountName }: { accountName: string }) {
-  const [importers, setImporters] = useState<ImporterItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export function PoaClient({
+  accountName,
+  initialImporters,
+}: {
+  accountName: string;
+  initialImporters?: ImporterItem[];
+}) {
+  const hasInitial = Boolean(initialImporters);
+  const [importers, setImporters] = useState<ImporterItem[]>(() => initialImporters || []);
+  const [loading, setLoading] = useState(!hasInitial);
   const [search, setSearch] = useState("");
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "GRANTED" | "PENDING">("ALL");
@@ -60,7 +67,9 @@ export function PoaClient({ accountName }: { accountName: string }) {
   };
 
   useEffect(() => {
-    fetchImporters();
+    if (!hasInitial) {
+      fetchImporters();
+    }
   }, []);
 
   const handlePoaUpload = async (importerId: string, file: File) => {

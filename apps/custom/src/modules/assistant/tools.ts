@@ -60,6 +60,7 @@ import {
 } from "@/modules/agents/compliance/restrictedParty/partyScreeningLifecycle";
 import { runRestrictedPartyScreening } from "@/modules/agents/compliance/restrictedParty/restrictedPartyScreening";
 import { persistScreeningRun } from "@/modules/agents/compliance/restrictedParty/persistResult";
+import { checkPreApprovalGate } from "@/modules/agents/compliance/restrictedParty/preApproval";
 
 /**
  * Helper to convert Zod Object Schema into Gemini-compatible Schema object
@@ -1903,6 +1904,7 @@ const getCountryEmbargoScreening: AssistantTool = {
     });
 
     const evidence = check.evidence ?? {};
+    const isPrivate = check.matcher === "PRIVATE";
     return {
       status: check.result,
       screeningPerformed: check.result !== "SKIPPED",
@@ -1911,6 +1913,12 @@ const getCountryEmbargoScreening: AssistantTool = {
       shipToCountry: check.screenedCountry,
       direction: "DESTINATION",
       matcher: check.matcher,
+      // A HIT from the PRIVATE matcher is this account's own configured watch-list
+      // rule, not a government sanction -- never phrase it to the user as one.
+      classification: check.result === "HIT" ? (isPrivate ? "PRIVATE_EMBARGO" : "PUBLIC_EMBARGO") : null,
+      classificationNote: isPrivate
+        ? "This hit is a private, account-configured embargo/watch-list rule -- not a government sanction. It reflects this account's own compliance policy."
+        : null,
       reason: check.reason ?? null,
       referenceRuleId: check.ruleId ?? null,
       sanctionIndicators: {
@@ -2113,6 +2121,218 @@ const getPartyRestrictedPartyScreeningHistory: AssistantTool = {
   },
 };
 
+// ---- tool: get_party_pre_approval_status ----
+//
+// Deterministic, evidence-grounded: reads persisted PartyScreeningApproval
+// rows only and reports validity by re-running the exact same checks
+// checkPreApprovalGate uses (revoked / expired / version / identity-hash /
+// reference-data freshness). The assistant must never infer, approve, or
+// bypass a pre-approval on its own -- this tool only reports what is
+// already recorded and whether it is currently valid for reuse.
+
+const getPartyPreApprovalStatusSchema = z.object({
+  partyId: z.string().describe("Party UUID."),
+});
+
+const getPartyPreApprovalStatus: AssistantTool = {
+  schema: getPartyPreApprovalStatusSchema,
+  declaration: {
+    name: "get_party_pre_approval_status",
+    description:
+      "Whether a Party has an active Restricted Party Screening pre-approval (reuse permission), and why it is or " +
+      "isn't currently valid. Distinct from a candidate's FALSE_POSITIVE disposition -- this is a party-level grant, " +
+      "not a judgment on one match. Use for 'is this party pre-approved' or 'can screening be reused for this party' questions.",
+    parameters: zodToGeminiSchema(getPartyPreApprovalStatusSchema),
+  },
+  access: { navHref: "/app/parties", permission: "compliance.restrictedParty.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getPartyPreApprovalStatusSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { partyId } = parsed.data;
+
+    const party = await db.party.findFirst({ where: { id: partyId, accountId: ctx.accountId }, select: { id: true } });
+    if (!party) return { error: "Party not found" };
+
+    const gate = await checkPreApprovalGate({
+      accountId: ctx.accountId,
+      partyId: party.id,
+      source: "SHIPMENT",
+      audit: false,
+    });
+
+    const approvals = await db.partyScreeningApproval.findMany({
+      where: { partyId: party.id, accountId: ctx.accountId },
+      orderBy: { approvedAt: "desc" },
+      take: 10,
+    });
+
+    return {
+      partyId: party.id,
+      currentlyValidForReuse: gate.applied,
+      validityReason: gate.reason,
+      approvals: approvals.map((a) => ({
+        approvalId: a.id,
+        status: a.status,
+        approvedAt: a.approvedAt.toISOString(),
+        expiresAt: a.expiresAt?.toISOString() ?? null,
+        revokedAt: a.revokedAt?.toISOString() ?? null,
+        reason: a.reason,
+      })),
+    };
+  },
+};
+
+export // ---- tool: get_shipment_compliance_execution_history ----
+//
+// Deterministic, evidence-grounded: reads only persisted ComplianceExecution
+// rows (the unified audit envelope across RPS, embargo, classification, and
+// the five thin-finding screening domains). The assistant must never invent
+// or infer an execution that isn't recorded here.
+
+const getShipmentComplianceExecutionHistorySchema = z.object({
+  shipmentId: z.string().describe("Shipment UUID."),
+  executionType: z.string().optional().describe("Optional filter, e.g. EMBARGO_SCREENING, RESTRICTED_PARTY_SCREENING, CLASSIFICATION."),
+});
+
+const getShipmentComplianceExecutionHistory: AssistantTool = {
+  schema: getShipmentComplianceExecutionHistorySchema,
+  declaration: {
+    name: "get_shipment_compliance_execution_history",
+    description:
+      "The full compliance-check execution history for one shipment -- every recorded RPS/embargo/classification/" +
+      "forced-labor/end-use/end-user/military-end-use/anti-boycott invocation, with status, source, and timing. " +
+      "Use for 'what compliance checks ran on this shipment' or 'when was this shipment last screened' questions.",
+    parameters: zodToGeminiSchema(getShipmentComplianceExecutionHistorySchema),
+  },
+  access: { navHref: "/app/compliance", permission: "compliance.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getShipmentComplianceExecutionHistorySchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { shipmentId, executionType } = parsed.data;
+
+    const shipment = await db.shipment.findFirst({ where: { id: shipmentId, accountId: ctx.accountId }, select: { id: true } });
+    if (!shipment) return { error: "Shipment not found" };
+
+    const executions = await db.complianceExecution.findMany({
+      where: { accountId: ctx.accountId, shipmentId: shipment.id, ...(executionType ? { executionType: executionType as never } : {}) },
+      orderBy: { startedAt: "desc" },
+      take: 50,
+      select: {
+        id: true, executionType: true, status: true, source: true, finalStatus: true,
+        correlationId: true, startedAt: true, completedAt: true, durationMs: true,
+      },
+    });
+
+    return {
+      shipmentId: shipment.id,
+      executions: executions.map((e) => ({
+        ...e,
+        startedAt: e.startedAt.toISOString(),
+        completedAt: e.completedAt?.toISOString() ?? null,
+      })),
+    };
+  },
+};
+
+// ---- tool: get_service_usage_summary ----
+//
+// Deterministic aggregate-only tool -- counts recorded ComplianceExecution
+// rows via groupBy, never a client-side scan and never an LLM estimate.
+
+const getServiceUsageSummarySchema = z.object({
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional(),
+});
+
+const getServiceUsageSummary: AssistantTool = {
+  schema: getServiceUsageSummarySchema,
+  declaration: {
+    name: "get_service_usage_summary",
+    description:
+      "Aggregate counts of compliance-check executions for this account (total, by type, by status, by source, " +
+      "review-required, overridden), optionally within a date range. Use for 'how many screenings ran this month' " +
+      "or 'how many compliance checks needed review' questions.",
+    parameters: zodToGeminiSchema(getServiceUsageSummarySchema),
+  },
+  access: { navHref: "/app/compliance", permission: "compliance.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getServiceUsageSummarySchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { dateFrom, dateTo } = parsed.data;
+
+    const where = {
+      accountId: ctx.accountId,
+      ...(dateFrom || dateTo
+        ? { startedAt: { ...(dateFrom ? { gte: new Date(dateFrom) } : {}), ...(dateTo ? { lte: new Date(dateTo) } : {}) } }
+        : {}),
+    };
+
+    const [total, byType, byStatus, overriddenCount] = await Promise.all([
+      db.complianceExecution.count({ where }),
+      db.complianceExecution.groupBy({ by: ["executionType"], where, _count: { _all: true } }),
+      db.complianceExecution.groupBy({ by: ["status"], where, _count: { _all: true } }),
+      db.complianceExecution.count({ where: { ...where, overrides: { some: {} } } }),
+    ]);
+
+    return {
+      total,
+      byType: byType.map((r) => ({ executionType: r.executionType, count: r._count._all })),
+      byStatus: byStatus.map((r) => ({ status: r.status, count: r._count._all })),
+      overriddenCount,
+    };
+  },
+};
+
+// ---- tool: get_formal_overrides_for_result ----
+//
+// Deterministic: reads only persisted ComplianceFormalOverride rows. Never
+// creates, infers, or suggests an override -- that path is human-only
+// (formalOverride.ts) and unreachable from this tool.
+
+const getFormalOverridesForResultSchema = z.object({
+  resultRefType: z.string().describe("The domain result type the override applies to, e.g. RESTRICTED_PARTY, EMBARGO, CLASSIFICATION."),
+  resultRefId: z.string().describe("The id of the domain result row the override applies to."),
+});
+
+const getFormalOverridesForResult: AssistantTool = {
+  schema: getFormalOverridesForResultSchema,
+  declaration: {
+    name: "get_formal_overrides_for_result",
+    description:
+      "Every formal compliance override recorded against one domain result (e.g. one RestrictedPartyScreeningResult " +
+      "or ClassificationRun), including revocation status. Use for 'has this result been overridden' questions.",
+    parameters: zodToGeminiSchema(getFormalOverridesForResultSchema),
+  },
+  access: { navHref: "/app/compliance", permission: "compliance.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getFormalOverridesForResultSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { resultRefType, resultRefId } = parsed.data;
+
+    const overrides = await db.complianceFormalOverride.findMany({
+      where: { accountId: ctx.accountId, resultRefType, resultRefId },
+      orderBy: { overriddenAt: "desc" },
+      take: 20,
+    });
+
+    return {
+      resultRefType,
+      resultRefId,
+      overrides: overrides.map((o) => ({
+        id: o.id,
+        originalDecision: o.originalDecision,
+        overrideDecision: o.overrideDecision,
+        reason: o.reason,
+        overriddenByUserId: o.overriddenByUserId,
+        overriddenAt: o.overriddenAt.toISOString(),
+        revoked: Boolean(o.revokedAt),
+        revokedAt: o.revokedAt?.toISOString() ?? null,
+        revokedReason: o.revokedReason ?? null,
+      })),
+    };
+  },
+};
+
 export const ASSISTANT_TOOLS: AssistantTool[] = [
   listShipments,
   getValueAtRisk,
@@ -2155,6 +2375,10 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   screenRestrictedParty,
   getRestrictedPartyScreeningDetails,
   getPartyRestrictedPartyScreeningHistory,
+  getPartyPreApprovalStatus,
+  getShipmentComplianceExecutionHistory,
+  getServiceUsageSummary,
+  getFormalOverridesForResult,
 ];
 
 const TOOLS_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.declaration.name, t]));

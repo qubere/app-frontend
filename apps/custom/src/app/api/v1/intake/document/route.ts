@@ -13,7 +13,7 @@ import { db, withAccountIdContext } from "@/lib/db";
 import { authenticateApiKey, apiKeyHasScope } from "@/lib/api/api-key-auth";
 import { generateRequestId } from "@/lib/api/error";
 import { createAuditLog, AuditAction } from "@/lib/audit";
-import { resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
+import { readStoredObject, resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
 
 const bodySchema = z.object({
   /** Publicly reachable URL or internal storage URL for the document file. */
@@ -127,18 +127,16 @@ export async function POST(req: Request): Promise<Response> {
       const { DocumentIntelligenceAgent } = await import(
         "@/modules/agents/documentIntelligenceAgent"
       );
-      const fileRes = await fetch(url);
-      if (!fileRes.ok) return;
-      const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+      const stored = await readStoredObject(url);
 
       await DocumentIntelligenceAgent.execute({
         accountId: apiCtx.accountId,
         userId: null,
         shipmentId: shipmentId ?? "",
         packetId: `pkt_intake_${doc.id.slice(0, 8)}`,
-        fileBuffer,
+        fileBuffer: stored.body,
         fileName,
-        mimeType: "application/pdf",
+        mimeType: stored.contentType ?? "application/pdf",
         docTypeCode: documentType,
         forceOverwrite: false,
       });

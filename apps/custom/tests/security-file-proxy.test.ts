@@ -15,6 +15,26 @@ describe("Storage origin allowlist (file proxy hardening)", () => {
     expect(resolveStorageOrigin("/uploads/1234-invoice.pdf")).toBeNull();
   });
 
+  it("accepts only objects in the configured Google Cloud Storage bucket", () => {
+    const originalBucket = process.env.GCS_BUCKET;
+    process.env.GCS_BUCKET = "qubere-demo-documents";
+    try {
+      expect(
+        resolveStorageOrigin(
+          "https://storage.googleapis.com/qubere-demo-documents/documents/inv.pdf"
+        )
+      ).toBe("gcs");
+      expect(() =>
+        resolveStorageOrigin(
+          "https://storage.googleapis.com/attacker-controlled/documents/inv.pdf"
+        )
+      ).toThrow(StorageValidationError);
+    } finally {
+      if (originalBucket === undefined) delete process.env.GCS_BUCKET;
+      else process.env.GCS_BUCKET = originalBucket;
+    }
+  });
+
   it("rejects hosts that merely contain the allowlisted domain as a substring", () => {
     // These all passed the previous `url.includes("vercel-storage.com")` check
     // and would have leaked BLOB_READ_WRITE_TOKEN to the attacker.

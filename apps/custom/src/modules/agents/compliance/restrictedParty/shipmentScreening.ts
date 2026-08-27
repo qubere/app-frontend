@@ -10,6 +10,8 @@
 import { getShipmentPartiesForScreening } from "./restrictedPartyRepository";
 import { runRestrictedPartyScreening } from "./restrictedPartyScreening";
 import { persistScreeningRun } from "./persistResult";
+import { checkPreApprovalGate } from "./preApproval";
+import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
 import type { RestrictedPartyPassType, RestrictedPartyScreeningStatus } from "./types";
 
 const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
@@ -56,18 +58,31 @@ export interface RestrictedPartyShipmentError {
   message: string;
 }
 
+/** A shipment party whose Restricted Party Screening obligation was satisfied via a valid pre-approval instead of running the local matcher. The matcher was skipped, NOT run-and-clear -- see executionMode. */
+export interface RestrictedPartyShipmentPreApprovedReuse {
+  role: string;
+  partyName: string;
+  partyId: string;
+  approvalId: string;
+  screeningDisposition: "PRE_APPROVED";
+  executionMode: "PRE_APPROVED_REUSE";
+  localMatcherExecuted: false;
+}
+
 export interface RestrictedPartyShipmentScreeningResult {
   status: RestrictedPartyScreeningStatus;
   hits: RestrictedPartyShipmentHit[];
   redFlagHits: RestrictedPartyShipmentRedFlagHit[];
   skipped: RestrictedPartyShipmentSkip[];
   errors: RestrictedPartyShipmentError[];
+  preApprovedReuses: RestrictedPartyShipmentPreApprovedReuse[];
   partiesScreened: number;
 }
 
 export async function runRestrictedPartyScreeningForShipment(
   accountId: string,
-  shipmentId: string
+  shipmentId: string,
+  options?: { forceRescreen?: boolean; userId?: string | null; requestId?: string }
 ): Promise<RestrictedPartyShipmentScreeningResult> {
   const parties = await getShipmentPartiesForScreening(shipmentId);
 
@@ -78,6 +93,7 @@ export async function runRestrictedPartyScreeningForShipment(
       redFlagHits: [],
       skipped: [{ role: "ALL", reason: "No shipment parties are available to screen." }],
       errors: [],
+      preApprovedReuses: [],
       partiesScreened: 0,
     };
   }
@@ -87,8 +103,31 @@ export async function runRestrictedPartyScreeningForShipment(
   const redFlagHits: RestrictedPartyShipmentRedFlagHit[] = [];
   const skipped: RestrictedPartyShipmentSkip[] = [];
   const errors: RestrictedPartyShipmentError[] = [];
+  const preApprovedReuses: RestrictedPartyShipmentPreApprovedReuse[] = [];
 
   for (const party of parties) {
+    const gate = await checkPreApprovalGate({
+      accountId,
+      partyId: party.partyId,
+      source: "SHIPMENT",
+      forceRescreen: options?.forceRescreen,
+      userId: options?.userId,
+      requestId: options?.requestId,
+    });
+
+    if (gate.applied && party.partyId && gate.approvalId) {
+      preApprovedReuses.push({
+        role: party.role,
+        partyName: party.name,
+        partyId: party.partyId,
+        approvalId: gate.approvalId,
+        screeningDisposition: "PRE_APPROVED",
+        executionMode: "PRE_APPROVED_REUSE",
+        localMatcherExecuted: false,
+      });
+      continue;
+    }
+
     const input = {
       accountId,
       source: "SHIPMENT" as const,
@@ -106,6 +145,33 @@ export async function runRestrictedPartyScreeningForShipment(
 
     const runResult = await runRestrictedPartyScreening(input);
     await persistScreeningRun(input, runResult);
+
+    // ComplianceExecution envelope -- additive, alongside the authoritative
+    // RestrictedPartyScreeningResult rows persisted above. Shares the same
+    // correlationId so the two can be cross-referenced without a schema
+    // change to RestrictedPartyScreeningResult. Never affects `overall`.
+    const passStatuses = runResult.passes.map((p) => p.status);
+    const executionStatus = passStatuses.includes("ERROR")
+      ? passStatuses.some((s) => s !== "ERROR")
+        ? "PARTIAL"
+        : "FAILED"
+      : "COMPLETED";
+    await recordComplianceExecution({
+      accountId,
+      executionType: "RESTRICTED_PARTY_SCREENING",
+      status: executionStatus,
+      correlationId: runResult.correlationId,
+      shipmentId,
+      partyId: party.partyId ?? undefined,
+      source: "SHIPMENT_PIPELINE",
+      initiatedByUserId: options?.userId ?? undefined,
+      requestId: options?.requestId ?? undefined,
+      responseSnapshot: {
+        passes: runResult.passes.map((p) => ({ passType: p.passType, status: p.status, matchCount: p.matches.length })),
+      },
+      finalStatus: passStatuses.join(","),
+      durationMs: runResult.passes.reduce((sum, p) => sum + (p.screeningDurationMs ?? 0), 0),
+    });
 
     for (const pass of runResult.passes) {
       overall = worseStatus(overall, pass.status);
@@ -148,5 +214,5 @@ export async function runRestrictedPartyScreeningForShipment(
     }
   }
 
-  return { status: overall, hits, redFlagHits, skipped, errors, partiesScreened: parties.length };
+  return { status: overall, hits, redFlagHits, skipped, errors, preApprovedReuses, partiesScreened: parties.length };
 }

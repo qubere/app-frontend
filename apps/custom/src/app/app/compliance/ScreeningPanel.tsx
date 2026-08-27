@@ -209,7 +209,7 @@ export function ScreeningPanel({ screeningBuckets, mayReadPartyScreening, partyS
 
   const subTabs: { id: SubTab; label: string; count: number; hidden?: boolean }[] = [
     { id: "party", label: "Party Screening", count: partyOpenCount, hidden: !mayReadPartyScreening },
-    { id: "embargo", label: "Country Embargo", count: openCount("COUNTRY_EMBARGO") },
+    { id: "embargo", label: "Country Embargo", count: openCount("COUNTRY_EMBARGO", "PRIVATE_EMBARGO") },
     { id: "uflpa", label: "Forced Labor / UFLPA", count: openCount("UFLPA") },
     { id: "endUse", label: "End-Use / End-User", count: openCount("END_USE_RESTRICTION", "END_USER_RESTRICTION") },
     { id: "military", label: "Military End-Use / End-User", count: openCount("MILITARY_END_USE", "MILITARY_END_USER") },
@@ -249,7 +249,7 @@ export function ScreeningPanel({ screeningBuckets, mayReadPartyScreening, partyS
 
       <div key={activeSub}>
         {activeSub === "party" && mayReadPartyScreening && <PartyScreeningList results={partyScreeningResults} />}
-        {activeSub === "embargo" && <FindingsList items={combined("COUNTRY_EMBARGO")} />}
+        {activeSub === "embargo" && <FindingsList items={combined("COUNTRY_EMBARGO", "PRIVATE_EMBARGO")} />}
         {activeSub === "uflpa" && <FindingsList items={combined("UFLPA")} />}
         {activeSub === "endUse" && <FindingsList items={combined("END_USE_RESTRICTION", "END_USER_RESTRICTION")} />}
         {activeSub === "military" && <FindingsList items={combined("MILITARY_END_USE", "MILITARY_END_USER")} />}

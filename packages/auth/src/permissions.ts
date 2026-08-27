@@ -153,6 +153,8 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "compliance.review", description: "Review compliance exceptions and warnings.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
   { name: "compliance.approve", description: "Approve compliance clearance.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
   { name: "compliance.override", description: "Waive or override compliance exception.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
+  { name: "compliance.restricted_party_approve", description: "Approve a Party for restricted-party screening reuse (pre-approval).", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "compliance.restricted_party_revoke", description: "Revoke a Party's restricted-party screening pre-approval.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
 
   // PGA
   { name: "pga.read", description: "View PGA message set requirements.", category: "PGA", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
@@ -168,6 +170,14 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "filing.amend", description: "Submit post-summary amendment.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
   { name: "filing.cancel", description: "Request filing cancellation.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
   { name: "filing.view_responses", description: "View raw ACE/CBP electronic responses.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER"] },
+
+  // Post-entry recovery
+  { name: "psc.read", description: "View post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
+  { name: "psc.create", description: "Create and update draft post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "psc.manage", description: "Submit, withdraw, and otherwise manage post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "protest.read", description: "View customs protests and their supporting records.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
+  { name: "protest.create", description: "Create and update draft customs protests, notes, and attachments.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "protest.manage", description: "File, withdraw, and request further review of customs protests.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
 
   // Reporting
   { name: "report.read", description: "View analytics reports and dashboards.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },

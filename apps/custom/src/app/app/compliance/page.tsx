@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const SCREENING_BUCKETS = [
   "COUNTRY_EMBARGO",
+  "PRIVATE_EMBARGO",
   "UFLPA",
   "END_USE_RESTRICTION",
   "END_USER_RESTRICTION",
@@ -16,55 +17,77 @@ const SCREENING_BUCKETS = [
   "MILITARY_END_USER",
 ] as const;
 
-export default async function CompliancePage() {
+export default async function CompliancePage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const searchParams = await props.searchParams;
   const context = await getAccountContext();
   if (!context) return null;
 
+  const rawTab = typeof searchParams.tab === "string" ? searchParams.tab : "overview";
+  const activeTab =
+    rawTab === "screening" || rawTab === "review" || rawTab === "audit" || rawTab === "history" ? rawTab : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
+  const mayReadAuditHistory = holdsPermission(context, "compliance.read");
+  const mayReadExecutionHistory =
+    holdsPermission(context, "audit.read") || holdsPermission(context, "compliance.read");
+  const resolvedTab =
+    (activeTab === "audit" && !mayReadAuditHistory) || (activeTab === "history" && !mayReadExecutionHistory)
+      ? "overview"
+      : activeTab;
 
-  // ComplianceFinding/ComplianceAuditRecord/ComplianceScreeningFinding/
-  // RestrictedPartyScreeningResult/PartyScreeningSummary all carry an Account
-  // relation (dataMode-scoped) -- without this wrapper these queries silently
-  // default to PRODUCTION isolation for any DEMO/SANDBOX account.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
+    let findingsQuery: Promise<any[]> = Promise.resolve([]);
+    let auditQuery: Promise<any[]> = Promise.resolve([]);
+    let screeningFindingQuery: Promise<any[]> = Promise.resolve([]);
+    let partyResultQuery: Promise<any[]> = Promise.resolve([]);
+    let partySummaryQuery: Promise<any> = Promise.resolve([]);
 
-  const [findings, recentAudits, screeningFindings, partyScreeningResults, partySummaryGroups] = await Promise.all([
-    db.complianceFinding.findMany({
-      where: { accountId: context.accountId },
-      include: {
-        filing: {
+    if (resolvedTab === "overview") {
+      findingsQuery = db.complianceFinding.findMany({
+        where: { accountId: context.accountId },
+        include: {
+          filing: {
+            select: {
+              id: true,
+              entryNumber: true,
+              filingStatus: true,
+              shipment: { select: { shipmentNumber: true, importerName: true } },
+            },
+          },
+          assignedToUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+        take: 10,
+      });
+
+      if (mayReadAuditHistory) {
+        auditQuery = db.complianceAuditRecord.findMany({
+          where: { accountId: context.accountId },
+          orderBy: { runAt: "desc" },
+          take: 5,
+          include: { filing: { select: { entryNumber: true } } },
+        });
+      }
+
+      screeningFindingQuery = db.complianceScreeningFinding.findMany({
+        where: { accountId: context.accountId },
+        include: { shipment: { select: { id: true, shipmentNumber: true, importerName: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+
+      if (mayReadPartyScreening) {
+        partyResultQuery = db.restrictedPartyScreeningResult.findMany({
+          where: { accountId: context.accountId, status: { in: ["HIT", "REVIEW_REQUIRED", "PARTIAL"] } },
           select: {
             id: true,
-            entryNumber: true,
-            filingStatus: true,
-            shipment: { select: { shipmentNumber: true, importerName: true } },
-          },
-        },
-        assignedToUser: { select: { id: true, firstName: true, lastName: true, email: true } },
-      },
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-    }),
-    db.complianceAuditRecord.findMany({
-      where: { accountId: context.accountId },
-      orderBy: { runAt: "desc" },
-      take: 25,
-      include: { filing: { select: { entryNumber: true } } },
-    }),
-    // Bounded to the most recent 300 across all six categories -- a browse/
-    // monitoring view, not a full unbounded export.
-    db.complianceScreeningFinding.findMany({
-      where: { accountId: context.accountId },
-      include: { shipment: { select: { id: true, shipmentNumber: true, importerName: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 300,
-    }),
-    mayReadPartyScreening
-      ? db.restrictedPartyScreeningResult.findMany({
-          where: { accountId: context.accountId, status: { in: ["HIT", "REVIEW_REQUIRED", "PARTIAL"] } },
-          include: {
-            matches: true,
-            redFlagHits: true,
-            disposition: true,
+            passType: true,
+            status: true,
+            screenedName: true,
+            screeningDate: true,
+            hitCount: true,
+            redFlagCount: true,
             party: {
               select: {
                 id: true,
@@ -77,19 +100,100 @@ export default async function CompliancePage() {
                 },
               },
             },
+            matches: { select: { id: true, matchedName: true, sourceList: true, nameScore: true } },
+            redFlagHits: { select: { id: true, matchedWord: true } },
+            disposition: { select: { status: true } },
           },
           orderBy: { screeningDate: "desc" },
-          take: 50,
-        })
-      : Promise.resolve([]),
-    mayReadPartyScreening
-      ? db.partyScreeningSummary.groupBy({
+          take: 10,
+        });
+
+        partySummaryQuery = db.partyScreeningSummary.groupBy({
           by: ["screeningStatus"],
           where: { accountId: context.accountId },
           _count: true,
-        })
-      : Promise.resolve([]),
-  ]);
+        });
+      }
+    } else if (resolvedTab === "screening") {
+      screeningFindingQuery = db.complianceScreeningFinding.findMany({
+        where: { accountId: context.accountId },
+        include: { shipment: { select: { id: true, shipmentNumber: true, importerName: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 300,
+      });
+
+      if (mayReadPartyScreening) {
+        partyResultQuery = db.restrictedPartyScreeningResult.findMany({
+          where: { accountId: context.accountId, status: { in: ["HIT", "REVIEW_REQUIRED", "PARTIAL"] } },
+          select: {
+            id: true,
+            passType: true,
+            status: true,
+            screenedName: true,
+            screeningDate: true,
+            hitCount: true,
+            redFlagCount: true,
+            party: {
+              select: {
+                id: true,
+                internalPartyCode: true,
+                names: {
+                  where: { status: "ACTIVE" },
+                  orderBy: [{ isPrimary: "desc" }, { updatedAt: "desc" }],
+                  take: 1,
+                  select: { rawName: true },
+                },
+              },
+            },
+            matches: { select: { id: true, matchedName: true, sourceList: true, nameScore: true } },
+            redFlagHits: { select: { id: true, matchedWord: true } },
+            disposition: { select: { status: true } },
+          },
+          orderBy: { screeningDate: "desc" },
+          take: 50,
+        });
+
+        partySummaryQuery = db.partyScreeningSummary.groupBy({
+          by: ["screeningStatus"],
+          where: { accountId: context.accountId },
+          _count: true,
+        });
+      }
+    } else if (resolvedTab === "review") {
+      findingsQuery = db.complianceFinding.findMany({
+        where: { accountId: context.accountId },
+        include: {
+          filing: {
+            select: {
+              id: true,
+              entryNumber: true,
+              filingStatus: true,
+              shipment: { select: { shipmentNumber: true, importerName: true } },
+            },
+          },
+          assignedToUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+        take: 50,
+      });
+    } else if (resolvedTab === "audit") {
+      auditQuery = db.complianceAuditRecord.findMany({
+        where: { accountId: context.accountId },
+        orderBy: { runAt: "desc" },
+        take: 50,
+        include: { filing: { select: { entryNumber: true } } },
+      });
+    }
+    // "history" tab needs no server query -- ExecutionHistoryPanel is fully
+    // self-fetching against /api/v1/compliance/executions*.
+
+    const [findings, recentAudits, screeningFindings, partyScreeningResults, partySummaryGroups] = await Promise.all([
+      findingsQuery,
+      auditQuery,
+      screeningFindingQuery,
+      partyResultQuery,
+      partySummaryQuery,
+    ]);
 
   const findingProps = findings.map((f) => ({
     id: f.id,
@@ -159,8 +263,8 @@ export default async function CompliancePage() {
     party: r.party
       ? { id: r.party.id, internalPartyCode: r.party.internalPartyCode, displayName: r.party.names[0]?.rawName ?? r.party.internalPartyCode ?? "Unnamed party" }
       : null,
-    matches: r.matches.map((m) => ({ id: m.id, matchedName: m.matchedName, sourceList: m.sourceList, nameScore: m.nameScore })),
-    redFlagHits: r.redFlagHits.map((h) => ({ id: h.id, matchedWord: h.matchedWord })),
+    matches: r.matches.map((m: any) => ({ id: m.id, matchedName: m.matchedName, sourceList: m.sourceList, nameScore: m.nameScore })),
+    redFlagHits: r.redFlagHits.map((h: any) => ({ id: h.id, matchedWord: h.matchedWord })),
     disposition: r.disposition ? { status: r.disposition.status } : null,
   }));
 
@@ -182,12 +286,15 @@ export default async function CompliancePage() {
       </div>
 
       <ComplianceWorkspaceClient
+        initialTab={resolvedTab}
         findings={findingProps}
         recentAudits={auditProps}
         screeningBuckets={screeningBuckets}
         mayReadPartyScreening={mayReadPartyScreening}
+        mayReadAuditHistory={mayReadAuditHistory}
         partyScreeningResults={partyScreeningProps}
         partySummaryCounts={partySummaryCounts}
+        mayReadExecutionHistory={mayReadExecutionHistory}
       />
     </div>
   );

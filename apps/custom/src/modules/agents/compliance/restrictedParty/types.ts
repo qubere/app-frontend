@@ -95,6 +95,9 @@ export interface RestrictedPartyMatchCandidate {
   tier: "HIT" | "REVIEW_REQUIRED";
   suppressedByApprovedParty: boolean;
   suppressingDispositionId: string | null;
+  /** Audit-evidence detail -- see RestrictedPartyMatch.normalizedMatchedName/matchedTokens in schema.prisma. */
+  normalizedMatchedName: string;
+  matchedTokens: string[];
 }
 
 export interface RestrictedPartyRedFlagHitCandidate {
@@ -105,6 +108,10 @@ export interface RestrictedPartyRedFlagHitCandidate {
 export interface RestrictedPartyPassOutcome {
   passType: RestrictedPartyPassType;
   screenedName: string;
+  /** normalizeForMatching() output of screenedName -- audit-evidence snapshot, see RestrictedPartyScreeningResult.normalizedScreenedName in schema.prisma. */
+  normalizedScreenedName: string;
+  /** getLatestReferenceDataPublishedAt() watermark at screening time, or null when no reference data has published yet. */
+  referenceDataAsOf: Date | null;
   screenedAddress: string | null;
   screenedCity: string | null;
   screenedCountry: string | null;
@@ -138,5 +145,7 @@ export interface RestrictedPartyScreeningRunResult {
 export const DEFAULT_NAME_THRESHOLD = 80;
 /** Fixed floor below which a candidate is not worth surfacing at all, regardless of nameThreshold. */
 export const REVIEW_FLOOR_SCORE = 50;
+/** Deterministic matcher/ruleset version stamped onto every persisted result and match -- bump when normalize.ts/candidateGeneration.ts/scoring.ts behavior changes, so a historical result stays attributable to the logic that actually produced it. */
+export const RPS_MATCHER_VERSION = "rps-matcher-v1";
 /** Hard cap on scored matches persisted per pass -- with reference sets now spanning OFAC+BIS+Dow Jones (tens of thousands of rows), an unbounded result set is a real risk, not a theoretical one. Truncation is always flagged via matchesTruncated, never silent. */
 export const MAX_PERSISTED_MATCHES = 100;

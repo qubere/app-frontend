@@ -14,7 +14,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -123,11 +123,11 @@ describe("tenant isolation: billing model reads are account-scoped (static scan)
         const calls = extractModelCalls(source, model, SINGLE_ROW_METHODS);
         for (const call of calls) {
           if (call.includes("accountId")) continue;
-          const basename = file.split("/").pop();
+          const fileBasename = basename(file);
           // Try both method names for the documented-exception key.
           const isDocumentedSafe =
-            SAFE_UNSCOPED_SINGLE_ROW_LOOKUPS.has(`${basename}::${model}.findUnique`) ||
-            SAFE_UNSCOPED_SINGLE_ROW_LOOKUPS.has(`${basename}::${model}.findFirst`);
+            SAFE_UNSCOPED_SINGLE_ROW_LOOKUPS.has(`${fileBasename}::${model}.findUnique`) ||
+            SAFE_UNSCOPED_SINGLE_ROW_LOOKUPS.has(`${fileBasename}::${model}.findFirst`);
           if (isDocumentedSafe) continue;
           offenders.push(`${file}: ${call.slice(0, 120)}`);
         }

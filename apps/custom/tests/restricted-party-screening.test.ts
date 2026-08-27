@@ -11,12 +11,14 @@ const getRestrictedPartyReferenceList = vi.fn();
 const getRedFlagRules = vi.fn();
 const getApprovedDispositions = vi.fn();
 const getAccountScreeningConfig = vi.fn();
+const getLatestReferenceDataPublishedAt = vi.fn();
 
 vi.mock("@/modules/agents/compliance/restrictedParty/restrictedPartyRepository", () => ({
   getRestrictedPartyReferenceList,
   getRedFlagRules,
   getApprovedDispositions,
   getAccountScreeningConfig,
+  getLatestReferenceDataPublishedAt,
 }));
 
 const { runRestrictedPartyScreening } = await import(
@@ -71,6 +73,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getApprovedDispositions.mockResolvedValue(new Map());
   getAccountScreeningConfig.mockResolvedValue(null);
+  getLatestReferenceDataPublishedAt.mockResolvedValue(null);
 });
 
 describe("runRestrictedPartyScreening: missing reference data never resolves to CLEAR", () => {
@@ -309,5 +312,46 @@ describe("runRestrictedPartyScreening: tenant safety", () => {
     getRedFlagRules.mockResolvedValue([]);
     await runRestrictedPartyScreening(baseInput({ accountId: "acct_1", partyId: "party_1" }));
     expect(getApprovedDispositions).toHaveBeenCalledWith("acct_1", "party_1");
+  });
+});
+
+describe("runRestrictedPartyScreening: audit-evidence snapshot fields", () => {
+  it("stamps normalizedScreenedName and the referenceDataAsOf watermark on the pass outcome", async () => {
+    const asOf = new Date("2026-01-15T00:00:00Z");
+    getRestrictedPartyReferenceList.mockResolvedValue([screeningEntity({ name: "Acme Trading Co" })]);
+    getRedFlagRules.mockResolvedValue([]);
+    getLatestReferenceDataPublishedAt.mockResolvedValue(asOf);
+
+    const result = await runRestrictedPartyScreening(baseInput({ identity: { name: "Acme Trading Co" } }));
+
+    expect(result.passes[0].normalizedScreenedName).toBe("ACME");
+    expect(result.passes[0].referenceDataAsOf).toBe(asOf);
+  });
+
+  it("leaves referenceDataAsOf null when the watermark lookup fails, without failing the screening", async () => {
+    getRestrictedPartyReferenceList.mockResolvedValue([screeningEntity({ name: "Acme Trading Co" })]);
+    getRedFlagRules.mockResolvedValue([]);
+    getLatestReferenceDataPublishedAt.mockRejectedValue(new Error("db unavailable"));
+
+    const result = await runRestrictedPartyScreening(baseInput({ identity: { name: "Acme Trading Co" } }));
+
+    expect(result.passes[0].status).toBe("HIT");
+    expect(result.passes[0].referenceDataAsOf).toBeNull();
+  });
+
+  it("stamps normalizedMatchedName and matchedTokens on each match candidate", async () => {
+    getRestrictedPartyReferenceList.mockResolvedValue([
+      screeningEntity({ name: "Consolidated Acme Metals" }),
+    ]);
+    getRedFlagRules.mockResolvedValue([]);
+
+    const result = await runRestrictedPartyScreening(
+      baseInput({ identity: { name: "Acme Consolidated Traders" } })
+    );
+
+    expect(result.passes[0].matches).toHaveLength(1);
+    const match = result.passes[0].matches[0];
+    expect(match.normalizedMatchedName).toBe("CONSOLIDATED ACME METALS");
+    expect(match.matchedTokens).toEqual(["CONSOLIDATED"]);
   });
 });

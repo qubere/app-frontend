@@ -3,7 +3,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { assembleReasonableCarePackage } from "@/lib/audit/reasonableCarePackage";
-import { put } from "@vercel/blob";
+import { createSignedReadUrl, storeGeneratedFile } from "@/lib/storage";
 
 export const POST = withAuthenticatedRoute(async ({ ctx }) => {
   // Task E-2: Access control: only OWNER role on the account can trigger this export
@@ -85,27 +85,23 @@ export const POST = withAuthenticatedRoute(async ({ ctx }) => {
     },
   });
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    return NextResponse.json(
-      { error: "Vercel Blob Storage token is not configured. Compliance export generation is not implemented." },
-      { status: 501 }
-    );
-  }
-
   let downloadUrl = "";
   try {
     const filename = `compliance-exports/export-${ctx.accountId}-${Date.now()}.json`;
-    const blob = await put(filename, JSON.stringify(exportPayload, null, 2), {
-      access: "private",
+    const stored = await storeGeneratedFile({
+      objectPath: filename,
+      filename: filename.split("/").pop() ?? "compliance-export.json",
       contentType: "application/json",
-      token,
+      body: Buffer.from(JSON.stringify(exportPayload, null, 2)),
     });
-    downloadUrl = blob.url;
+    downloadUrl = await createSignedReadUrl(
+      stored.url,
+      new Date(Date.now() + 15 * 60 * 1000)
+    );
   } catch (err) {
-    console.error("Failed to upload compliance export to Vercel Blob:", err);
+    console.error("Failed to upload compliance export:", err);
     return NextResponse.json(
-      { error: "Failed to upload compliance export artifact to Vercel Blob Storage." },
+      { error: "Failed to upload compliance export artifact to object storage." },
       { status: 500 }
     );
   }
