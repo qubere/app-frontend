@@ -70,3 +70,4 @@ apps/custom/public/uploads/*
 # database dumps
 *.dump
 
+/scratch
