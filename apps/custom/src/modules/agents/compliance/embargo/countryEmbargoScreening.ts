@@ -46,6 +46,7 @@ function hitToFinding(check: EmbargoCheckResult): CountryEmbargoHit {
     ruleId: check.ruleId,
     reason: check.reason ?? "Country embargo match.",
     evidence: check.evidence,
+    citationText: typeof check.evidence?.citationText === "string" ? check.evidence.citationText : undefined,
   };
 }
 

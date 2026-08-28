@@ -132,6 +132,8 @@ export interface CountryEmbargoHit {
 
   reason: string;
   evidence?: Record<string, unknown>;
+  /** Legal/regulatory citation for the matched country_by_country_maps row, when captured. */
+  citationText?: string;
 }
 
 export interface EmbargoScreeningSkip {

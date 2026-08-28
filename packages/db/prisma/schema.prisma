@@ -3013,6 +3013,11 @@ model CountryByCountryMap {
   cycyIndNationalSanction String? @map("CYCY_IND_NATIONAL_SANCTION")
   cycyIndEuSanction       String? @map("CYCY_IND_EU_SANCTION")
   cycyIndUnSanction       String? @map("CYCY_IND_UN_SANCTION")
+  /// Free-text legal/regulatory citation for this country pair (e.g. CFR
+  /// sections, Federal Register doc numbers). Not present in the legacy
+  /// source data -- populated selectively as citations are captured, and
+  /// only ever surfaced in a finding when present (see hitToFinding()).
+  citationText            String? @map("CITATION_TEXT")
 
   @@index([complianceCountry, embargoedCountry])
   @@map("country_by_country_maps")

@@ -79,6 +79,7 @@ export async function evaluateCountryPair(
   evidence.nationalSanction = relationship.cycyIndNationalSanction === "Y";
   evidence.euSanction = relationship.cycyIndEuSanction === "Y";
   evidence.unSanction = relationship.cycyIndUnSanction === "Y";
+  if (relationship.citationText) evidence.citationText = relationship.citationText;
 
   const isEmbargoed = relationship.cycyIndEmbargoed === "Y";
   return {
