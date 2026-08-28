@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM node:20-alpine AS source
 WORKDIR /app
-RUN apk add --no-cache libc6-compat openssl jq git
+RUN apk add --no-cache libc6-compat openssl jq git postgresql-client
 COPY . .
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm ci
