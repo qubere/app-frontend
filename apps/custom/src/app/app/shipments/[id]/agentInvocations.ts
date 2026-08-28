@@ -34,6 +34,16 @@ export interface InvocationStep {
   outputSnapshot?: unknown;
 }
 
+export interface PipelineJobRow {
+  id: string;
+  status: string;
+  currentStep?: number;
+  totalSteps?: number;
+  startedAt?: Date | string | null;
+  completedAt?: Date | string | null;
+  errorMessage?: string | null;
+}
+
 export interface AgentInvocation {
   runId: string;
   invokedBy: string;
@@ -41,7 +51,10 @@ export interface AgentInvocation {
   startedAt: string;
   completedAt: string | null;
   totalDurationMs: number;
-  status: "COMPLETED" | "FAILED" | "REVIEW" | "RUNNING";
+  status: "COMPLETED" | "FAILED" | "REVIEW" | "RUNNING" | "PROCESSING";
+  currentStep: number;
+  totalSteps: number;
+  isProcessing: boolean;
   steps: InvocationStep[];
 }
 
@@ -57,10 +70,6 @@ function normalizeLogStatus(status: string): InvocationStep["status"] {
   return "REVIEW"; // "Review Required" | "Attention"
 }
 
-// Groups items lacking a real runId by time proximity: a new cluster starts
-// whenever the gap since the previous item's start exceeds the threshold.
-// Object identity is used as the map key since callers always pass back the
-// exact same array elements they clustered.
 function clusterLegacyByTime<T>(items: T[], getStartMs: (item: T) => number, sourcePrefix: string): Map<T, string> {
   const sorted = [...items].sort((a, b) => getStartMs(a) - getStartMs(b));
   const clusterOf = new Map<T, string>();
@@ -77,12 +86,6 @@ function clusterLegacyByTime<T>(items: T[], getStartMs: (item: T) => number, sou
   return clusterOf;
 }
 
-/**
- * An `AgentExecutionRecord` row: a selective agent re-run.
- *
- * `runId` is nullable because rows written before run grouping existed have none,
- * which is exactly what `clusterLegacyByTime` reconstructs a grouping for.
- */
 export interface AgentExecutionRecordRow {
   id: string;
   agentName: string;
@@ -98,17 +101,10 @@ export interface AgentExecutionRecordRow {
   confidence?: unknown;
   modelVersion?: string | null;
   error?: string | null;
-  /** Prisma `Json` snapshots of what the step was given and produced. */
   inputSnapshot?: unknown;
   outputSnapshot?: unknown;
 }
 
-/**
- * An `AgentExecutionLog` row: one step of the upload pipeline.
- *
- * Unlike a record, this stores only `timestamp` (taken after the step finished),
- * so a start time has to be derived from `durationMs`.
- */
 export interface AgentExecutionLogRow {
   id: string;
   agentName: string;
@@ -119,21 +115,33 @@ export interface AgentExecutionLogRow {
   invokedBy?: string | null;
   triggerEvent?: string | null;
   summary?: string;
-  /** Prisma `Json` snapshots of what the step was given and produced. */
   inputSnapshot?: unknown;
   outputSnapshot?: unknown;
 }
 
 export function buildAgentInvocations(
   records: AgentExecutionRecordRow[],
-  logs: AgentExecutionLogRow[]
+  logs: AgentExecutionLogRow[],
+  pipelineJobs: PipelineJobRow[] = []
 ): AgentInvocation[] {
   const groups = new Map<string, AgentInvocation>();
 
   const ensureGroup = (runId: string, invokedBy: string, triggerEvent: string) => {
     let g = groups.get(runId);
     if (!g) {
-      g = { runId, invokedBy, triggerEvent, startedAt: "", completedAt: null, totalDurationMs: 0, status: "COMPLETED", steps: [] };
+      g = {
+        runId,
+        invokedBy,
+        triggerEvent,
+        startedAt: "",
+        completedAt: null,
+        totalDurationMs: 0,
+        status: "COMPLETED",
+        currentStep: 0,
+        totalSteps: 0,
+        isProcessing: false,
+        steps: [],
+      };
       groups.set(runId, g);
     }
     return g;
@@ -173,9 +181,6 @@ export function buildAgentInvocations(
   for (const log of logs || []) {
     const runId = log.runId || legacyLogClusters.get(log)!;
     const g = ensureGroup(runId, log.invokedBy || "Document Upload", log.triggerEvent || "DOCUMENT_UPLOADED");
-    // AgentExecutionLog only stores a single "recorded at" timestamp (taken
-    // right after the step finishes), so startedAt is derived by walking
-    // back the step's own durationMs -- an approximation, not a stored fact.
     const completedAt = new Date(log.timestamp);
     const durationMs = log.durationMs || 0;
     const startedAt = new Date(completedAt.getTime() - durationMs);
@@ -202,14 +207,53 @@ export function buildAgentInvocations(
     const startedAt = startTimes.length ? new Date(Math.min(...startTimes)).toISOString() : new Date().toISOString();
     const completedAt = endTimes.length ? new Date(Math.max(...endTimes)).toISOString() : null;
     const totalDurationMs = completedAt ? new Date(completedAt).getTime() - new Date(startedAt).getTime() : 0;
-    const status: AgentInvocation["status"] = g.steps.some((s) => s.status === "FAILED")
-      ? "FAILED"
-      : g.steps.some((s) => s.status === "RUNNING")
-      ? "RUNNING"
-      : g.steps.some((s) => s.status === "REVIEW")
-      ? "REVIEW"
-      : "COMPLETED";
-    return { ...g, startedAt, completedAt, totalDurationMs, status };
+
+    const hasFailed = g.steps.some((s) => s.status === "FAILED");
+    const hasRunningStep = g.steps.some((s) => s.status === "RUNNING");
+    const hasReview = g.steps.some((s) => s.status === "REVIEW");
+
+    // Match pipelineJob if available
+    const activeJob = (pipelineJobs || []).find(
+      (pj) => pj.status === "PROCESSING" || pj.status === "PENDING"
+    );
+    const jobForRun = activeJob || (pipelineJobs || [])[0];
+
+    // Determine expected total steps for this pipeline trigger type
+    const expectedTotalSteps =
+      jobForRun?.totalSteps ||
+      (g.triggerEvent === "DOCUMENT_UPLOADED" || g.triggerEvent === "DOCUMENT_PARSE_PROMOTED" ? 10 : Math.max(g.steps.length, 1));
+
+    const isRecentRun = Date.now() - new Date(startedAt).getTime() < 10 * 60 * 1000;
+    const isJobProcessing = activeJob !== undefined || (isRecentRun && g.steps.length < expectedTotalSteps && !hasFailed);
+
+    let status: AgentInvocation["status"] = "COMPLETED";
+    if (hasFailed) {
+      status = "FAILED";
+    } else if (hasRunningStep || isJobProcessing) {
+      status = "PROCESSING";
+    } else if (hasReview) {
+      status = "REVIEW";
+    } else {
+      status = "COMPLETED";
+    }
+
+    const currentStep = hasRunningStep
+      ? g.steps.filter((s) => s.status === "COMPLETED" || s.status === "REVIEW").length + 1
+      : g.steps.length;
+
+    const totalSteps = status === "PROCESSING" ? expectedTotalSteps : Math.max(g.steps.length, expectedTotalSteps);
+    const isProcessing = status === "PROCESSING";
+
+    return {
+      ...g,
+      startedAt,
+      completedAt: isProcessing ? null : completedAt,
+      totalDurationMs,
+      status,
+      currentStep: Math.min(currentStep, totalSteps),
+      totalSteps,
+      isProcessing,
+    };
   });
 
   invocations.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());

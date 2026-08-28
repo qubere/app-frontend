@@ -20,7 +20,7 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
   }
 
-  const [records, logs] = await Promise.all([
+  const [records, logs, pipelineJobs] = await Promise.all([
     db.agentExecutionRecord.findMany({
       where: { shipmentId: id },
       orderBy: { startedAt: "desc" },
@@ -31,8 +31,13 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
       orderBy: { timestamp: "desc" },
       take: 200,
     }),
+    db.pipelineJob.findMany({
+      where: { shipmentId: id },
+      orderBy: { startedAt: "desc" },
+      take: 20,
+    }),
   ]);
 
-  const invocations = buildAgentInvocations(records, logs);
+  const invocations = buildAgentInvocations(records, logs, pipelineJobs);
   return NextResponse.json({ invocations });
 });

@@ -49,7 +49,12 @@ const STATUS_STYLES: Record<AgentInvocation["status"], { badge: string; label: s
   },
   RUNNING: {
     badge: "bg-blue-50 text-blue-700 border-blue-200",
-    label: "Running",
+    label: "Processing",
+    icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+  },
+  PROCESSING: {
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    label: "Processing",
     icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
   },
 };
@@ -190,7 +195,13 @@ export function AgentExecutionTimeline({
                     <Clock className="w-3 h-3" />
                     <span>{formatTimestamp(inv.startedAt)}</span>
                     <span>&middot;</span>
-                    <span>{inv.steps.length} agent{inv.steps.length !== 1 ? "s" : ""}</span>
+                    {inv.status === "PROCESSING" || inv.isProcessing ? (
+                      <span className="text-blue-600 font-bold">
+                        Processing {inv.currentStep || inv.steps.length}/{inv.totalSteps || 10}
+                      </span>
+                    ) : (
+                      <span>{inv.steps.length} agent{inv.steps.length !== 1 ? "s" : ""}</span>
+                    )}
                     <span>&middot;</span>
                     <span>{formatDuration(inv.totalDurationMs)} total</span>
                   </p>
@@ -199,7 +210,11 @@ export function AgentExecutionTimeline({
               <div className="flex items-center space-x-3 shrink-0 ml-3">
                 <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${style.badge}`}>
                   {style.icon}
-                  <span>{style.label}</span>
+                  <span>
+                    {inv.status === "PROCESSING" || inv.isProcessing
+                      ? `Processing ${inv.currentStep || inv.steps.length}/${inv.totalSteps || 10}`
+                      : style.label}
+                  </span>
                 </span>
                 {isExpanded ? <ChevronUp className="w-4 h-4 text-ink-muted" /> : <ChevronDown className="w-4 h-4 text-ink-muted" />}
               </div>
