@@ -165,7 +165,9 @@ export class HTSClassificationAgent {
   });
 
   static async execute(input: HTSClassificationInput): Promise<HTSClassificationOutput> {
-    let aiProvider = process.env.GEMINI_API_KEY
+    // Determined solely by env var presence, so it's safe as a plain const
+    // shared across the concurrently-processed line items below.
+    const aiProvider = process.env.GEMINI_API_KEY
       ? "Gemini 2.5 Flash HTS Classification Engine"
       : "Deterministic HTS DB Lookup (No API Key)";
     let debugError: string | undefined = undefined;
@@ -243,6 +245,10 @@ export class HTSClassificationAgent {
       const chunk = input.productProfiles.slice(i, i + BATCH_SIZE);
       const chunkResults = await Promise.all(
         chunk.map(async (item) => {
+          // Local to this item's closure -- concurrent items in the same
+          // batch must not overwrite each other's error/provider state.
+          let itemError: string | undefined;
+
           const keyword = (item.rawDescription || "").split(" ").find((w) => w.length > 3) || "";
           let htsCandidates: Awaited<ReturnType<typeof HtsNodeRepository.searchNodes>>["items"] = [];
           try {
@@ -251,7 +257,7 @@ export class HTSClassificationAgent {
               htsCandidates = result.items;
             }
           } catch (err) {
-            debugError = logAgentError(
+            itemError = logAgentError(
               "HTS Classification Agent",
               input.shipmentId,
               "HTS DB candidate lookup",
@@ -322,7 +328,6 @@ ${candidateContext}`;
               const parsed = JSON.parse(response.text || "{}");
               if (parsed.htsCode) {
                 htsResult = parsed;
-                aiProvider = "Gemini 2.5 Flash HTS Classification Engine";
                 modelVersionUsed = aiModel("hts-classification");
                 promptVersionUsed = hashPromptVersion(HTS_CLASSIFICATION_SYSTEM_PROMPT);
 
@@ -336,7 +341,7 @@ ${candidateContext}`;
                         verifiedRulings.push(citation);
                       }
                     } catch (err) {
-                      debugError = logAgentError(
+                      itemError = logAgentError(
                         "HTS Classification Agent",
                         input.shipmentId,
                         "CROSS citation verification",
@@ -354,7 +359,7 @@ ${candidateContext}`;
                   parsed.dutyRate =
                     realRate !== null ? realRate : "Duty rate unverified — code not found in HTS Master Release data";
                 } catch (err) {
-                  debugError = logAgentError(
+                  itemError = logAgentError(
                     "HTS Classification Agent",
                     input.shipmentId,
                     "HTS duty rate grounding lookup",
@@ -363,7 +368,7 @@ ${candidateContext}`;
                 }
               }
             } catch (err: unknown) {
-              debugError = logAgentError(
+              itemError = logAgentError(
                 "HTS Classification Agent",
                 input.shipmentId,
                 "Gemini generateContent",
@@ -378,8 +383,8 @@ ${candidateContext}`;
             const fallbackDesc = dbCandidate?.description || `No DB match for: ${item.rawDescription}`;
             const fallbackRate = realGeneralDutyRate(dbCandidate ?? null);
             const lowConfidence = htsCandidates.length > 0 ? 35 : 0;
-            const rationaleReason = debugError
-              ? `Gemini API call failed (${debugError}). `
+            const rationaleReason = itemError
+              ? `Gemini API call failed (${itemError}). `
               : "Gemini API unavailable. ";
 
             htsResult = {
@@ -391,38 +396,42 @@ ${candidateContext}`;
               confidence: lowConfidence,
               legalRationale: `${rationaleReason}DB candidate used as unverified low-confidence suggestion (${lowConfidence}% confidence). Requires human broker classification review before filing.`,
             };
-
-            if (!process.env.GEMINI_API_KEY) {
-              aiProvider = "Deterministic HTS DB Lookup (No API Key)";
-            }
           }
 
           if (htsResult) {
             return {
-              lineNumber: item.lineNumber,
-              productDescription: item.rawDescription,
-              htsCode: htsResult.htsCode,
-              htsDescription: htsResult.htsDescription,
-              dutyRate: htsResult.dutyRate,
-              griCitations: htsResult.griCitations,
-              crossRulings: htsResult.crossRulings,
-              confidence: htsResult.confidence,
-              evaluatorScore: htsResult.evaluatorScore ?? null,
-              evaluatorCritique: htsResult.evaluatorScore
-                ? "Evaluator-Optimizer Turn 2 confirmed."
-                : "Single-pass classification. Evaluator refinement loop pending.",
-              refinementTurns: 1,
-              legalRationale: htsResult.legalRationale,
-              modelVersion: modelVersionUsed,
-              promptVersion: promptVersionUsed,
+              error: itemError,
+              item: {
+                lineNumber: item.lineNumber,
+                productDescription: item.rawDescription,
+                htsCode: htsResult.htsCode,
+                htsDescription: htsResult.htsDescription,
+                dutyRate: htsResult.dutyRate,
+                griCitations: htsResult.griCitations,
+                crossRulings: htsResult.crossRulings,
+                confidence: htsResult.confidence,
+                evaluatorScore: htsResult.evaluatorScore ?? null,
+                evaluatorCritique: htsResult.evaluatorScore
+                  ? "Evaluator-Optimizer Turn 2 confirmed."
+                  : "Single-pass classification. Evaluator refinement loop pending.",
+                refinementTurns: 1,
+                legalRationale: htsResult.legalRationale,
+                modelVersion: modelVersionUsed,
+                promptVersion: promptVersionUsed,
+              },
             };
           }
-          return null;
+          return { error: itemError, item: null };
         })
       );
 
-      for (const res of chunkResults) {
+      // Aggregated in fixed item order after the batch settles, rather than
+      // mutated from inside the concurrent closures above, so the recorded
+      // debugError is deterministic instead of "whichever item's catch block
+      // happened to run last."
+      for (const { item: res, error } of chunkResults) {
         if (res !== null) results.push(res);
+        if (error) debugError = error;
       }
     }
 
