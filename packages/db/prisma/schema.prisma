@@ -361,6 +361,7 @@ model User {
   publishedFilings            CustomsFiling[]          @relation("FilingPublisher")
   createdCustomerRequests     CustomerRequest[]        @relation("RequestCreator")
   closedCustomerRequests      CustomerRequest[]        @relation("RequestCloser")
+  assignedCustomerRequests     CustomerRequest[]        @relation("RequestAssignee")
   authoredRequestMessages     CustomerRequestMessage[] @relation("MessageAuthor")
 
   @@index([clerkUserId])
@@ -1049,6 +1050,7 @@ model ShipmentDocument {
   @@index([clientId])
   @@index([accountId, portalVisibility])
   @@index([accountId, clientId, portalVisibility])
+  @@index([accountId, portalVisibility, createdAt])
   @@index([accountId])
   @@index([accountId, checksum])
   @@index([documentType])
@@ -1516,6 +1518,8 @@ model CustomerRequest {
   dueAt           DateTime?
   createdByUserId String?
   createdByUser   User?    @relation("RequestCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  assignedUserId  String?
+  assignedUser    User?    @relation("RequestAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
   closedByUserId  String?
   closedByUser    User?    @relation("RequestCloser", fields: [closedByUserId], references: [id], onDelete: SetNull)
   closedAt        DateTime?
@@ -1529,9 +1533,11 @@ model CustomerRequest {
   @@index([accountId])
   @@index([clientId])
   @@index([shipmentId])
+  @@index([assignedUserId])
   @@index([status])
   @@index([dueAt])
   @@index([accountId, clientId, status])
+  @@index([accountId, createdAt])
 }
 
 model CustomerRequestMessage {
@@ -1550,6 +1556,7 @@ model CustomerRequestMessage {
   @@index([requestId])
   @@index([accountId])
   @@index([clientId])
+  @@index([requestId, createdAt])
 }
 
 model CustomerRequestDocument {

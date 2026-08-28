@@ -17,31 +17,37 @@ export async function GET(req: Request) {
 
   console.log("[Shipments API Debug] ctx.accountId:", ctx.accountId, "clientId:", clientId, "authorizedClientIds:", scope.authorizedClientIds);
 
-  const clientFilter = clientId
-    ? { clientId }
-    : scope.isAllClients || scope.authorizedClientIds.length === 0
-      ? {}
-      : { clientId: { in: scope.authorizedClientIds } };
-
-  const whereClause = {
-    accountId: ctx.accountId,
-    ...clientFilter,
+  const whereClause: any = {
     deletedAt: null,
-    ...(query
-      ? {
-          OR: [
-            { shipmentNumber: { contains: query, mode: "insensitive" as const } },
-            { poReference: { contains: query, mode: "insensitive" as const } },
-            { importerName: { contains: query, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
   };
+
+  if (clientId) {
+    whereClause.clientId = clientId;
+  } else if (scope.authorizedClientIds.length > 0) {
+    whereClause.OR = [
+      { clientId: { in: scope.authorizedClientIds } },
+      { accountId: ctx.accountId },
+    ];
+  } else {
+    whereClause.accountId = ctx.accountId;
+  }
+
+  if (query) {
+    whereClause.AND = [
+      {
+        OR: [
+          { shipmentNumber: { contains: query, mode: "insensitive" as const } },
+          { poReference: { contains: query, mode: "insensitive" as const } },
+          { importerName: { contains: query, mode: "insensitive" as const } },
+        ],
+      },
+    ];
+  }
 
   const shipments = await db.shipment.findMany({
     take: limit + 1,
     cursor: cursor ? { id: cursor } : undefined,
-    orderBy: { updatedAt: "desc" },
+    orderBy: { createdAt: "desc" },
     where: whereClause,
     include: {
       customsFilings: {
@@ -50,7 +56,7 @@ export async function GET(req: Request) {
         select: { filingStatus: true },
       },
       customerRequests: {
-        where: { status: "OPEN" },
+        where: { status: { notIn: ["RESOLVED", "CLOSED"] } },
         select: { id: true },
       },
     },

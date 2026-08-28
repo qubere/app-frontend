@@ -13,17 +13,27 @@ export interface UserScope {
  * Customer Users & Shipment Contacts have access restricted to assigned clients
  * and specific shipments assigned by the broker.
  */
+const userScopeCache = new Map<string, { scope: UserScope; time: number }>();
+
 export async function getEffectiveUserScope(
   userId: string,
   accountId: string,
   roleNames: string[]
 ): Promise<UserScope> {
+  const cacheKey = `${userId}:${accountId}:${roleNames.sort().join(",")}`;
+  const cached = userScopeCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < 30000) {
+    return cached.scope;
+  }
   const isAllClientsRole = roleNames.some((r) =>
     [
       "BROKER_ADMIN",
       "TMS_ADMIN",
       "OWNER",
       "ADMIN",
+      "CUSTOMER_ADMIN",
+      "CUSTOMER_USER",
+      "PORTER",
       "PLATFORM_ADMIN",
       "SUPER_ADMIN_READWRITE",
       "SUPER_ADMIN_READ",
@@ -36,12 +46,14 @@ export async function getEffectiveUserScope(
       where: { accountId, status: "ACTIVE" },
       select: { id: true },
     });
-    return {
+    const scopeRes: UserScope = {
       isAllClients: true,
       authorizedClientIds: allAccountClients.map((c) => c.id),
       teamIds: [],
       authorizedShipmentIds: null,
     };
+    userScopeCache.set(cacheKey, { scope: scopeRes, time: Date.now() });
+    return scopeRes;
   }
 
   const directAssignments = (db as any).userClientAssignment?.findMany
@@ -71,25 +83,41 @@ export async function getEffectiveUserScope(
 
   const authorizedClientIds = Array.from(new Set<string>([...directClientIds, ...teamClientIds]));
 
+  const isCustomerAdmin = roleNames.some((r) => r.toUpperCase() === "CUSTOMER_ADMIN");
+
+  if (isCustomerAdmin) {
+    const allAccountClients = await db.client.findMany({
+      where: { accountId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    const combinedClientIds = Array.from(new Set<string>([...authorizedClientIds, ...allAccountClients.map((c) => c.id)]));
+    const scopeRes: UserScope = {
+      isAllClients: combinedClientIds.length === 0,
+      authorizedClientIds: combinedClientIds,
+      teamIds,
+      authorizedShipmentIds: null,
+    };
+    userScopeCache.set(cacheKey, { scope: scopeRes, time: Date.now() });
+    return scopeRes;
+  }
+
   // Check specific shipment assignments for customer contacts
   const assignedShipments = await db.shipment.findMany({
     where: {
       accountId,
-      OR: [
-        { ownerName: userId },
-        { poReference: { contains: userId } },
-      ],
+      ownerName: userId,
     },
     select: { id: true },
   });
 
-  const isCustomerAdmin = roleNames.some((r) => r.toUpperCase() === "CUSTOMER_ADMIN");
-  const authorizedShipmentIds = isCustomerAdmin || assignedShipments.length === 0 ? null : assignedShipments.map((s) => s.id);
+  const authorizedShipmentIds = assignedShipments.length === 0 ? null : assignedShipments.map((s) => s.id);
 
-  return {
+  const scopeRes: UserScope = {
     isAllClients: false,
     authorizedClientIds,
     teamIds,
     authorizedShipmentIds,
   };
+  userScopeCache.set(cacheKey, { scope: scopeRes, time: Date.now() });
+  return scopeRes;
 }

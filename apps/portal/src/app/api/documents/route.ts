@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { getAccountContext, getEffectiveUserScope, authorizePortalResource } from "@qubere/auth";
 import { db, processSharedDocumentUpload } from "@qubere/db";
 
+const inFlightDocumentPromises = new Map<string, Promise<any>>();
+let cachedDocuments: { cacheKey: string; time: number; data: any } | null = null;
+
+export function invalidateDocumentsCache() {
+  cachedDocuments = null;
+  inFlightDocumentPromises.clear();
+}
+
 export async function GET(req: Request) {
   const ctx = await getAccountContext();
   if (!ctx) {
@@ -10,55 +18,80 @@ export async function GET(req: Request) {
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
   const url = new URL(req.url);
-  const shipmentId = url.searchParams.get("shipmentId") || undefined;
-  const docType = url.searchParams.get("docType") || undefined;
-  const clientId = url.searchParams.get("clientId");
-  const cursor = url.searchParams.get("cursor") || undefined;
+  const shipmentId = url.searchParams.get("shipmentId") || "";
+  const docType = url.searchParams.get("docType") || "";
+  const clientId = url.searchParams.get("clientId") || "";
+  const cursor = url.searchParams.get("cursor") || "";
   const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
 
-  const clientFilter = clientId
-    ? { clientId }
-    : scope.isAllClients || scope.authorizedClientIds.length === 0
-      ? {}
-      : { clientId: { in: scope.authorizedClientIds } };
+  const cacheKey = `${ctx.accountId}:${clientId}:${shipmentId}:${docType}:${cursor}:${limit}`;
+  const now = Date.now();
 
-  const documents = await db.shipmentDocument.findMany({
-    take: limit + 1,
-    cursor: cursor ? { id: cursor } : undefined,
-    orderBy: { createdAt: "desc" },
-    where: {
-      accountId: ctx.accountId,
-      ...clientFilter,
-      portalVisibility: "CUSTOMER",
-      ...(shipmentId ? { shipmentId } : {}),
-      ...(docType ? { docType } : {}),
-    },
-    include: {
-      shipment: {
-        select: { id: true, shipmentNumber: true },
-      },
-    },
-  });
-
-  let nextCursor: string | undefined = undefined;
-  if (documents.length > limit) {
-    const nextItem = documents.pop();
-    nextCursor = nextItem?.id;
+  if (cachedDocuments && cachedDocuments.cacheKey === cacheKey && now - cachedDocuments.time < 5000) {
+    return NextResponse.json(cachedDocuments.data);
   }
 
-  const items = documents.map((d) => ({
-    id: d.id,
-    fileName: d.fileName,
-    docType: d.docType,
-    byteSize: d.byteSize,
-    mimeType: d.mimeType,
-    status: d.status === "Received" ? "Ready" : "Processing",
-    shipmentId: d.shipmentId,
-    shipmentNumber: d.shipment?.shipmentNumber || null,
-    createdAt: d.createdAt,
-  }));
+  if (inFlightDocumentPromises.has(cacheKey)) {
+    const data = await inFlightDocumentPromises.get(cacheKey);
+    return NextResponse.json(data);
+  }
 
-  return NextResponse.json({ items, nextCursor });
+  const fetchPromise = (async () => {
+    const clientFilter = clientId
+      ? { clientId }
+      : scope.isAllClients || scope.authorizedClientIds.length === 0
+        ? {}
+        : { clientId: { in: scope.authorizedClientIds } };
+
+    const documents = await db.shipmentDocument.findMany({
+      take: limit + 1,
+      cursor: cursor ? { id: cursor } : undefined,
+      orderBy: { createdAt: "desc" },
+      where: {
+        accountId: ctx.accountId,
+        ...clientFilter,
+        portalVisibility: "CUSTOMER",
+        ...(shipmentId ? { shipmentId } : {}),
+        ...(docType ? { docType } : {}),
+      },
+      include: {
+        shipment: {
+          select: { id: true, shipmentNumber: true },
+        },
+      },
+    });
+
+    let nextCursor: string | undefined = undefined;
+    if (documents.length > limit) {
+      const nextItem = documents.pop();
+      nextCursor = nextItem?.id;
+    }
+
+    const items = documents.map((d) => ({
+      id: d.id,
+      fileName: d.fileName,
+      docType: d.docType,
+      byteSize: d.byteSize,
+      mimeType: d.mimeType,
+      source: d.source || "PORTAL_UPLOAD",
+      fileUrl: d.fileUrl || null,
+      status: d.status === "Received" ? "Ready" : "Processing",
+      shipmentId: d.shipmentId,
+      shipmentNumber: d.shipment?.shipmentNumber || null,
+      createdAt: d.createdAt,
+    }));
+
+    return { items, nextCursor };
+  })();
+
+  inFlightDocumentPromises.set(cacheKey, fetchPromise);
+  try {
+    const data = await fetchPromise;
+    cachedDocuments = { cacheKey, time: Date.now(), data };
+    return NextResponse.json(data);
+  } finally {
+    inFlightDocumentPromises.delete(cacheKey);
+  }
 }
 
 export async function POST(req: Request) {

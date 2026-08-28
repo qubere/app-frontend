@@ -30,7 +30,88 @@ export async function POST(
   }
 
   try {
+    const contentType = req.headers.get("content-type") || "";
+
+    // Case A: JSON payload attaching existing document
+    if (contentType.includes("application/json")) {
+      const { documentId } = await req.json();
+      if (!documentId) {
+        return NextResponse.json({ error: "DOCUMENT_ID_REQUIRED" }, { status: 400 });
+      }
+
+      const existingDoc = await db.shipmentDocument.findUnique({
+        where: { id: documentId },
+      });
+
+      if (!existingDoc) {
+        return NextResponse.json({ error: "DOCUMENT_NOT_FOUND" }, { status: 404 });
+      }
+
+      const reqDoc = await db.customerRequestDocument.create({
+        data: {
+          requestId: id,
+          documentId: existingDoc.id,
+        },
+      });
+
+      const msg = await db.customerRequestMessage.create({
+        data: {
+          requestId: id,
+          accountId: request.accountId,
+          clientId: request.clientId,
+          authorUserId: auth.ctx.userId,
+          authorType: "CUSTOMER",
+          body: `Attached existing document from Documents folder: ${existingDoc.fileName}`,
+        },
+      });
+
+      await db.customerRequest.update({
+        where: { id },
+        data: { status: "CUSTOMER_RESPONDED" },
+      });
+
+      return NextResponse.json({ document: existingDoc, message: msg });
+    }
+
+    // Case B: Multipart form data with file upload or existing documentId
     const formData = await req.formData();
+    const existingDocId = formData.get("documentId") as string | null;
+
+    if (existingDocId) {
+      const existingDoc = await db.shipmentDocument.findUnique({
+        where: { id: existingDocId },
+      });
+
+      if (!existingDoc) {
+        return NextResponse.json({ error: "DOCUMENT_NOT_FOUND" }, { status: 404 });
+      }
+
+      const reqDoc = await db.customerRequestDocument.create({
+        data: {
+          requestId: id,
+          documentId: existingDoc.id,
+        },
+      });
+
+      const msg = await db.customerRequestMessage.create({
+        data: {
+          requestId: id,
+          accountId: request.accountId,
+          clientId: request.clientId,
+          authorUserId: auth.ctx.userId,
+          authorType: "CUSTOMER",
+          body: `Attached existing document from Documents folder: ${existingDoc.fileName}`,
+        },
+      });
+
+      await db.customerRequest.update({
+        where: { id },
+        data: { status: "CUSTOMER_RESPONDED" },
+      });
+
+      return NextResponse.json({ document: existingDoc, message: msg });
+    }
+
     const file = formData.get("file") as File | null;
     if (!file) {
       return NextResponse.json({ error: "NO_FILE_PROVIDED" }, { status: 400 });

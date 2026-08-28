@@ -59,12 +59,16 @@ export const ACTIVE_ACCOUNT_COOKIE = "qubere_active_account_id";
 async function loadAccountContext(): Promise<AccountContext | null> {
   const startTime = Date.now();
   try {
-    const { userId: clerkUserId } = await auth();
+    let clerkUserId: string | null = null;
+    try {
+      const authObj = await auth();
+      clerkUserId = authObj.userId;
+    } catch {
+      // Unauthenticated or outside HTTP context in dev/demo mode
+    }
+
     const authDuration = Date.now() - startTime;
     if (!clerkUserId) {
-      console.log(
-        `[ThirdPartyHTTP] [${new Date().toISOString()}] [User: anonymous] [Account: N/A] [Provider: CLERK_AUTH] auth() -> Status: 401 Unauthenticated (${authDuration}ms)`
-      );
       if (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_APP_ENV === "demo") {
         return await getDemoAccountContext();
       }
@@ -362,78 +366,55 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       throw error;
     }
     console.error("Error retrieving account context:", error);
+    if (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_APP_ENV === "demo") {
+      return await getDemoAccountContext();
+    }
     return null;
   }
 }
 
-export async function getDemoAccountContext(): Promise<AccountContext | null> {
+let cachedDemoContext: { cacheKey: string; ctx: AccountContext; fetchedAt: number } | null = null;
+
+export async function getDevOrDemoAccountContext(): Promise<AccountContext | null> {
+  // STRICT SAFETY: Never execute dev/demo fallbacks in production environments
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  let cookieStore;
   try {
-    let demoAccount = await db.account.findFirst({
-      where: {
-        clients: {
-          some: { name: { in: ["Target Corporation", "Amazon Import Services"] } },
-        },
-      },
-      include: {
-        clients: { select: { id: true } },
-      },
-    });
+    cookieStore = await cookies();
+  } catch {
+    // Cookies not available outside HTTP context
+  }
 
-    if (!demoAccount) {
-      demoAccount = await db.account.findFirst({
-        where: { id: "cmtcfi6r7000ifx6vpmkuymwk" },
-        include: {
-          clients: { select: { id: true } },
-        },
-      });
-    }
+  const activeUserIdCookie = cookieStore?.get("qubere_active_user_id")?.value || "";
+  const activeAccountIdCookie = cookieStore?.get(ACTIVE_ACCOUNT_COOKIE)?.value || "";
+  const devEmailFilter = process.env.DEV_USER_EMAIL || "";
+  const cacheKey = `${devEmailFilter}:${activeUserIdCookie}:${activeAccountIdCookie}`;
 
-    if (!demoAccount) {
-      demoAccount = await db.account.findFirst({
-        include: { clients: { select: { id: true } } },
-      });
-    }
+  const now = Date.now();
+  if (cachedDemoContext && cachedDemoContext.cacheKey === cacheKey && now - cachedDemoContext.fetchedAt < 2000) {
+    return cachedDemoContext.ctx;
+  }
 
-    if (!demoAccount) return null;
+  try {
+    let targetUser: any = null;
 
-    let demoUser = await db.user.findFirst({
-      where: {
-        memberships: {
-          some: { accountId: demoAccount.id },
-        },
-      },
-      include: {
-        memberships: {
-          where: { accountId: demoAccount.id },
-          include: {
-            roles: {
-              include: {
-                role: {
-                  include: {
-                    rolePermissions: {
-                      include: { permission: true },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!demoUser) {
-      demoUser = await db.user.findFirst({
+    // 1. If explicit active user cookie is present, resolve that user directly
+    if (activeUserIdCookie) {
+      targetUser = await db.user.findUnique({
+        where: { id: activeUserIdCookie },
         include: {
           memberships: {
+            where: { deletedAt: null },
             include: {
+              account: { include: { clients: { select: { id: true } } } },
               roles: {
                 include: {
                   role: {
                     include: {
-                      rolePermissions: {
-                        include: { permission: true },
-                      },
+                      rolePermissions: { include: { permission: true } },
                     },
                   },
                 },
@@ -444,64 +425,119 @@ export async function getDemoAccountContext(): Promise<AccountContext | null> {
       });
     }
 
-    const userId = demoUser?.id || "demo_user_id";
-    const email = demoUser?.email || "sarah.jenkins@apexglobal.com";
-    const firstName = demoUser?.firstName || "Sarah";
-    const lastName = demoUser?.lastName || "Jenkins";
-    const clerkUserId = demoUser?.clerkUserId || "user_demo_123";
+    // 2. Query target user by configured DEV_USER_EMAIL env var
+    if (!targetUser && devEmailFilter) {
+      targetUser = await db.user.findFirst({
+        where: {
+          deletedAt: null,
+          email: { contains: devEmailFilter, mode: "insensitive" },
+        },
+        include: {
+          memberships: {
+            where: { deletedAt: null },
+            include: {
+              account: { include: { clients: { select: { id: true } } } },
+              roles: {
+                include: {
+                  role: {
+                    include: {
+                      rolePermissions: { include: { permission: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
 
-    const membership = demoUser?.memberships?.[0];
-    const roleNames = membership?.roles.map((r) => r.role.name) || ["CUSTOMER_ADMIN"];
+    // 3. General active user fallback if specific user not configured
+    if (!targetUser) {
+      targetUser = await db.user.findFirst({
+        where: { deletedAt: null },
+        include: {
+          memberships: {
+            where: { deletedAt: null },
+            include: {
+              account: { include: { clients: { select: { id: true } } } },
+              roles: {
+                include: {
+                  role: {
+                    include: {
+                      rolePermissions: { include: { permission: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (!targetUser || !targetUser.memberships || targetUser.memberships.length === 0) {
+      return null;
+    }
+
+    // Data-driven membership resolution from database model relations
+    const targetAccountId = activeAccountIdCookie || process.env.DEV_ACCOUNT_ID || "";
+    const membership = (targetAccountId ? targetUser.memberships.find((m: any) => m.accountId === targetAccountId) : null) || targetUser.memberships[0];
+    const account = membership.account;
+    const roleNames = membership.roles.map((r: any) => r.role.name);
     const permissions = Array.from(
-      new Set(
-        membership?.roles.flatMap((r) =>
-          r.role.rolePermissions.map((rp) => rp.permission.name)
-        ) || []
+      new Set<string>(
+        membership.roles.flatMap((r: any) =>
+          r.role.rolePermissions.map((rp: any) => rp.permission.name)
+        )
       )
     );
 
-    const clientIds = demoAccount.clients.map((c) => c.id);
+    const clientIds = account.clients?.map((c: any) => c.id) || [];
 
-    return {
-      userId,
-      actorUserId: userId,
-      effectiveUserId: userId,
-      clerkUserId,
-      email,
-      firstName,
-      lastName,
+    const ctxResult: AccountContext = {
+      userId: targetUser.id,
+      actorUserId: targetUser.id,
+      effectiveUserId: targetUser.id,
+      clerkUserId: targetUser.clerkUserId || targetUser.id,
+      email: targetUser.email,
+      firstName: targetUser.firstName,
+      lastName: targetUser.lastName,
       isImpersonating: false,
       isPlatformAdmin: false,
       platformRoles: [],
-      accountId: demoAccount.id,
-      accountName: demoAccount.name,
-      accountSlug: demoAccount.slug,
-      accountType: demoAccount.type,
-      dataMode: demoAccount.dataMode,
-      ownerUserId: demoAccount.ownerUserId,
-      membershipId: membership?.id || "demo_mem",
-      roleIds: membership?.roles.map((r) => r.roleId) || [],
+      accountId: account.id,
+      accountName: account.name,
+      accountSlug: account.slug,
+      accountType: account.type,
+      dataMode: account.dataMode,
+      ownerUserId: account.ownerUserId,
+      membershipId: membership.id,
+      roleIds: membership.roles.map((r: any) => r.roleId),
       roleNames,
-      permissions: permissions.length > 0 ? permissions : ["porter", "portal.access", "portal.shipments.read", "portal.entries.read", "portal.documents.read", "portal.invoices.read"],
+      permissions,
       authorizedClientIds: clientIds,
-      isAllClients: true,
-      memberships: [
-        {
-          accountId: demoAccount.id,
-          accountName: demoAccount.name,
-          accountSlug: demoAccount.slug,
-          accountType: demoAccount.type,
-          dataMode: demoAccount.dataMode,
-          roleNames,
-        },
-      ],
-      account: demoAccount as any,
+      isAllClients: roleNames.some((r: string) => ["ADMIN", "OWNER", "BROKER_ADMIN", "TMS_ADMIN"].includes(r.toUpperCase())),
+      memberships: targetUser.memberships.map((m: any) => ({
+        accountId: m.account.id,
+        accountName: m.account.name,
+        accountSlug: m.account.slug,
+        accountType: m.account.type,
+        dataMode: m.account.dataMode,
+        roleNames: m.roles.map((r: any) => r.role.name),
+      })),
+      account: account as any,
     };
+
+    cachedDemoContext = { cacheKey, ctx: ctxResult, fetchedAt: now };
+    return ctxResult;
   } catch (err) {
-    console.error("Failed to load demo account context:", err);
+    console.error("Failed to load development account context:", err);
     return null;
   }
 }
+
+export const getDemoAccountContext = getDevOrDemoAccountContext;
 
 export const getAccountContext = cache(loadAccountContext);
 

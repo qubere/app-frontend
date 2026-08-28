@@ -126,6 +126,12 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         });
       }
 
+      // Assign customerRequest to user
+      await db.customerRequest.update({
+        where: { id: customerRequest.id },
+        data: { assignedUserId: user.id },
+      });
+
       // Ensure "porter" permission & CUSTOMER_USER role exist
       const porterPerm = await db.permission.upsert({
         where: { name: "porter" },

@@ -2,54 +2,79 @@ import { NextResponse } from "next/server";
 import { getAccountContext, getEffectiveUserScope, hasPermission } from "@qubere/auth";
 import { db } from "@qubere/db";
 
+const meCache = new Map<string, { data: any; time: number }>();
+const CACHE_TTL_MS = 300 * 1000; // 300 seconds (5 minutes)
+
+export function invalidateMeCache(userId?: string) {
+  if (userId) {
+    for (const key of meCache.keys()) {
+      if (key.startsWith(userId)) meCache.delete(key);
+    }
+  } else {
+    meCache.clear();
+  }
+}
+
 export async function GET() {
   const ctx = await getAccountContext();
   if (!ctx) {
     return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const user = await db.user.findUnique({
-    where: { id: ctx.userId },
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-    },
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
+  const cacheKey = `${ctx.userId}:${ctx.accountId}`;
+  const cached = meCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < CACHE_TTL_MS) {
+    return NextResponse.json(cached.data, {
+      headers: {
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
+      },
+    });
   }
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
 
-  // Fetch client details for authorized client IDs
-  const authorizedClients = await db.client.findMany({
-    where: {
-      accountId: ctx.accountId,
-      status: "ACTIVE",
-      ...(scope.isAllClients ? {} : { id: { in: scope.authorizedClientIds } }),
-    },
-    select: {
-      id: true,
-      name: true,
-      contactName: true,
-      contactEmail: true,
-    },
-  });
+  const [user, authorizedClients] = await Promise.all([
+    db.user.findUnique({
+      where: { id: ctx.userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      },
+    }),
+    db.client.findMany({
+      where: {
+        accountId: ctx.accountId,
+        status: "ACTIVE",
+        ...(scope.isAllClients ? {} : { id: { in: scope.authorizedClientIds } }),
+      },
+      select: {
+        id: true,
+        name: true,
+        contactName: true,
+        contactEmail: true,
+      },
+    }),
+  ]);
 
-  const hasPorterView = (await hasPermission("porter")) || (await hasPermission("portal.porter")) || (await hasPermission("portal.access"));
-  const hasCustomsAccess = hasPorterView || (await hasPermission("portal.customs.read")) || (await hasPermission("portal.shipments.read"));
-  const hasTmsAccess = hasPorterView || (await hasPermission("portal.tms.read")) || (await hasPermission("portal.orders.read"));
-  const canUploadDocuments = await hasPermission("portal.documents.create");
-  const canRespondRequests = await hasPermission("portal.requests.respond");
+  const email = user?.email || ctx.email || "porter@target.com";
+  const name = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email : (ctx.firstName ? `${ctx.firstName} ${ctx.lastName || ""}`.trim() : email);
 
-  return NextResponse.json({
+  const perms = new Set(ctx.permissions || []);
+  const isOwnerOrAdmin = ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN");
+
+  const hasPorterView = isOwnerOrAdmin || perms.has("porter") || perms.has("portal.porter") || perms.has("portal.access");
+  const hasCustomsAccess = hasPorterView || perms.has("portal.customs.read") || perms.has("portal.shipments.read");
+  const hasTmsAccess = hasPorterView || perms.has("portal.tms.read") || perms.has("portal.orders.read");
+  const canUploadDocuments = isOwnerOrAdmin || perms.has("portal.documents.create");
+  const canRespondRequests = isOwnerOrAdmin || perms.has("portal.requests.respond");
+
+  const responseData = {
     user: {
-      id: user.id,
-      email: user.email,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+      id: user?.id || ctx.userId,
+      email,
+      name,
     },
     account: {
       id: ctx.accountId,
@@ -62,5 +87,13 @@ export async function GET() {
       canRespondRequests,
     },
     clients: authorizedClients,
+  };
+
+  meCache.set(cacheKey, { data: responseData, time: Date.now() });
+
+  return NextResponse.json(responseData, {
+    headers: {
+      "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
+    },
   });
 }

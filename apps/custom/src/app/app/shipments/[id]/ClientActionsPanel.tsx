@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   FolderCheck,
   X,
+  RotateCcw,
 } from "lucide-react";
 
 export interface CustomerRequestMessageData {
@@ -52,6 +53,13 @@ export interface CustomerRequestItemData {
   status: string;
   dueAt?: string | Date | null;
   createdAt: string | Date;
+  assignedUserId?: string | null;
+  assignedUser?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
   messages: CustomerRequestMessageData[];
   documents?: CustomerRequestDocumentData[];
 }
@@ -63,10 +71,38 @@ interface ClientActionsPanelProps {
 
 export function ClientActionsPanel({ shipmentId, initialRequests }: ClientActionsPanelProps) {
   const [requests, setRequests] = useState<CustomerRequestItemData[]>(initialRequests);
-  const [expandedId, setExpandedId] = useState<string | null>(initialRequests[0]?.id || null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState<{ [requestId: string]: string }>({});
   const [sendingReply, setSendingReply] = useState<{ [requestId: string]: boolean }>({});
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+
+  const [customerUserCandidates, setCustomerUserCandidates] = useState<Array<{ id: string; name: string; email: string }>>([]);
+
+  useEffect(() => {
+    fetch("/api/broker/customer-users")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.customerUsers && Array.isArray(data.customerUsers)) {
+          setCustomerUserCandidates(data.customerUsers);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleReassignUser = async (requestId: string, targetUserId: string) => {
+    try {
+      const res = await fetch("/api/broker/customer-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, assignedUserId: targetUserId || null }),
+      });
+      if (res.ok) {
+        refreshRequests();
+      }
+    } catch (err) {
+      console.error("Failed to reassign user", err);
+    }
+  };
 
   // Review Modal state for viewing & approving quarantine documents
   const [reviewModalDoc, setReviewModalDoc] = useState<{
@@ -115,7 +151,8 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
         setReplyText((prev) => ({ ...prev, [requestId]: "" }));
         refreshRequests();
       } else {
-        alert("Failed to send reply to counterparty.");
+        const errJson = await res.json().catch(() => ({}));
+        alert(`Failed to send reply: ${errJson.message || errJson.error || res.statusText}`);
       }
     } catch (err) {
       console.error(err);
@@ -125,16 +162,18 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
     }
   };
 
-  const handleResolveRequest = async (requestId: string) => {
+  const handleUpdateStatus = async (requestId: string, newStatus: string) => {
     setResolvingId(requestId);
     try {
-      const res = await fetch(`/api/broker/customer-requests/${requestId}/resolve`, {
+      const res = await fetch(`/api/broker/customer-requests/${requestId}/status`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
       });
       if (res.ok) {
         refreshRequests();
       } else {
-        alert("Failed to resolve request.");
+        alert("Failed to update action status.");
       }
     } catch (err) {
       console.error(err);
@@ -207,11 +246,32 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
       </div>
 
       {/* Action Requests Cards List */}
-      <div className="space-y-3">
-        {requests.map((item) => {
-          const isExpanded = expandedId === item.id;
-          const isResponded = item.status === "CUSTOMER_RESPONDED";
-          const isResolved = item.status === "RESOLVED";
+      {(() => {
+        const sortedAsc = [...requests].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        const actionIdMap = new Map<string, string>();
+        sortedAsc.forEach((r, idx) => {
+          actionIdMap.set(r.id, `ACT-${(101 + idx).toString()}`);
+        });
+
+        // Active items first (OPEN, CUSTOMER_RESPONDED, PROCESSING), then RESOLVED items; sorted by createdAt asc within groups
+        const displaySortedRequests = [...requests].sort((a, b) => {
+          const isResA = a.status === "RESOLVED" || a.status === "CLOSED";
+          const isResB = b.status === "RESOLVED" || b.status === "CLOSED";
+          if (isResA !== isResB) {
+            return isResA ? 1 : -1;
+          }
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+
+        return (
+          <div className="space-y-3">
+            {displaySortedRequests.map((item, idx) => {
+              const isExpanded = expandedId === item.id;
+              const isResponded = item.status === "CUSTOMER_RESPONDED";
+              const isResolved = item.status === "RESOLVED" || item.status === "CLOSED";
+              const displayActionId = actionIdMap.get(item.id) || `ACT-${(101 + idx).toString()}`;
 
           return (
             <div
@@ -232,15 +292,19 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
                 <div className="flex items-start space-x-3 min-w-0">
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                      isResponded
-                        ? "bg-emerald-100 text-emerald-700"
-                        : isResolved
-                        ? "bg-slate-100 text-slate-500"
-                        : "bg-amber-100 text-amber-700"
+                      isResolved
+                        ? "bg-slate-100 text-slate-500 border border-slate-200"
+                        : item.status === "PROCESSING"
+                        ? "bg-purple-100 text-purple-700 border border-purple-300 animate-pulse"
+                        : isResponded
+                        ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
+                        : "bg-amber-100 text-amber-700 border border-amber-300"
                     }`}
                   >
                     {isResolved ? (
                       <CheckCircle2 className="w-5 h-5" />
+                    ) : item.status === "PROCESSING" ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
                     ) : isResponded ? (
                       <MessageSquare className="w-5 h-5 animate-bounce" />
                     ) : (
@@ -249,23 +313,47 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
                   </div>
 
                   <div className="min-w-0">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                      <span className="text-xs font-mono font-extrabold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 shadow-2xs">
+                        {displayActionId}
+                      </span>
                       <h3 className="text-sm font-bold text-ink truncate">{item.title}</h3>
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           isResolved
-                            ? "bg-slate-100 text-slate-600 border border-slate-200"
+                            ? "bg-slate-100 text-slate-600 border border-slate-300"
+                            : item.status === "PROCESSING"
+                            ? "bg-purple-100 text-purple-800 border border-purple-300"
                             : isResponded
                             ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                             : "bg-amber-100 text-amber-800 border border-amber-300"
                         }`}
                       >
                         {isResolved
-                          ? "Resolved"
+                          ? "Resolved / Closed"
+                          : item.status === "PROCESSING"
+                          ? "Agent Processing"
                           : isResponded
                           ? "Counterparty Responded"
                           : "Awaiting Client Response"}
                       </span>
+
+                      {/* Assignee Selector Dropdown */}
+                      <div className="flex items-center space-x-1 ml-1" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[10px] text-ink-muted font-semibold">Assignee:</span>
+                        <select
+                          value={item.assignedUserId || ""}
+                          onChange={(e) => handleReassignUser(item.id, e.target.value)}
+                          className="px-2 py-0.5 text-[11px] bg-surface-muted border border-border rounded-lg text-ink font-semibold focus:outline-none focus:border-brand cursor-pointer"
+                        >
+                          <option value="">Unassigned (All Team)</option>
+                          {customerUserCandidates.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     {item.description && (
                       <p className="text-xs text-ink-muted mt-1 truncate">{item.description}</p>
@@ -274,21 +362,39 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
                 </div>
 
                 <div className="flex items-center space-x-3 shrink-0 pl-4">
-                  {!isResolved && (
+                  {/* Status Action Buttons */}
+                  {isResolved ? (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleResolveRequest(item.id);
+                        handleUpdateStatus(item.id, "OPEN");
                       }}
                       disabled={resolvingId === item.id}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition cursor-pointer disabled:opacity-50 flex items-center space-x-1"
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-amber-50 text-amber-900 border border-amber-300 text-xs font-extrabold transition cursor-pointer disabled:opacity-50 flex items-center space-x-1.5 shadow-2xs"
+                      title="Re-open Action Item"
+                    >
+                      {resolvingId === item.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
+                      <span>Re-Open Action</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUpdateStatus(item.id, "RESOLVED");
+                      }}
+                      disabled={resolvingId === item.id}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-extrabold hover:bg-emerald-700 transition cursor-pointer disabled:opacity-50 flex items-center space-x-1 shadow-2xs"
                     >
                       {resolvingId === item.id ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
                         <CheckCircle2 className="w-3.5 h-3.5" />
                       )}
-                      <span>Resolve Action</span>
+                      <span>Close & Resolve</span>
                     </button>
                   )}
 
@@ -392,34 +498,36 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
                   )}
 
                   {/* Messages Timeline */}
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-ink uppercase tracking-wider">
-                      Communication Thread
-                    </h4>
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                  {item.messages && item.messages.length > 0 && (
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2 bg-[#F9F9FB] p-4 rounded-3xl border border-[#E5E5EA]">
                       {item.messages.map((msg) => {
                         const isBroker = msg.authorType === "BROKER";
+                        const brokerName = msg.authorUser
+                          ? `${msg.authorUser.firstName || "Customs"} ${msg.authorUser.lastName || "Broker"}`.trim()
+                          : "Customs Broker";
+                        const customerName = msg.authorUser
+                          ? `${msg.authorUser.firstName || "Porter"} ${msg.authorUser.lastName || "TargetUser"}`.trim()
+                          : "Porter TargetUser";
+
+                        const displayAuthor = isBroker
+                          ? `${brokerName} (You)`
+                          : customerName;
+
                         return (
                           <div
                             key={msg.id}
                             className={`flex flex-col ${isBroker ? "items-end" : "items-start"}`}
                           >
-                            <div className="flex items-center space-x-2 text-[10px] text-ink-muted mb-1 px-1">
-                              <span className="font-bold">
-                                {isBroker
-                                  ? "Broker Agent (You)"
-                                  : msg.authorUser
-                                  ? `${msg.authorUser.firstName || "Porter"} ${msg.authorUser.lastName || "User"}`
-                                  : "Counterparty Client"}
-                              </span>
+                            <div className="flex items-center space-x-1.5 text-[10px] font-semibold text-[#8E8E93] mb-1 px-2">
+                              <span>{displayAuthor}</span>
                               <span>&bull;</span>
                               <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                             </div>
                             <div
-                              className={`p-3.5 rounded-2xl text-xs max-w-lg leading-relaxed shadow-2xs ${
+                              className={`px-4 py-2.5 rounded-[20px] text-[13px] max-w-lg leading-snug ${
                                 isBroker
-                                  ? "bg-brand text-white rounded-br-none"
-                                  : "bg-white text-ink border border-border rounded-bl-none font-medium"
+                                  ? "bg-[#007AFF] text-white rounded-br-[4px] font-normal shadow-2xs"
+                                  : "bg-[#E9E9EB] text-[#000000] rounded-bl-[4px] font-normal"
                               }`}
                             >
                               {msg.body}
@@ -428,11 +536,11 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
                         );
                       })}
                     </div>
-                  </div>
+                  )}
 
                   {/* Reply Input Form */}
                   {!isResolved && (
-                    <div className="pt-2 border-t border-border flex items-center space-x-3">
+                    <div className="pt-2 flex items-center space-x-2">
                       <input
                         type="text"
                         value={replyText[item.id] || ""}
@@ -442,20 +550,20 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
                         onKeyDown={(e) => {
                           if (e.key === "Enter") handleSendReply(item.id);
                         }}
-                        placeholder="Type reply to client or counterparty..."
-                        className="flex-1 bg-white border border-border text-ink rounded-xl px-4 py-2.5 text-xs focus:ring-2 focus:ring-brand focus:outline-none"
+                        placeholder="iMessage..."
+                        className="flex-1 bg-white border border-[#C6C6C8] text-[#000000] rounded-full px-4 py-2 text-xs focus:ring-2 focus:ring-[#007AFF]/20 focus:border-[#007AFF] focus:outline-none transition shadow-2xs"
                       />
                       <button
                         onClick={() => handleSendReply(item.id)}
                         disabled={!replyText[item.id]?.trim() || sendingReply[item.id]}
-                        className="px-4 py-2.5 bg-brand text-white rounded-xl text-xs font-semibold hover:bg-brand/90 transition cursor-pointer disabled:opacity-50 flex items-center space-x-1.5 shadow-xs shrink-0"
+                        className="w-9 h-9 rounded-full bg-[#007AFF] text-white hover:bg-[#0062CC] transition cursor-pointer disabled:opacity-40 flex items-center justify-center shrink-0 shadow-2xs"
+                        title="Send Message"
                       >
                         {sendingReply[item.id] ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <Send className="w-3.5 h-3.5" />
+                          <Send className="w-4 h-4 translate-x-0.5 -translate-y-0.5" />
                         )}
-                        <span>Send Reply</span>
                       </button>
                     </div>
                   )}
@@ -465,6 +573,8 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
           );
         })}
       </div>
+    );
+  })()}
 
       {/* Document Review & Agent Pipeline Approval Modal Overlay */}
       {reviewModalDoc && (

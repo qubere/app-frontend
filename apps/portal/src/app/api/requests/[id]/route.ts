@@ -73,5 +73,23 @@ export async function GET(
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
-  return NextResponse.json({ request });
+  let actionId = `ACT-${request.id.slice(-4).toUpperCase()}`;
+  if (request.shipmentId) {
+    const siblingRequests = await db.customerRequest.findMany({
+      where: { shipmentId: request.shipmentId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    const index = siblingRequests.findIndex((r) => r.id === request.id);
+    if (index !== -1) {
+      actionId = `ACT-${(101 + index).toString()}`;
+    }
+  }
+
+  return NextResponse.json({
+    request: {
+      ...request,
+      actionId,
+    },
+  });
 }

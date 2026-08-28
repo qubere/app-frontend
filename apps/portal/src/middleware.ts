@@ -9,8 +9,8 @@ const isProtectedRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    // Allows public preview mode if auth is unauthenticated in demo mode
+  if (process.env.NODE_ENV === "production" && isProtectedRoute(req)) {
+    await auth.protect();
   }
 });
 

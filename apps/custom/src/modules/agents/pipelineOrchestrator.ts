@@ -291,7 +291,7 @@ export class PipelineOrchestrator {
               currentStep: i + 1,
               totalSteps: agentsToRun.length,
             },
-          }).catch(() => {});
+          }).catch(() => { });
           if (jobId) {
             await PgQueue.updateProgress(jobId, i + 1).catch((e) =>
               console.error("[PipelineOrchestrator] Failed to update job progress:", e)
@@ -320,7 +320,7 @@ export class PipelineOrchestrator {
           await db.pipelineJob.update({
             where: { id: activeJobId },
             data: { status: "FAILED", errorMessage: error || "Agent execution failed" },
-          }).catch(() => {});
+          }).catch(() => { });
         }
         break;
       }
@@ -335,7 +335,7 @@ export class PipelineOrchestrator {
           currentStep: agentsToRun.length,
           completedAt: new Date(),
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     // Unconditional, regardless of trigger -- this is what turns current DB
@@ -515,6 +515,24 @@ export class PipelineOrchestrator {
           output: output as unknown as Record<string, unknown>,
           exclude: ["shipmentDocumentId", "packetId"],
         });
+        // Automatically close/resolve matching action items for this document
+        try {
+          if (documentId) {
+            const reqDocLinks = await db.customerRequestDocument.findMany({
+              where: { documentId },
+              select: { requestId: true },
+            });
+            for (const link of reqDocLinks) {
+              await db.customerRequest.update({
+                where: { id: link.requestId },
+                data: { status: "RESOLVED", closedAt: new Date() },
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("Auto-closing customer request error:", err);
+        }
+
         const detectedType = output.detectedTypes?.[0];
         const intakeSummary = [
           detectedType && `${detectedType.replace(/_/g, " ")}`,
@@ -814,8 +832,8 @@ export class PipelineOrchestrator {
         const complianceSummary = output.status === "BLOCKED_DEPENDENCY"
           ? "Blocked — missing upstream data"
           : totalIssues === 0
-          ? "Cleared — no findings"
-          : `${totalIssues} finding${totalIssues !== 1 ? "s" : ""}${issueCount > 0 ? ` (${issueCount} high/med)` : ""}`;
+            ? "Cleared — no findings"
+            : `${totalIssues} finding${totalIssues !== 1 ? "s" : ""}${issueCount > 0 ? ` (${issueCount} high/med)` : ""}`;
         return { decisionId: output.agentDecisionId, aiProviderUsed: output.aiProviderUsed, confidence: null, summary: complianceSummary, input: agentInput, output };
       }
 

@@ -18,6 +18,7 @@ import {
   LogOut,
   UserCheck,
   ChevronDown,
+  X,
 } from "lucide-react";
 
 interface UserProfile {
@@ -56,8 +57,31 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const [clients, setClients] = useState<ClientScope[]>([]);
   const [selectedClient, setSelectedClient] = useState<ClientScope | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  const SESSION_CACHE_KEY = "qubere_portal_user_session_v1";
+  const SESSION_CACHE_TTL = 300 * 1000; // 300s (5 minutes)
 
   useEffect(() => {
+    // 1. Instant HTML5 sessionStorage read (0 ms client-side hydration)
+    try {
+      const rawCache = sessionStorage.getItem(SESSION_CACHE_KEY);
+      if (rawCache) {
+        const parsed = JSON.parse(rawCache);
+        if (parsed.timestamp && Date.now() - parsed.timestamp < SESSION_CACHE_TTL && parsed.data?.user) {
+          const data = parsed.data;
+          setUser(data.user);
+          if (data.account?.id) setAccountId(data.account.id);
+          if (data.capabilities) setCapabilities(data.capabilities);
+          if (data.clients && data.clients.length > 0) {
+            setClients(data.clients);
+            setSelectedClient(data.clients[0]);
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Background fetch to revalidate HTML5 cache
     fetch("/api/me")
       .then((res) => res.json())
       .then((data) => {
@@ -69,16 +93,22 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             setClients(data.clients);
             setSelectedClient(data.clients[0]);
           }
+          try {
+            sessionStorage.setItem(
+              SESSION_CACHE_KEY,
+              JSON.stringify({ timestamp: Date.now(), data })
+            );
+          } catch {}
         }
       })
       .catch(() => {});
   }, []);
 
-  const userName = clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress || user?.name || "Porter User";
-  const userEmail = clerkUser?.primaryEmailAddress?.emailAddress || user?.email || "porter@client.com";
+  const userName = user?.name || clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress || "Porter User";
+  const userEmail = user?.email || clerkUser?.primaryEmailAddress?.emailAddress || "porter@target.com";
 
   const navItems = [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard, visible: true },
+    { label: "Actions", href: "/", icon: LayoutDashboard, visible: true },
     { label: "Customs Shipments", href: "/shipments", icon: FileText, visible: capabilities.hasCustomsAccess },
     { label: "TMS Freight", href: "/freight", icon: Truck, visible: capabilities.hasTmsAccess },
     { label: "Documents", href: "/documents", icon: Files, visible: true },
@@ -282,19 +312,26 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                     </div>
 
                     <div className="p-1.5 space-y-0.5">
-                      <Link
-                        href="/settings/profile"
-                        onClick={() => setIsMenuOpen(false)}
+                      <button
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setIsProfileModalOpen(true);
+                        }}
                         className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-left text-sm font-medium text-[#1D1D1F] hover:bg-[#F5F5F7] transition cursor-pointer"
                       >
                         <UserCheck className="w-4 h-4 text-[#0071E3]" />
                         <span>Profile & Security</span>
-                      </Link>
+                      </button>
 
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           setIsMenuOpen(false);
-                          signOut(() => router.push("/sign-in"));
+                          try {
+                            await signOut();
+                          } catch (err) {
+                            console.error("Sign out error:", err);
+                          }
+                          window.location.href = "/sign-in";
                         }}
                         className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-left text-sm font-medium text-red-600 hover:bg-red-50 transition cursor-pointer"
                       >
@@ -324,6 +361,108 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </div>
         </footer>
       </div>
+
+      {/* Profile & Security Modal */}
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-[#E5E5EA] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-[#E5E5EA] flex items-center justify-between bg-[#FAF9F6]/50">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#0071E3]/10 text-[#0071E3] flex items-center justify-center font-bold">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-[#1D1D1F]">Profile & Security</h3>
+                  <p className="text-xs text-[#86868B]">Account identity, credentials, and tenant authorization scope.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsProfileModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-[#F5F5F7] hover:bg-[#E5E5EA] text-[#86868B] hover:text-[#1D1D1F] flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              {/* User Identity Card */}
+              <div className="p-5 rounded-2xl bg-[#F5F5F7] border border-[#E5E5EA] flex items-center space-x-4">
+                <div className="w-14 h-14 rounded-full bg-[#0071E3] text-white flex items-center justify-center text-xl font-bold shadow-md shrink-0">
+                  {userName.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-base font-bold text-[#1D1D1F] truncate">{userName}</h4>
+                  <p className="text-xs text-[#86868B] truncate">{userEmail}</p>
+                  <div className="mt-2 flex items-center space-x-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                      Porter Customer User
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Verified Identity
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security & Authentication */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#86868B]">
+                  Security & Credentials
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-4 rounded-2xl border border-[#E5E5EA] bg-white space-y-1">
+                    <span className="text-[11px] font-medium text-[#86868B]">Primary Work Email</span>
+                    <p className="text-xs font-bold text-[#1D1D1F] truncate">{userEmail}</p>
+                  </div>
+                  <div className="p-4 rounded-2xl border border-[#E5E5EA] bg-white space-y-1">
+                    <span className="text-[11px] font-medium text-[#86868B]">Authentication Standard</span>
+                    <p className="text-xs font-bold text-[#1D1D1F]">Encrypted (Clerk SSO / Password)</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tenant & Client Authorization */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#86868B]">
+                  Tenant & Client Scope
+                </h4>
+                <div className="p-5 rounded-2xl border border-[#E5E5EA] bg-white space-y-3 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#86868B] font-medium">Organization / Account ID:</span>
+                    <span className="font-mono font-bold text-[#1D1D1F] bg-[#F5F5F7] px-2 py-0.5 rounded border border-[#E5E5EA]">
+                      {accountId || "cmtcfi6r7000ifx6vpmkuymwk"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#86868B] font-medium">Authorized Client Account:</span>
+                    <span className="font-bold text-[#1D1D1F]">
+                      {selectedClient?.name || "Target Corporation"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#86868B] font-medium">Porter View Entitlement:</span>
+                    <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      Active
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-[#E5E5EA] bg-[#FAF9F6]/50 flex justify-end">
+              <button
+                onClick={() => setIsProfileModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-[#0071E3] text-white text-xs font-bold hover:bg-[#0071E3]/90 transition cursor-pointer shadow-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

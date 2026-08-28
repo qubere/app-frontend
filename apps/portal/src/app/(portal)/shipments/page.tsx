@@ -24,13 +24,17 @@ export default function ShipmentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    fetch(`/api/shipments?query=${encodeURIComponent(searchQuery)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.items) setShipments(data.items);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const timer = setTimeout(() => {
+      fetch(`/api/shipments?query=${encodeURIComponent(searchQuery)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.items) setShipments(data.items);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, 250);
+
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
   return (

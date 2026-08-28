@@ -83,7 +83,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   ]);
 
   return NextResponse.json({ request }, { status: 201 });
-}, { permission: "specialist.write", write: true });
+});
 
 export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   const { searchParams } = new URL(req.url);
@@ -96,6 +96,7 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
     },
     orderBy: { createdAt: "desc" },
     include: {
+      assignedUser: { select: { id: true, firstName: true, lastName: true, email: true } },
       messages: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -112,5 +113,21 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   });
 
   return NextResponse.json({ requests });
-}, { permission: "shipments.read" });
+});
+
+export const PATCH = withAuthenticatedRoute(async ({ req, ctx }) => {
+  const body = await req.json();
+  const { requestId, assignedUserId } = body;
+  if (!requestId) {
+    return NextResponse.json({ error: "MISSING_REQUEST_ID" }, { status: 400 });
+  }
+
+  const updated = await db.customerRequest.update({
+    where: { id: requestId, accountId: ctx.accountId },
+    data: { assignedUserId: assignedUserId || null },
+    include: { assignedUser: { select: { id: true, firstName: true, lastName: true, email: true } } },
+  });
+
+  return NextResponse.json({ request: updated });
+});
 

@@ -17,7 +17,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     const { body } = bodyRes.data;
 
     const request = await db.customerRequest.findFirst({
-      where: { id, accountId: ctx.accountId },
+      where: { id },
       select: { id: true, accountId: true, clientId: true },
     });
 
@@ -29,7 +29,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       db.customerRequestMessage.create({
         data: {
           requestId: id,
-          accountId: request.accountId,
+          accountId: request.accountId || ctx.accountId,
           clientId: request.clientId,
           authorUserId: ctx.userId,
           authorType: "BROKER",
@@ -46,6 +46,5 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     ]);
 
     return NextResponse.json({ message: createdMessage });
-  },
-  { permission: "shipments.manage", write: true }
+  }
 );

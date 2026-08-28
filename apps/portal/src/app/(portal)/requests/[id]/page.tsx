@@ -42,6 +42,7 @@ interface DocumentItem {
 
 interface RequestDetail {
   id: string;
+  actionId?: string;
   type: string;
   title: string;
   description?: string | null;
@@ -68,7 +69,7 @@ export default function RequestThreadPage() {
   const [previewDoc, setPreviewDoc] = useState<{ fileName: string } | null>(null);
 
   const fetchRequest = () => {
-    fetch(`/api/requests/${id}`)
+    fetch(`/api/requests/${id}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (data.request) {
@@ -81,6 +82,14 @@ export default function RequestThreadPage() {
 
   useEffect(() => {
     fetchRequest();
+
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchRequest();
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [id]);
 
   const handleSendReply = async (e: React.FormEvent) => {
@@ -132,7 +141,7 @@ export default function RequestThreadPage() {
         <h2 className="text-lg font-bold text-[#1D1D1F]">Request Not Found</h2>
         <p className="text-xs text-[#86868B] mt-1">The request action item does not exist or has been archived.</p>
         <Link href="/" className="inline-block mt-4 text-xs font-semibold text-[#0071E3] hover:underline">
-          &larr; Back to Dashboard
+          &larr; Back to Actions
         </Link>
       </div>
     );
@@ -145,24 +154,36 @@ export default function RequestThreadPage() {
       {/* Top Header */}
       <div>
         <Link href="/" className="text-[#86868B] hover:text-[#1D1D1F] text-xs font-semibold">
-          &larr; Back to Dashboard
+          &larr; Back to Actions
         </Link>
 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mt-3 border-b border-[#E5E5EA] pb-5">
           <div>
-            <div className="flex items-center space-x-2.5">
-              <Badge variant={isResolved ? "success" : "warning"}>
-                {isResolved ? "Action Resolved" : "Action Required"}
-              </Badge>
-              {request.shipment?.shipmentNumber && (
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+              {/* <ShipmentID> */}
+              {request.shipment?.shipmentNumber ? (
                 <Link
                   href={`/shipments/${request.shipment.id}`}
-                  className="font-mono text-xs font-bold text-[#0071E3] bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-100 hover:underline"
+                  className="font-mono text-xs font-extrabold text-[#0071E3] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 hover:underline"
                 >
                   {request.shipment.shipmentNumber}
                 </Link>
-              )}
+              ) : request.shipment?.id ? (
+                <span className="font-mono text-xs font-extrabold text-[#0071E3] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+                  SHP-{request.shipment.id.slice(-6).toUpperCase()}
+                </span>
+              ) : null}
+
+              {/* <ActionID> */}
+              <span className="font-mono text-xs font-extrabold text-amber-900 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-300">
+                {request.actionId || `ACT-${request.id.slice(-4).toUpperCase()}`}
+              </span>
+
+              <Badge variant={isResolved ? "success" : "warning"}>
+                {isResolved ? "Action Resolved" : "Action Required"}
+              </Badge>
             </div>
+            {/* <ActionNeeded> */}
             <h1 className="text-2xl font-extrabold text-[#1D1D1F] tracking-tight mt-2">
               {request.title}
             </h1>
@@ -171,9 +192,10 @@ export default function RequestThreadPage() {
             )}
           </div>
 
-          <div className="text-xs text-[#86868B] flex items-center space-x-2 bg-white px-3 py-2 rounded-xl border border-[#E5E5EA]">
+          {/* <ETA> */}
+          <div className="text-xs text-[#86868B] flex items-center space-x-2 bg-white px-3 py-2 rounded-xl border border-[#E5E5EA] shrink-0">
             <Clock className="w-4 h-4 text-amber-600" />
-            <span>Due Date: <strong className="text-[#1D1D1F]">{request.dueAt ? new Date(request.dueAt).toLocaleDateString() : "ASAP"}</strong></span>
+            <span>ETA / Due Date: <strong className="text-[#1D1D1F]">{request.dueAt ? new Date(request.dueAt).toLocaleDateString() : "ASAP"}</strong></span>
           </div>
         </div>
       </div>

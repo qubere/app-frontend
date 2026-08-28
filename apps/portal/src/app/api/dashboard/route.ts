@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
-import { db, mapPortalShipmentStatus } from "@qubere/db";
+import { db } from "@qubere/db";
+
+const inFlightDashboardPromises = new Map<string, Promise<any>>();
+
+export function invalidateDashboardCache() {
+  inFlightDashboardPromises.clear();
+}
 
 export async function GET(req: Request) {
   const ctx = await getAccountContext();
@@ -10,117 +16,160 @@ export async function GET(req: Request) {
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
   const url = new URL(req.url);
-  const clientId = url.searchParams.get("clientId");
+  const clientId = url.searchParams.get("clientId") || "";
 
-  const clientFilter = clientId
-    ? { clientId }
-    : scope.isAllClients || scope.authorizedClientIds.length === 0
-      ? {}
-      : { clientId: { in: scope.authorizedClientIds } };
+  const cacheKey = `${ctx.accountId}:${clientId}`;
 
-  // Fetch open customer action requests for "Needs your attention"
-  const rawActionRequests = await db.customerRequest.findMany({
-    take: 10,
-    orderBy: { dueAt: "asc" },
-    where: {
+  if (inFlightDashboardPromises.has(cacheKey)) {
+    const data = await inFlightDashboardPromises.get(cacheKey);
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
+  }
+
+  const fetchPromise = (async () => {
+    const actionWhere: any = {
       accountId: ctx.accountId,
-      ...clientFilter,
-      status: "OPEN",
-    },
-    include: {
-      shipment: {
-        select: {
-          id: true,
-          shipmentNumber: true,
-          estimatedArrival: true,
-        },
-      },
-    },
-  });
+    };
 
-  const actionItems = rawActionRequests.map((r) => {
-    let actionTargetUrl = `/requests/${r.id}`;
-    if (r.shipmentId) {
-      actionTargetUrl = `/shipments/${r.shipmentId}`;
+    if (clientId) {
+      actionWhere.clientId = clientId;
+    } else if (!scope.isAllClients && scope.authorizedClientIds.length > 0) {
+      actionWhere.clientId = { in: scope.authorizedClientIds };
     }
 
-    return {
-      id: r.id,
-      type: r.type,
-      title: r.title,
-      description: r.description,
-      status: r.status,
-      dueAt: r.dueAt,
-      shipmentId: r.shipmentId,
-      shipmentNumber: r.shipment?.shipmentNumber,
-      estimatedArrival: r.shipment?.estimatedArrival,
-      domain: r.domain,
-      targetUrl: actionTargetUrl,
-    };
-  });
-
-  // Fetch active shipments
-  const rawShipments = await db.shipment.findMany({
-    take: 6,
-    orderBy: { createdAt: "desc" },
-    where: {
-      accountId: ctx.accountId,
-      ...clientFilter,
-      status: { notIn: ["Completed", "Cancelled"] },
-    },
-    include: {
-      customerRequests: {
-        where: { status: "OPEN" },
-        select: { id: true },
+    // Fetch open customer action requests for "Needs your attention"
+    const rawActionRequests = await db.customerRequest.findMany({
+      take: 50,
+      where: actionWhere,
+      orderBy: { createdAt: "asc" },
+      include: {
+        shipment: {
+          select: {
+            id: true,
+            shipmentNumber: true,
+            poReference: true,
+            estimatedArrival: true,
+          },
+        },
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        messages: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            authorType: true,
+            body: true,
+            createdAt: true,
+            authorUser: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        },
+        documents: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            document: {
+              select: {
+                id: true,
+                fileName: true,
+                fileUrl: true,
+                docType: true,
+                status: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
       },
-      customsFilings: {
-        select: { filingStatus: true },
-      },
-    },
-  });
-
-  const activeShipments = rawShipments.map((s) => {
-    const { transportationStatus, customsStatus } = mapPortalShipmentStatus({
-      internalStatus: s.status,
-      filingStatus: s.customsFilings[0]?.filingStatus,
-      openCustomerRequestCount: s.customerRequests.length,
     });
 
-    return {
-      id: s.id,
-      shipmentNumber: s.shipmentNumber,
-      poReference: s.poReference,
-      origin: `${s.countryOfExport} - ${s.portOfEntry || "Origin"}`,
-      destination: s.destinationCountry || "US",
-      estimatedArrival: s.estimatedArrival,
-      transportationStatus,
-      customsStatus,
-      actionRequiredCount: s.customerRequests.length,
-    };
-  });
+    // Calculate deterministic actionId (ACT-101, ACT-102...) per shipment based on creation order asc
+    const shipmentIdToRequestsMap = new Map<string, typeof rawActionRequests>();
+    for (const reqItem of rawActionRequests) {
+      const key = reqItem.shipmentId || "GENERAL";
+      if (!shipmentIdToRequestsMap.has(key)) {
+        shipmentIdToRequestsMap.set(key, []);
+      }
+      shipmentIdToRequestsMap.get(key)!.push(reqItem);
+    }
 
-  // Fetch recent published documents
-  const rawFiles = await db.shipmentDocument.findMany({
-    take: 5,
-    orderBy: { createdAt: "desc" },
-    where: {
-      accountId: ctx.accountId,
-      ...clientFilter,
-      portalVisibility: "CUSTOMER",
-    },
-  });
+    const actionIdMap = new Map<string, string>();
+    for (const [_, reqList] of shipmentIdToRequestsMap.entries()) {
+      const sortedAsc = [...reqList].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      sortedAsc.forEach((r, idx) => {
+        actionIdMap.set(r.id, `ACT-${(101 + idx).toString()}`);
+      });
+    }
 
-  const recentFiles = rawFiles.map((f) => ({
-    id: f.id,
-    fileName: f.fileName,
-    docType: f.docType,
-    createdAt: f.createdAt,
-    shipmentId: f.shipmentId,
-  }));
+    // Sort by Shipment Number & Urgency for display (Active items first, RESOLVED last; sorted by createdAt asc within groups)
+    rawActionRequests.sort((a, b) => {
+      const shpA = a.shipment?.shipmentNumber || a.shipmentId || "ZZZ";
+      const shpB = b.shipment?.shipmentNumber || b.shipmentId || "ZZZ";
+      if (shpA !== shpB) {
+        return shpA.localeCompare(shpB);
+      }
+      const isResA = a.status === "RESOLVED" || a.status === "CLOSED";
+      const isResB = b.status === "RESOLVED" || b.status === "CLOSED";
+      if (isResA !== isResB) {
+        return isResA ? 1 : -1;
+      }
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
 
-  return NextResponse.json({
-    actionItems,
-    activeShipments,
-    recentFiles,
-  });
+    const actionItems = rawActionRequests.map((r, idx) => {
+      let actionTargetUrl = `/requests/${r.id}`;
+      if (r.shipmentId) {
+        actionTargetUrl = `/shipments/${r.shipmentId}`;
+      }
+
+      const actionId = actionIdMap.get(r.id) || `ACT-${(101 + idx).toString()}`;
+
+      return {
+        id: r.id,
+        actionId,
+        type: r.type,
+        title: r.title,
+        description: r.description,
+        status: r.status,
+        dueAt: r.dueAt,
+        createdAt: r.createdAt,
+        assignedUserId: r.assignedUserId,
+        assignedUser: r.assignedUser,
+        shipmentId: r.shipmentId,
+        shipmentNumber: r.shipment?.shipmentNumber || (r.shipmentId ? `SHP-${r.shipmentId.slice(-6).toUpperCase()}` : undefined),
+        poReference: r.shipment?.poReference,
+        estimatedArrival: r.shipment?.estimatedArrival,
+        domain: r.domain,
+        targetUrl: actionTargetUrl,
+        messages: r.messages,
+        documents: r.documents,
+      };
+    });
+
+    return { actionItems };
+  })();
+
+  inFlightDashboardPromises.set(cacheKey, fetchPromise);
+  try {
+    const data = await fetchPromise;
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
+  } finally {
+    inFlightDashboardPromises.delete(cacheKey);
+  }
 }

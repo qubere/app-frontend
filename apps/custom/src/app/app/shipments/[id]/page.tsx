@@ -165,7 +165,7 @@ export default async function ShipmentWorkspacePage(props: {
       orderBy: { createdAt: "desc" },
     }),
     db.customerRequest.findMany({
-      where: { shipmentId: shipment.id, accountId: context.accountId },
+      where: { shipmentId: shipment.id },
       orderBy: { createdAt: "desc" },
       include: {
         messages: {

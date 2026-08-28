@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle, AlertTriangle, Info, FileText, CheckCircle2, Pencil, Mail, X, Loader2 } from "lucide-react";
@@ -70,6 +70,27 @@ export function ExceptionsDrawer({
   const [requestEmail, setRequestEmail] = useState("");
   const [sendingRequest, setSendingRequest] = useState(false);
   const [requestSentFor, setRequestSentFor] = useState<string | null>(null);
+
+  const [customerUsersList, setCustomerUsersList] = useState<Array<{ id: string; email: string; name: string }>>([]);
+  const [loadingCustomerUsers, setLoadingCustomerUsers] = useState(false);
+
+  useEffect(() => {
+    if (requestingDocType) {
+      setLoadingCustomerUsers(true);
+      fetch("/api/broker/customer-users")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.customerUsers && Array.isArray(data.customerUsers)) {
+            setCustomerUsersList(data.customerUsers);
+            if (data.customerUsers.length > 0 && !requestEmail) {
+              setRequestEmail(data.customerUsers[0].email);
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingCustomerUsers(false));
+    }
+  }, [requestingDocType]);
 
   const handleInlineEditSave = async (docId: string, fieldKey: string) => {
     if (!editingValue.trim()) return;
@@ -670,20 +691,62 @@ export function ExceptionsDrawer({
             <div className="p-3 bg-surface-muted rounded-xl text-xs text-ink">
               <span className="font-semibold">{requestingDocType}</span> — a secure upload link valid for 7 days will be emailed to the recipient.
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted" htmlFor="request-email">
-                Recipient email
+            <div className="space-y-2">
+              <label className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted flex items-center justify-between" htmlFor="request-email">
+                <span>Recipient Email</span>
+                {loadingCustomerUsers && <span className="text-brand flex items-center gap-1 font-normal"><Loader2 className="w-3 h-3 animate-spin" /> Loading customer contacts…</span>}
               </label>
-              <input
-                id="request-email"
-                type="email"
-                value={requestEmail}
-                onChange={(e) => setRequestEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSendDocumentRequest(); }}
-                placeholder="counterparty@example.com"
-                className="w-full px-3 py-2 text-sm rounded-xl border border-border bg-white text-ink placeholder-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-                autoFocus
-              />
+
+              {/* Quick Select Dropdown for Existing Customer Users */}
+              {customerUsersList.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] text-ink-muted font-medium">Select existing Customer Contact:</span>
+                  <select
+                    value={customerUsersList.some((u) => u.email === requestEmail) ? requestEmail : ""}
+                    onChange={(e) => {
+                      if (e.target.value) setRequestEmail(e.target.value);
+                    }}
+                    className="w-full px-3 py-1.5 text-xs rounded-xl border border-border bg-surface-muted text-ink font-medium focus:outline-none focus:border-brand"
+                  >
+                    <option value="">-- Choose Existing Contact --</option>
+                    {customerUsersList.map((user) => (
+                      <option key={user.id} value={user.email}>
+                        {user.name} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Recipient Email Input with Datalist */}
+              <div className="space-y-1">
+                <input
+                  id="request-email"
+                  type="email"
+                  list="customer-users-datalist"
+                  value={requestEmail}
+                  onChange={(e) => setRequestEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSendDocumentRequest(); }}
+                  placeholder="counterparty@example.com"
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-border bg-white text-ink placeholder-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+                  autoFocus
+                />
+                <datalist id="customer-users-datalist">
+                  {customerUsersList.map((user) => (
+                    <option key={user.id} value={user.email}>
+                      {user.name}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+
+              {/* Auto-provisioning indicator */}
+              {requestEmail.trim() && !customerUsersList.some((u) => u.email.toLowerCase() === requestEmail.trim().toLowerCase()) && (
+                <div className="p-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-medium flex items-center gap-1.5">
+                  <span className="shrink-0 font-bold">✨ New Contact:</span>
+                  <span>Will auto-create account, grant Customer User role & send request email.</span>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
               <button
