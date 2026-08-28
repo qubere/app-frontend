@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withCronRoute } from "@/lib/api/auth-guards";
-import { db } from "@/lib/db";
+import { db, runWithAccountId } from "@/lib/db";
 import { reevaluateProductLineItems } from "@/lib/origin/originReEvalService";
 
 export const maxDuration = 300;
@@ -14,7 +14,9 @@ async function handleReevaluation(req: Request, requestId: string) {
     if (!product) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
-    const res = await reevaluateProductLineItems(product.id, product.accountId);
+    const res = await runWithAccountId(product.accountId, () =>
+      reevaluateProductLineItems(product.id, product.accountId)
+    );
     return NextResponse.json({ status: "COMPLETED", productId, ...res, requestId });
   }
 
@@ -31,7 +33,7 @@ async function handleReevaluation(req: Request, requestId: string) {
 
   for (const item of uniqueProducts) {
     const [pId, aId] = item.split(":");
-    const res = await reevaluateProductLineItems(pId, aId);
+    const res = await runWithAccountId(aId, () => reevaluateProductLineItems(pId, aId));
     totalEvaluated += res.evaluatedLineItems;
     totalUpdated += res.updatedDeterminations;
   }
