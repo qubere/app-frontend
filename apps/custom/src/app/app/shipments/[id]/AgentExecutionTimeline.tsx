@@ -52,6 +52,11 @@ const STATUS_STYLES: Record<AgentInvocation["status"], { badge: string; label: s
     label: "Running",
     icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
   },
+  PROCESSING: {
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    label: "Processing",
+    icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+  },
 };
 
 // Poll every 3s while a run is active, 30s otherwise (cheap keep-alive to catch
@@ -199,7 +204,11 @@ export function AgentExecutionTimeline({
               <div className="flex items-center space-x-3 shrink-0 ml-3">
                 <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${style.badge}`}>
                   {style.icon}
-                  <span>{style.label}</span>
+                  <span>
+                    {inv.status === "PROCESSING" || inv.isProcessing
+                      ? `Processing (${inv.currentStep || inv.steps.length}/${inv.totalSteps || 10})`
+                      : style.label}
+                  </span>
                 </span>
                 {isExpanded ? <ChevronUp className="w-4 h-4 text-ink-muted" /> : <ChevronDown className="w-4 h-4 text-ink-muted" />}
               </div>
@@ -208,7 +217,7 @@ export function AgentExecutionTimeline({
             {isExpanded && (
               <div className="border-t border-border bg-[#FAFAFC] px-4 py-4 space-y-2.5">
                 {inv.steps.map((step, idx) => {
-                  const stepStyle = STATUS_STYLES[step.status];
+                  const stepStyle = STATUS_STYLES[step.status === "SUCCESS" ? "COMPLETED" : step.status];
                   const offsetMs = new Date(step.startedAt).getTime() - new Date(inv.startedAt).getTime();
                   const offsetPct = Math.max(0, Math.min(100, (offsetMs / waterfallSpan) * 100));
                   const widthPct = Math.max(1.5, Math.min(100 - offsetPct, (step.durationMs / waterfallSpan) * 100));

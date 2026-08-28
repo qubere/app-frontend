@@ -4,6 +4,7 @@ import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { PipelineOrchestrator } from "@/modules/agents/pipelineOrchestrator";
+import { loadDocumentBytes } from "@/modules/documents/loadDocumentBytes";
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
 import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
 import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service";
@@ -148,13 +149,23 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
       }
     } else {
       // First document on this shipment — run the full pipeline so this doc
-      // gets classified and extracted before reconciliation can run.
+      // gets classified and extracted before reconciliation can run. Load the
+      // original bytes so the extraction agents have a document to read even
+      // when it came in via the portal (rawContent / local quarantine only).
+      const loaded = await loadDocumentBytes(id);
       await PipelineOrchestrator.processEvent({
         shipmentId,
         accountId: ctx.accountId,
         userId: ctx.userId,
         triggerEvent: "DOCUMENT_UPLOADED",
-        payload: { documentId: id, fileName: doc.fileName, reattached: true },
+        payload: {
+          documentId: id,
+          fileName: doc.fileName,
+          fileUrl: doc.fileUrl || undefined,
+          fileBuffer: loaded?.buffer,
+          mimeType: doc.mimeType || loaded?.mimeType || undefined,
+          reattached: true,
+        },
       });
     }
   } catch (err: unknown) {

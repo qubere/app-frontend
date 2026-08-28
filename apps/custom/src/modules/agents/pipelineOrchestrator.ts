@@ -144,6 +144,26 @@ export class PipelineOrchestrator {
     const executedAgents: string[] = [];
     const scratch: RunScratch = {};
 
+    let activeJobId = jobId;
+    if (!activeJobId) {
+      try {
+        const newJob = await db.pipelineJob.create({
+          data: {
+            shipmentId,
+            accountId,
+            userId,
+            status: "PROCESSING",
+            currentStep: 1,
+            totalSteps: agentsToRun.length || 10,
+            startedAt: new Date(),
+          },
+        });
+        activeJobId = newJob.id;
+      } catch (err) {
+        console.warn("[PipelineOrchestrator] PipelineJob auto-creation notice:", err);
+      }
+    }
+
     logEvent({
       action: "pipeline.run_started",
       message: `Agent pipeline started for shipment ${shipmentId}: ${agentsToRun.join(", ")} (trigger: ${triggerEvent}, invoked by ${invokedByLabel})`,
@@ -151,7 +171,7 @@ export class PipelineOrchestrator {
       userId,
       resourceType: "shipment",
       resourceId: shipmentId,
-      metadata: { runId, triggerEvent, invokedBy: invokedByLabel, agentsToRun, jobId },
+      metadata: { runId, triggerEvent, invokedBy: invokedByLabel, agentsToRun, jobId: activeJobId },
     });
 
     for (let i = 0; i < agentsToRun.length; i++) {
@@ -263,10 +283,20 @@ export class PipelineOrchestrator {
           }
         }
 
-        if (jobId) {
-          await PgQueue.updateProgress(jobId, i + 1).catch((e) =>
-            console.error("[PipelineOrchestrator] Failed to update job progress:", e)
-          );
+        if (activeJobId) {
+          await db.pipelineJob.update({
+            where: { id: activeJobId },
+            data: {
+              status: "PROCESSING",
+              currentStep: i + 1,
+              totalSteps: agentsToRun.length,
+            },
+          }).catch(() => {});
+          if (jobId) {
+            await PgQueue.updateProgress(jobId, i + 1).catch((e) =>
+              console.error("[PipelineOrchestrator] Failed to update job progress:", e)
+            );
+          }
         }
       }
 
@@ -286,8 +316,26 @@ export class PipelineOrchestrator {
             triggerEvent,
           }
         );
+        if (activeJobId && status === "FAILED") {
+          await db.pipelineJob.update({
+            where: { id: activeJobId },
+            data: { status: "FAILED", errorMessage: error || "Agent execution failed" },
+          }).catch(() => {});
+        }
         break;
       }
+    }
+
+    // Mark active PipelineJob as COMPLETED when execution finishes cleanly
+    if (activeJobId) {
+      await db.pipelineJob.update({
+        where: { id: activeJobId },
+        data: {
+          status: "COMPLETED",
+          currentStep: agentsToRun.length,
+          completedAt: new Date(),
+        },
+      }).catch(() => {});
     }
 
     // Unconditional, regardless of trigger -- this is what turns current DB

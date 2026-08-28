@@ -101,6 +101,7 @@ export default async function ShipmentWorkspacePage(props: {
     resolvedReconciliations,
     shipmentChangeEvents,
     customerRequests,
+    pipelineJobs,
   ] = await Promise.all([
     CanonicalShipmentService.getCanonicalState(shipment.id),
     canEditClient
@@ -181,6 +182,10 @@ export default async function ShipmentWorkspacePage(props: {
         },
       },
     }),
+    db.pipelineJob.findMany({
+      where: { shipmentId: shipment.id, accountId: context.accountId },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   if (!trackingProjection) notFound();
@@ -191,9 +196,12 @@ export default async function ShipmentWorkspacePage(props: {
   const lineItemCurrency = extractedCurrency(documents);
 
   // Merges AgentExecutionRecord (selective re-runs) and AgentExecutionLog
-  // (the real 10-agent upload pipeline) into one waterfall-ready list --
-  // see agentInvocations.ts for why these two tables exist separately.
-  const agentInvocations = buildAgentInvocations(fullShipment.agentExecutionRecords || [], agentExecutionLogs || []);
+  // (the real 10-agent upload pipeline) into one waterfall-ready list
+  const agentInvocations = buildAgentInvocations(
+    fullShipment.agentExecutionRecords || [],
+    agentExecutionLogs || [],
+    pipelineJobs || []
+  );
 
   // Load display line items
   const displayLineItems = (fullShipment.lineItems || []).map((item) => ({

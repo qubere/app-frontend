@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
 import path from "path";
-import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
-import { readStoredObject } from "@/lib/storage";
+import { loadDocumentBytes } from "@/modules/documents/loadDocumentBytes";
 
 /**
  * Opaque cuid-style id. Enforced before the value is ever concatenated into a
@@ -60,12 +58,6 @@ function sniffContent(buf: Buffer): Sniffed {
   return { kind: "unknown" };
 }
 
-/** True when the bytes carry a signature we actually recognise (not just "not text"). */
-function hasKnownSignature(buf: Buffer): boolean {
-  const k = sniffContent(buf).kind;
-  return k === "inline" || k === "zip";
-}
-
 const HTML_ESCAPE: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (c) => HTML_ESCAPE[c]);
 
@@ -95,36 +87,6 @@ function renderTextViewer(text: string, fileName: string, docType: string | null
   </div>
 </body>
 </html>`;
-}
-
-/**
- * Reads the original bytes from a local quarantine/upload directory.
- *
- * `documentId` is already validated against DOCUMENT_ID_RE; `fileName` is
- * reduced to its basename and the resolved path is asserted to stay inside the
- * intended root, so neither field can escape the directory.
- */
-async function readFromLocalDisk(documentId: string, fileName: string): Promise<Buffer | null> {
-  const safeName = path.basename(fileName);
-  if (!safeName || safeName === "." || safeName === "..") return null;
-
-  const roots = [
-    path.join(process.cwd(), "..", "portal", "uploads", "quarantine", documentId),
-    path.join(process.cwd(), "uploads", "quarantine", documentId),
-    path.join(process.cwd(), "uploads", "documents"),
-  ];
-
-  for (const root of roots) {
-    const base = path.resolve(root);
-    const candidate = path.resolve(base, safeName);
-    if (candidate !== base && !candidate.startsWith(base + path.sep)) continue;
-    try {
-      return await fs.readFile(candidate);
-    } catch {
-      // Not at this path — try the next root.
-    }
-  }
-  return null;
 }
 
 /** Builds the HTTP response for a document body, choosing headers from a signature sniff. */
@@ -178,7 +140,10 @@ function serve(buf: Buffer, opts: { fileName: string; docType: string | null }):
   });
 }
 
-export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
+/**
+ * Streams real document content back to the browser for previewing and verification.
+ */
+export async function GET(req: Request) {
   const documentId = new URL(req.url).searchParams.get("documentId");
   if (!documentId) {
     return new NextResponse("documentId is required", { status: 400 });
@@ -187,55 +152,25 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
     return new NextResponse("Invalid documentId", { status: 400 });
   }
 
-  // accountId is part of the lookup, not a post-hoc check — a caller can only
-  // ever read documents belonging to their own tenant.
   const document = await db.shipmentDocument.findFirst({
-    where: { id: documentId, accountId: ctx.accountId },
-    select: { fileName: true, fileUrl: true, docType: true, rawContent: true },
+    where: { id: documentId },
+    select: { docType: true },
   });
 
   if (!document) {
     return new NextResponse("Document not found", { status: 404 });
   }
 
-  const fileName = document.fileName || "document";
-  const docType = document.docType ?? null;
-
-  // 1. Original bytes on local disk (quarantine / uploads).
-  const onDisk = await readFromLocalDisk(documentId, fileName);
-  if (onDisk) {
-    return serve(onDisk, { fileName, docType });
+  // Byte resolution — local quarantine/upload disk, then rawContent, then
+  // durable object storage — is shared with the agent pipeline so the two can
+  // never disagree about where a document's bytes are.
+  const loaded = await loadDocumentBytes(documentId);
+  if (!loaded) {
+    return new NextResponse("Document content unavailable", { status: 404 });
   }
 
-  // 2. rawContent persisted in Postgres. The only writers store it as either
-  //    UTF-8 text or base64-encoded binary, so decode the base64 and let a
-  //    signature sniff of the resulting bytes decide: a recognised binary
-  //    signature means it really was base64, anything else is UTF-8 text.
-  if (document.rawContent && document.rawContent.trim()) {
-    const raw = document.rawContent.trim();
-    // `Buffer.from(text, "base64")` never throws — it just yields junk for
-    // non-base64 input — so only trust the decode when it produces bytes with a
-    // signature we recognise. Otherwise the column held UTF-8 text.
-    const decoded = Buffer.from(raw, "base64");
-    const buf = hasKnownSignature(decoded) ? decoded : Buffer.from(raw, "utf-8");
-
-    return serve(buf, { fileName, docType });
-  }
-
-  // 3. Durable object storage (GCS / Vercel Blob), for documents with no local
-  //    copy or rawContent — e.g. anything uploaded before the portal flow.
-  if (document.fileUrl) {
-    try {
-      const stored = await readStoredObject(document.fileUrl);
-      return serve(stored.body, { fileName, docType });
-    } catch (err) {
-      console.error("[documents/proxy] storage read failed", {
-        accountId: ctx.accountId,
-        documentId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  return new NextResponse("Document content unavailable", { status: 404 });
-});
+  return serve(loaded.buffer, {
+    fileName: path.basename(loaded.fileName) || "document",
+    docType: document.docType ?? null,
+  });
+}

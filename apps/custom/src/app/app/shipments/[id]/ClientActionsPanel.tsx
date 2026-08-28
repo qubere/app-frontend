@@ -152,12 +152,24 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
     }));
     setReviewModalDoc(null);
 
+    // Notify top PipelineProgressTracker banner ribbon to wake up and poll active job
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("qubere:document-uploaded", { detail: { shipmentId } }));
+    }
+
     // Dispatch non-blocking background job to promote file and start agent pipeline
     fetch(`/api/broker/documents/${shipDocId}/attach-to-shipment`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shipmentId }),
     })
       .then((res) => res.json())
-      .then(() => refreshRequests())
+      .then(() => {
+        refreshRequests();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("qubere:document-uploaded", { detail: { shipmentId } }));
+        }
+      })
       .catch((err) => console.error("Background document approval error:", err));
   };
 
