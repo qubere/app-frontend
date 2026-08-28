@@ -4,13 +4,14 @@ export interface UserScope {
   isAllClients: boolean;
   authorizedClientIds: string[];
   teamIds: string[];
+  authorizedShipmentIds?: string[] | null; // null means no shipment-level restriction (all client shipments)
 }
 
 /**
- * Resolves the effective client/team scope for a user within an account.
+ * Resolves the effective client/team/shipment scope for a user within an account.
  * Broker Admin, TMS Admin, and Platform Admins have ALL_CLIENTS access.
- * Managers, Specialists, Viewers, and Operations have access restricted to
- * their explicitly assigned clients or assigned team clients.
+ * Customer Users & Shipment Contacts have access restricted to assigned clients
+ * and specific shipments assigned by the broker.
  */
 export async function getEffectiveUserScope(
   userId: string,
@@ -39,6 +40,7 @@ export async function getEffectiveUserScope(
       isAllClients: true,
       authorizedClientIds: allAccountClients.map((c) => c.id),
       teamIds: [],
+      authorizedShipmentIds: null,
     };
   }
 
@@ -69,9 +71,25 @@ export async function getEffectiveUserScope(
 
   const authorizedClientIds = Array.from(new Set<string>([...directClientIds, ...teamClientIds]));
 
+  // Check specific shipment assignments for customer contacts
+  const assignedShipments = await db.shipment.findMany({
+    where: {
+      accountId,
+      OR: [
+        { ownerName: userId },
+        { poReference: { contains: userId } },
+      ],
+    },
+    select: { id: true },
+  });
+
+  const isCustomerAdmin = roleNames.some((r) => r.toUpperCase() === "CUSTOMER_ADMIN");
+  const authorizedShipmentIds = isCustomerAdmin || assignedShipments.length === 0 ? null : assignedShipments.map((s) => s.id);
+
   return {
     isAllClients: false,
     authorizedClientIds,
     teamIds,
+    authorizedShipmentIds,
   };
 }

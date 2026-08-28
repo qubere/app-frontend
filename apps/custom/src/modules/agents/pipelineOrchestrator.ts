@@ -429,18 +429,34 @@ export class PipelineOrchestrator {
 
     switch (agentName) {
       case "Document Intake Agent": {
-        if (!payload?.fileUrl || !payload.fileName) {
+        let fileUrl = payload?.fileUrl;
+        let fileName = payload?.fileName;
+        let mimeType = payload?.mimeType;
+
+        const targetDocId = documentId || payload?.documentId;
+        if ((!fileUrl || !fileName) && targetDocId) {
+          const doc = await db.shipmentDocument.findUnique({
+            where: { id: targetDocId },
+          });
+          if (doc) {
+            fileUrl = fileUrl || doc.fileUrl || undefined;
+            fileName = fileName || doc.fileName;
+            mimeType = mimeType || doc.mimeType || undefined;
+          }
+        }
+
+        if (!fileUrl || !fileName) {
           return { input: null, output: { skipped: "No file on this trigger" } };
         }
         const agentInput = {
           accountId,
           userId,
           shipmentId,
-          fileName: payload.fileName,
-          fileUrl: payload.fileUrl,
-          fileBuffer: payload.fileBuffer,
-          mimeType: payload.mimeType,
-          docTypeOverride: payload.docTypeOverride,
+          fileName,
+          fileUrl,
+          fileBuffer: payload?.fileBuffer,
+          mimeType,
+          docTypeOverride: payload?.docTypeOverride,
         };
         const output = await DocumentIntakeAgent.execute(agentInput);
         scratch.packetId = output.packetId;

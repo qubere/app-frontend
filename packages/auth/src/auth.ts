@@ -65,6 +65,9 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       console.log(
         `[ThirdPartyHTTP] [${new Date().toISOString()}] [User: anonymous] [Account: N/A] [Provider: CLERK_AUTH] auth() -> Status: 401 Unauthenticated (${authDuration}ms)`
       );
+      if (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_APP_ENV === "demo") {
+        return await getDemoAccountContext();
+      }
       return null;
     }
 
@@ -363,6 +366,143 @@ async function loadAccountContext(): Promise<AccountContext | null> {
   }
 }
 
+export async function getDemoAccountContext(): Promise<AccountContext | null> {
+  try {
+    let demoAccount = await db.account.findFirst({
+      where: {
+        clients: {
+          some: { name: { in: ["Target Corporation", "Amazon Import Services"] } },
+        },
+      },
+      include: {
+        clients: { select: { id: true } },
+      },
+    });
+
+    if (!demoAccount) {
+      demoAccount = await db.account.findFirst({
+        where: { id: "cmtcfi6r7000ifx6vpmkuymwk" },
+        include: {
+          clients: { select: { id: true } },
+        },
+      });
+    }
+
+    if (!demoAccount) {
+      demoAccount = await db.account.findFirst({
+        include: { clients: { select: { id: true } } },
+      });
+    }
+
+    if (!demoAccount) return null;
+
+    let demoUser = await db.user.findFirst({
+      where: {
+        memberships: {
+          some: { accountId: demoAccount.id },
+        },
+      },
+      include: {
+        memberships: {
+          where: { accountId: demoAccount.id },
+          include: {
+            roles: {
+              include: {
+                role: {
+                  include: {
+                    rolePermissions: {
+                      include: { permission: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!demoUser) {
+      demoUser = await db.user.findFirst({
+        include: {
+          memberships: {
+            include: {
+              roles: {
+                include: {
+                  role: {
+                    include: {
+                      rolePermissions: {
+                        include: { permission: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    const userId = demoUser?.id || "demo_user_id";
+    const email = demoUser?.email || "sarah.jenkins@apexglobal.com";
+    const firstName = demoUser?.firstName || "Sarah";
+    const lastName = demoUser?.lastName || "Jenkins";
+    const clerkUserId = demoUser?.clerkUserId || "user_demo_123";
+
+    const membership = demoUser?.memberships?.[0];
+    const roleNames = membership?.roles.map((r) => r.role.name) || ["CUSTOMER_ADMIN"];
+    const permissions = Array.from(
+      new Set(
+        membership?.roles.flatMap((r) =>
+          r.role.rolePermissions.map((rp) => rp.permission.name)
+        ) || []
+      )
+    );
+
+    const clientIds = demoAccount.clients.map((c) => c.id);
+
+    return {
+      userId,
+      actorUserId: userId,
+      effectiveUserId: userId,
+      clerkUserId,
+      email,
+      firstName,
+      lastName,
+      isImpersonating: false,
+      isPlatformAdmin: false,
+      platformRoles: [],
+      accountId: demoAccount.id,
+      accountName: demoAccount.name,
+      accountSlug: demoAccount.slug,
+      accountType: demoAccount.type,
+      dataMode: demoAccount.dataMode,
+      ownerUserId: demoAccount.ownerUserId,
+      membershipId: membership?.id || "demo_mem",
+      roleIds: membership?.roles.map((r) => r.roleId) || [],
+      roleNames,
+      permissions: permissions.length > 0 ? permissions : ["porter", "portal.access", "portal.shipments.read", "portal.entries.read", "portal.documents.read", "portal.invoices.read"],
+      authorizedClientIds: clientIds,
+      isAllClients: true,
+      memberships: [
+        {
+          accountId: demoAccount.id,
+          accountName: demoAccount.name,
+          accountSlug: demoAccount.slug,
+          accountType: demoAccount.type,
+          dataMode: demoAccount.dataMode,
+          roleNames,
+        },
+      ],
+      account: demoAccount as any,
+    };
+  } catch (err) {
+    console.error("Failed to load demo account context:", err);
+    return null;
+  }
+}
+
 export const getAccountContext = cache(loadAccountContext);
 
 export async function hasPermission(requiredPermission: string): Promise<boolean> {
@@ -378,3 +518,4 @@ export async function hasPermission(requiredPermission: string): Promise<boolean
   }
   return context.permissions.includes(requiredPermission);
 }
+

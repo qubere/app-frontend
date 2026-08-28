@@ -27,6 +27,7 @@ import { displayCurrency } from "@/lib/honest";
 import { extractedCurrency } from "@/modules/documents/extractedCurrency";
 import { DocumentWorkspacePanel } from "./DocumentWorkspacePanel";
 import { ShipmentTabsPanel } from "./ShipmentTabsPanel";
+import { ClientActionsPanel } from "./ClientActionsPanel";
 import { DeadlineRail } from "@/components/deadlines/DeadlineRail";
 import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
 import type { ExtractedLineItem } from "./workspaceTypes";
@@ -99,6 +100,7 @@ export default async function ShipmentWorkspacePage(props: {
     resolvedExceptions,
     resolvedReconciliations,
     shipmentChangeEvents,
+    customerRequests,
   ] = await Promise.all([
     CanonicalShipmentService.getCanonicalState(shipment.id),
     canEditClient
@@ -160,6 +162,24 @@ export default async function ShipmentWorkspacePage(props: {
         user: { select: { firstName: true, lastName: true, email: true } },
       },
       orderBy: { createdAt: "desc" },
+    }),
+    db.customerRequest.findMany({
+      where: { shipmentId: shipment.id, accountId: context.accountId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        messages: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            authorUser: { select: { firstName: true, lastName: true, email: true } },
+          },
+        },
+        documents: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            document: { select: { id: true, fileName: true, fileUrl: true, status: true, docType: true } },
+          },
+        },
+      },
     }),
   ]);
 
@@ -1409,6 +1429,10 @@ export default async function ShipmentWorkspacePage(props: {
 
   const trackingContent = <ShipmentTrackingPanel projection={trackingProjection} />;
 
+  const clientActionsContent = (
+    <ClientActionsPanel shipmentId={shipment.id} initialRequests={customerRequests as any} />
+  );
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
       <PipelineProgressTracker shipmentId={shipment.id} />
@@ -1543,8 +1567,10 @@ export default async function ShipmentWorkspacePage(props: {
       <ShipmentTabsPanel
         initialTab={activeTab}
         auditCount={combinedAuditEntries.length}
+        clientActionCount={customerRequests.filter((r) => r.status !== "RESOLVED").length}
         workspaceContent={workspaceContent}
         trackingContent={trackingContent}
+        clientActionsContent={clientActionsContent}
         filingContent={filingContent}
         auditContent={auditContent}
       />
@@ -1552,4 +1578,3 @@ export default async function ShipmentWorkspacePage(props: {
   );
   });
 }
-

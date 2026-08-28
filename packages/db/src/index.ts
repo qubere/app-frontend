@@ -5,6 +5,11 @@ import type { DataMode } from "./dataMode";
 export * from "./dataMode";
 export * from "./environment";
 export * from "./caseNumber";
+export * from "./services/shared-upload-service";
+export * from "./services/portal-status-mapper";
+export * from "./services/portal-entry-service";
+export * from "./services/portal-invoice-service";
+export * from "./services/portal-notification-service";
 
 class DummyAsyncLocalStorage<T> {
   run<R>(_store: T, callback: () => R): R {

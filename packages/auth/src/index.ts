@@ -8,4 +8,5 @@ export * from "./scope-engine";
 export * from "./impersonation-service";
 export * from "./audit-service";
 export * from "./authorization-service";
+export * from "./portal-auth";
 export * from "./client-auth";

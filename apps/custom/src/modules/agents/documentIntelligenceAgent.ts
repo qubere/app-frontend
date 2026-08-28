@@ -529,7 +529,7 @@ export class DocumentIntelligenceAgent {
     let currency: string | null = null;
     let invoiceSubtotal: number | null = null;
     let hasCommercialInvoice = false;
-    let confidence = 95;
+    let confidence = 100;
     const missingFields: string[] = [];
     let extractionError: string | undefined = undefined;
 

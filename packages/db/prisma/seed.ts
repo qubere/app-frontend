@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { assertDemoSeedingAllowed } from "../src/environment";
 import { seedTradeRemedyReferenceData } from "./seeds/seed-trade-remedy-reference-data";
+import { seedCustomerPortalDemoData } from "./seeds/seed-customer-portal";
 
 const db = new PrismaClient({ log: ["warn", "error"] });
 
@@ -342,6 +343,8 @@ async function main() {
   // ─────────────────────────────────────────────
   await seedTradeRemedyReferenceData();
   console.log("  ✅ Seeded real PENDING trade-rate rows for Rate Review queue");
+
+  await seedCustomerPortalDemoData(db);
 
   console.log("\n✅ Seed complete! HTS Master & CROSS Rulings are ready.");
   console.log("   Try searching for: 'steel valves', '8481', 'cotton', 'battery'");

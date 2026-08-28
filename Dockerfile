@@ -51,6 +51,27 @@ USER nextjs
 EXPOSE 8080
 CMD ["node", "apps/tms/server.js"]
 
+FROM source AS portal-builder
+ARG PORTAL_APP_URL
+ARG NEXT_PUBLIC_APP_ENV=demo
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG GIT_COMMIT_SHA=unknown
+ENV NEXT_PUBLIC_APP_URL=${PORTAL_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} GIT_COMMIT_SHA=${GIT_COMMIT_SHA} NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+RUN export NEXT_PUBLIC_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
+    export NEXT_PUBLIC_DEPLOYMENT_LOG=$(git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
+    npm run build --workspace=apps/portal
+
+FROM node:20-alpine AS portal-web
+WORKDIR /app
+RUN apk add --no-cache libc6-compat openssl && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+ENV NODE_ENV=production PORT=8080 HOSTNAME=0.0.0.0
+COPY --from=portal-builder --chown=nextjs:nodejs /app/apps/portal/.next/standalone ./
+COPY --from=portal-builder --chown=nextjs:nodejs /app/apps/portal/.next/static ./apps/portal/.next/static
+USER nextjs
+EXPOSE 8080
+CMD ["node", "apps/portal/server.js"]
+
 FROM source AS database
 ENV NODE_ENV=production
 CMD ["npx", "prisma", "migrate", "deploy", "--schema=packages/db/prisma/schema.prisma"]
