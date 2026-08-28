@@ -16,7 +16,10 @@ const trackingWebhookSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const webhookSecret = process.env.WEBHOOK_SECRET || process.env.ERP_WEBHOOK_API_KEY || "whsec_tms_default_secret_2026";
+  const webhookSecret = process.env.WEBHOOK_SECRET || process.env.ERP_WEBHOOK_API_KEY;
+  if (!webhookSecret) {
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+  }
   const sig = req.headers.get("x-webhook-signature") || req.headers.get("authorization") || req.headers.get("x-api-key");
   if (!sig || (sig !== webhookSecret && sig !== `Bearer ${webhookSecret}`)) {
     return NextResponse.json({ error: "Unauthorized: Invalid or missing webhook signature" }, { status: 401 });
