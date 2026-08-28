@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, authorizePortalResource } from "@qubere/auth";
+import { getAccountContext, getEffectiveUserScope, authorizePortalResource, resolvePortalClientScope } from "@qubere/auth";
 import { db, processSharedDocumentUpload } from "@qubere/db";
 
 const inFlightDocumentPromises = new Map<string, Promise<any>>();
@@ -24,7 +24,12 @@ export async function GET(req: Request) {
   const cursor = url.searchParams.get("cursor") || "";
   const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
 
-  const cacheKey = `${ctx.accountId}:${clientId}:${shipmentId}:${docType}:${cursor}:${limit}`;
+  const clientScope = resolvePortalClientScope(scope, clientId);
+  if (clientScope.forbidden) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const cacheKey = `${ctx.userId}:${ctx.accountId}:${clientId}:${shipmentId}:${docType}:${cursor}:${limit}`;
   const now = Date.now();
 
   if (cachedDocuments && cachedDocuments.cacheKey === cacheKey && now - cachedDocuments.time < 5000) {
@@ -37,11 +42,8 @@ export async function GET(req: Request) {
   }
 
   const fetchPromise = (async () => {
-    const clientFilter = clientId
-      ? { clientId }
-      : scope.isAllClients || scope.authorizedClientIds.length === 0
-        ? {}
-        : { clientId: { in: scope.authorizedClientIds } };
+    const clientFilter =
+      clientScope.clientIds === null ? {} : { clientId: { in: clientScope.clientIds } };
 
     const documents = await db.shipmentDocument.findMany({
       take: limit + 1,
@@ -112,6 +114,16 @@ export async function POST(req: Request) {
   }
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+
+  // A caller-supplied clientId must be one the caller is authorized for.
+  if (
+    clientIdInput &&
+    !scope.isAllClients &&
+    !scope.authorizedClientIds.includes(clientIdInput)
+  ) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+
   const effectiveClientId = clientIdInput || scope.authorizedClientIds[0];
 
   if (!effectiveClientId && !scope.isAllClients) {

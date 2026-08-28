@@ -36,12 +36,17 @@ const CUSTOMER_VISIBLE_STATUSES: InvoiceStatus[] = [
  */
 export async function getCustomerInvoices(params: {
   accountId: string;
-  clientId?: string;
+  /**
+   * Client ids to restrict to. `null`/undefined = no restriction (all-clients caller
+   * only). `[]` = return nothing. Callers must resolve this via
+   * `resolvePortalClientScope` — never pass a raw caller-supplied clientId.
+   */
+  clientIds?: string[] | null;
   shipmentId?: string;
   limit?: number;
   cursor?: string;
 }): Promise<{ items: PortalInvoiceDto[]; nextCursor?: string }> {
-  const { accountId, clientId, shipmentId, limit = 25, cursor } = params;
+  const { accountId, clientIds, shipmentId, limit = 25, cursor } = params;
 
   const invoices = await db.invoice.findMany({
     take: limit + 1,
@@ -49,7 +54,7 @@ export async function getCustomerInvoices(params: {
     orderBy: { issueDate: "desc" },
     where: {
       accountId,
-      ...(clientId ? { clientId } : {}),
+      ...(clientIds != null ? { clientId: { in: clientIds } } : {}),
       status: { in: CUSTOMER_VISIBLE_STATUSES },
       ...(shipmentId ? { lines: { some: { shipmentId } } } : {}),
     },

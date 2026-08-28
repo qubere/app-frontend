@@ -43,7 +43,20 @@ export async function authorizePortalResource(
     };
   }
 
-  // 1. AccountId isolation check
+  // 1. Permission check — the caller's role must actually grant the action being
+  // performed. Platform admins and account owners/admins short-circuit; everyone
+  // else (including read-only CUSTOMER_VIEWER) must hold the named permission.
+  if (options.permission && !hasRequiredPortalPermission(ctx, options.permission)) {
+    return {
+      authorized: false,
+      ctx,
+      scope: null,
+      effectiveClientId: null,
+      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
+    };
+  }
+
+  // 2. AccountId isolation check
   if (options.resourceAccountId !== ctx.accountId) {
     return {
       authorized: false,
@@ -121,6 +134,55 @@ export async function authorizePortalResource(
     effectiveClientId: resourceClientId,
     errorResponse: null,
   };
+}
+
+export interface PortalClientScopeResult {
+  /**
+   * Client ids to filter list queries to.
+   *  - `string[]` (possibly empty): restrict to exactly these ids. `[]` => return nothing.
+   *  - `null`: no client restriction (all-clients role, no specific client requested).
+   */
+  clientIds: string[] | null;
+  /** The caller asked for a client they are not authorized to see. */
+  forbidden: boolean;
+}
+
+/**
+ * Resolves the effective client filter for a portal LIST endpoint, given the caller's
+ * scope and an optional caller-supplied `clientId`. Callers MUST treat `forbidden` as
+ * a hard 403 and MUST apply `clientIds` as `{ clientId: { in: clientIds } }` when it is
+ * not null. A caller-supplied `clientId` is never trusted on its own.
+ * See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P0-3/P0-5/P0-6).
+ */
+export function resolvePortalClientScope(
+  scope: { isAllClients: boolean; authorizedClientIds: string[] },
+  requestedClientId?: string | null
+): PortalClientScopeResult {
+  if (requestedClientId) {
+    if (!scope.isAllClients && !scope.authorizedClientIds.includes(requestedClientId)) {
+      return { clientIds: [], forbidden: true };
+    }
+    return { clientIds: [requestedClientId], forbidden: false };
+  }
+  if (scope.isAllClients) {
+    return { clientIds: null, forbidden: false };
+  }
+  // Scoped user, no specific client requested: restrict to assignments. Empty
+  // assignments => empty result (fail closed), never the whole account.
+  return { clientIds: scope.authorizedClientIds, forbidden: false };
+}
+
+/**
+ * True when the context holds `permission`, or is an account owner/admin or platform
+ * admin (who implicitly hold every portal permission).
+ */
+function hasRequiredPortalPermission(ctx: AccountContext, permission: string): boolean {
+  if (ctx.isPlatformAdmin) return true;
+  const roleNames = ctx.roleNames || [];
+  if (roleNames.some((r) => ["OWNER", "ADMIN", "BROKER_ADMIN", "TMS_ADMIN"].includes(r.toUpperCase()))) {
+    return true;
+  }
+  return (ctx.permissions || []).includes(permission);
 }
 
 /**

@@ -111,6 +111,7 @@ describe("Multi-Tenant Customer Isolation Test Suite", () => {
       } as any,
       scope: targetUserScope,
       effectiveClientId: TARGET_CLIENT_ID,
+      errorResponse: null,
     });
 
     // 3. Execute authorization check for Target user trying to access Target's Shipment

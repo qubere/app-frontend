@@ -25,15 +25,16 @@ export async function getEffectiveUserScope(
   if (cached && Date.now() - cached.time < 30000) {
     return cached.scope;
   }
+  // NOTE: customer portal roles (CUSTOMER_*, PORTER) must NEVER be all-clients.
+  // Their scope is resolved exclusively from UserClientAssignment / TeamClientAssignment
+  // below. Granting them account-wide scope exposes every importer's data to every
+  // customer user. See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P0-4).
   const isAllClientsRole = roleNames.some((r) =>
     [
       "BROKER_ADMIN",
       "TMS_ADMIN",
       "OWNER",
       "ADMIN",
-      "CUSTOMER_ADMIN",
-      "CUSTOMER_USER",
-      "PORTER",
       "PLATFORM_ADMIN",
       "SUPER_ADMIN_READWRITE",
       "SUPER_ADMIN_READ",
@@ -83,23 +84,10 @@ export async function getEffectiveUserScope(
 
   const authorizedClientIds = Array.from(new Set<string>([...directClientIds, ...teamClientIds]));
 
-  const isCustomerAdmin = roleNames.some((r) => r.toUpperCase() === "CUSTOMER_ADMIN");
-
-  if (isCustomerAdmin) {
-    const allAccountClients = await db.client.findMany({
-      where: { accountId, status: "ACTIVE" },
-      select: { id: true },
-    });
-    const combinedClientIds = Array.from(new Set<string>([...authorizedClientIds, ...allAccountClients.map((c) => c.id)]));
-    const scopeRes: UserScope = {
-      isAllClients: combinedClientIds.length === 0,
-      authorizedClientIds: combinedClientIds,
-      teamIds,
-      authorizedShipmentIds: null,
-    };
-    userScopeCache.set(cacheKey, { scope: scopeRes, time: Date.now() });
-    return scopeRes;
-  }
+  // CUSTOMER_ADMIN administers the users and data of its OWN importer org, i.e. the
+  // client(s) it is explicitly assigned to — never the broker's entire client book.
+  // It therefore falls through to the assignment-based scope below like any other
+  // customer role. See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P0-4).
 
   // Check specific shipment assignments for customer contacts
   const assignedShipments = await db.shipment.findMany({

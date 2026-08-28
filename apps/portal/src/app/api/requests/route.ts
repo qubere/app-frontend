@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
+import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 export async function GET(req: Request) {
@@ -15,11 +15,12 @@ export async function GET(req: Request) {
   const cursor = url.searchParams.get("cursor") || undefined;
   const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
 
-  const clientFilter = clientId
-    ? { clientId }
-    : scope.isAllClients || scope.authorizedClientIds.length === 0
-      ? {}
-      : { clientId: { in: scope.authorizedClientIds } };
+  const clientScope = resolvePortalClientScope(scope, clientId);
+  if (clientScope.forbidden) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+  const clientFilter =
+    clientScope.clientIds === null ? {} : { clientId: { in: clientScope.clientIds } };
 
   const requests = await db.customerRequest.findMany({
     take: limit + 1,

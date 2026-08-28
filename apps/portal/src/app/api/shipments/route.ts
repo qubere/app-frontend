@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
+import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
 
 export async function GET(req: Request) {
@@ -15,21 +15,18 @@ export async function GET(req: Request) {
   const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
   const clientId = url.searchParams.get("clientId");
 
-  console.log("[Shipments API Debug] ctx.accountId:", ctx.accountId, "clientId:", clientId, "authorizedClientIds:", scope.authorizedClientIds);
+  const clientScope = resolvePortalClientScope(scope, clientId);
+  if (clientScope.forbidden) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
 
   const whereClause: any = {
     deletedAt: null,
+    accountId: ctx.accountId,
   };
 
-  if (clientId) {
-    whereClause.clientId = clientId;
-  } else if (scope.authorizedClientIds.length > 0) {
-    whereClause.OR = [
-      { clientId: { in: scope.authorizedClientIds } },
-      { accountId: ctx.accountId },
-    ];
-  } else {
-    whereClause.accountId = ctx.accountId;
+  if (clientScope.clientIds !== null) {
+    whereClause.clientId = { in: clientScope.clientIds };
   }
 
   if (query) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
+import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const inFlightDashboardPromises = new Map<string, Promise<any>>();
@@ -18,7 +18,12 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const clientId = url.searchParams.get("clientId") || "";
 
-  const cacheKey = `${ctx.accountId}:${clientId}`;
+  const clientScope = resolvePortalClientScope(scope, clientId || undefined);
+  if (clientScope.forbidden) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const cacheKey = `${ctx.userId}:${ctx.accountId}:${clientId}`;
 
   if (inFlightDashboardPromises.has(cacheKey)) {
     const data = await inFlightDashboardPromises.get(cacheKey);
@@ -32,10 +37,8 @@ export async function GET(req: Request) {
       accountId: ctx.accountId,
     };
 
-    if (clientId) {
-      actionWhere.clientId = clientId;
-    } else if (!scope.isAllClients && scope.authorizedClientIds.length > 0) {
-      actionWhere.clientId = { in: scope.authorizedClientIds };
+    if (clientScope.clientIds !== null) {
+      actionWhere.clientId = { in: clientScope.clientIds };
     }
 
     // Fetch open customer action requests for "Needs your attention"

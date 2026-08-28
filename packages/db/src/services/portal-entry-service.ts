@@ -21,12 +21,17 @@ export interface PortalEntryDto {
  */
 export async function getCustomerPublishedEntries(params: {
   accountId: string;
-  clientId?: string;
+  /**
+   * Client ids to restrict to. `null`/undefined = no restriction (all-clients caller
+   * only). `[]` = return nothing. Callers must resolve this via
+   * `resolvePortalClientScope` — never pass a raw caller-supplied clientId.
+   */
+  clientIds?: string[] | null;
   shipmentId?: string;
   limit?: number;
   cursor?: string;
 }): Promise<{ items: PortalEntryDto[]; nextCursor?: string }> {
-  const { accountId, clientId, shipmentId, limit = 25, cursor } = params;
+  const { accountId, clientIds, shipmentId, limit = 25, cursor } = params;
 
   const filings = await db.customsFiling.findMany({
     take: limit + 1,
@@ -35,7 +40,7 @@ export async function getCustomerPublishedEntries(params: {
     where: {
       accountId,
       customerVisibleAt: { not: null },
-      ...(clientId ? { shipment: { clientId } } : {}),
+      ...(clientIds != null ? { shipment: { clientId: { in: clientIds } } } : {}),
       ...(shipmentId ? { shipmentId } : {}),
     },
     include: {
