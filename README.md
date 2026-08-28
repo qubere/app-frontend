@@ -318,11 +318,24 @@ reacts to a specific reference-data change; a **full-population dispatcher**
 proactively re-screens the whole account on a schedule — both funnel into one
 shared `outcomeRecorder.ts`, which reuses the canonical `rescreenParty()`
 lifecycle rather than reimplementing it, and both persist an
-`RdpsPartyOutcome` row that records whether a result worsened. Surfaced via
-`RdpsPanel.tsx` inside the Compliance workspace and eight tenant-scoped API
-routes. **Known gap**: neither dispatcher is wired into `vercel.json`'s cron
-schedule today (the same class of gap as `community-screening-dispatch`
-below) — both are manual-trigger-only until a cron entry is added. See
+`RdpsPartyOutcome` row that records whether a result worsened plus a
+deterministic `transitionType` (`NEW_HIT` / `ESCALATED` / `RISK_REDUCED` /
+`CLEARED` / `UNCHANGED_*` / `ERROR` / …). Reference-data changes carry a
+`changeType` of `ADDED` / `UPDATED` / `SUPERSEDED` / `EXPIRED` — the last
+written by an hourly `referenceDataExpirySweep.ts` cron that catches entities
+whose own `expirationDate` elapsed while still active in every feed, a case
+the ingestion services themselves never catch. A read-only **Preview
+Impact** action shows which parties a reference-data change would match
+today without rescreening or recording anything, and a per-change-set
+**Impacted Parties** drill-down (via `triggeringChangeSetIds` on each
+outcome) shows which parties actually were re-screened because of it. Both
+dispatchers, the expiry sweep, and Community Screening's dispatcher are all
+wired into scheduled cron (`rdps-delta-impact-dispatch` every 10 minutes,
+`rdps-full-population-dispatch` and `reference-data-expiry-sweep` hourly),
+registered in both `apps/custom/vercel.json` and
+`infrastructure/gcp/configure-scheduler.sh` (GCP Cloud Scheduler is
+authoritative in production). Surfaced via `RdpsPanel.tsx` inside the
+Compliance workspace and its tenant-scoped API routes. See
 [docs/rdps-continuous-monitoring.md](docs/rdps-continuous-monitoring.md) for
 the full design.
 
