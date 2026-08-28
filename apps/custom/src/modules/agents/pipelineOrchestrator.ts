@@ -160,7 +160,7 @@ export class PipelineOrchestrator {
       const stepStart = Date.now();
       const startedAt = new Date();
 
-      let status: "COMPLETED" | "FAILED" = "COMPLETED";
+      let status: "COMPLETED" | "FAILED" | "SKIPPED" = "COMPLETED";
       let error: string | undefined;
       let confidence: unknown = null;
       let decisionId: string | null = null;
@@ -168,6 +168,7 @@ export class PipelineOrchestrator {
       let summary: string | undefined;
       let inputSnapshot: unknown = null;
       let outputSnapshot: unknown = null;
+      let isSkipped = false;
 
       try {
         const result = await this.runSingleAgent(agentName, {
@@ -185,6 +186,14 @@ export class PipelineOrchestrator {
         summary = result.summary;
         inputSnapshot = result.input;
         outputSnapshot = result.output;
+
+        const outObj = (outputSnapshot as Record<string, unknown>) ?? {};
+        if (outObj.skipped || outObj.status === "SKIPPED") {
+          isSkipped = true;
+          status = "SKIPPED";
+          const skipReason = typeof outObj.skipped === "string" ? outObj.skipped : "Step skipped";
+          summary = summary || `Skipped: ${skipReason}`;
+        }
       } catch (err) {
         status = "FAILED";
         error = err instanceof Error ? err.message : "Agent execution failed";
@@ -208,7 +217,7 @@ export class PipelineOrchestrator {
               triggerEvent,
               invokedBy: invokedByLabel,
               stepNumber: i + 1,
-              nextStep,
+              nextStep: isSkipped || status === "FAILED" ? "Terminated (Short-Circuited)" : nextStep,
               summary,
               status,
               durationMs: Date.now() - stepStart,
@@ -259,6 +268,25 @@ export class PipelineOrchestrator {
             console.error("[PipelineOrchestrator] Failed to update job progress:", e)
           );
         }
+      }
+
+      if (isSkipped || status === "FAILED") {
+        const stopReason = isSkipped
+          ? `Agent ${agentName} skipped (${summary})`
+          : `Agent ${agentName} failed (${error})`;
+        logger.warn(
+          `Short-circuiting pipeline execution for shipment ${shipmentId} at step ${i + 1} (${agentName}): ${stopReason}`,
+          {
+            accountId,
+            userId,
+            shipmentId,
+            runId,
+            agentName,
+            stepStatus: status,
+            triggerEvent,
+          }
+        );
+        break;
       }
     }
 
