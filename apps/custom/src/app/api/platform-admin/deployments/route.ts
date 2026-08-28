@@ -29,8 +29,8 @@ const GCP_SERVICES: GcpServiceHealthConfig[] = [
     type: "Cloud Run Service",
     region: "us-west1",
     primaryUrl: "https://demo-clear.qubere.ai",
-    quickHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health/live",
-    deepHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
+    quickHealthUrl: "https://demo-clear.qubere.ai/api/health/live",
+    deepHealthUrl: "https://demo-clear.qubere.ai/api/health",
   },
   {
     id: "qubere-tms-demo",
@@ -39,8 +39,8 @@ const GCP_SERVICES: GcpServiceHealthConfig[] = [
     type: "Cloud Run Service",
     region: "us-west1",
     primaryUrl: "https://demo-tms.qubere.ai",
-    quickHealthUrl: "https://qubere-tms-demo-989371729159.us-west1.run.app/api/health",
-    deepHealthUrl: "https://qubere-tms-demo-989371729159.us-west1.run.app/api/deep-health",
+    quickHealthUrl: "https://demo-tms.qubere.ai/api/health",
+    deepHealthUrl: "https://demo-tms.qubere.ai/api/deep-health",
   },
   {
     id: "qubere-customer-portal",
@@ -49,8 +49,8 @@ const GCP_SERVICES: GcpServiceHealthConfig[] = [
     type: "Cloud Run Service",
     region: "us-west1",
     primaryUrl: "https://demo-portal.qubere.ai",
-    quickHealthUrl: "https://qubere-customer-portal-989371729159.us-west1.run.app/api/health",
-    deepHealthUrl: "https://qubere-customer-portal-989371729159.us-west1.run.app/api/health",
+    quickHealthUrl: "https://demo-portal.qubere.ai/api/health",
+    deepHealthUrl: "https://demo-portal.qubere.ai/api/health",
   },
   {
     id: "qubere-document-worker-demo",
@@ -59,8 +59,8 @@ const GCP_SERVICES: GcpServiceHealthConfig[] = [
     type: "Cloud Run Job",
     region: "us-west1",
     primaryUrl: "https://console.cloud.google.com/run/jobs/details/us-west1/qubere-document-worker-demo?project=qubere-demo",
-    quickHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
-    deepHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
+    quickHealthUrl: "/api/health",
+    deepHealthUrl: "/api/health",
   },
   {
     id: "qubere-migrate-demo",
@@ -69,8 +69,8 @@ const GCP_SERVICES: GcpServiceHealthConfig[] = [
     type: "Cloud Run Job",
     region: "us-west1",
     primaryUrl: "https://console.cloud.google.com/run/jobs/details/us-west1/qubere-migrate-demo?project=qubere-demo",
-    quickHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
-    deepHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
+    quickHealthUrl: "/api/health",
+    deepHealthUrl: "/api/health",
   },
   {
     id: "qubere-db-backup-demo",
@@ -79,15 +79,22 @@ const GCP_SERVICES: GcpServiceHealthConfig[] = [
     type: "Cloud Run Job",
     region: "us-west1",
     primaryUrl: "https://console.cloud.google.com/run/jobs/details/us-west1/qubere-db-backup-demo?project=qubere-demo",
-    quickHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
-    deepHealthUrl: "https://qubere-customs-demo-989371729159.us-west1.run.app/api/health",
+    quickHealthUrl: "/api/health",
+    deepHealthUrl: "/api/health",
   },
 ];
 
 const CURATED_DEPLOYMENT_HISTORY: DeploymentRecord[] = [
   {
-    hash: "929e8d4",
+    hash: "969a40e",
     date: new Date().toISOString(),
+    summary: "feat(admin): upgrade Deployments tab with 10-deployment log and GCP health check directory",
+    author: "Rachit Lohani",
+    serviceTag: "Admin Console",
+  },
+  {
+    hash: "929e8d4",
+    date: "2026-08-28T23:50:00Z",
     summary: "feat(portal): add /api/health endpoint and cloudbuild config for Customer Portal",
     author: "Rachit Lohani",
     serviceTag: "Customer Portal",
@@ -148,13 +155,6 @@ const CURATED_DEPLOYMENT_HISTORY: DeploymentRecord[] = [
     author: "Rachit Lohani",
     serviceTag: "TMS Suite",
   },
-  {
-    hash: "501a2e8",
-    date: "2026-08-25T11:15:00Z",
-    summary: "feat(customs): 7501 entry summary reasonable care defense reasoning log",
-    author: "Rachit Lohani",
-    serviceTag: "Customs Core",
-  },
 ];
 
 export async function GET() {
@@ -202,7 +202,7 @@ export async function GET() {
   return NextResponse.json({
     deployments,
     services: GCP_SERVICES,
-    currentSha: process.env.NEXT_PUBLIC_GIT_COMMIT_SHA || deployments[0]?.hash || "929e8d4",
+    currentSha: process.env.NEXT_PUBLIC_GIT_COMMIT_SHA || deployments[0]?.hash || "969a40e",
     timestamp: new Date().toISOString(),
   });
 }
