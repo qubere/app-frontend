@@ -98,9 +98,13 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         if (existingUsers.data.length > 0) {
           clerkUserId = existingUsers.data[0].id;
         } else {
+          // No password: the recipient sets their own credential via the Clerk
+          // invitation / first-sign-in flow. Never provision a login-capable
+          // account with a shared or predictable password.
+          // See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P0-7).
           const newUser = await clerkClient.users.createUser({
             emailAddress: [recipientEmail],
-            password: "QuberePass2026!",
+            skipPasswordRequirement: true,
             firstName: "Porter",
             lastName: recipientEmail.split("@")[0],
           });

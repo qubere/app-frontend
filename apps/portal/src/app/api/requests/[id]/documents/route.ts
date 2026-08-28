@@ -29,6 +29,28 @@ export async function POST(
     return auth.errorResponse || NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
+  // Only allow attaching a document the caller's request can legitimately see:
+  // same account, and (when the doc is client-scoped) the same client.
+  // See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P1-2).
+  const loadAttachableDoc = async (documentId: string) => {
+    const doc = await db.shipmentDocument.findUnique({
+      where: { id: documentId },
+      select: { id: true, fileName: true, mimeType: true, docType: true, status: true, createdAt: true, accountId: true, clientId: true },
+    });
+    if (!doc) return null;
+    if (doc.accountId !== request.accountId) return null;
+    if (doc.clientId && doc.clientId !== request.clientId) return null;
+    return doc;
+  };
+  const toDocDto = (doc: { id: string; fileName: string; mimeType: string | null; docType: string | null; status: string | null; createdAt: Date }) => ({
+    id: doc.id,
+    fileName: doc.fileName,
+    mimeType: doc.mimeType,
+    docType: doc.docType,
+    status: doc.status,
+    createdAt: doc.createdAt,
+  });
+
   try {
     const contentType = req.headers.get("content-type") || "";
 
@@ -39,9 +61,7 @@ export async function POST(
         return NextResponse.json({ error: "DOCUMENT_ID_REQUIRED" }, { status: 400 });
       }
 
-      const existingDoc = await db.shipmentDocument.findUnique({
-        where: { id: documentId },
-      });
+      const existingDoc = await loadAttachableDoc(documentId);
 
       if (!existingDoc) {
         return NextResponse.json({ error: "DOCUMENT_NOT_FOUND" }, { status: 404 });
@@ -70,7 +90,7 @@ export async function POST(
         data: { status: "CUSTOMER_RESPONDED" },
       });
 
-      return NextResponse.json({ document: existingDoc, message: msg });
+      return NextResponse.json({ document: toDocDto(existingDoc), message: msg });
     }
 
     // Case B: Multipart form data with file upload or existing documentId
@@ -78,9 +98,7 @@ export async function POST(
     const existingDocId = formData.get("documentId") as string | null;
 
     if (existingDocId) {
-      const existingDoc = await db.shipmentDocument.findUnique({
-        where: { id: existingDocId },
-      });
+      const existingDoc = await loadAttachableDoc(existingDocId);
 
       if (!existingDoc) {
         return NextResponse.json({ error: "DOCUMENT_NOT_FOUND" }, { status: 404 });
@@ -109,7 +127,7 @@ export async function POST(
         data: { status: "CUSTOMER_RESPONDED" },
       });
 
-      return NextResponse.json({ document: existingDoc, message: msg });
+      return NextResponse.json({ document: toDocDto(existingDoc), message: msg });
     }
 
     const file = formData.get("file") as File | null;
@@ -117,8 +135,25 @@ export async function POST(
       return NextResponse.json({ error: "NO_FILE_PROVIDED" }, { status: 400 });
     }
 
-    const fileName = file.name;
-    const mimeType = file.type || (fileName.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
+    // Basename only — never let a caller-supplied name traverse out of the
+    // quarantine directory. See CUSTOMER-PORTAL-PR97-REVIEW.md (P1-7/P1-8).
+    const fileName = path.basename(file.name || "").replace(/[^\x20-\x7e]/g, "").trim();
+    if (!fileName || fileName === "." || fileName === ".." || fileName.includes("/") || fileName.includes("\\")) {
+      return NextResponse.json({ error: "INVALID_FILE_NAME" }, { status: 400 });
+    }
+
+    const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json({ error: "FILE_TOO_LARGE", message: "Maximum upload size is 25 MB." }, { status: 413 });
+    }
+
+    const ALLOWED_EXT = [".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt"];
+    const ext = path.extname(fileName).toLowerCase();
+    if (!ALLOWED_EXT.includes(ext)) {
+      return NextResponse.json({ error: "UNSUPPORTED_FILE_TYPE", message: `Allowed: ${ALLOWED_EXT.join(", ")}` }, { status: 415 });
+    }
+
+    const mimeType = file.type || (ext === ".pdf" ? "application/pdf" : "application/octet-stream");
     const fileSize = file.size;
 
     const arrayBuf = await file.arrayBuffer();
@@ -192,7 +227,7 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ document: shipDoc, message: msg });
+    return NextResponse.json({ document: toDocDto(shipDoc), message: msg });
   } catch (err: any) {
     console.error("Error processing document upload:", err);
     return NextResponse.json({ error: "UPLOAD_FAILED", message: err.message }, { status: 500 });

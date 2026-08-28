@@ -86,10 +86,26 @@ export async function GET(
     }
   }
 
+  // Explicit projection — never spread the raw row (internal assignee/creator ids,
+  // filing linkage, etc.). See CUSTOMER-PORTAL-PR97-REVIEW.md (P1-3).
   return NextResponse.json({
     request: {
-      ...request,
+      id: request.id,
       actionId,
+      type: request.type,
+      title: request.title,
+      description: request.description,
+      status: request.status,
+      priority: request.priority,
+      domain: request.domain,
+      dueAt: request.dueAt,
+      version: request.version,
+      createdAt: request.createdAt,
+      updatedAt: request.updatedAt,
+      shipmentId: request.shipmentId,
+      shipment: request.shipment,
+      messages: request.messages,
+      documents: request.documents,
     },
   });
 }

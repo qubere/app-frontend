@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "path";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { loadDocumentBytes } from "@/modules/documents/loadDocumentBytes";
 
@@ -142,8 +143,12 @@ function serve(buf: Buffer, opts: { fileName: string; docType: string | null }):
 
 /**
  * Streams real document content back to the browser for previewing and verification.
+ *
+ * The caller supplies only a document id; `accountId` is part of the lookup, not a
+ * post-hoc check, so a caller can only ever read documents in their own tenant. This
+ * route must never be exempted from authentication (see `middleware.ts`).
  */
-export async function GET(req: Request) {
+export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   const documentId = new URL(req.url).searchParams.get("documentId");
   if (!documentId) {
     return new NextResponse("documentId is required", { status: 400 });
@@ -153,7 +158,7 @@ export async function GET(req: Request) {
   }
 
   const document = await db.shipmentDocument.findFirst({
-    where: { id: documentId },
+    where: { id: documentId, accountId: ctx.accountId },
     select: { docType: true },
   });
 
@@ -173,4 +178,4 @@ export async function GET(req: Request) {
     fileName: path.basename(loaded.fileName) || "document",
     docType: document.docType ?? null,
   });
-}
+}, { permission: "document.read" });

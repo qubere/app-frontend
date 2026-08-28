@@ -15,8 +15,12 @@ if (!clerkSecretKey) {
 const clerkClient = createClerkClient({ secretKey: clerkSecretKey });
 
 async function seedPorterUser() {
-  const targetEmail = "porter@target.com";
-  const password = "QuberePass2026!";
+  const targetEmail = process.env.SEED_PORTER_EMAIL || "porter@target.com";
+  const password = process.env.SEED_PORTER_PASSWORD;
+  if (!password) {
+    console.error("Error: SEED_PORTER_PASSWORD is required (do not hardcode credentials).");
+    process.exit(1);
+  }
 
   console.log(`🚀 Creating Porter user (${targetEmail}) in Clerk and Database...`);
 

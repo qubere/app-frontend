@@ -3,9 +3,20 @@ import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
 import { db, processSharedDocumentUpload } from "@qubere/db";
 
 export async function POST(req: Request) {
+  // This route simulates provider inbound-email ingestion for the demo. It is NOT a
+  // verified webhook (no provider signature check) and must not be reachable in a
+  // real deployment. See CUSTOMER-PORTAL-PR97-REVIEW.md (P1-4).
+  if (process.env.NEXT_PUBLIC_APP_ENV !== "demo") {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  }
+
   const ctx = await getAccountContext();
   if (!ctx) {
     return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+  }
+
+  if (!(ctx.permissions || []).includes("portal.documents.create") && !ctx.roleNames.some((r) => ["OWNER", "ADMIN", "BROKER_ADMIN"].includes(r.toUpperCase()))) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
   const formData = await req.formData();
