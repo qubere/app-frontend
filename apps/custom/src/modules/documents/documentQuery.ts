@@ -39,7 +39,7 @@ export interface DocumentQuery {
  * archive scope. A shipment can also qualify by being soft-deleted regardless
  * of status -- see buildDocumentWhere.
  */
-export const ARCHIVE_SHIPMENT_STATUSES = ["Submitted", "Completed"];
+export const ARCHIVE_SHIPMENT_STATUSES = ["Submitted", "Completed", "DELIVERED", "Delivered with Exception"];
 
 /** Sentinel for "no client", which is a real filter and not the absence of one. */
 export const UNASSIGNED_CLIENT = "UNASSIGNED";

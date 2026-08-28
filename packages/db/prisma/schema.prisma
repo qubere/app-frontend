@@ -569,7 +569,7 @@ model Shipment {
   arrivalDate        DateTime? // Actual arrival at first US port; falls back to estimatedArrival
   transportMode      String? // Ocean | Air | Truck | Rail — ISF applies to Ocean only
   filingDeadline     DateTime? // Derived cache: min(dueAt) over OPEN blocking ComplianceDeadlines
-  status             String            @default("Draft") // Draft, In Progress, Ready to File, On Hold, Submitted, Completed
+  status             String            @default("Draft") // Draft, In Progress, Ready to File, On Hold, Submitted, Completed, DELIVERED, Delivered with Exception (the latter two are written by apps/tms's POD pipeline)
   customsRequired    Boolean           @default(false)
   // Workflow lifecycle stage. Values: DOCUMENT_INTAKE | CLASSIFICATION | VALUATION | ORIGIN | COMPLIANCE | FILING_PREP | READY_TO_FILE
   currentStage       String?

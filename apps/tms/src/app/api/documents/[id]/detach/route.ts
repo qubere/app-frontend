@@ -10,15 +10,9 @@ export const maxDuration = 60;
 // extractedJson and metadata stay intact so the document can later be reattached.
 export const POST = withAuthenticatedRoute<{ id: string }>(
   async ({ ctx, params, requestId }) => {
-    let doc = await db.shipmentDocument.findFirst({
+    const doc = await db.shipmentDocument.findFirst({
       where: { id: params.id, accountId: ctx.accountId },
     });
-
-    if (!doc) {
-      doc = await db.shipmentDocument.findUnique({
-        where: { id: params.id },
-      });
-    }
 
     if (!doc) {
       return NextResponse.json({ error: "Document not found.", requestId }, { status: 404 });
