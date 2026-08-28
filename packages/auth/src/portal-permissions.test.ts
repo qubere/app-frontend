@@ -17,7 +17,6 @@ describe("Customer Portal Roles and Permissions Catalogue", () => {
 
   it("should register atomic portal permissions in PERMISSION_CATALOGUE", () => {
     const portalPermissions = [
-      "porter",
       "portal.porter",
       "portal.access",
       "portal.customs.read",

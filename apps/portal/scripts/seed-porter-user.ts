@@ -126,12 +126,12 @@ async function seedPorterUser() {
 
   console.log(`✅ Database User: ${user.email} (${user.id})`);
 
-  // 5. Ensure "porter" permission exists in DB
+  // 5. Ensure the porter-view permission exists in DB
   const porterPerm = await db.permission.upsert({
-    where: { name: "porter" },
+    where: { name: "portal.porter" },
     update: {},
     create: {
-      name: "porter",
+      name: "portal.porter",
       description: "Porter View permission for Importers & Exporters",
     },
   });
