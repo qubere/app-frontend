@@ -87,6 +87,9 @@ upsert_job qubere-deadline-sweep "*/15 * * * *" /api/cron/deadline-sweep
 upsert_job qubere-regulatory-ingest "0 4 * * *" /api/cron/regulatory-ingest POST
 upsert_job qubere-rdps-recall-validation "0 5 * * *" /api/cron/rdps-recall-validation
 upsert_job qubere-origin-re-eval "0 6 * * *" /api/cron/origin-re-eval
+upsert_job qubere-rdps-delta-impact-dispatch "*/10 * * * *" /api/cron/rdps-delta-impact-dispatch
+upsert_job qubere-rdps-full-population-dispatch "0 * * * *" /api/cron/rdps-full-population-dispatch
+upsert_job qubere-community-screening-dispatch "*/2 * * * *" /api/cron/community-screening-dispatch
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"
 upsert_backup_job() {

@@ -55,14 +55,11 @@ tenant-isolation convention used across every compliance route.
 export pattern used by Community Screening — a downloaded run includes the
 prior/new status and worsening flag per party, not just a pass/fail summary.
 
-## Known gap: not wired into the cron schedule
+## Scheduling
 
-`apps/custom/vercel.json`'s cron configuration has **no entries** for
-`rdps-delta-impact`, `rdps-full-population`, or (pre-existing, same class of
-gap) `community-screening-dispatch`. `api/platform-admin/cron/route.ts` does
-register these jobs in its handler's registry, so the code path exists and
-works when invoked — but nothing invokes it automatically today. Both
-dispatchers are effectively manual-trigger-only until a cron entry is added.
-This is a genuine operational gap, not a design choice, and should be closed
-before RDPS is relied on as a continuous-monitoring control rather than an
-on-demand tool.
+`rdps-delta-impact-dispatch` (every 10 minutes), `rdps-full-population-dispatch`
+(hourly), and `community-screening-dispatch` (every 2 minutes) are registered
+in both `apps/custom/vercel.json` and `infrastructure/gcp/configure-scheduler.sh`,
+and listed in the admin cron dashboard (`src/lib/admin/cronData.ts`). Until
+this was added, both dispatchers were manual-trigger-only, so RDPS could not
+be relied on as a continuous-monitoring control rather than an on-demand tool.
