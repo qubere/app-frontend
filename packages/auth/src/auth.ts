@@ -504,12 +504,18 @@ export async function getDevOrDemoAccountContext(): Promise<AccountContext | nul
     const membership = (targetAccountId ? targetUser.memberships.find((m: any) => m.accountId === targetAccountId) : null) || targetUser.memberships[0];
     const account = membership.account;
     const roleNames = membership.roles.map((r: any) => r.role.name);
+    // Match loadAccountContext: effective permissions = explicit role grants
+    // UNION the role's default permission set. Without the defaults, demo/dev
+    // sessions under-report permissions (e.g. a seeded CUSTOMER_USER whose role
+    // only has `porter` + `portal.access` explicitly granted would be denied
+    // portal.requests.respond even though that is a CUSTOMER_USER default).
     const permissions = Array.from(
-      new Set<string>(
-        membership.roles.flatMap((r: any) =>
+      new Set<string>([
+        ...membership.roles.flatMap((r: any) =>
           r.role.rolePermissions.map((rp: any) => rp.permission.name)
-        )
-      )
+        ),
+        ...roleNames.flatMap((name: string) => defaultPermissionsForRole(name)),
+      ])
     );
 
     const clientIds = account.clients?.map((c: any) => c.id) || [];

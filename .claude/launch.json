@@ -7,6 +7,12 @@
       "runtimeArgs": ["next", "dev"],
       "cwd": "apps/custom",
       "port": 3100
+    },
+    {
+      "name": "portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=apps/portal"],
+      "port": 3002
     }
   ]
 }

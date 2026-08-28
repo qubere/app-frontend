@@ -15,15 +15,16 @@ export function invalidateMeCache(userId?: string) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const ctx = await getAccountContext();
   if (!ctx) {
     return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
+  const forceRefresh = new URL(req.url).searchParams.get("refresh") === "1";
   const cacheKey = `${ctx.userId}:${ctx.accountId}`;
   const cached = meCache.get(cacheKey);
-  if (cached && Date.now() - cached.time < CACHE_TTL_MS) {
+  if (!forceRefresh && cached && Date.now() - cached.time < CACHE_TTL_MS) {
     return NextResponse.json(cached.data, {
       headers: {
         "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
