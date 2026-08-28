@@ -331,8 +331,36 @@ Target File Name: "${input.fileName}"`;
     }
 
     const detectedTypes = Array.from(new Set(pages.map((p) => p.docTypeCode)));
-    const status: "Completed" | "Review Required" | "Attention" = "Completed";
-    const humanReviewReason = undefined;
+    const requiredTypes = ["COMMERCIAL_INVOICE"];
+    const missingRequiredDocs = requiredTypes.filter((t) => !detectedTypes.includes(t));
+
+    // 2. Evaluate Human-in-the-Loop Broker Review Rules. Intake gates on
+    // packet-level signals (required doc types present, any OCR confidence at
+    // all); field-level extraction gating is the Intelligence agent's job.
+    let status: "Completed" | "Review Required" | "Attention" = "Completed";
+    const reviewReasons: string[] = [];
+
+    if (overallConfidence === null) {
+      status = "Review Required";
+      reviewReasons.push(
+        "No OCR confidence was reported for this packet, so it cannot clear the 90% threshold for automated filing."
+      );
+    } else if (overallConfidence < 90) {
+      status = "Review Required";
+      reviewReasons.push(
+        `OCR confidence score (${overallConfidence}%) is below mandatory 90% threshold for automated filing.`
+      );
+    }
+    if (missingRequiredDocs.length > 0) {
+      status = "Review Required";
+      reviewReasons.push(`Missing mandatory trade documents: ${missingRequiredDocs.join(", ")}.`);
+    }
+    if (pages.some((p) => p.isHandwritten || p.hasIllegibleStamps)) {
+      if (status !== "Review Required") status = "Attention";
+      reviewReasons.push("Handwritten annotations or unverified seals detected on document pages.");
+    }
+
+    const humanReviewReason = reviewReasons.length > 0 ? reviewReasons.join(" ") : undefined;
     const primaryDoc = DocumentTypeCatalog.matchDocumentType(detectedTypes[0] || input.fileName);
     // Null rather than "doc_fallback_intake"/"dec_fallback_intake": a failed write
     // produced no row, and a synthetic id here was persisted into the audit trail.
@@ -443,7 +471,7 @@ Target File Name: "${input.fileName}"`;
       pageCount: pages.length,
       classifications: pages,
       detectedTypes,
-      missingRequiredDocs: [],
+      missingRequiredDocs,
       humanReviewReason,
       reasoningChain,
       agentDecisionId: agentDecisionId,

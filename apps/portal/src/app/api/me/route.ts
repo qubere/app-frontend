@@ -65,7 +65,7 @@ export async function GET(req: Request) {
   const perms = new Set(ctx.permissions || []);
   const isOwnerOrAdmin = ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN");
 
-  const hasPorterView = isOwnerOrAdmin || perms.has("porter") || perms.has("portal.porter") || perms.has("portal.access");
+  const hasPorterView = isOwnerOrAdmin || perms.has("portal.porter") || perms.has("portal.access");
   const hasCustomsAccess = hasPorterView || perms.has("portal.customs.read") || perms.has("portal.shipments.read");
   const hasTmsAccess = hasPorterView || perms.has("portal.tms.read") || perms.has("portal.orders.read");
   const canUploadDocuments = isOwnerOrAdmin || perms.has("portal.documents.create");

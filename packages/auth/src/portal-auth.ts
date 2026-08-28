@@ -187,13 +187,12 @@ function hasRequiredPortalPermission(ctx: AccountContext, permission: string): b
 
 /**
  * Checks if the user has Porter View permission covering both Importers and Exporters.
- * Granted if user has 'porter', 'portal.porter', or 'portal.access' permissions.
+ * Granted if user has 'portal.porter' or 'portal.access' permissions.
  */
 export function hasPorterAccess(ctx: AccountContext | null): boolean {
   if (!ctx) return false;
   const userPermissions = ctx.permissions || [];
   return (
-    userPermissions.includes("porter") ||
     userPermissions.includes("portal.porter") ||
     userPermissions.includes("portal.access") ||
     ctx.roleNames.some((r) => r.startsWith("CUSTOMER_") || ["OWNER", "ADMIN", "BROKER_ADMIN", "TMS_ADMIN"].includes(r.toUpperCase()))

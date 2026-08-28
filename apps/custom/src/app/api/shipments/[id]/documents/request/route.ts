@@ -136,11 +136,11 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         data: { assignedUserId: user.id },
       });
 
-      // Ensure "porter" permission & CUSTOMER_USER role exist
+      // Ensure the porter-view permission & CUSTOMER_USER role exist
       const porterPerm = await db.permission.upsert({
-        where: { name: "porter" },
+        where: { name: "portal.porter" },
         update: {},
-        create: { name: "porter", description: "Porter View permission" },
+        create: { name: "portal.porter", description: "Porter View permission" },
       });
 
       let role = await db.role.findFirst({

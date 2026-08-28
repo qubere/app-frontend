@@ -1,0 +1,14 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: portal
+    args:
+      - "build"
+      - "--target=portal-web"
+      - "--build-arg=PORTAL_APP_URL=https://demo-portal.qubere.ai"
+      - "--build-arg=NEXT_PUBLIC_APP_ENV=demo"
+      - "--build-arg=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsucXViZXJlLmFpJA"
+      - "--tag=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:latest"
+      - "."
+images:
+  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:latest"
+options: { machineType: E2_HIGHCPU_8, logging: CLOUD_LOGGING_ONLY }
