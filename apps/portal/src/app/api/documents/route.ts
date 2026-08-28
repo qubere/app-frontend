@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAccountContext, getEffectiveUserScope, authorizePortalResource, resolvePortalClientScope } from "@qubere/auth";
-import { db, processSharedDocumentUpload } from "@qubere/db";
+import { db } from "@qubere/db";
+import { processSharedDocumentUpload } from "@qubere/db/services/shared-upload-service";
 
 const inFlightDocumentPromises = new Map<string, Promise<any>>();
 let cachedDocuments: { cacheKey: string; time: number; data: any } | null = null;

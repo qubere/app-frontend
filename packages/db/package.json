@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./dataMode": "./src/dataMode.ts",
-    "./environment": "./src/environment.ts"
+    "./environment": "./src/environment.ts",
+    "./services/shared-upload-service": "./src/services/shared-upload-service.ts"
   },
   "scripts": {
     "build": "prisma generate",

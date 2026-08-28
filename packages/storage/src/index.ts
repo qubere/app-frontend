@@ -168,7 +168,7 @@ export function resolveLocalFilePath(fileUrl: string): string | null {
 
   for (const dir of allowedDirs) {
     const candidate = path.resolve(dir, fileName);
-    if (candidate.startsWith(dir + path.sep) && fs.existsSync(candidate)) {
+    if (candidate.startsWith(dir + path.sep) && fs.existsSync(/* turbopackIgnore: true */ candidate)) {
       return candidate;
     }
   }
@@ -176,7 +176,7 @@ export function resolveLocalFilePath(fileUrl: string): string | null {
   if (fileUrl.startsWith("file://")) {
     const rawPath = path.resolve(fileUrl.slice(7));
     for (const dir of allowedDirs) {
-      if (rawPath.startsWith(dir + path.sep) && fs.existsSync(rawPath)) {
+      if (rawPath.startsWith(dir + path.sep) && fs.existsSync(/* turbopackIgnore: true */ rawPath)) {
         return rawPath;
       }
     }
@@ -296,7 +296,7 @@ export async function readStoredObject(fileUrl: string): Promise<StoredObject> {
     if (!localPath) {
       throw new StorageObjectReadError("[Storage] Local object was not found.", false);
     }
-    return { body: fs.readFileSync(localPath), contentType: null };
+    return { body: fs.readFileSync(/* turbopackIgnore: true */ localPath), contentType: null };
   }
   if (origin === "gcs") return readGcsObject(fileUrl);
 
@@ -330,7 +330,7 @@ export async function deleteStoredObject(fileUrl: string): Promise<boolean> {
     const origin = resolveStorageOrigin(fileUrl);
     if (origin === null) {
       const localPath = resolveLocalFilePath(fileUrl);
-      if (localPath) fs.rmSync(localPath, { force: true });
+      if (localPath) fs.rmSync(/* turbopackIgnore: true */ localPath, { force: true });
       return true;
     }
     if (origin === "gcs") {
@@ -436,8 +436,8 @@ export async function storeDocumentBytes(params: {
 
   // localhost development only.
   const uploadDir = path.join(process.cwd(), ".qubere", "storage", "uploads");
-  fs.mkdirSync(uploadDir, { recursive: true });
-  fs.writeFileSync(path.join(uploadDir, safeName), buffer);
+  fs.mkdirSync(/* turbopackIgnore: true */ uploadDir, { recursive: true });
+  fs.writeFileSync(/* turbopackIgnore: true */ path.join(uploadDir, safeName), buffer);
   return {
     url: `/uploads/${safeName}`,
     filename: fileName,
@@ -516,8 +516,8 @@ export async function storeProcessingArtifact(params: {
 
   const artifactRoot = path.join(process.cwd(), ".qubere", "artifacts");
   const target = path.join(artifactRoot, objectPath);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, params.body);
+  fs.mkdirSync(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
+  fs.writeFileSync(/* turbopackIgnore: true */ target, params.body);
 
   return {
     url: `file://${target}`,
@@ -540,7 +540,7 @@ export async function readProcessingArtifact(storageRef: string): Promise<Buffer
         "Artifact reference points outside the artifact store."
       );
     }
-    return fs.readFileSync(resolved);
+    return fs.readFileSync(/* turbopackIgnore: true */ resolved);
   }
   return (await readStoredObject(storageRef)).body;
 }

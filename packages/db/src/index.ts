@@ -5,7 +5,10 @@ import type { DataMode } from "./dataMode";
 export * from "./dataMode";
 export * from "./environment";
 export * from "./caseNumber";
-export * from "./services/shared-upload-service";
+// NOTE: ./services/shared-upload-service is deliberately NOT re-exported here.
+// It imports @qubere/storage -> @google-cloud/storage (node-only), and this
+// barrel is pulled into client bundles transitively. Import it from
+// "@qubere/db/services/shared-upload-service" in server-only code.
 export * from "./services/portal-status-mapper";
 export * from "./services/portal-entry-service";
 export * from "./services/portal-invoice-service";

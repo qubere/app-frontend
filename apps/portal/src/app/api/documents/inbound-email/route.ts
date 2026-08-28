@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
-import { db, processSharedDocumentUpload } from "@qubere/db";
+import { db } from "@qubere/db";
+import { processSharedDocumentUpload } from "@qubere/db/services/shared-upload-service";
 
 export async function POST(req: Request) {
   // This route simulates provider inbound-email ingestion for the demo. It is NOT a
