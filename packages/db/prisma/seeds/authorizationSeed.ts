@@ -27,16 +27,38 @@ export async function seedAuthorizationData(db: PrismaClient): Promise<{
           data: { description: def.description },
         });
       }
-    } else {
-      const created = await db.permission.create({
-        data: {
-          name: def.name,
-          description: def.description,
-        },
-      });
-      permissionByName.set(created.name, created);
-      permissionsCreated++;
+      continue;
     }
+
+    // Not found under its current name -- check whether this is a rename of
+    // a permission already in the DB (via formerNames) before creating a new
+    // row. Renaming the existing row in place (rather than creating a new
+    // one) preserves its id, so every RolePermission grant already pointing
+    // at it -- including custom, tenant-created roles the rest of this seed
+    // never touches -- follows the rename for free.
+    const formerMatch = def.formerNames
+      ?.map((formerName) => permissionByName.get(formerName))
+      .find((p): p is NonNullable<typeof p> => p !== undefined);
+
+    if (formerMatch) {
+      const renamed = await db.permission.update({
+        where: { id: formerMatch.id },
+        data: { name: def.name, description: def.description },
+      });
+      permissionByName.delete(formerMatch.name);
+      permissionByName.set(renamed.name, renamed);
+      console.log(`  ↳ Renamed permission "${formerMatch.name}" -> "${def.name}" (existing grants preserved).`);
+      continue;
+    }
+
+    const created = await db.permission.create({
+      data: {
+        name: def.name,
+        description: def.description,
+      },
+    });
+    permissionByName.set(created.name, created);
+    permissionsCreated++;
   }
 
   // 2. Seed System Roles

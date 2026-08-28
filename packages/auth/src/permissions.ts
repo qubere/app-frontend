@@ -74,6 +74,15 @@ export interface PermissionDefinition {
   description: string;
   category: PermissionCategory;
   defaultRoles: readonly SystemRole[];
+  /**
+   * Names this permission was seeded under previously. Lets the seed tell a
+   * rename apart from a brand-new permission and update the existing
+   * Permission row's name in place -- preserving its id so every
+   * RolePermission grant already pointing at it (system AND custom roles)
+   * follows the rename automatically, instead of being left orphaned while a
+   * duplicate row is created under the new name.
+   */
+  formerNames?: readonly string[];
 }
 
 const BILLING_ADMINS: readonly SystemRole[] = ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"];
