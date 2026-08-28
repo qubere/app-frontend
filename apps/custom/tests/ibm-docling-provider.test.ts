@@ -84,6 +84,12 @@ beforeEach(() => {
   delete process.env.DOCLING_SOURCE_DELIVERY;
   delete process.env.DOCLING_AUTH_HEADER_NAME;
   delete process.env.DOCLING_AUTH_HEADER_SCHEME;
+  // A developer's real .env (IBM console credentials for local manual testing)
+  // may set these to a /convert/file endpoint. Left alone, that leaks into the
+  // "submission mapping" describe below and silently flips submitEncoding to
+  // "multipart", breaking every test that assumes the default JSON encoding.
+  delete process.env.DOCLING_SUBMIT_PATH;
+  delete process.env.DOCLING_SUBMIT_ENCODING;
 });
 
 afterEach(() => {
