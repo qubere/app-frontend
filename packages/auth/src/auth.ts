@@ -56,15 +56,38 @@ export interface AccountContext {
 
 export const ACTIVE_ACCOUNT_COOKIE = "qubere_active_account_id";
 
+/**
+ * Whether the "no Clerk session -> act as the first user in the DB" fallback is
+ * allowed. This is a LOCAL developer convenience only.
+ *
+ * It is deliberately NOT gated on `NEXT_PUBLIC_APP_ENV === "demo"` — the hosted
+ * demo sets that too, and it runs on `--allow-unauthenticated` Cloud Run, so
+ * gating on it would turn every anonymous visitor into an authenticated account
+ * owner. Requires `NODE_ENV=development` or an explicit `QUBERE_ALLOW_DEMO_AUTH=1`
+ * that is never set in any deployment. See
+ * docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P1-9).
+ */
+function isDemoAuthFallbackEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  return process.env.NODE_ENV === "development" || process.env.QUBERE_ALLOW_DEMO_AUTH === "1";
+}
+
 async function loadAccountContext(): Promise<AccountContext | null> {
   const startTime = Date.now();
   try {
-    const { userId: clerkUserId } = await auth();
+    let clerkUserId: string | null = null;
+    try {
+      const authObj = await auth();
+      clerkUserId = authObj.userId;
+    } catch {
+      // Unauthenticated or outside HTTP context in dev/demo mode
+    }
+
     const authDuration = Date.now() - startTime;
     if (!clerkUserId) {
-      console.log(
-        `[ThirdPartyHTTP] [${new Date().toISOString()}] [User: anonymous] [Account: N/A] [Provider: CLERK_AUTH] auth() -> Status: 401 Unauthenticated (${authDuration}ms)`
-      );
+      if (isDemoAuthFallbackEnabled()) {
+        return await getDemoAccountContext();
+      }
       return null;
     }
 
@@ -359,9 +382,187 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       throw error;
     }
     console.error("Error retrieving account context:", error);
+    // Only fall back to demo identity on error in true local dev — never in a
+    // deployment, where an error must fail closed (return null / 401), not
+    // silently authenticate as the first user. See CUSTOMER-PORTAL-PR97-REVIEW (P1-9).
+    if (process.env.NODE_ENV === "development") {
+      return await getDemoAccountContext();
+    }
     return null;
   }
 }
+
+let cachedDemoContext: { cacheKey: string; ctx: AccountContext; fetchedAt: number } | null = null;
+
+export async function getDevOrDemoAccountContext(): Promise<AccountContext | null> {
+  // STRICT SAFETY: Never execute dev/demo fallbacks in production environments
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  let cookieStore;
+  try {
+    cookieStore = await cookies();
+  } catch {
+    // Cookies not available outside HTTP context
+  }
+
+  const activeUserIdCookie = cookieStore?.get("qubere_active_user_id")?.value || "";
+  const activeAccountIdCookie = cookieStore?.get(ACTIVE_ACCOUNT_COOKIE)?.value || "";
+  const devEmailFilter = process.env.DEV_USER_EMAIL || "";
+  const cacheKey = `${devEmailFilter}:${activeUserIdCookie}:${activeAccountIdCookie}`;
+
+  const now = Date.now();
+  if (cachedDemoContext && cachedDemoContext.cacheKey === cacheKey && now - cachedDemoContext.fetchedAt < 2000) {
+    return cachedDemoContext.ctx;
+  }
+
+  try {
+    let targetUser: any = null;
+
+    // 1. If explicit active user cookie is present, resolve that user directly
+    if (activeUserIdCookie) {
+      targetUser = await db.user.findUnique({
+        where: { id: activeUserIdCookie },
+        include: {
+          memberships: {
+            where: { deletedAt: null },
+            include: {
+              account: { include: { clients: { select: { id: true } } } },
+              roles: {
+                include: {
+                  role: {
+                    include: {
+                      rolePermissions: { include: { permission: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    // 2. Query target user by configured DEV_USER_EMAIL env var
+    if (!targetUser && devEmailFilter) {
+      targetUser = await db.user.findFirst({
+        where: {
+          deletedAt: null,
+          email: { contains: devEmailFilter, mode: "insensitive" },
+        },
+        include: {
+          memberships: {
+            where: { deletedAt: null },
+            include: {
+              account: { include: { clients: { select: { id: true } } } },
+              roles: {
+                include: {
+                  role: {
+                    include: {
+                      rolePermissions: { include: { permission: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    // 3. General active user fallback if specific user not configured
+    if (!targetUser) {
+      targetUser = await db.user.findFirst({
+        where: { deletedAt: null },
+        include: {
+          memberships: {
+            where: { deletedAt: null },
+            include: {
+              account: { include: { clients: { select: { id: true } } } },
+              roles: {
+                include: {
+                  role: {
+                    include: {
+                      rolePermissions: { include: { permission: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (!targetUser || !targetUser.memberships || targetUser.memberships.length === 0) {
+      return null;
+    }
+
+    // Data-driven membership resolution from database model relations
+    const targetAccountId = activeAccountIdCookie || process.env.DEV_ACCOUNT_ID || "";
+    const membership = (targetAccountId ? targetUser.memberships.find((m: any) => m.accountId === targetAccountId) : null) || targetUser.memberships[0];
+    const account = membership.account;
+    const roleNames = membership.roles.map((r: any) => r.role.name);
+    // Match loadAccountContext: effective permissions = explicit role grants
+    // UNION the role's default permission set. Without the defaults, demo/dev
+    // sessions under-report permissions (e.g. a seeded CUSTOMER_USER whose role
+    // only has `porter` + `portal.access` explicitly granted would be denied
+    // portal.requests.respond even though that is a CUSTOMER_USER default).
+    const permissions = Array.from(
+      new Set<string>([
+        ...membership.roles.flatMap((r: any) =>
+          r.role.rolePermissions.map((rp: any) => rp.permission.name)
+        ),
+        ...roleNames.flatMap((name: string) => defaultPermissionsForRole(name)),
+      ])
+    );
+
+    const clientIds = account.clients?.map((c: any) => c.id) || [];
+
+    const ctxResult: AccountContext = {
+      userId: targetUser.id,
+      actorUserId: targetUser.id,
+      effectiveUserId: targetUser.id,
+      clerkUserId: targetUser.clerkUserId || targetUser.id,
+      email: targetUser.email,
+      firstName: targetUser.firstName,
+      lastName: targetUser.lastName,
+      isImpersonating: false,
+      isPlatformAdmin: false,
+      platformRoles: [],
+      accountId: account.id,
+      accountName: account.name,
+      accountSlug: account.slug,
+      accountType: account.type,
+      dataMode: account.dataMode,
+      ownerUserId: account.ownerUserId,
+      membershipId: membership.id,
+      roleIds: membership.roles.map((r: any) => r.roleId),
+      roleNames,
+      permissions,
+      authorizedClientIds: clientIds,
+      isAllClients: roleNames.some((r: string) => ["ADMIN", "OWNER", "BROKER_ADMIN", "TMS_ADMIN"].includes(r.toUpperCase())),
+      memberships: targetUser.memberships.map((m: any) => ({
+        accountId: m.account.id,
+        accountName: m.account.name,
+        accountSlug: m.account.slug,
+        accountType: m.account.type,
+        dataMode: m.account.dataMode,
+        roleNames: m.roles.map((r: any) => r.role.name),
+      })),
+      account: account as any,
+    };
+
+    cachedDemoContext = { cacheKey, ctx: ctxResult, fetchedAt: now };
+    return ctxResult;
+  } catch (err) {
+    console.error("Failed to load development account context:", err);
+    return null;
+  }
+}
+
+export const getDemoAccountContext = getDevOrDemoAccountContext;
 
 export const getAccountContext = cache(loadAccountContext);
 
@@ -378,3 +579,4 @@ export async function hasPermission(requiredPermission: string): Promise<boolean
   }
   return context.permissions.includes(requiredPermission);
 }
+

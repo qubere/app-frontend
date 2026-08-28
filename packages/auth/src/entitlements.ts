@@ -8,12 +8,21 @@ export class AccountNotEntitledError extends Error {
   }
 }
 
+const entitlementCache = new Map<string, { value: boolean; time: number }>();
+
 export async function hasProductEntitlement(accountId: string, product: string): Promise<boolean> {
   if (!accountId) return true;
+
+  const cacheKey = `${accountId}:${product.toUpperCase()}`;
+  const cached = entitlementCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < 30000) {
+    return cached.value;
+  }
 
   try {
     const ctx = await getAccountContext();
     if (ctx && (ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN"))) {
+      entitlementCache.set(cacheKey, { value: true, time: Date.now() });
       return true;
     }
   } catch {
@@ -27,12 +36,9 @@ export async function hasProductEntitlement(accountId: string, product: string):
     },
   });
 
-  if (entitlement) {
-    return entitlement.status === "ACTIVE";
-  }
-
-  // If no entitlement record exists for this account, default to true for active accounts
-  return true;
+  const res = entitlement ? entitlement.status === "ACTIVE" : true;
+  entitlementCache.set(cacheKey, { value: res, time: Date.now() });
+  return res;
 }
 
 export async function assertProductEntitlement(accountId: string, product: string): Promise<void> {

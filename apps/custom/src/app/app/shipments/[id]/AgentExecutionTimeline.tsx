@@ -223,7 +223,7 @@ export function AgentExecutionTimeline({
             {isExpanded && (
               <div className="border-t border-border bg-[#FAFAFC] px-4 py-4 space-y-2.5">
                 {inv.steps.map((step, idx) => {
-                  const stepStyle = STATUS_STYLES[step.status];
+                  const stepStyle = STATUS_STYLES[step.status === "SUCCESS" ? "COMPLETED" : step.status];
                   const offsetMs = new Date(step.startedAt).getTime() - new Date(inv.startedAt).getTime();
                   const offsetPct = Math.max(0, Math.min(100, (offsetMs / waterfallSpan) * 100));
                   const widthPct = Math.max(1.5, Math.min(100 - offsetPct, (step.durationMs / waterfallSpan) * 100));

@@ -61,6 +61,10 @@ next-env.d.ts
 apps/custom/public/uploads/*
 !apps/custom/public/uploads/.gitkeep
 
+# runtime upload / quarantine dirs (customer document contents — never commit)
+apps/*/uploads/
+!apps/*/uploads/.gitkeep
+
 # turbo
 .turbo
 

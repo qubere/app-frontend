@@ -218,6 +218,8 @@ model Account {
   trackingSubscriptions       TrackingSubscription[]
 
   shipmentProductWorkspaces ShipmentProductWorkspace[]
+  customerRequests          CustomerRequest[]
+  customerRequestMessages   CustomerRequestMessage[]
   productEntitlements       AccountProductEntitlement[]
   customsCases              CustomsCase[]
   customsCaseShipments      CustomsCaseShipment[]
@@ -356,6 +358,11 @@ model User {
   auditLogsAsActor            AuditLog[]              @relation("AuditActor")
   auditLogsAsEffective        AuditLog[]              @relation("AuditEffective")
   initiatedComplianceExecutions ComplianceExecution[]
+  publishedFilings            CustomsFiling[]          @relation("FilingPublisher")
+  createdCustomerRequests     CustomerRequest[]        @relation("RequestCreator")
+  closedCustomerRequests      CustomerRequest[]        @relation("RequestCloser")
+  assignedCustomerRequests     CustomerRequest[]        @relation("RequestAssignee")
+  authoredRequestMessages     CustomerRequestMessage[] @relation("MessageAuthor")
 
   @@index([clerkUserId])
   @@index([email])
@@ -459,6 +466,10 @@ model Invitation {
   id              String   @id @default(cuid())
   accountId       String
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId        String?
+  client          Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  purpose         String   @default("WORKBENCH") // WORKBENCH, CUSTOMER_PORTAL
+  productScopes   String[] @default(["CUSTOMS"]) // CUSTOMS, TMS
   email           String
   token           String   @unique @default(cuid())
   roleId          String
@@ -471,6 +482,7 @@ model Invitation {
   updatedAt       DateTime @updatedAt
 
   @@index([accountId])
+  @@index([clientId])
   @@index([email])
   @@index([token])
   @@index([createdByUserId])
@@ -654,6 +666,7 @@ model Shipment {
   tenders                         Tender[]
   productWorkspaces               ShipmentProductWorkspace[]
   customsCaseLinks                CustomsCaseShipment[]
+  customerRequests                CustomerRequest[]
 
   usageEvents       UsageEvent[]
   shipmentCharges   ShipmentCharge[]
@@ -1007,6 +1020,16 @@ model ShipmentDocument {
   assignedToUserId String?
   assignedToUser   User?   @relation("DocumentAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
 
+  /// Customer ownership scope for standalone or portal-uploaded documents.
+  clientId               String?
+  client                 Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  /// Visibility scope for customer portal access: INTERNAL or CUSTOMER.
+  portalVisibility       String        @default("INTERNAL") // INTERNAL, CUSTOMER
+  /// TMS Order linkage if document belongs to a TMS order
+  tmsOrderId             String?
+  /// TMS Load linkage if document belongs to a TMS load
+  tmsLoadId              String?
+
   extractionFields   ExtractionField[]
   parseVersions      DocumentParseVersion[]
   hydrationRuns      HydrationRun[]
@@ -1021,8 +1044,13 @@ model ShipmentDocument {
   customsCaseLinks   CustomsCaseDocument[]
   proofsOfDelivery   ProofOfDelivery[]
   carrierInvoices    CarrierInvoice[]
+  customerRequestDocuments CustomerRequestDocument[]
 
   @@index([shipmentId])
+  @@index([clientId])
+  @@index([accountId, portalVisibility])
+  @@index([accountId, clientId, portalVisibility])
+  @@index([accountId, portalVisibility, createdAt])
   @@index([accountId])
   @@index([accountId, checksum])
   @@index([documentType])
@@ -1436,6 +1464,12 @@ model CustomsFiling {
   approvedByUserId    String?
   transmittedByUserId String?
 
+  /// Customer publication timestamp for customer portal visibility (null = unpublished/internal only)
+  customerVisibleAt          DateTime?
+  /// User ID who published this entry summary to the customer portal
+  customerPublishedByUserId  String?
+  customerPublishedByUser    User?     @relation("FilingPublisher", fields: [customerPublishedByUserId], references: [id], onDelete: SetNull)
+
   responses                   CustomsResponse[]
   exceptionItems              ExceptionItem[]
   refundOpportunities         RefundOpportunity[]
@@ -1458,6 +1492,84 @@ model CustomsFiling {
   @@index([customsCaseId])
   @@index([accountId])
   @@index([filingStatus])
+}
+
+// =============================================================================
+// QUBERE CUSTOMER PORTAL MODELS
+// =============================================================================
+
+model CustomerRequest {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  shipmentId      String?
+  shipment        Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  filingId        String?
+  tmsOrderId      String?
+  tmsLoadId       String?
+  domain          String   @default("CUSTOMS") // CUSTOMS, TMS, GENERAL
+  type            String   // QUESTION, DOCUMENT, CONFIRMATION
+  title           String
+  description     String?
+  status          String   @default("OPEN") // OPEN, CUSTOMER_RESPONDED, BROKER_REVIEWED, CLOSED, CANCELLED
+  priority        String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  dueAt           DateTime?
+  createdByUserId String?
+  createdByUser   User?    @relation("RequestCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  assignedUserId  String?
+  assignedUser    User?    @relation("RequestAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  closedByUserId  String?
+  closedByUser    User?    @relation("RequestCloser", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  closedAt        DateTime?
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  messages        CustomerRequestMessage[]
+  documents       CustomerRequestDocument[]
+
+  @@index([accountId])
+  @@index([clientId])
+  @@index([shipmentId])
+  @@index([assignedUserId])
+  @@index([status])
+  @@index([dueAt])
+  @@index([accountId, clientId, status])
+  @@index([accountId, createdAt])
+}
+
+model CustomerRequestMessage {
+  id           String          @id @default(cuid())
+  requestId    String
+  request      CustomerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId     String
+  authorUserId String?
+  authorUser   User?           @relation("MessageAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorType   String          @default("CUSTOMER") // BROKER, CUSTOMER, SYSTEM
+  body         String          @db.Text
+  createdAt    DateTime        @default(now())
+
+  @@index([requestId])
+  @@index([accountId])
+  @@index([clientId])
+  @@index([requestId, createdAt])
+}
+
+model CustomerRequestDocument {
+  id         String           @id @default(cuid())
+  requestId  String
+  request    CustomerRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  documentId String
+  document   ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+
+  @@unique([requestId, documentId])
+  @@index([requestId])
+  @@index([documentId])
 }
 
 // =============================================================================
@@ -2167,6 +2279,10 @@ model Client {
 
   userAssignments UserClientAssignment[]
   teamAssignments TeamClientAssignment[]
+
+  invitations       Invitation[]
+  shipmentDocuments ShipmentDocument[]
+  customerRequests  CustomerRequest[]
 
   @@index([accountId])
   @@index([accountId, status])

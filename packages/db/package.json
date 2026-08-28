@@ -7,11 +7,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./dataMode": "./src/dataMode.ts",
-    "./environment": "./src/environment.ts"
+    "./environment": "./src/environment.ts",
+    "./services/shared-upload-service": "./src/services/shared-upload-service.ts"
   },
   "scripts": {
     "build": "prisma generate",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate:deploy": "prisma migrate deploy",
@@ -21,11 +23,13 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3"
+    "@prisma/client": "^6.19.3",
+    "@qubere/storage": "*"
   },
   "devDependencies": {
     "prisma": "^6.19.3",
     "tsx": "^4.23.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

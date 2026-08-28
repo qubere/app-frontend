@@ -63,6 +63,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<"ALL" | "7DAYS" | "30DAYS" | "THIS_MONTH">("ALL");
+  const [roleFilter, setRoleFilter] = useState<string>("ALL");
 
   const [loadingMembershipId, setLoadingMembershipId] = useState<string | null>(null);
   const [impersonatingUserId, setImpersonatingUserId] = useState<string | null>(null);
@@ -77,6 +78,21 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
       setInviteRole(availableRoles.find((r) => r !== "OWNER") ?? availableRoles[0] ?? "");
     }
   }, [availableRoles, inviteRole]);
+
+  // Compute member counts by role
+  const roleCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    members.forEach((m) => {
+      if (m.roleNames && m.roleNames.length > 0) {
+        m.roleNames.forEach((r) => {
+          counts[r] = (counts[r] || 0) + 1;
+        });
+      } else {
+        counts["UNASSIGNED"] = (counts["UNASSIGNED"] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [members]);
 
   const handleImpersonateUser = async (targetUserId: string, targetEmail: string) => {
     setImpersonatingUserId(targetUserId);
@@ -111,10 +127,10 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
 
   const filteredMembers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const today = new Date(now);
-    return visibleMembers.filter((m) => {
-      const name = [m.firstName, m.lastName].filter(Boolean).join(" ");
+    const today = new Date();
 
+    return visibleMembers.filter((m) => {
+      const name = `${m.firstName || ""} ${m.lastName || ""}`.trim();
       const matchesSearch =
         !q ||
         name.toLowerCase().includes(q) ||
@@ -122,6 +138,10 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
         m.roleNames.some((r) => r.toLowerCase().includes(q));
 
       if (!matchesSearch) return false;
+
+      if (roleFilter !== "ALL" && !m.roleNames.includes(roleFilter)) {
+        return false;
+      }
 
       if (dateFilter !== "ALL") {
         const createdAt = new Date(m.createdAt).getTime();
@@ -134,7 +154,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
       }
       return true;
     });
-  }, [visibleMembers, searchQuery, dateFilter, now]);
+  }, [visibleMembers, searchQuery, dateFilter, roleFilter, now]);
 
   const handleInviteUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,11 +330,44 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
         {/* Table Header & Search Filter Bar */}
         <div className="p-4 border-b border-border space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h3 className="text-base font-bold text-ink flex items-center space-x-2">
-              <Users className="w-4 h-4 text-brand" />
-              <span>Active Account Members ({filteredMembers.length})</span>
-            </h3>
-            <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted cursor-pointer select-none">
+            <div>
+              <h3 className="text-base font-bold text-ink flex items-center space-x-2">
+                <Users className="w-4 h-4 text-brand" />
+                <span>Active Account Members ({filteredMembers.length})</span>
+              </h3>
+              {/* Role Count Summary Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter("ALL")}
+                  className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-colors cursor-pointer ${
+                    roleFilter === "ALL"
+                      ? "bg-brand text-white shadow-xs"
+                      : "bg-surface-muted text-ink-muted hover:bg-border/60 hover:text-ink"
+                  }`}
+                >
+                  All ({members.length})
+                </button>
+                {Object.entries(roleCounts).map(([role, count]) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setRoleFilter(roleFilter === role ? "ALL" : role)}
+                    className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                      roleFilter === role
+                        ? "bg-brand text-white shadow-xs"
+                        : role === "CUSTOMER_USER" || role === "CUSTOMER_ADMIN"
+                        ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        : "bg-surface-muted text-ink-muted hover:bg-border/60 hover:text-ink"
+                    }`}
+                  >
+                    <span>{role}</span>
+                    <span className="opacity-80">({count})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted cursor-pointer select-none shrink-0">
               <div
                 onClick={() => setShowInactive((v) => !v)}
                 className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${showInactive ? "bg-brand" : "bg-border"}`}
@@ -325,7 +378,7 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
             </label>
           </div>
 
-          {/* Search & Date Filter Bar */}
+          {/* Search & Role / Date Filter Bar */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[220px]">
               <Search className="w-3.5 h-3.5 text-ink-muted absolute left-3 top-2.5" />
@@ -338,6 +391,24 @@ export function UserManagementTable({ members, currentUserId, availableRoles, on
               />
             </div>
 
+            {/* Role Filter Dropdown */}
+            <div className="flex items-center space-x-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-ink-muted shrink-0" />
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs bg-surface-muted border border-border rounded-xl text-ink font-semibold focus:outline-none focus:border-brand"
+              >
+                <option value="ALL">All Roles</option>
+                {availableRoles.map((r) => (
+                  <option key={r} value={r}>
+                    {r} ({roleCounts[r] || 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date Filter Dropdown */}
             <div className="flex items-center space-x-1.5">
               <Filter className="w-3.5 h-3.5 text-ink-muted shrink-0" />
               <select

@@ -1,21 +1,23 @@
 "use client";
 
 import { useCallback, useState, useEffect, type ReactNode } from "react";
-import { Activity, FileText, Layers, Route } from "lucide-react";
+import { Activity, FileText, Layers, Route, UserCheck } from "lucide-react";
 
-type ShipmentTab = "workspace" | "tracking" | "filing" | "audit";
+type ShipmentTab = "workspace" | "tracking" | "client-actions" | "filing" | "audit";
 
 interface ShipmentTabsPanelProps {
   initialTab: string;
   auditCount: number;
+  clientActionCount?: number;
   workspaceContent: ReactNode;
   trackingContent: ReactNode;
+  clientActionsContent: ReactNode;
   filingContent: ReactNode;
   auditContent: ReactNode;
 }
 
 function normalizeTab(tab: string): ShipmentTab {
-  if (tab === "tracking" || tab === "filing" || tab === "audit") {
+  if (tab === "tracking" || tab === "client-actions" || tab === "filing" || tab === "audit") {
     return tab;
   }
   if (
@@ -30,14 +32,15 @@ function normalizeTab(tab: string): ShipmentTab {
 }
 
 /**
- * Switches between the shipment detail page's four tabs entirely
- * client-side.
+ * Switches between the shipment detail page's tabs client-side.
  */
 export function ShipmentTabsPanel({
   initialTab,
   auditCount,
+  clientActionCount = 0,
   workspaceContent,
   trackingContent,
+  clientActionsContent,
   filingContent,
   auditContent,
 }: ShipmentTabsPanelProps) {
@@ -45,9 +48,6 @@ export function ShipmentTabsPanel({
 
   const selectTab = useCallback((tab: ShipmentTab) => {
     setActiveTab(tab);
-    // Keeps the URL shareable/deep-linkable without going through the
-    // router -- a router navigation here is exactly the full-page
-    // re-render this component exists to avoid.
     const url = new URL(window.location.href);
     url.searchParams.set("view", tab);
     window.history.replaceState(null, "", url);
@@ -88,6 +88,7 @@ export function ShipmentTabsPanel({
           <Activity className="w-3.5 h-3.5" />
           <span>Operational Workspace</span>
         </button>
+
         <button
           type="button"
           onClick={() => selectTab("tracking")}
@@ -98,6 +99,23 @@ export function ShipmentTabsPanel({
           <Route className="w-3.5 h-3.5" />
           <span>Tracking</span>
         </button>
+
+        {/* Client Actions Pill right next to Tracking */}
+        <button
+          type="button"
+          onClick={() => selectTab("client-actions")}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
+            activeTab === "client-actions"
+              ? "bg-brand text-white"
+              : clientActionCount > 0
+              ? "bg-amber-100 text-amber-900 border border-amber-300 font-extrabold hover:bg-amber-200"
+              : "bg-slate-100 text-ink-muted hover:text-ink"
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>Client Actions {clientActionCount > 0 && `(${clientActionCount})`}</span>
+        </button>
+
         <button
           type="button"
           onClick={() => selectTab("filing")}
@@ -108,6 +126,7 @@ export function ShipmentTabsPanel({
           <FileText className="w-3.5 h-3.5" />
           <span>Filing Data</span>
         </button>
+
         <button
           type="button"
           onClick={() => selectTab("audit")}
@@ -125,12 +144,12 @@ export function ShipmentTabsPanel({
           ? filingContent
           : activeTab === "tracking"
             ? trackingContent
-            : activeTab === "workspace"
-              ? workspaceContent
-              : auditContent}
+            : activeTab === "client-actions"
+              ? clientActionsContent
+              : activeTab === "workspace"
+                ? workspaceContent
+                : auditContent}
       </div>
     </div>
   );
 }
-
-

@@ -24,6 +24,12 @@ export const SYSTEM_ROLES = [
   "TMS_BILLING_USER",
   "TMS_BILLING_VIEWER",
   "TMS_VIEWER",
+  // Qubere Customer Portal Roles
+  "CUSTOMER_ADMIN",
+  "CUSTOMER_USER",
+  "CUSTOMER_VIEWER",
+  "CUSTOMER_CUSTOMS_USER",
+  "CUSTOMER_TMS_USER",
   // Qubere System Admin Roles
   "INTERNAL_ADMIN",
   "SUPER_ADMIN_READ",
@@ -373,6 +379,25 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "system.audit.read", description: "Read global system audit log.", category: "System", defaultRoles: ["INTERNAL_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE"] },
   { name: "system.support.read", description: "View support tickets and diagnostics.", category: "System", defaultRoles: ["INTERNAL_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE"] },
   { name: "system.impersonate.write", description: "Impersonate customer user for troubleshooting.", category: "System", defaultRoles: ["SUPER_ADMIN_WRITE"] },
+
+  // ─── QUBERE CUSTOMER PORTAL PERMISSIONS ──────────────────────────────────
+  { name: "porter", description: "Porter View permission for Importers and Exporters to log into and access Qubere Customer Portal.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE", "INTERNAL_ADMIN", "OWNER", "ADMIN"] },
+  { name: "portal.porter", description: "Porter View permission (alias).", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE", "INTERNAL_ADMIN", "OWNER", "ADMIN"] },
+  { name: "portal.access", description: "Access Qubere Customer Portal.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE", "INTERNAL_ADMIN", "OWNER", "ADMIN"] },
+  { name: "portal.customs.read", description: "View Customs shipments and CBP status in portal.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "BROKER_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.shipments.read", description: "View customer shipments.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "BROKER_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.entries.read", description: "View customer entry summaries.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "BROKER_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.entries.download", description: "Download customer 7501 PDF entry summaries.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "BROKER_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.tms.read", description: "View TMS freight orders and carrier tracking in portal.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_TMS_USER", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.orders.read", description: "View customer transportation orders.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_TMS_USER", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.loads.read", description: "View customer freight loads.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_TMS_USER", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.documents.read", description: "View customer-visible documents.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.documents.create", description: "Upload documents to customer requests or shipments.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "OWNER"] },
+  { name: "portal.requests.read", description: "View customer requests and questions.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.requests.respond", description: "Respond to broker/carrier customer requests.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "OWNER"] },
+  { name: "portal.invoices.read", description: "View customer issued invoices.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.invoices.download", description: "Download customer-safe PDF invoices.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "CUSTOMER_USER", "CUSTOMER_VIEWER", "CUSTOMER_CUSTOMS_USER", "CUSTOMER_TMS_USER", "BROKER_ADMIN", "TMS_ADMIN", "SUPER_ADMIN_READ", "OWNER"] },
+  { name: "portal.users.manage", description: "Manage customer portal user access for client.", category: "Customer", defaultRoles: ["CUSTOMER_ADMIN", "BROKER_ADMIN", "TMS_ADMIN", "OWNER"] },
 ] as const;
 
 export const PERMISSION_NAMES = PERMISSION_CATALOGUE.map((p) => p.name);

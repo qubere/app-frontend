@@ -144,6 +144,26 @@ export class PipelineOrchestrator {
     const executedAgents: string[] = [];
     const scratch: RunScratch = {};
 
+    let activeJobId = jobId;
+    if (!activeJobId) {
+      try {
+        const newJob = await db.pipelineJob.create({
+          data: {
+            shipmentId,
+            accountId,
+            userId,
+            status: "PROCESSING",
+            currentStep: 1,
+            totalSteps: agentsToRun.length || 10,
+            startedAt: new Date(),
+          },
+        });
+        activeJobId = newJob.id;
+      } catch (err) {
+        console.warn("[PipelineOrchestrator] PipelineJob auto-creation notice:", err);
+      }
+    }
+
     logEvent({
       action: "pipeline.run_started",
       message: `Agent pipeline started for shipment ${shipmentId}: ${agentsToRun.join(", ")} (trigger: ${triggerEvent}, invoked by ${invokedByLabel})`,
@@ -151,7 +171,7 @@ export class PipelineOrchestrator {
       userId,
       resourceType: "shipment",
       resourceId: shipmentId,
-      metadata: { runId, triggerEvent, invokedBy: invokedByLabel, agentsToRun, jobId },
+      metadata: { runId, triggerEvent, invokedBy: invokedByLabel, agentsToRun, jobId: activeJobId },
     });
 
     for (let i = 0; i < agentsToRun.length; i++) {
@@ -263,10 +283,20 @@ export class PipelineOrchestrator {
           }
         }
 
-        if (jobId) {
-          await PgQueue.updateProgress(jobId, i + 1).catch((e) =>
-            console.error("[PipelineOrchestrator] Failed to update job progress:", e)
-          );
+        if (activeJobId) {
+          await db.pipelineJob.update({
+            where: { id: activeJobId },
+            data: {
+              status: "PROCESSING",
+              currentStep: i + 1,
+              totalSteps: agentsToRun.length,
+            },
+          }).catch(() => { });
+          if (jobId) {
+            await PgQueue.updateProgress(jobId, i + 1).catch((e) =>
+              console.error("[PipelineOrchestrator] Failed to update job progress:", e)
+            );
+          }
         }
       }
 
@@ -286,8 +316,26 @@ export class PipelineOrchestrator {
             triggerEvent,
           }
         );
+        if (activeJobId && status === "FAILED") {
+          await db.pipelineJob.update({
+            where: { id: activeJobId },
+            data: { status: "FAILED", errorMessage: error || "Agent execution failed" },
+          }).catch(() => { });
+        }
         break;
       }
+    }
+
+    // Mark active PipelineJob as COMPLETED when execution finishes cleanly
+    if (activeJobId) {
+      await db.pipelineJob.update({
+        where: { id: activeJobId },
+        data: {
+          status: "COMPLETED",
+          currentStep: agentsToRun.length,
+          completedAt: new Date(),
+        },
+      }).catch(() => { });
     }
 
     // Unconditional, regardless of trigger -- this is what turns current DB
@@ -429,18 +477,34 @@ export class PipelineOrchestrator {
 
     switch (agentName) {
       case "Document Intake Agent": {
-        if (!payload?.fileUrl || !payload.fileName) {
+        let fileUrl = payload?.fileUrl;
+        let fileName = payload?.fileName;
+        let mimeType = payload?.mimeType;
+
+        const targetDocId = documentId || payload?.documentId;
+        if ((!fileUrl || !fileName) && targetDocId) {
+          const doc = await db.shipmentDocument.findUnique({
+            where: { id: targetDocId },
+          });
+          if (doc) {
+            fileUrl = fileUrl || doc.fileUrl || undefined;
+            fileName = fileName || doc.fileName;
+            mimeType = mimeType || doc.mimeType || undefined;
+          }
+        }
+
+        if (!fileUrl || !fileName) {
           return { input: null, output: { skipped: "No file on this trigger" } };
         }
         const agentInput = {
           accountId,
           userId,
           shipmentId,
-          fileName: payload.fileName,
-          fileUrl: payload.fileUrl,
-          fileBuffer: payload.fileBuffer,
-          mimeType: payload.mimeType,
-          docTypeOverride: payload.docTypeOverride,
+          fileName,
+          fileUrl,
+          fileBuffer: payload?.fileBuffer,
+          mimeType,
+          docTypeOverride: payload?.docTypeOverride,
         };
         const output = await DocumentIntakeAgent.execute(agentInput);
         scratch.packetId = output.packetId;
@@ -451,6 +515,24 @@ export class PipelineOrchestrator {
           output: output as unknown as Record<string, unknown>,
           exclude: ["shipmentDocumentId", "packetId"],
         });
+        // Automatically close/resolve matching action items for this document
+        try {
+          if (documentId) {
+            const reqDocLinks = await db.customerRequestDocument.findMany({
+              where: { documentId },
+              select: { requestId: true },
+            });
+            for (const link of reqDocLinks) {
+              await db.customerRequest.update({
+                where: { id: link.requestId },
+                data: { status: "RESOLVED", closedAt: new Date() },
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("Auto-closing customer request error:", err);
+        }
+
         const detectedType = output.detectedTypes?.[0];
         const intakeSummary = [
           detectedType && `${detectedType.replace(/_/g, " ")}`,
@@ -750,8 +832,8 @@ export class PipelineOrchestrator {
         const complianceSummary = output.status === "BLOCKED_DEPENDENCY"
           ? "Blocked — missing upstream data"
           : totalIssues === 0
-          ? "Cleared — no findings"
-          : `${totalIssues} finding${totalIssues !== 1 ? "s" : ""}${issueCount > 0 ? ` (${issueCount} high/med)` : ""}`;
+            ? "Cleared — no findings"
+            : `${totalIssues} finding${totalIssues !== 1 ? "s" : ""}${issueCount > 0 ? ` (${issueCount} high/med)` : ""}`;
         return { decisionId: output.agentDecisionId, aiProviderUsed: output.aiProviderUsed, confidence: null, summary: complianceSummary, input: agentInput, output };
       }
 

@@ -7,6 +7,14 @@
       "runtimeArgs": ["next", "dev"],
       "cwd": "apps/custom",
       "port": 3100
+    },
+    {
+      "name": "portal",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev"],
+      "cwd": "apps/portal",
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }
