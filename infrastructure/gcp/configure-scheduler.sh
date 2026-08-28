@@ -81,5 +81,29 @@ upsert_job qubere-uflpa-ingest "0 6 * * *" /api/cron/uflpa-entity-list-ingest
 upsert_job qubere-cbp-cross-ingest "0 5 * * *" /api/cron/cbp-cross-rulings-ingest
 upsert_job qubere-outbox-dispatch "*/5 * * * *" /api/cron/outbox-dispatch
 
+BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"
+upsert_backup_job() {
+  local uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/jobs/${BACKUP_JOB}:run"
+  local common_args=(
+    --project="${GCP_PROJECT_ID}"
+    --location="${GCP_REGION}"
+    --schedule="0 */6 * * *"
+    --uri="${uri}"
+    --http-method=POST
+    --message-body="{}"
+    --oauth-service-account-email="${RUNTIME_SERVICE_ACCOUNT}"
+    --oauth-token-scope="https://www.googleapis.com/auth/cloud-platform"
+    --time-zone=Etc/UTC
+    --attempt-deadline=30m
+  )
+  if gcloud scheduler jobs describe qubere-db-backup-schedule \
+    --project="${GCP_PROJECT_ID}" --location="${GCP_REGION}" >/dev/null 2>&1; then
+    gcloud scheduler jobs update http qubere-db-backup-schedule "${common_args[@]}"
+  else
+    gcloud scheduler jobs create http qubere-db-backup-schedule "${common_args[@]}"
+  fi
+}
+upsert_backup_job
+
 unset CRON_SECRET_VALUE
 echo "Cloud Scheduler jobs configured for ${SERVICE_URL}."

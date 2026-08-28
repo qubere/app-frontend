@@ -66,3 +66,7 @@ apps/custom/public/uploads/*
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# database dumps
+*.dump
+

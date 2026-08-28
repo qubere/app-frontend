@@ -58,3 +58,8 @@ CMD ["npx", "prisma", "migrate", "deploy", "--schema=packages/db/prisma/schema.p
 FROM source AS document-worker
 ENV NODE_ENV=production NODE_OPTIONS=--max-old-space-size=1536
 CMD ["sh", "infrastructure/gcp/run-document-job.sh"]
+
+FROM source AS db-backup
+ENV NODE_ENV=production
+CMD ["sh", "infrastructure/gcp/run-db-backup.sh"]
+

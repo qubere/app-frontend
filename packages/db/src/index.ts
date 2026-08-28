@@ -19,10 +19,10 @@ function createAsyncLocalStorage<T>(): AsyncLocalStorage<T> {
   if (typeof (globalThis as any).window === "undefined") {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const NodeAsyncLocalStorage = require("node:async_hooks").AsyncLocalStorage as new <U>() => AsyncLocalStorage<U>;
+      const NodeAsyncLocalStorage = require("async_hooks").AsyncLocalStorage as new <U>() => AsyncLocalStorage<U>;
       return new NodeAsyncLocalStorage<T>();
     } catch {
-      // Fallback if node:async_hooks is unavailable
+      // Fallback if async_hooks is unavailable
     }
   }
   return new DummyAsyncLocalStorage<T>() as unknown as AsyncLocalStorage<T>;
