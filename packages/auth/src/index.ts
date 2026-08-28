@@ -9,3 +9,4 @@ export * from "./impersonation-service";
 export * from "./audit-service";
 export * from "./authorization-service";
 export * from "./client-auth";
+export * from "./logger";

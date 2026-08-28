@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./permissions": "./src/permissions.ts",
-    "./guards": "./src/auth-guards.ts"
+    "./guards": "./src/auth-guards.ts",
+    "./logger": "./src/logger.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
