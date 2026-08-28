@@ -63,8 +63,8 @@ beforeEach(() => {
 });
 
 describe("POST .../pre-approval: grants a party-level pre-approval", () => {
-  it("requires the compliance.restricted_party_approve permission, not an ordinary write permission", () => {
-    expect(guardOptionsByRoute).toContainEqual({ permission: "compliance.restricted_party_approve", write: true });
+  it("requires the compliance.restricted_party.approve permission, not an ordinary write permission", () => {
+    expect(guardOptionsByRoute).toContainEqual({ permission: "compliance.restricted_party.approve", write: true });
   });
 
   it("returns 404 rather than creating an approval when the party does not belong to this account", async () => {
@@ -114,8 +114,8 @@ describe("POST .../pre-approval: grants a party-level pre-approval", () => {
 });
 
 describe("PATCH .../pre-approval/[approvalId]: revokes a party-level pre-approval", () => {
-  it("requires the compliance.restricted_party_revoke permission, distinct from approve", () => {
-    expect(guardOptionsByRoute).toContainEqual({ permission: "compliance.restricted_party_revoke", write: true });
+  it("requires the compliance.restricted_party.revoke permission, distinct from approve", () => {
+    expect(guardOptionsByRoute).toContainEqual({ permission: "compliance.restricted_party.revoke", write: true });
   });
 
   it("returns 404 when the approval does not belong to this account, even if the id exists elsewhere", async () => {

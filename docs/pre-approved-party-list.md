@@ -37,8 +37,8 @@ the caller falls through to a normal RPS run. There is deliberately no
 
 Approvals are created and revoked through the v1 API
 (`src/app/api/v1/parties/[partyId]/restricted-party-screening/pre-approval/**`),
-gated by `compliance.restricted_party_approve` (create) and
-`compliance.restricted_party_revoke` (revoke) respectively. Every route is
+gated by `compliance.restricted_party.approve` (create) and
+`compliance.restricted_party.revoke` (revoke) respectively. Every route is
 wrapped in `withAuthenticatedRoute`, so approvals are always scoped to the
 authenticated account, never a caller-supplied one.
 

@@ -917,7 +917,7 @@ export function PartyTabs({
                 </div>
                 {!mayApprovePreScreening && (
                   <p className="text-xs text-[#6E6E73]">
-                    Granting pre-approval needs compliance.restricted_party_approve.
+                    Granting pre-approval needs compliance.restricted_party.approve.
                   </p>
                 )}
                 {preApprovals.length === 0 ? (
