@@ -12149,7 +12149,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "BluJay internal\n application data"
+      "description": "Qubere internal\n application data"
     },
     "Invoice": {
       "type": "object",
