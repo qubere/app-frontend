@@ -22,6 +22,7 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(db.fact, "findFirst").mockResolvedValue(null);
   });
 
   it("test-matrix #13: strictly enforces Human Lock Invariant #4 — rejects automatic overwrite of human locks in DB", async () => {
@@ -188,7 +189,7 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
     expect(result.factId).toBe("fact_existing_14");
   });
 
-  it("test-matrix #22 (Real Postgres DB): recomputeShipmentFactsOnDetach supersedes non-human-locked facts from detached document", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))("test-matrix #22 (Real Postgres DB): recomputeShipmentFactsOnDetach supersedes non-human-locked facts from detached document", async () => {
     const runId = Date.now().toString(36);
     const realAccount = `acc_detach_${runId}`;
     const realShipment = `shp_detach_${runId}`;
@@ -253,7 +254,7 @@ describe("Universal Field Hydration — Phase 4 Governed Promotion", () => {
     await db.shipment.deleteMany({ where: { id: realShipment } });
   });
 
-  it("test-matrix #15.2 (Real Postgres DB): rolls back transaction cleanly if party assignment fails during materialization", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))("test-matrix #15.2 (Real Postgres DB): rolls back transaction cleanly if party assignment fails during materialization", async () => {
     const runId = Date.now().toString(36);
     const realAccount = `acc_tx_rollback_${runId}`;
     const realShipment = `shp_tx_rollback_${runId}`;

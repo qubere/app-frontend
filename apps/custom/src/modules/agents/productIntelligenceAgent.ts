@@ -311,197 +311,202 @@ export class ProductIntelligenceAgent {
     const actor = { accountId: input.accountId, userId: input.userId };
     const profiles: EnrichedProductProfile[] = [];
 
-    for (const item of input.lineItems) {
-      const desc = item.description || "Unspecified Item";
-      const lineInput: ProductIntelligenceLineInput = {
-        sku: item.sku ?? null,
-        supplierSku: item.supplierSku ?? null,
-        manufacturerPartNumber: item.manufacturerPartNumber ?? null,
-        model: item.model ?? null,
-        gtin: item.gtin ?? null,
-        manufacturerName: item.manufacturerName ?? null,
-        supplierName: item.supplierName ?? null,
-        brandOwnerName: item.brandOwnerName ?? null,
-        countryOfManufacture: item.countryOfManufacture ?? null,
-      };
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < input.lineItems.length; i += BATCH_SIZE) {
+      const chunk = input.lineItems.slice(i, i + BATCH_SIZE);
+      const chunkProfiles = await Promise.all(
+        chunk.map(async (item) => {
+          const desc = item.description || "Unspecified Item";
+          const lineInput: ProductIntelligenceLineInput = {
+            sku: item.sku ?? null,
+            supplierSku: item.supplierSku ?? null,
+            manufacturerPartNumber: item.manufacturerPartNumber ?? null,
+            model: item.model ?? null,
+            gtin: item.gtin ?? null,
+            manufacturerName: item.manufacturerName ?? null,
+            supplierName: item.supplierName ?? null,
+            brandOwnerName: item.brandOwnerName ?? null,
+            countryOfManufacture: item.countryOfManufacture ?? null,
+          };
 
-      let matchResult: ProductMatchResult = { status: "NO_MATCH", candidates: [], rule: null };
-      let parties: Awaited<ReturnType<typeof matchLineItemToProduct>>["parties"] = [];
-      let matchedProduct: Awaited<ReturnType<typeof matchLineItemToProduct>>["matchedProduct"] = null;
-      try {
-        const outcome = await matchLineItemToProduct(actor, lineInput);
-        matchResult = outcome.match;
-        parties = outcome.parties;
-        matchedProduct = outcome.matchedProduct;
-      } catch (err) {
-        debugError = logAgentError(
-          "Product Intelligence Agent",
-          input.shipmentId,
-          "matchLineItemToProduct",
-          err
-        );
-      }
+          let matchResult: ProductMatchResult = { status: "NO_MATCH", candidates: [], rule: null };
+          let parties: Awaited<ReturnType<typeof matchLineItemToProduct>>["parties"] = [];
+          let matchedProduct: Awaited<ReturnType<typeof matchLineItemToProduct>>["matchedProduct"] = null;
+          try {
+            const outcome = await matchLineItemToProduct(actor, lineInput);
+            matchResult = outcome.match;
+            parties = outcome.parties;
+            matchedProduct = outcome.matchedProduct;
+          } catch (err) {
+            debugError = logAgentError(
+              "Product Intelligence Agent",
+              input.shipmentId,
+              "matchLineItemToProduct",
+              err
+            );
+          }
 
-      let enriched: Partial<EnrichedProductProfile> | null = null;
+          let enriched: Partial<EnrichedProductProfile> | null = null;
 
-      if (matchedProduct !== null) {
-        const masterDerived = deriveProfileFromMaster(matchedProduct.snapshot);
-        if (masterDerived !== null) {
-          enriched = masterDerived;
-          aiProvider = "Product Master (deterministic, no generative call)";
-        }
-      }
+          if (matchedProduct !== null) {
+            const masterDerived = deriveProfileFromMaster(matchedProduct.snapshot);
+            if (masterDerived !== null) {
+              enriched = masterDerived;
+              aiProvider = "Product Master (deterministic, no generative call)";
+            }
+          }
 
-      if (!enriched && process.env.GEMINI_API_KEY) {
-        try {
-          const masterContext =
-            matchedProduct !== null
-              ? `\n\nKnown Product Master facts for this exact product (authoritative -- do not contradict): ${JSON.stringify(
-                  {
-                    description: matchedProduct.snapshot.customsDescription ?? matchedProduct.snapshot.technicalDescription,
-                    compositions: matchedProduct.snapshot.compositions,
-                  }
-                )}`
-              : "";
-          const prompt = `${PRODUCT_INTELLIGENCE_SYSTEM_PROMPT}
+          if (!enriched && process.env.GEMINI_API_KEY) {
+            try {
+              const masterContext =
+                matchedProduct !== null
+                  ? `\n\nKnown Product Master facts for this exact product (authoritative -- do not contradict): ${JSON.stringify(
+                      {
+                        description: matchedProduct.snapshot.customsDescription ?? matchedProduct.snapshot.technicalDescription,
+                        compositions: matchedProduct.snapshot.compositions,
+                      }
+                    )}`
+                  : "";
+              const prompt = `${PRODUCT_INTELLIGENCE_SYSTEM_PROMPT}
 
 Raw Description: "${desc}"
 ${item.countryOfOrigin ? `Country of Origin (from shipment context, if it informs typical material/finish conventions): "${item.countryOfOrigin}"` : ""}${masterContext}`;
 
-          const response = await this.aiClient.models.generateContent({
-            model: aiModel("product-intelligence"),
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: productSchema,
-              temperature: 0.2,
-            },
+              const response = await this.aiClient.models.generateContent({
+                model: aiModel("product-intelligence"),
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                config: {
+                  responseMimeType: "application/json",
+                  responseSchema: productSchema,
+                  temperature: 0.2,
+                },
+              });
+
+              await meterGeminiCall(
+                "product-intelligence",
+                { accountId: input.accountId, userId: input.userId },
+                response
+              );
+
+              const parsed = JSON.parse(response.text || "{}");
+              if (parsed.enrichedDescription) {
+                enriched = parsed;
+                aiProvider = "Gemini 2.5 Flash Product Intelligence Engine";
+                usedGeminiEnrichment = true;
+              }
+            } catch (err: unknown) {
+              debugError = logAgentError(
+                "Product Intelligence Agent",
+                input.shipmentId,
+                "Gemini generateContent",
+                err
+              );
+            }
+          }
+
+          if (!enriched) {
+            enriched = {
+              enrichedDescription: desc,
+              materialComposition: "Not determined — enrichment requires Gemini API",
+              essentialCharacter: "Not determined — requires Gemini enrichment or manual classification review",
+              carbonContentPercentage: null,
+              finish: null,
+              casNumber: null,
+              endUse: "Not determined",
+              confidence: 10,
+            };
+            if (!process.env.GEMINI_API_KEY) {
+              aiProvider = "Deterministic Product Parser (No API Key)";
+            }
+          }
+
+          const comparison: ComparisonResult = compareLineItemToProductMaster({
+            matchResult,
+            matchedProduct,
+            parties,
+            originClaim: item.countryOfOrigin ?? null,
+            countryOfManufacture: item.countryOfManufacture ?? null,
+            manufacturerPartNumber: item.manufacturerPartNumber ?? null,
+            model: item.model ?? null,
+            enrichedDescription: enriched.enrichedDescription ?? null,
+            materialComposition: enriched.materialComposition ?? null,
+            essentialCharacter: enriched.essentialCharacter ?? null,
+            endUse: enriched.endUse ?? null,
           });
 
-          // Accounting only — see meterGeminiCall. Never refuses and never throws.
-          await meterGeminiCall(
-            "product-intelligence",
-            { accountId: input.accountId, userId: input.userId },
-            response
-          );
+          const verification = verifyProductIntelligence({
+            matchResult,
+            conflicts: comparison.conflicts,
+            missingInformationCount: comparison.missingInformation.length,
+            readiness: comparison.readiness,
+            confidence: enriched.confidence ?? 10,
+          });
 
-          const parsed = JSON.parse(response.text || "{}");
-          if (parsed.enrichedDescription) {
-            enriched = parsed;
-            aiProvider = "Gemini 2.5 Flash Product Intelligence Engine";
-            usedGeminiEnrichment = true;
-          }
-        } catch (err: unknown) {
-          debugError = logAgentError(
-            "Product Intelligence Agent",
-            input.shipmentId,
-            "Gemini generateContent",
-            err
-          );
-        }
-      }
+          const newProductCandidate: NewProductCandidate | null =
+            matchResult.status === "NO_MATCH"
+              ? {
+                  productName: desc,
+                  brand: null,
+                  identifiers: [
+                    lineInput.sku && { identifierType: "INTERNAL_SKU", value: lineInput.sku },
+                    lineInput.supplierSku && { identifierType: "SUPPLIER_SKU", value: lineInput.supplierSku },
+                    lineInput.gtin && { identifierType: "GTIN", value: lineInput.gtin },
+                    lineInput.manufacturerPartNumber && {
+                      identifierType: "MANUFACTURER_PART_NUMBER",
+                      value: lineInput.manufacturerPartNumber,
+                    },
+                    lineInput.model && { identifierType: "MODEL_NUMBER", value: lineInput.model },
+                  ].filter((v): v is { identifierType: string; value: string } => Boolean(v)),
+                  manufacturerName: item.manufacturerName ?? null,
+                  supplierName: item.supplierName ?? null,
+                  brandOwnerName: item.brandOwnerName ?? null,
+                  countryOfManufacture: item.countryOfManufacture ?? null,
+                  materialComposition: enriched.materialComposition ?? null,
+                }
+              : null;
 
-      // Fallback: return raw description unchanged — do not fabricate enrichment
-      if (!enriched) {
-        enriched = {
-          enrichedDescription: desc,
-          materialComposition: "Not determined — enrichment requires Gemini API",
-          essentialCharacter: "Not determined — requires Gemini enrichment or manual classification review",
-          carbonContentPercentage: null,
-          finish: null,
-          casNumber: null,
-          endUse: "Not determined",
-          confidence: 10,
-        };
-        if (!process.env.GEMINI_API_KEY) {
-          aiProvider = "Deterministic Product Parser (No API Key)";
-        }
-      }
+          const reasoningSummary = [
+            matchResult.status === "EXACT_MATCH"
+              ? `Matched Product Master via ${matchResult.rule}.`
+              : matchResult.status === "NO_MATCH"
+                ? "No Product Master match; structured candidate proposed."
+                : `${matchResult.status}: ${matchResult.candidates.length} candidate(s), human confirmation required.`,
+            comparison.conflicts.length > 0 ? `${comparison.conflicts.length} conflict(s) with Product Master.` : null,
+            comparison.missingInformation.length > 0
+              ? `${comparison.missingInformation.length} field(s) missing information.`
+              : null,
+            comparison.recommendedActions.length > 0
+              ? `Recommends: ${comparison.recommendedActions.map((a) => a.flag).join(", ")}.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ");
 
-      const comparison: ComparisonResult = compareLineItemToProductMaster({
-        matchResult,
-        matchedProduct,
-        parties,
-        originClaim: item.countryOfOrigin ?? null,
-        countryOfManufacture: item.countryOfManufacture ?? null,
-        manufacturerPartNumber: item.manufacturerPartNumber ?? null,
-        model: item.model ?? null,
-        enrichedDescription: enriched.enrichedDescription ?? null,
-        materialComposition: enriched.materialComposition ?? null,
-        essentialCharacter: enriched.essentialCharacter ?? null,
-        endUse: enriched.endUse ?? null,
-      });
-
-      const verification = verifyProductIntelligence({
-        matchResult,
-        conflicts: comparison.conflicts,
-        missingInformationCount: comparison.missingInformation.length,
-        readiness: comparison.readiness,
-        confidence: enriched.confidence ?? 10,
-      });
-
-      const newProductCandidate: NewProductCandidate | null =
-        matchResult.status === "NO_MATCH"
-          ? {
-              productName: desc,
-              brand: null,
-              identifiers: [
-                lineInput.sku && { identifierType: "INTERNAL_SKU", value: lineInput.sku },
-                lineInput.supplierSku && { identifierType: "SUPPLIER_SKU", value: lineInput.supplierSku },
-                lineInput.gtin && { identifierType: "GTIN", value: lineInput.gtin },
-                lineInput.manufacturerPartNumber && {
-                  identifierType: "MANUFACTURER_PART_NUMBER",
-                  value: lineInput.manufacturerPartNumber,
-                },
-                lineInput.model && { identifierType: "MODEL_NUMBER", value: lineInput.model },
-              ].filter((v): v is { identifierType: string; value: string } => Boolean(v)),
-              manufacturerName: item.manufacturerName ?? null,
-              supplierName: item.supplierName ?? null,
-              brandOwnerName: item.brandOwnerName ?? null,
-              countryOfManufacture: item.countryOfManufacture ?? null,
-              materialComposition: enriched.materialComposition ?? null,
-            }
-          : null;
-
-      const reasoningSummary = [
-        matchResult.status === "EXACT_MATCH"
-          ? `Matched Product Master via ${matchResult.rule}.`
-          : matchResult.status === "NO_MATCH"
-            ? "No Product Master match; structured candidate proposed."
-            : `${matchResult.status}: ${matchResult.candidates.length} candidate(s), human confirmation required.`,
-        comparison.conflicts.length > 0 ? `${comparison.conflicts.length} conflict(s) with Product Master.` : null,
-        comparison.missingInformation.length > 0
-          ? `${comparison.missingInformation.length} field(s) missing information.`
-          : null,
-        comparison.recommendedActions.length > 0
-          ? `Recommends: ${comparison.recommendedActions.map((a) => a.flag).join(", ")}.`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      profiles.push({
-        sku: item.sku || `SKU-${Date.now().toString().slice(-4)}`,
-        rawDescription: desc,
-        enrichedDescription: enriched.enrichedDescription || desc,
-        materialComposition: enriched.materialComposition || "Not determined",
-        essentialCharacter: enriched.essentialCharacter || "Not determined",
-        carbonContentPercentage: enriched.carbonContentPercentage ?? null,
-        finish: enriched.finish ?? null,
-        casNumber: enriched.casNumber ?? null,
-        endUse: enriched.endUse || "Not determined",
-        confidence: enriched.confidence ?? 10,
-        productMatch: matchResult.status,
-        existingProductId: matchedProduct?.product.id ?? null,
-        missingInformation: comparison.missingInformation,
-        conflicts: comparison.conflicts,
-        changes: comparison.changes,
-        readiness: comparison.readiness,
-        recommendedActions: comparison.recommendedActions,
-        newProductCandidate,
-        verificationStatus: verification.verificationStatus,
-        reasoningSummary,
-      });
+          return {
+            sku: item.sku || `SKU-${Date.now().toString().slice(-4)}`,
+            rawDescription: desc,
+            enrichedDescription: enriched.enrichedDescription || desc,
+            materialComposition: enriched.materialComposition || "Not determined",
+            essentialCharacter: enriched.essentialCharacter || "Not determined",
+            carbonContentPercentage: enriched.carbonContentPercentage ?? null,
+            finish: enriched.finish ?? null,
+            casNumber: enriched.casNumber ?? null,
+            endUse: enriched.endUse || "Not determined",
+            confidence: enriched.confidence ?? 10,
+            productMatch: matchResult.status,
+            existingProductId: matchedProduct?.product.id ?? null,
+            missingInformation: comparison.missingInformation,
+            conflicts: comparison.conflicts,
+            changes: comparison.changes,
+            readiness: comparison.readiness,
+            recommendedActions: comparison.recommendedActions,
+            newProductCandidate,
+            verificationStatus: verification.verificationStatus,
+            reasoningSummary,
+          };
+        })
+      );
+      profiles.push(...chunkProfiles);
     }
 
     const overallConfidence =

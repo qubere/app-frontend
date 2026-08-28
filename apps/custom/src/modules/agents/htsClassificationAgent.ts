@@ -238,59 +238,56 @@ export class HTSClassificationAgent {
     // the record a reviewer actually looks at.
     const accountMemoryCountByLine = new Map<number, number>();
 
-    for (const item of input.productProfiles) {
-      // Seed candidates from the real, ingested HTS Master Release data
-      // (HtsNode/HtsDutyRate -- 29k+ classifiable nodes, 50k+ parsed duty
-      // rate rows) instead of the near-empty legacy HTSCode table, and
-      // include each candidate's real General duty rate so the LLM is
-      // grounded in actual rate data rather than recalling one from memory.
-      const keyword = (item.rawDescription || "").split(" ").find((w) => w.length > 3) || "";
-      let htsCandidates: Awaited<ReturnType<typeof HtsNodeRepository.searchNodes>>["items"] = [];
-      try {
-        if (keyword) {
-          const result = await HtsNodeRepository.searchNodes({ q: keyword, level: 10, limit: 3 });
-          htsCandidates = result.items;
-        }
-      } catch (err) {
-        debugError = logAgentError(
-          "HTS Classification Agent",
-          input.shipmentId,
-          "HTS DB candidate lookup",
-          err
-        );
-      }
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < input.productProfiles.length; i += BATCH_SIZE) {
+      const chunk = input.productProfiles.slice(i, i + BATCH_SIZE);
+      const chunkResults = await Promise.all(
+        chunk.map(async (item) => {
+          const keyword = (item.rawDescription || "").split(" ").find((w) => w.length > 3) || "";
+          let htsCandidates: Awaited<ReturnType<typeof HtsNodeRepository.searchNodes>>["items"] = [];
+          try {
+            if (keyword) {
+              const result = await HtsNodeRepository.searchNodes({ q: keyword, level: 10, limit: 3 });
+              htsCandidates = result.items;
+            }
+          } catch (err) {
+            debugError = logAgentError(
+              "HTS Classification Agent",
+              input.shipmentId,
+              "HTS DB candidate lookup",
+              err
+            );
+          }
 
-      const candidateContext =
-        htsCandidates.length > 0
-          ? htsCandidates
-              .map((c) => `${c.htsNumberDisplay}: ${c.description} (General duty rate: ${realGeneralDutyRate(c) ?? "not on file"})`)
-              .join("\n")
-          : "No DB candidates found.";
+          const candidateContext =
+            htsCandidates.length > 0
+              ? htsCandidates
+                  .map((c) => `${c.htsNumberDisplay}: ${c.description} (General duty rate: ${realGeneralDutyRate(c) ?? "not on file"})`)
+                  .join("\n")
+              : "No DB candidates found.";
 
-      // Retrieve Account Institutional Memory context for this account/product
-      let accountContextPrompt = "";
-      try {
-        const accountContext = await AccountContextBuilder.build({
-          accountId: input.accountId,
-          task: "HTS_CLASSIFICATION",
-          shipmentId: input.shipmentId,
-          partNumber: item.partNumber ?? undefined,
-          productDescription: item.rawDescription,
-        });
-        accountContextPrompt = accountContext.formattedText;
-        accountMemoryCountByLine.set(item.lineNumber, accountContext.memoryCount);
-      } catch {
-        // Non-blocking fallback
-      }
+          let accountContextPrompt = "";
+          try {
+            const accountContext = await AccountContextBuilder.build({
+              accountId: input.accountId,
+              task: "HTS_CLASSIFICATION",
+              shipmentId: input.shipmentId,
+              partNumber: item.partNumber ?? undefined,
+              productDescription: item.rawDescription,
+            });
+            accountContextPrompt = accountContext.formattedText;
+            accountMemoryCountByLine.set(item.lineNumber, accountContext.memoryCount);
+          } catch {
+            // Non-blocking fallback
+          }
 
-      // Try real Gemini call
-      let htsResult: HtsModelResult | null = null;
-      let modelVersionUsed: string | null = null;
-      let promptVersionUsed: string | null = null;
+          let htsResult: HtsModelResult | null = null;
+          let modelVersionUsed: string | null = null;
+          let promptVersionUsed: string | null = null;
 
-      if (process.env.GEMINI_API_KEY) {
-        try {
-          const prompt = `${HTS_CLASSIFICATION_SYSTEM_PROMPT}
+          if (process.env.GEMINI_API_KEY) {
+            try {
+              const prompt = `${HTS_CLASSIFICATION_SYSTEM_PROMPT}
 
 Product Description: "${item.rawDescription}"
 ${item.enrichedDescription ? `Enriched Description: "${item.enrichedDescription}"` : ""}
@@ -306,145 +303,126 @@ ${accountContextPrompt ? `${accountContextPrompt}\n` : ""}
 DB Candidate HTS codes (use as reference, override if wrong):
 ${candidateContext}`;
 
-          const response = await this.aiClient.models.generateContent({
-            model: aiModel("hts-classification"),
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: htsSchema,
-              temperature: 0.1,
-            },
-          });
+              const response = await this.aiClient.models.generateContent({
+                model: aiModel("hts-classification"),
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                config: {
+                  responseMimeType: "application/json",
+                  responseSchema: htsSchema,
+                  temperature: 0.1,
+                },
+              });
 
-          // Accounting only. Cannot refuse, cannot throw, does not touch the
-          // response — classification behaves identically whether or not the
-          // usage table exists. Inside the same try as the call, so a metering
-          // failure would fall into the existing Gemini catch and the
-          // deterministic path, but meterGeminiCall swallows its own errors so it
-          // will not get there.
-          await meterGeminiCall(
-            "hts-classification",
-            { accountId: input.accountId, userId: input.userId },
-            response
-          );
+              await meterGeminiCall(
+                "hts-classification",
+                { accountId: input.accountId, userId: input.userId },
+                response
+              );
 
-          const parsed = JSON.parse(response.text || "{}");
-          if (parsed.htsCode) {
-            htsResult = parsed;
-            aiProvider = "Gemini 2.5 Flash HTS Classification Engine";
-            modelVersionUsed = aiModel("hts-classification");
-            promptVersionUsed = hashPromptVersion(HTS_CLASSIFICATION_SYSTEM_PROMPT);
+              const parsed = JSON.parse(response.text || "{}");
+              if (parsed.htsCode) {
+                htsResult = parsed;
+                aiProvider = "Gemini 2.5 Flash HTS Classification Engine";
+                modelVersionUsed = aiModel("hts-classification");
+                promptVersionUsed = hashPromptVersion(HTS_CLASSIFICATION_SYSTEM_PROMPT);
 
-            // Zero-hallucination policy: the LLM's crossRulings are a claim,
-            // not evidence. A ruling number only becomes trustworthy CBP
-            // supporting evidence once it resolves against the persisted
-            // Qubere CROSS corpus via verifyCitation() -- an unverified or
-            // fabricated ruling number must never reach downstream facts,
-            // AgentDecision evidence, or the filing UI as if it were real.
-            if (Array.isArray(parsed.crossRulings) && parsed.crossRulings.length > 0) {
-              const verifiedRulings: string[] = [];
-              for (const citation of parsed.crossRulings as unknown[]) {
-                if (typeof citation !== "string" || !citation.trim()) continue;
-                try {
-                  const verification = await CrossIngestionService.verifyCitation(citation);
-                  if (verification.verified) {
-                    verifiedRulings.push(citation);
+                if (Array.isArray(parsed.crossRulings) && parsed.crossRulings.length > 0) {
+                  const verifiedRulings: string[] = [];
+                  for (const citation of parsed.crossRulings as unknown[]) {
+                    if (typeof citation !== "string" || !citation.trim()) continue;
+                    try {
+                      const verification = await CrossIngestionService.verifyCitation(citation);
+                      if (verification.verified) {
+                        verifiedRulings.push(citation);
+                      }
+                    } catch (err) {
+                      debugError = logAgentError(
+                        "HTS Classification Agent",
+                        input.shipmentId,
+                        "CROSS citation verification",
+                        err
+                      );
+                    }
                   }
+                  parsed.crossRulings = verifiedRulings;
+                }
+
+                try {
+                  const normalizedCode = String(parsed.htsCode).replace(/[^0-9]/g, "");
+                  const matchedNode = normalizedCode ? await HtsNodeRepository.findByNormalizedCode(normalizedCode) : null;
+                  const realRate = realGeneralDutyRate(matchedNode);
+                  parsed.dutyRate =
+                    realRate !== null ? realRate : "Duty rate unverified — code not found in HTS Master Release data";
                 } catch (err) {
-                  // Lookup failure means we could not confirm the citation,
-                  // not that it is real -- treat it the same as unverified
-                  // rather than risking a false positive.
                   debugError = logAgentError(
                     "HTS Classification Agent",
                     input.shipmentId,
-                    "CROSS citation verification",
+                    "HTS duty rate grounding lookup",
                     err
                   );
                 }
               }
-              parsed.crossRulings = verifiedRulings;
-            }
-
-            // Ground the LLM's recalled duty rate in the real ingested HTS
-            // data rather than trusting what it remembered. If the code it
-            // returned resolves to a real node, override dutyRate with the
-            // actual General column rate; if it doesn't resolve (wrong
-            // format, hallucinated code), say so honestly instead of
-            // presenting an ungrounded rate as if it were verified.
-            try {
-              const normalizedCode = String(parsed.htsCode).replace(/[^0-9]/g, "");
-              const matchedNode = normalizedCode ? await HtsNodeRepository.findByNormalizedCode(normalizedCode) : null;
-              const realRate = realGeneralDutyRate(matchedNode);
-              parsed.dutyRate =
-                realRate !== null ? realRate : "Duty rate unverified — code not found in HTS Master Release data";
-            } catch (err) {
+            } catch (err: unknown) {
               debugError = logAgentError(
                 "HTS Classification Agent",
                 input.shipmentId,
-                "HTS duty rate grounding lookup",
+                "Gemini generateContent",
                 err
               );
             }
           }
-        } catch (err: unknown) {
-          debugError = logAgentError(
-            "HTS Classification Agent",
-            input.shipmentId,
-            "Gemini generateContent",
-            err
-          );
-        }
-      }
 
-      // Fallback: use DB candidate with low confidence and clear labeling — NO fabricated rulings or codes
-      if (!htsResult) {
-        const dbCandidate = htsCandidates[0];
-        const fallbackCode = dbCandidate?.htsNumberDisplay || "UNCLASSIFIABLE";
-        const fallbackDesc = dbCandidate?.description || `No DB match for: ${item.rawDescription}`;
-        const fallbackRate = realGeneralDutyRate(dbCandidate ?? null);
-        const lowConfidence = htsCandidates.length > 0 ? 35 : 0;
-        const rationaleReason = debugError
-          ? `Gemini API call failed (${debugError}). `
-          : "Gemini API unavailable. ";
+          if (!htsResult) {
+            const dbCandidate = htsCandidates[0];
+            const fallbackCode = dbCandidate?.htsNumberDisplay || "UNCLASSIFIABLE";
+            const fallbackDesc = dbCandidate?.description || `No DB match for: ${item.rawDescription}`;
+            const fallbackRate = realGeneralDutyRate(dbCandidate ?? null);
+            const lowConfidence = htsCandidates.length > 0 ? 35 : 0;
+            const rationaleReason = debugError
+              ? `Gemini API call failed (${debugError}). `
+              : "Gemini API unavailable. ";
 
-        htsResult = {
-          htsCode: fallbackCode,
-          htsDescription: fallbackDesc,
-          // The CODE itself is still an unverified low-confidence keyword
-          // match, not a confirmed classification -- but if we are showing
-          // this candidate code, its rate should be the real one on file
-          // for it, not a placeholder string.
-          dutyRate: fallbackRate ?? "Duty rate unverified — requires classification review",
-          griCitations: [],
-          crossRulings: [], // Never fabricate a citation
-          confidence: lowConfidence,
-          legalRationale: `${rationaleReason}DB candidate used as unverified low-confidence suggestion (${lowConfidence}% confidence). Requires human broker classification review before filing.`,
-        };
+            htsResult = {
+              htsCode: fallbackCode,
+              htsDescription: fallbackDesc,
+              dutyRate: fallbackRate ?? "Duty rate unverified — requires classification review",
+              griCitations: [],
+              crossRulings: [],
+              confidence: lowConfidence,
+              legalRationale: `${rationaleReason}DB candidate used as unverified low-confidence suggestion (${lowConfidence}% confidence). Requires human broker classification review before filing.`,
+            };
 
-        if (!process.env.GEMINI_API_KEY) {
-          aiProvider = "Deterministic HTS DB Lookup (No API Key)";
-        }
-      }
+            if (!process.env.GEMINI_API_KEY) {
+              aiProvider = "Deterministic HTS DB Lookup (No API Key)";
+            }
+          }
 
-      if (htsResult) {
-        results.push({
-          lineNumber: item.lineNumber,
-          productDescription: item.rawDescription,
-          htsCode: htsResult.htsCode,
-          htsDescription: htsResult.htsDescription,
-          dutyRate: htsResult.dutyRate,
-          griCitations: htsResult.griCitations,
-          crossRulings: htsResult.crossRulings,
-          confidence: htsResult.confidence,
-          evaluatorScore: htsResult.evaluatorScore ?? null,
-          evaluatorCritique: htsResult.evaluatorScore
-            ? "Evaluator-Optimizer Turn 2 confirmed."
-            : "Single-pass classification. Evaluator refinement loop pending.",
-          refinementTurns: 1,
-          legalRationale: htsResult.legalRationale,
-          modelVersion: modelVersionUsed,
-          promptVersion: promptVersionUsed,
-        });
+          if (htsResult) {
+            return {
+              lineNumber: item.lineNumber,
+              productDescription: item.rawDescription,
+              htsCode: htsResult.htsCode,
+              htsDescription: htsResult.htsDescription,
+              dutyRate: htsResult.dutyRate,
+              griCitations: htsResult.griCitations,
+              crossRulings: htsResult.crossRulings,
+              confidence: htsResult.confidence,
+              evaluatorScore: htsResult.evaluatorScore ?? null,
+              evaluatorCritique: htsResult.evaluatorScore
+                ? "Evaluator-Optimizer Turn 2 confirmed."
+                : "Single-pass classification. Evaluator refinement loop pending.",
+              refinementTurns: 1,
+              legalRationale: htsResult.legalRationale,
+              modelVersion: modelVersionUsed,
+              promptVersion: promptVersionUsed,
+            };
+          }
+          return null;
+        })
+      );
+
+      for (const res of chunkResults) {
+        if (res !== null) results.push(res);
       }
     }
 

@@ -13,12 +13,14 @@ CUSTOMS_WEB_SERVICE="${CUSTOMS_WEB_SERVICE:-qubere-customs-demo}"
 TMS_WEB_SERVICE="${TMS_WEB_SERVICE:-qubere-tms-demo}"
 MIGRATION_JOB="${MIGRATION_JOB:-qubere-migrate-demo}"
 DOCUMENT_PROCESSING_JOB="${DOCUMENT_PROCESSING_JOB:-qubere-document-worker-demo}"
+BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short=12 HEAD)}"
 REGISTRY="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}"
 CUSTOMS_IMAGE="${REGISTRY}/customs-web:${IMAGE_TAG}"
 TMS_IMAGE="${REGISTRY}/tms-web:${IMAGE_TAG}"
 DATABASE_IMAGE="${REGISTRY}/database:${IMAGE_TAG}"
 DOCUMENT_IMAGE="${REGISTRY}/document-worker:${IMAGE_TAG}"
+BACKUP_IMAGE="${REGISTRY}/db-backup:${IMAGE_TAG}"
 
 DATABASE_URL_SECRET="${DATABASE_URL_SECRET:-qubere-demo-database-url}"
 DIRECT_URL_SECRET="${DIRECT_URL_SECRET:-qubere-demo-direct-url}"
@@ -49,9 +51,12 @@ gcloud run jobs execute "${MIGRATION_JOB}" --project="${GCP_PROJECT_ID}" --regio
 gcloud run jobs deploy "${DOCUMENT_PROCESSING_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${DOCUMENT_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --cpu=2 --memory=4Gi --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=15m --set-env-vars="${BASE_ENV},DOCUMENT_PROCESSING_EXECUTOR=in-process" --set-secrets="${SECRET_BINDINGS}"
 gcloud run jobs add-iam-policy-binding "${DOCUMENT_PROCESSING_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" --role=roles/run.invoker >/dev/null
 
+gcloud run jobs deploy "${BACKUP_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${BACKUP_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:qubere-demo-instance" --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=15m --set-env-vars="${BASE_ENV}" --set-secrets="${SECRET_BINDINGS}"
+gcloud run jobs add-iam-policy-binding "${BACKUP_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" --role=roles/run.invoker >/dev/null
+
 deploy_web() {
   local service="$1" image="$2" app_url="$3"
-  gcloud run deploy "${service}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${image}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --allow-unauthenticated --cpu=2 --memory=2Gi --min-instances=1 --max-instances=3 --concurrency=20 --timeout=300 --set-env-vars="${JOB_TRIGGER_ENV},NEXT_PUBLIC_APP_URL=${app_url}" --set-secrets="${SECRET_BINDINGS}"
+  gcloud run deploy "${service}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${image}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --allow-unauthenticated --cpu=2 --memory=2Gi --min-instances=1 --max-instances=3 --concurrency=20 --timeout=300 --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:qubere-demo-instance" --set-env-vars="${JOB_TRIGGER_ENV},NEXT_PUBLIC_APP_URL=${app_url}" --set-secrets="${SECRET_BINDINGS}"
 }
 deploy_web "${CUSTOMS_WEB_SERVICE}" "${CUSTOMS_IMAGE}" "${NEXT_PUBLIC_CUSTOMS_APP_URL}"
 deploy_web "${TMS_WEB_SERVICE}" "${TMS_IMAGE}" "${NEXT_PUBLIC_TMS_APP_URL}"

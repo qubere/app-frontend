@@ -48,6 +48,8 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
     vi.spyOn(db.shipment, "update").mockResolvedValue({ id: testShipment, version: 2 } as any);
     vi.spyOn(db.hydrationCandidate, "updateMany").mockResolvedValue({ count: 1 } as any);
     vi.spyOn(db.fieldApproval, "create").mockResolvedValue({ id: "app_1" } as any);
+    vi.spyOn(db.exceptionItem, "findFirst").mockResolvedValue(null);
+    vi.spyOn(db.exceptionItem, "updateMany").mockResolvedValue({ count: 0 } as any);
 
     // REJECT action does not create human-locked Fact
     const rejectRes = await FieldReviewService.submitFieldReviewAction({
@@ -167,6 +169,8 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
       return null;
     }) as any);
     vi.spyOn(db.fieldApproval, "create").mockResolvedValue({ id: "app_alt_1" } as any);
+    vi.spyOn(db.exceptionItem, "findFirst").mockResolvedValue(null);
+    vi.spyOn(db.exceptionItem, "updateMany").mockResolvedValue({ count: 0 } as any);
     vi.spyOn(db.fact, "create").mockResolvedValue({ id: "fact_approved_1" } as any);
     vi.spyOn(db.fact, "update").mockResolvedValue({ id: "fact_approved_1", isHumanLocked: true } as any);
     vi.spyOn(db, "$transaction").mockImplementation((async (cb: any) => {

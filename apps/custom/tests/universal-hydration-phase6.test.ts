@@ -187,7 +187,7 @@ describe("Universal Field Hydration — Phase 6 Backfill & Rollout", () => {
     expect(updatedErrorCode).toContain("FAIL_CLOSED");
   });
 
-  it("test-matrix #18 (Real Postgres DB): mid-pipeline failure persists status FAILED and errorCode to Postgres", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))("test-matrix #18 (Real Postgres DB): mid-pipeline failure persists status FAILED and errorCode to Postgres", async () => {
     vi.restoreAllMocks();
     const { HydrationRunEngine } = await import("../src/modules/hydration/engine/hydrationRunEngine");
     const runId = Date.now().toString(36);
