@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  transpilePackages: ["@qubere/db", "@qubere/billing", "@qubere/auth"],
-  serverExternalPackages: ["@prisma/client"],
+  transpilePackages: ["@qubere/db", "@qubere/billing", "@qubere/auth", "@qubere/storage"],
+  serverExternalPackages: ["@prisma/client", "@google-cloud/storage"],
   env: {
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
   },

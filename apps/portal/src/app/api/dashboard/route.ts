@@ -87,7 +87,6 @@ export async function GET(req: Request) {
               select: {
                 id: true,
                 fileName: true,
-                fileUrl: true,
                 docType: true,
                 status: true,
                 createdAt: true,

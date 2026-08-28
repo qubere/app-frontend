@@ -1,6 +1,31 @@
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
+import { readStoredObject } from "@qubere/storage";
 import { db } from "@qubere/db";
+
+/**
+ * Byte signatures we are willing to serve INLINE with their real media type.
+ * Anything else is returned as an attachment, so a stored file can never be
+ * rendered as active content in the portal's origin.
+ */
+const INLINE_SIGNATURES: Array<{ mime: string; match: (b: Buffer) => boolean }> = [
+  { mime: "application/pdf", match: (b) => b.subarray(0, 1024).includes(Buffer.from("%PDF")) },
+  { mime: "image/jpeg", match: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  {
+    mime: "image/png",
+    match: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  },
+  { mime: "image/tiff", match: (b) => ["49492a00", "4d4d002a"].includes(b.subarray(0, 4).toString("hex")) },
+  { mime: "image/gif", match: (b) => ["GIF87a", "GIF89a"].includes(b.subarray(0, 6).toString("ascii")) },
+];
+
+function sniffInlineMime(buf: Buffer): string | null {
+  if (buf.length < 4) return null;
+  for (const sig of INLINE_SIGNATURES) {
+    if (sig.match(buf)) return sig.mime;
+  }
+  return null;
+}
 
 export async function GET(
   req: Request,
@@ -18,7 +43,6 @@ export async function GET(
       mimeType: true,
       fileUrl: true,
       portalVisibility: true,
-      rawContent: true,
     },
   });
 
@@ -37,7 +61,24 @@ export async function GET(
     return auth.errorResponse || NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
-  // Audit download
+  if (!document.fileUrl) {
+    return NextResponse.json(
+      { error: "CONTENT_UNAVAILABLE", message: "This document has no stored file." },
+      { status: 404 }
+    );
+  }
+
+  let body: Buffer;
+  try {
+    ({ body } = await readStoredObject(document.fileUrl));
+  } catch (err) {
+    console.error("[portal documents/download] storage read failed", document.id, err);
+    return NextResponse.json(
+      { error: "CONTENT_UNAVAILABLE", message: "Document content could not be retrieved." },
+      { status: 502 }
+    );
+  }
+
   await db.auditLog.create({
     data: {
       accountId: document.accountId,
@@ -53,74 +94,22 @@ export async function GET(
     },
   });
 
-  let responseBuffer: Buffer;
-  let contentType = document.mimeType || "application/pdf";
+  const inlineMime = sniffInlineMime(body);
+  const asciiName = (document.fileName || "document").replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  const utf8Name = encodeURIComponent(document.fileName || "document");
 
-  if (document.rawContent && document.rawContent.trim()) {
-    const raw = document.rawContent.trim();
-    if (raw.startsWith("JVBER") || (/^[A-Za-z0-9+/=\s]+$/.test(raw.slice(0, 100)) && raw.length > 50)) {
-      const decoded = Buffer.from(raw, "base64");
-      if (decoded.slice(0, 4).toString() === "%PDF" || decoded.byteLength > 0) {
-        responseBuffer = decoded;
-      } else {
-        responseBuffer = Buffer.from(raw, "utf-8");
-      }
-    } else {
-      responseBuffer = Buffer.from(raw, "utf-8");
-    }
+  const headers: Record<string, string> = {
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+
+  if (inlineMime) {
+    headers["Content-Type"] = inlineMime;
+    headers["Content-Disposition"] = `inline; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
   } else {
-    const htmlDocument = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f5f5f7; margin: 0; padding: 32px; color: #1d1d1f; }
-    .sheet { background: white; max-width: 640px; margin: 0 auto; padding: 40px; border-radius: 20px; border: 1px solid #e5e5ea; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    .title { font-size: 20px; font-weight: 800; color: #1d1d1f; margin-bottom: 4px; }
-    .sub { font-size: 12px; color: #86868b; margin-bottom: 24px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .badge { display: inline-block; background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; margin-bottom: 24px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 12px; background: #faf9f6; padding: 16px; border-radius: 12px; border: 1px solid #e5e5ea; margin-bottom: 24px; }
-    .lbl { color: #86868b; font-weight: 600; display: block; margin-bottom: 2px; }
-    .val { color: #1d1d1f; font-weight: 700; font-family: monospace; }
-  </style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="badge">&#10003; VERIFIED CUSTOMS VAULT RECORD</div>
-    <div class="title">${document.fileName}</div>
-    <div class="sub">Customs Document Reference</div>
-    <div class="grid">
-      <div><span class="lbl">Document ID:</span> <span class="val">${document.id}</span></div>
-      <div><span class="lbl">Format:</span> <span class="val">${document.mimeType || "application/pdf"}</span></div>
-      <div><span class="lbl">Client Scope:</span> <span class="val">${document.clientId || "Target Corporation"}</span></div>
-      <div><span class="lbl">Portal Visibility:</span> <span class="val">${document.portalVisibility || "CUSTOMER"}</span></div>
-    </div>
-    <p style="font-size: 13px; line-height: 1.6; color: #424242;">
-      This record is active and verified in the Qubere Customer Documents Vault. Document intelligence, OCR classification, and entry filings have been matched.
-    </p>
-  </div>
-</body>
-</html>`;
-    responseBuffer = Buffer.from(htmlDocument, "utf-8");
-    contentType = "text/html; charset=utf-8";
+    headers["Content-Type"] = "application/octet-stream";
+    headers["Content-Disposition"] = `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
   }
 
-  if (responseBuffer.slice(0, 4).toString() === "%PDF") {
-    contentType = "application/pdf";
-  } else if (responseBuffer.slice(0, 8).toString("hex") === "89504e470d0a1a0a") {
-    contentType = "image/png";
-  } else if (responseBuffer.slice(0, 2).toString("hex") === "ffd8") {
-    contentType = "image/jpeg";
-  } else if (!document.mimeType || document.mimeType.includes("text")) {
-    contentType = "text/plain; charset=utf-8";
-  }
-
-  return new Response(new Uint8Array(responseBuffer), {
-    status: 200,
-    headers: {
-      "Content-Type": contentType,
-      "Content-Disposition": `inline; filename="${encodeURIComponent(document.fileName)}"`,
-      "Cache-Control": "private, max-age=300",
-    },
-  });
+  return new Response(new Uint8Array(body), { status: 200, headers });
 }

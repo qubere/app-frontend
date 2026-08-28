@@ -76,7 +76,6 @@ export async function GET(req: Request) {
       byteSize: d.byteSize,
       mimeType: d.mimeType,
       source: d.source || "PORTAL_UPLOAD",
-      fileUrl: d.fileUrl || null,
       status: d.status === "Received" ? "Ready" : "Processing",
       shipmentId: d.shipmentId,
       shipmentNumber: d.shipment?.shipmentNumber || null,

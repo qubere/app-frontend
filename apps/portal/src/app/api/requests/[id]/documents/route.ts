@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db } from "@qubere/db";
-import fs from "fs/promises";
+import { storeDocumentBytes } from "@qubere/storage";
+import { createHash } from "crypto";
 import path from "path";
 
 export async function POST(
@@ -156,49 +157,34 @@ export async function POST(
     const mimeType = file.type || (ext === ".pdf" ? "application/pdf" : "application/octet-stream");
     const fileSize = file.size;
 
-    const arrayBuf = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const checksum = createHash("sha256").update(buffer).digest("hex");
 
-    // Convert binary PDF / images to base64 for database rawContent persistence
-    let rawContent = "";
-    if (mimeType.includes("text") || mimeType.includes("json") || mimeType.includes("csv")) {
-      rawContent = buffer.toString("utf-8");
-    } else {
-      rawContent = buffer.toString("base64");
-    }
+    // 1. Persist the original bytes to durable object storage (GCS `quarantine/`
+    //    prefix in prod; local disk only for localhost dev). Never in Postgres.
+    const stored = await storeDocumentBytes({
+      buffer,
+      fileName,
+      contentType: mimeType,
+      folder: "quarantine",
+    });
 
-    // 1. Create ShipmentDocument in QUARANTINE folder on blob storage
-    const quarantineUrl = `https://blob.vercel-storage.com/quarantine/requests/${id}/${fileName}`;
     const shipDoc = await db.shipmentDocument.create({
       data: {
         accountId: request.accountId,
         clientId: request.clientId,
         shipmentId: request.shipmentId || undefined,
         fileName,
-        fileUrl: quarantineUrl,
+        fileUrl: stored.url,
         mimeType,
+        byteSize: fileSize,
+        checksum,
         docType: request.title.replace("Upload ", "") || "Commercial Invoice",
         status: "QUARANTINED",
         portalVisibility: "CUSTOMER",
-        rawContent,
+        source: "PORTAL_UPLOAD",
       },
     });
-
-    // Save to disk under quarantine directories using shipDoc.id
-    const targetDirs = [
-      path.join(process.cwd(), "uploads", "quarantine", shipDoc.id),
-      path.join(process.cwd(), "uploads", "quarantine", id),
-      path.join(process.cwd(), "..", "custom", "uploads", "quarantine", shipDoc.id),
-    ];
-
-    for (const dir of targetDirs) {
-      try {
-        await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(path.join(dir, fileName), buffer);
-      } catch (err) {
-        console.error("Failed writing upload to disk path:", dir, err);
-      }
-    }
 
     // 2. Link to CustomerRequestDocument
     const reqDoc = await db.customerRequestDocument.create({

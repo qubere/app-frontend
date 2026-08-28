@@ -10,9 +10,11 @@
     },
     {
       "name": "portal",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace=apps/portal"],
-      "port": 3002
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev"],
+      "cwd": "apps/portal",
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }

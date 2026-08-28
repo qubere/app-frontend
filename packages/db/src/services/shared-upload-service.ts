@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { storeDocumentBytes } from "@qubere/storage";
 import { db } from "../index";
 
 export interface SharedUploadParams {
@@ -65,8 +66,22 @@ export async function processSharedDocumentUpload(
       accountId,
       checksum,
     },
-    select: { id: true },
+    select: { id: true, fileUrl: true },
   });
+
+  // Persist the immutable original to durable object storage (GCS in prod,
+  // local disk only for localhost dev). Reuse the existing object when this
+  // exact file was already uploaded to the account. The bytes never go in the DB.
+  const fileUrl =
+    existingDuplicate?.fileUrl ||
+    (
+      await storeDocumentBytes({
+        buffer: fileBuffer,
+        fileName,
+        contentType: mimeType,
+        folder: "documents",
+      })
+    ).url;
 
   // Verify shipment client ownership consistency if shipmentId is supplied
   if (shipmentId) {
@@ -82,7 +97,8 @@ export async function processSharedDocumentUpload(
     }
   }
 
-  // Create ShipmentDocument with client attribution and portal visibility
+  // Create ShipmentDocument with client attribution and portal visibility.
+  // fileUrl is a pointer to object storage — the file itself is never stored here.
   const doc = await db.shipmentDocument.create({
     data: {
       accountId,
@@ -91,6 +107,7 @@ export async function processSharedDocumentUpload(
       tmsOrderId: tmsOrderId || null,
       tmsLoadId: tmsLoadId || null,
       fileName,
+      fileUrl,
       docType,
       mimeType,
       byteSize,

@@ -21,6 +21,7 @@
     "@qubere/cloud-runtime": "*",
     "@qubere/db": "*",
     "@qubere/decisions": "*",
+    "@qubere/storage": "*",
     "@vercel/blob": "^2.6.1",
     "clsx": "^2.1.1",
     "inngest": "^4.16.0",

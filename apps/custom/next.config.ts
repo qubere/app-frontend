@@ -51,8 +51,8 @@ const nextConfig: NextConfig = {
   // treating it as opaque runtime code. App Router + Turbopack/webpack
   // transpile workspace packages automatically in most cases, but this is
   // kept explicit since it's a hard requirement for the build to work.
-  transpilePackages: ["@qubere/db", "@qubere/billing", "@qubere/auth"],
-  serverExternalPackages: ["@prisma/client"],
+  transpilePackages: ["@qubere/db", "@qubere/billing", "@qubere/auth", "@qubere/storage"],
+  serverExternalPackages: ["@prisma/client", "@google-cloud/storage"],
   env: {
     NEXT_PUBLIC_GIT_COMMIT_SHA: resolveGitCommitSha(),
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),

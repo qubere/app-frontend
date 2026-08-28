@@ -22,7 +22,8 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3"
+    "@prisma/client": "^6.19.3",
+    "@qubere/storage": "*"
   },
   "devDependencies": {
     "prisma": "^6.19.3",

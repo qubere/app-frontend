@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizePortalResource, getAccountContext } from "@qubere/auth";
+import { deleteStoredObject } from "@qubere/storage";
 import { db } from "@qubere/db";
 
 export async function DELETE(
@@ -19,6 +20,7 @@ export async function DELETE(
       accountId: true,
       clientId: true,
       fileName: true,
+      fileUrl: true,
       shipmentId: true,
       portalVisibility: true,
     },
@@ -55,10 +57,13 @@ export async function DELETE(
     where: { documentId: id },
   });
 
-  // Delete document record
+  // Delete document record, then best-effort remove the stored object.
   await db.shipmentDocument.delete({
     where: { id },
   });
+  if (document.fileUrl) {
+    await deleteStoredObject(document.fileUrl);
+  }
 
   // Audit deletion
   await db.auditLog.create({

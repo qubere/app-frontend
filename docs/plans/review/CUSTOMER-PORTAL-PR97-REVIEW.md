@@ -7,11 +7,12 @@
 > on all list routes + services), P0-4 (scope-engine), P0-7 (passwordless provisioning
 > + seed env var + sign-in page), P0-8 (permission enforcement), P1-1 (invite acceptance
 > flow), P1-2 (attach-doc authz + projection), P1-3 (request projection), P1-4
-> (inbound-email demo gate), P1-7/P1-8 (upload validation), P1-9 (demo-auth single flag),
-> P2-2 (untrack uploads).
-> STILL OPEN — P1-5 (object storage — needs a runtime session; portal uploads still
-> only hit local disk / rawContent), P1-6 (real 7501/invoice PDFs — no PDF lib in repo),
-> P2-1 (real two-tenant route tests), P2-3..P2-10, P3.
+> (inbound-email demo gate), **P1-5 (object storage — new `@qubere/storage` package;
+> GCS in prod, local-fs only for localhost; no bytes in Postgres; upload→store→pointer
+> →download→delete verified end to end)**, P1-7/P1-8 (upload validation), P1-9
+> (demo-auth single flag), P2-2 (untrack uploads).
+> STILL OPEN — P1-6 (real 7501/invoice PDFs — no PDF lib in repo; downloads still
+> return stubs), P2-1 (real two-tenant route tests), P2-3..P2-10, P3.
 **Scope:** `apps/portal/**`, `packages/auth/**`, portal-touching routes in `apps/custom/**`, schema, Dockerfile, GCP deploy.
 **Deployment target:** Docker on GCP Cloud Run, `NEXT_PUBLIC_APP_ENV=demo`, `--allow-unauthenticated`.
 
@@ -170,15 +171,20 @@ surface; if it's a demo helper it should be gated out of production builds.
 signature, no session. Demo tool → `if (process.env.NEXT_PUBLIC_APP_ENV !== "demo")
 return 404`.
 
-### P1-5 · Uploads go to local disk + base64-in-Postgres; no object storage
-`requests/[id]/documents` writes files to `process.cwd()/uploads/quarantine/...` (and
-`../custom/uploads/...`) and stores the whole file base64 in
-`ShipmentDocument.rawContent`. On Cloud Run the filesystem is ephemeral and
-per-instance — uploads vanish on redeploy/scale and aren't visible to the worker or
-`custom` app. Base64 in a `Text` column bloats the row, the WAL, and every backup.
-**Fix:** route portal uploads through the same object-storage path the `custom`
-`/api/documents/upload` uses (`processSharedDocumentUpload` already exists — make it
-write durable storage, not just DB). Stop persisting `rawContent` for binaries.
+### P1-5 · Uploads go to local disk + base64-in-Postgres; no object storage — FIXED
+~~`requests/[id]/documents` writes files to `process.cwd()/uploads/quarantine/...` and
+stores the whole file base64 in `ShipmentDocument.rawContent`.~~
+**Done:** new `packages/storage` (`@qubere/storage`) is the single object-storage core
+for all apps + the `@qubere/db` upload service — GCS (`qubere-demo-uploaded-documents`,
+`documents/` and `quarantine/` prefixes) in prod, Vercel Blob where configured, local
+disk under `.qubere/storage/uploads` **only** on localhost (throws on a serverless
+host). `processSharedDocumentUpload` and the portal request-upload route now write
+bytes to storage and persist only a `fileUrl` pointer + checksum + byteSize — never
+`rawContent`. `apps/custom/src/lib/storage.ts` re-exports the shared core and keeps
+just its File/MIME/malware wrapper. Portal download reads via `readStoredObject`;
+delete removes the object (`deleteStoredObject`). Verified end to end on localhost:
+upload → `/uploads/...` pointer, `rawContent: null` → download 200 `%PDF` → delete →
+download 404, file gone.
 
 ### P1-6 · `entries/[id]/download` and `invoices/[id]/download` return fake PDFs
 Both return a hand-built `%PDF-1.4 ... mock` string, not a rendered document.

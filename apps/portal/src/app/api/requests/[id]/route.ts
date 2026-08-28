@@ -59,7 +59,6 @@ export async function GET(
             select: {
               id: true,
               fileName: true,
-              fileUrl: true,
               mimeType: true,
               createdAt: true,
             },
