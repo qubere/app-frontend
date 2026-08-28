@@ -38,6 +38,11 @@ vi.mock("@/modules/agents/compliance/restrictedParty/persistResult", () => ({
   persistScreeningRun,
 }));
 
+const recordUsageEvent = vi.fn();
+vi.mock("@/lib/billing/telemetry", () => ({
+  recordUsageEvent: (...args: unknown[]) => recordUsageEvent(...args),
+}));
+
 const { rescreenParty, markStaleIfChanged, PartyHasNoActiveNameError } = await import(
   "@/modules/agents/compliance/restrictedParty/partyScreeningLifecycle"
 );
@@ -45,6 +50,41 @@ const { rescreenParty, markStaleIfChanged, PartyHasNoActiveNameError } = await i
 beforeEach(() => {
   vi.clearAllMocks();
   partyScreeningApprovalFindFirst.mockResolvedValue(null);
+  recordUsageEvent.mockResolvedValue({ status: "RECORDED" });
+});
+
+describe("rescreenParty: billing usage metering", () => {
+  it("records an RPS_SCREENING_COMPLETED usage event keyed by account/party/result id", async () => {
+    partyNameFindFirst.mockResolvedValue({ rawName: "Acme Trading Co" });
+    partyAddressFindFirst.mockResolvedValue(null);
+    partyContactFindFirst.mockResolvedValue(null);
+    runRestrictedPartyScreening.mockResolvedValue({ correlationId: "corr_1", passes: [] });
+    persistScreeningRun.mockResolvedValue([{ id: "result_1", passType: "PARTY_NAME", status: "CLEAR" }]);
+
+    await rescreenParty("acct_1", "party_1");
+
+    expect(recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acct_1",
+        eventCode: "RPS_SCREENING_COMPLETED",
+        quantity: 1,
+        unit: "party",
+        idempotencyKey: "billing:rps-party:acct_1:party_1:result_1",
+      })
+    );
+  });
+
+  it("still returns the normal rescreen result when recordUsageEvent rejects (billing must never affect screening outcomes)", async () => {
+    partyNameFindFirst.mockResolvedValue({ rawName: "Acme Trading Co" });
+    partyAddressFindFirst.mockResolvedValue(null);
+    partyContactFindFirst.mockResolvedValue(null);
+    runRestrictedPartyScreening.mockResolvedValue({ correlationId: "corr_1", passes: [] });
+    persistScreeningRun.mockResolvedValue([{ id: "result_1", passType: "PARTY_NAME", status: "CLEAR" }]);
+    recordUsageEvent.mockRejectedValue(new Error("billing unavailable"));
+
+    const { overallStatus } = await rescreenParty("acct_1", "party_1");
+    expect(overallStatus).toBe("CLEAR");
+  });
 });
 
 describe("rescreenParty: current-effective identity resolution", () => {

@@ -15,6 +15,7 @@ import { doEmbargoCheck } from "./doEmbargoCheck";
 import { parseClassification } from "./classificationParser";
 import { buildEmbargoAuditContext, createEmbargoUsageHeader, createEmbargoUsageLines } from "./embargoAudit";
 import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 import crypto from "crypto";
 import type {
   CountryEmbargoScreeningInput,
@@ -212,11 +213,12 @@ export async function runCountryEmbargoScreening(
   // legacy EmbargoUsageHeader/Line audit trail above. Shares the same
   // correlationId so the two can be cross-referenced without a schema change
   // to EmbargoUsageHeader. Never allowed to affect `status`/`hits`.
+  const complianceCorrelationId = input.correlationId ?? crypto.randomUUID();
   await recordComplianceExecution({
     accountId: input.accountId,
     executionType: "EMBARGO_SCREENING",
     status: status === "ERROR" ? "FAILED" : status === "PARTIAL" ? "PARTIAL" : "COMPLETED",
-    correlationId: input.correlationId ?? crypto.randomUUID(),
+    correlationId: complianceCorrelationId,
     shipmentId: input.shipmentId,
     source: "SHIPMENT_PIPELINE",
     countryChecked: input.shipToCountry ?? input.shipFromCountry ?? undefined,
@@ -225,6 +227,31 @@ export async function runCountryEmbargoScreening(
     resultRefType: usageId ? "EmbargoUsageHeader" : undefined,
     resultRefId: usageId,
   });
+
+  try {
+    await recordUsageEvent({
+      accountId: input.accountId,
+      eventCode: "EMBARGO_SCREENING_COMPLETED",
+      shipmentId: input.shipmentId,
+      quantity: 1,
+      unit: "shipment",
+      sourceFunction: "runCountryEmbargoScreening",
+      sourceAgent: "Compliance Audit Agent",
+      success: status !== "ERROR",
+      automated: true,
+      idempotencyKey: `billing:embargo:${complianceCorrelationId}`,
+      metadata: {
+        status,
+        checksPerformed: checks.length,
+        hitCount: hits.length,
+        errorCount: errors.length,
+        embargoUsageHeaderId: usageId ?? null,
+        complianceExecutionCorrelationId: complianceCorrelationId,
+      },
+    });
+  } catch (billingError) {
+    console.error("Failed to record embargo screening billing usage", billingError);
+  }
 
   return {
     status,

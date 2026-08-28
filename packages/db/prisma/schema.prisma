@@ -7010,6 +7010,10 @@ enum BillingEventCategory {
   VALUATION
   COMPLIANCE_REVIEW
   FILING_READINESS
+  RESTRICTED_PARTY_SCREENING
+  EMBARGO_SCREENING
+  COMMUNITY_SCREENING
+  RDPS_RESCREEN
 }
 
 /// Product module that owns the revenue event. Customer billing remains one

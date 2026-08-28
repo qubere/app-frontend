@@ -20,6 +20,7 @@ import { runRestrictedPartyScreening } from "./restrictedPartyScreening";
 import { persistScreeningRun, type PersistedRestrictedPartyResult } from "./persistResult";
 import { computeIdentityHash, loadCurrentIdentity, type Tx } from "./partyIdentity";
 import type { RestrictedPartyScreeningOptions, RestrictedPartyScreeningStatus } from "./types";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 
 /** Exported for reuse by the RDPS outcome recorder (modules/compliance/rdps/outcomeRecorder.ts), which needs the exact same worst-of-two-outcomes rollup rescreenParty already uses to decide whether a fresh rescreen is a worsening transition. */
 export const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
@@ -88,6 +89,22 @@ export async function rescreenParty(accountId: string, partyId: string, options?
       currentInputHash,
     },
   });
+
+  try {
+    await recordUsageEvent({
+      accountId,
+      eventCode: "RPS_SCREENING_COMPLETED",
+      quantity: 1,
+      unit: "party",
+      sourceFunction: "rescreenParty",
+      automated: true,
+      success: overallStatus !== "ERROR",
+      idempotencyKey: `billing:rps-party:${accountId}:${partyId}:${primaryResult.id}`,
+      metadata: { partyId, source: input.source, overallStatus },
+    });
+  } catch (billingError) {
+    console.error("Failed to record RPS Party Master billing usage", billingError);
+  }
 
   return { overallStatus, results: persisted };
 }

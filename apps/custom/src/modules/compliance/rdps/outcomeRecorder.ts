@@ -17,12 +17,60 @@ import { rescreenParty, STATUS_SEVERITY, worseStatus } from "../../agents/compli
 import type { RestrictedPartyScreeningStatus } from "../../agents/compliance/restrictedParty/types";
 import { createExceptionItem } from "@/lib/exceptions/createException";
 import { createAuditLog, AuditAction } from "@/lib/audit";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 
 export interface RecordRdpsOutcomeInput {
   runId: string;
   accountId: string;
   partyId: string;
   candidateReasons: CandidateReason[];
+  /** ReferenceDataChangeSet ids that produced this party as a DELTA_IMPACT candidate. Omitted/empty for FULL_POPULATION/MANUAL/TARGETED runs. */
+  triggeringChangeSetIds?: string[];
+}
+
+/**
+ * Deterministic previous->new classification for a Continuous Party
+ * Monitoring outcome (spec: UNCHANGED_CLEAR/UNCHANGED_REVIEW/UNCHANGED_HIT,
+ * NEW_REVIEW/NEW_HIT, ESCALATED, RISK_REDUCED/CLEARED, ERROR). A missing
+ * prior summary is treated as CLEAR baseline, matching isWorseningTransition
+ * below -- a first-ever HIT/REVIEW_REQUIRED must still classify as NEW_*,
+ * not UNCHANGED_*.
+ */
+export type RdpsTransitionType =
+  | "UNCHANGED_CLEAR"
+  | "UNCHANGED_REVIEW"
+  | "UNCHANGED_HIT"
+  | "NEW_REVIEW"
+  | "NEW_HIT"
+  | "ESCALATED"
+  | "RISK_REDUCED"
+  | "CLEARED"
+  | "ERROR"
+  | "SKIPPED"
+  | "PARTIAL";
+
+const RISK_RANK: Record<"CLEAR" | "REVIEW_REQUIRED" | "HIT", number> = { CLEAR: 0, REVIEW_REQUIRED: 1, HIT: 2 };
+
+export function classifyRdpsTransition(
+  previous: RestrictedPartyScreeningStatus | null,
+  fresh: RestrictedPartyScreeningStatus
+): RdpsTransitionType {
+  if (fresh === "ERROR") return "ERROR";
+  if (fresh === "SKIPPED") return "SKIPPED";
+  if (fresh === "PARTIAL") return "PARTIAL";
+
+  const baselineRaw = previous ?? "CLEAR";
+  const baseline: "CLEAR" | "REVIEW_REQUIRED" | "HIT" = baselineRaw in RISK_RANK ? (baselineRaw as any) : "CLEAR";
+  const baselineRank = RISK_RANK[baseline];
+  const freshRank = RISK_RANK[fresh];
+
+  if (freshRank === baselineRank) return `UNCHANGED_${fresh}` as RdpsTransitionType;
+  if (freshRank > baselineRank) {
+    if (fresh === "HIT" && baseline === "REVIEW_REQUIRED") return "ESCALATED";
+    return fresh === "HIT" ? "NEW_HIT" : "NEW_REVIEW";
+  }
+  // freshRank < baselineRank: risk decreased.
+  return fresh === "CLEAR" ? "CLEARED" : "RISK_REDUCED";
 }
 
 export interface RdpsOutcomeRecord {
@@ -58,7 +106,7 @@ function exceptionSeverityFor(status: RestrictedPartyScreeningStatus): string {
  * finish as COMPLETED.
  */
 export async function recordRdpsOutcome(input: RecordRdpsOutcomeInput): Promise<RdpsOutcomeRecord> {
-  const { runId, accountId, partyId, candidateReasons } = input;
+  const { runId, accountId, partyId, candidateReasons, triggeringChangeSetIds = [] } = input;
 
   const [priorSummary, activeApproval] = await Promise.all([
     db.partyScreeningSummary.findUnique({ where: { partyId }, select: { screeningStatus: true } }),
@@ -111,12 +159,31 @@ export async function recordRdpsOutcome(input: RecordRdpsOutcomeInput): Promise<
         candidateReasons,
         previousStatus: previousStatus ?? undefined,
         newStatus,
+        transitionType: classifyRdpsTransition(previousStatus, newStatus),
+        triggeringChangeSetIds,
         isWorsening: worsening,
         hadActivePreApproval,
         screeningResultId: primaryResult?.id ?? null,
         exceptionItemId,
       },
     });
+
+    try {
+      await recordUsageEvent({
+        accountId,
+        eventCode: "RDPS_RESCREEN_COMPLETED",
+        quantity: 1,
+        unit: "party",
+        sourceFunction: "recordRdpsOutcome",
+        sourceAgent: "RDPS Continuous Monitoring",
+        automated: true,
+        success: true,
+        idempotencyKey: `billing:rdps:${runId}:${partyId}`,
+        metadata: { runId, partyId, previousStatus, newStatus, isWorsening: worsening },
+      });
+    } catch (billingError) {
+      console.error("Failed to record RDPS billing usage", billingError);
+    }
 
     return { outcomeId: outcome.id, previousStatus, newStatus, isWorsening: worsening, errored: false };
   } catch (error) {
@@ -132,11 +199,31 @@ export async function recordRdpsOutcome(input: RecordRdpsOutcomeInput): Promise<
         // for "we don't actually know," never CLEAR (that would be a false
         // clear, exactly what fail-closed exists to prevent).
         newStatus: "ERROR",
+        transitionType: "ERROR",
+        triggeringChangeSetIds,
         isWorsening: false,
         hadActivePreApproval,
         errorMessage,
       },
     });
+
+    try {
+      await recordUsageEvent({
+        accountId,
+        eventCode: "RDPS_RESCREEN_COMPLETED",
+        quantity: 1,
+        unit: "party",
+        sourceFunction: "recordRdpsOutcome",
+        sourceAgent: "RDPS Continuous Monitoring",
+        automated: true,
+        success: false,
+        idempotencyKey: `billing:rdps:${runId}:${partyId}`,
+        metadata: { runId, partyId, errorMessage },
+      });
+    } catch (billingError) {
+      console.error("Failed to record RDPS billing usage (errored outcome)", billingError);
+    }
+
     return { outcomeId: outcome.id, previousStatus, newStatus: null, isWorsening: false, errored: true };
   }
 }

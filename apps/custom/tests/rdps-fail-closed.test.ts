@@ -36,6 +36,11 @@ vi.mock("@/lib/audit", () => ({
   AuditAction: { RDPS_WORSENING_DETECTED: "RDPS_WORSENING_DETECTED" },
 }));
 
+const recordUsageEvent = vi.fn();
+vi.mock("@/lib/billing/telemetry", () => ({
+  recordUsageEvent: (...args: unknown[]) => recordUsageEvent(...args),
+}));
+
 const { recordRdpsOutcome } = await import("@/modules/compliance/rdps/outcomeRecorder");
 const { listOutcomesForRun, listRuns } = await import("@/modules/compliance/rdps/rdpsQueryService");
 
@@ -43,6 +48,34 @@ beforeEach(() => {
   vi.clearAllMocks();
   dbMock.partyScreeningApproval.findFirst.mockResolvedValue(null);
   dbMock.rdpsPartyOutcome.create.mockImplementation(({ data }: any) => Promise.resolve({ id: "outcome_err", ...data }));
+  recordUsageEvent.mockResolvedValue({ status: "RECORDED" });
+});
+
+describe("recordRdpsOutcome: billing usage metering on the error path", () => {
+  it("still records an RDPS_RESCREEN_COMPLETED usage event with success:false when rescreenParty throws", async () => {
+    dbMock.partyScreeningSummary.findUnique.mockResolvedValue({ screeningStatus: "CLEAR" });
+    rescreenParty.mockRejectedValue(new Error("RPS engine unavailable"));
+
+    await recordRdpsOutcome({ runId: "run_1", accountId: "acct_1", partyId: "party_1", candidateReasons: [] });
+
+    expect(recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acct_1",
+        eventCode: "RDPS_RESCREEN_COMPLETED",
+        success: false,
+        idempotencyKey: "billing:rdps:run_1:party_1",
+      })
+    );
+  });
+
+  it("still writes the fail-closed outcome row when recordUsageEvent itself also rejects", async () => {
+    dbMock.partyScreeningSummary.findUnique.mockResolvedValue({ screeningStatus: "CLEAR" });
+    rescreenParty.mockRejectedValue(new Error("RPS engine unavailable"));
+    recordUsageEvent.mockRejectedValue(new Error("billing unavailable"));
+
+    const result = await recordRdpsOutcome({ runId: "run_1", accountId: "acct_1", partyId: "party_1", candidateReasons: [] });
+    expect(result.errored).toBe(true);
+  });
 });
 
 describe("recordRdpsOutcome: fail-closed when rescreenParty throws", () => {
