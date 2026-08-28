@@ -57,11 +57,6 @@ const STATUS_STYLES: Record<AgentInvocation["status"], { badge: string; label: s
     label: "Processing",
     icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
   },
-  PROCESSING: {
-    badge: "bg-blue-50 text-blue-700 border-blue-200",
-    label: "Processing",
-    icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-  },
 };
 
 // Poll every 3s while a run is active, 30s otherwise (cheap keep-alive to catch
