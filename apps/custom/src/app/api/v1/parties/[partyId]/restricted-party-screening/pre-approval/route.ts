@@ -6,7 +6,7 @@
  * in eligible reuse contexts (see preApproval.ts), for the party's *current*
  * identity snapshot only. Distinct from a candidate-level FALSE_POSITIVE
  * disposition (see the /disposition route) -- the two are never conflated.
- * Requires `compliance.restricted_party_approve` (stronger than ordinary
+ * Requires `compliance.restricted_party.approve` (stronger than ordinary
  * party-create authority).
  */
 import { NextResponse } from "next/server";
@@ -63,5 +63,5 @@ export const POST = withAuthenticatedRoute<{ partyId: string }>(
       throw error;
     }
   },
-  { permission: "compliance.restricted_party_approve", write: true }
+  { permission: "compliance.restricted_party.approve", write: true }
 );

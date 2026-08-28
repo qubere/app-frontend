@@ -3,7 +3,7 @@
  *
  * Revokes a Party-level Pre-Approval. Revocation is a one-way transition
  * (PRE_APPROVED -> REVOKED); approval history is never rewritten or deleted.
- * Requires `compliance.restricted_party_revoke` (stronger than ordinary
+ * Requires `compliance.restricted_party.revoke` (stronger than ordinary
  * party-create authority).
  */
 import { NextResponse } from "next/server";
@@ -50,5 +50,5 @@ export const PATCH = withAuthenticatedRoute<{ partyId: string; approvalId: strin
       throw error;
     }
   },
-  { permission: "compliance.restricted_party_revoke", write: true }
+  { permission: "compliance.restricted_party.revoke", write: true }
 );

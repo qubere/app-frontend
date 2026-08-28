@@ -10,7 +10,7 @@
 -- (the PR shipped the schema change with no migration). `prisma migrate diff`
 -- against the shared demo DB returns empty, i.e. those objects were already
 -- applied there via `db push` during development — so on that database run
--- `prisma migrate resolve --applied 20260828120000_add_customer_portal` instead
+-- `prisma migrate resolve --applied 20260828150000_add_customer_portal` instead
 -- of `migrate deploy`. On a fresh database `migrate deploy` runs it normally.
 -- Regenerate against a shadow DB with `prisma migrate diff
 -- --from-migrations ... --to-schema-datamodel ...` before relying on it in CI.

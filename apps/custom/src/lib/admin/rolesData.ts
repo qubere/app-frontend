@@ -6,6 +6,7 @@ import {
   catalogueCoverage,
   findPermission,
   roleGrantGap,
+  staleGrantNames,
   type CatalogueCoverage,
   type SystemRole,
 } from "@/lib/permissions";
@@ -22,6 +23,7 @@ export interface FormattedRole {
   memberCount: number;
   granted: Array<{ name: string; description: string }>;
   gapMissing: string[] | null;
+  staleGrants: string[] | null;
 }
 
 export interface RolesPermissionsData {
@@ -56,6 +58,11 @@ export async function getRolesPermissionsData(ctx: AccountContext): Promise<Role
   const formattedRoles: FormattedRole[] = roles.map((role) => {
     const granted = role.rolePermissions.map((rp) => rp.permission.name).sort();
     const gap = isSystemRole(role.name) ? roleGrantGap(role.name.toUpperCase(), granted) : null;
+    // Runs for every role, not just system ones: a name left over from a
+    // permission rename is never intentional, so a custom role's grant can
+    // silently go stale (the additive-only seed sync never re-grants a
+    // renamed permission to custom roles) with nothing else to surface it.
+    const stale = staleGrantNames(granted);
 
     return {
       id: role.id,
@@ -68,6 +75,7 @@ export async function getRolesPermissionsData(ctx: AccountContext): Promise<Role
         description: findPermission(name)?.description ?? "Not in the catalogue.",
       })),
       gapMissing: gap && gap.missing.length > 0 ? gap.missing : null,
+      staleGrants: stale.length > 0 ? stale : null,
     };
   });
 

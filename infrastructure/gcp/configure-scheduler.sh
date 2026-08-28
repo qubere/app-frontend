@@ -30,13 +30,14 @@ upsert_job() {
   local name="$1"
   local schedule="$2"
   local path="$3"
+  local method="${4:-GET}"
 
   local common_args=(
     --project="${GCP_PROJECT_ID}"
     --location="${GCP_REGION}"
     --schedule="${schedule}"
     --uri="${SERVICE_URL}${path}"
-    --http-method=GET
+    --http-method="${method}"
     --headers="Authorization=Bearer ${CRON_SECRET_VALUE}"
     --time-zone=Etc/UTC
     --attempt-deadline=30m
@@ -80,6 +81,16 @@ upsert_job qubere-fx-rate-refresh "0 3 * * *" /api/cron/fx-rate-refresh
 upsert_job qubere-uflpa-ingest "0 6 * * *" /api/cron/uflpa-entity-list-ingest
 upsert_job qubere-cbp-cross-ingest "0 5 * * *" /api/cron/cbp-cross-rulings-ingest
 upsert_job qubere-outbox-dispatch "*/5 * * * *" /api/cron/outbox-dispatch
+upsert_job qubere-compliance-notification-dispatch "*/2 * * * *" /api/cron/compliance-notification-dispatch
+upsert_job qubere-compliance-audit "0 1 * * *" /api/cron/compliance-audit
+upsert_job qubere-deadline-sweep "*/15 * * * *" /api/cron/deadline-sweep
+upsert_job qubere-regulatory-ingest "0 4 * * *" /api/cron/regulatory-ingest POST
+upsert_job qubere-rdps-recall-validation "0 5 * * *" /api/cron/rdps-recall-validation
+upsert_job qubere-origin-re-eval "0 6 * * *" /api/cron/origin-re-eval
+upsert_job qubere-rdps-delta-impact-dispatch "*/10 * * * *" /api/cron/rdps-delta-impact-dispatch
+upsert_job qubere-rdps-full-population-dispatch "0 * * * *" /api/cron/rdps-full-population-dispatch
+upsert_job qubere-reference-data-expiry-sweep "0 * * * *" /api/cron/reference-data-expiry-sweep
+upsert_job qubere-community-screening-dispatch "*/2 * * * *" /api/cron/community-screening-dispatch
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"
 upsert_backup_job() {

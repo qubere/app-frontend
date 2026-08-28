@@ -581,7 +581,7 @@ model Shipment {
   arrivalDate        DateTime? // Actual arrival at first US port; falls back to estimatedArrival
   transportMode      String? // Ocean | Air | Truck | Rail — ISF applies to Ocean only
   filingDeadline     DateTime? // Derived cache: min(dueAt) over OPEN blocking ComplianceDeadlines
-  status             String            @default("Draft") // Draft, In Progress, Ready to File, On Hold, Submitted, Completed
+  status             String            @default("Draft") // Draft, In Progress, Ready to File, On Hold, Submitted, Completed, DELIVERED, Delivered with Exception (the latter two are written by apps/tms's POD pipeline)
   customsRequired    Boolean           @default(false)
   // Workflow lifecycle stage. Values: DOCUMENT_INTAKE | CLASSIFICATION | VALUATION | ORIGIN | COMPLIANCE | FILING_PREP | READY_TO_FILE
   currentStage       String?
@@ -3129,6 +3129,11 @@ model CountryByCountryMap {
   cycyIndNationalSanction String? @map("CYCY_IND_NATIONAL_SANCTION")
   cycyIndEuSanction       String? @map("CYCY_IND_EU_SANCTION")
   cycyIndUnSanction       String? @map("CYCY_IND_UN_SANCTION")
+  /// Free-text legal/regulatory citation for this country pair (e.g. CFR
+  /// sections, Federal Register doc numbers). Not present in the legacy
+  /// source data -- populated selectively as citations are captured, and
+  /// only ever surfaced in a finding when present (see hitToFinding()).
+  citationText            String? @map("CITATION_TEXT")
 
   @@index([complianceCountry, embargoedCountry])
   @@map("country_by_country_maps")
@@ -5841,6 +5846,9 @@ model ScreeningEntity {
   // Dow Jones' ~62k rows.
   @@index([publicationStatus, sourceList])
   @@index([publicationStatus, provider])
+  // referenceDataExpirySweep.ts's WHERE publicationStatus = "PUBLISHED" AND
+  // expirationDate <= now() scan.
+  @@index([publicationStatus, expirationDate])
 }
 
 /// One name variant (Also Known As, Formerly Known As, Spelling Variation, ...)
@@ -6445,6 +6453,12 @@ enum ReferenceDataChangeType {
   ADDED
   UPDATED
   SUPERSEDED
+  /// Written only by referenceDataExpirySweep.ts when a PUBLISHED entity's own
+  /// expirationDate has passed -- distinct from SUPERSEDED (sweep-by-omission
+  /// or an explicit delist/ActiveStatus flip) so reference-data-health and the
+  /// Reference Changes UI can tell "this entity's own effective window ended"
+  /// apart from "the source list no longer lists this entity at all".
+  EXPIRED
 }
 
 /// One per-entity change record, written by an ingestion service immediately
@@ -6562,6 +6576,19 @@ model RdpsPartyOutcome {
 
   previousStatus RestrictedPartyScreeningStatus?
   newStatus      RestrictedPartyScreeningStatus
+
+  /// Deterministic previous->new classification (see classifyRdpsTransition
+  /// in outcomeRecorder.ts), e.g. NEW_HIT/ESCALATED/RISK_REDUCED/CLEARED/
+  /// UNCHANGED_(status)/ERROR. Nullable only for outcome rows written before
+  /// this column existed; every row created after this migration always sets it.
+  transitionType String?
+
+  /// ReferenceDataChangeSet ids that contributed this party as a candidate in
+  /// a DELTA_IMPACT run (a party can be triggered by more than one changed
+  /// entity in the same batch -- see deltaImpactDispatcher.ts's candidate
+  /// union). Empty for FULL_POPULATION/MANUAL/TARGETED outcomes, which have
+  /// no triggering change set.
+  triggeringChangeSetIds String[] @default([])
 
   isWorsening          Boolean @default(false)
   hadActivePreApproval Boolean @default(false)
@@ -7121,6 +7148,10 @@ enum BillingEventCategory {
   VALUATION
   COMPLIANCE_REVIEW
   FILING_READINESS
+  RESTRICTED_PARTY_SCREENING
+  EMBARGO_SCREENING
+  COMMUNITY_SCREENING
+  RDPS_RESCREEN
 }
 
 /// Product module that owns the revenue event. Customer billing remains one

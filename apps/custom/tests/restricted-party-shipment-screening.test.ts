@@ -26,6 +26,16 @@ vi.mock("@/modules/agents/compliance/restrictedParty/preApproval", () => ({
   checkPreApprovalGate,
 }));
 
+const recordComplianceExecution = vi.fn();
+vi.mock("@/modules/compliance/executionHistory", () => ({
+  recordComplianceExecution: (...args: unknown[]) => recordComplianceExecution(...args),
+}));
+
+const recordUsageEvent = vi.fn();
+vi.mock("@/lib/billing/telemetry", () => ({
+  recordUsageEvent: (...args: unknown[]) => recordUsageEvent(...args),
+}));
+
 const { runRestrictedPartyScreeningForShipment } = await import(
   "@/modules/agents/compliance/restrictedParty/shipmentScreening"
 );
@@ -73,6 +83,39 @@ beforeEach(() => {
   vi.clearAllMocks();
   persistScreeningRun.mockResolvedValue([]);
   checkPreApprovalGate.mockResolvedValue({ applied: false, reason: "No active pre-approval exists for this party." });
+  recordComplianceExecution.mockResolvedValue(undefined);
+  recordUsageEvent.mockResolvedValue({ status: "RECORDED" });
+});
+
+describe("runRestrictedPartyScreeningForShipment: billing usage metering", () => {
+  it("records an RPS_SCREENING_COMPLETED usage event per screened party with the correlation-scoped idempotency key", async () => {
+    getShipmentPartiesForScreening.mockResolvedValue([shipmentParty()]);
+    runRestrictedPartyScreening.mockResolvedValue({ correlationId: "corr_1", passes: [pass({ status: "CLEAR" })] });
+
+    await runRestrictedPartyScreeningForShipment("acct_1", "ship_1");
+
+    expect(recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acct_1",
+        eventCode: "RPS_SCREENING_COMPLETED",
+        shipmentId: "ship_1",
+        quantity: 1,
+        unit: "party",
+        idempotencyKey: "billing:rps-shipment:corr_1",
+      })
+    );
+  });
+
+  it("still returns the normal screening result when recordUsageEvent rejects (billing must never affect screening outcomes)", async () => {
+    getShipmentPartiesForScreening.mockResolvedValue([shipmentParty()]);
+    runRestrictedPartyScreening.mockResolvedValue({ correlationId: "corr_1", passes: [pass({ status: "CLEAR" })] });
+    recordUsageEvent.mockRejectedValue(new Error("billing unavailable"));
+
+    const result = await runRestrictedPartyScreeningForShipment("acct_1", "ship_1");
+
+    expect(result.status).toBe("CLEAR");
+    expect(result.partiesScreened).toBe(1);
+  });
 });
 
 describe("runRestrictedPartyScreeningForShipment: no shipment parties never resolves to CLEAR", () => {

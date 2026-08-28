@@ -209,6 +209,7 @@ export function buildAgentInvocations(
     );
     const jobForRun = activeJob || (pipelineJobs || [])[0];
 
+    // Determine expected total steps for this pipeline trigger type
     const expectedTotalSteps =
       jobForRun?.totalSteps ||
       (g.triggerEvent === "DOCUMENT_UPLOADED" || g.triggerEvent === "DOCUMENT_PARSE_PROMOTED" ? 10 : Math.max(g.steps.length, 1));

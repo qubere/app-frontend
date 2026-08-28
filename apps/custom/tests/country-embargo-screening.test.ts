@@ -17,6 +17,16 @@ vi.mock("@/modules/agents/compliance/embargo/embargoAudit", () => ({
   createEmbargoUsageLines,
 }));
 
+const recordComplianceExecution = vi.fn();
+vi.mock("@/modules/compliance/executionHistory", () => ({
+  recordComplianceExecution: (...args: unknown[]) => recordComplianceExecution(...args),
+}));
+
+const recordUsageEvent = vi.fn();
+vi.mock("@/lib/billing/telemetry", () => ({
+  recordUsageEvent: (...args: unknown[]) => recordUsageEvent(...args),
+}));
+
 const { runCountryEmbargoScreening } = await import(
   "@/modules/agents/compliance/embargo/countryEmbargoScreening"
 );
@@ -70,6 +80,38 @@ function hit(level: string, type: string, target: string, extra: Record<string, 
 beforeEach(() => {
   vi.clearAllMocks();
   buildEmbargoAuditContext.mockReturnValue({ audited: false, writeDetailedLines: false });
+  recordComplianceExecution.mockResolvedValue(undefined);
+  recordUsageEvent.mockResolvedValue({ status: "RECORDED" });
+});
+
+describe("runCountryEmbargoScreening: billing usage metering", () => {
+  it("records an EMBARGO_SCREENING_COMPLETED usage event keyed by the same correlationId shared with ComplianceExecution", async () => {
+    doEmbargoCheck.mockResolvedValue(clear("TRANSACTION", "D", "IR"));
+    await runCountryEmbargoScreening(baseInput({ correlationId: "corr_fixed_1" }));
+
+    expect(recordComplianceExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ correlationId: "corr_fixed_1" })
+    );
+    expect(recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acct_1",
+        eventCode: "EMBARGO_SCREENING_COMPLETED",
+        shipmentId: "ship_1",
+        quantity: 1,
+        unit: "shipment",
+        idempotencyKey: "billing:embargo:corr_fixed_1",
+        metadata: expect.objectContaining({ complianceExecutionCorrelationId: "corr_fixed_1" }),
+      })
+    );
+  });
+
+  it("still returns the normal screening result when recordUsageEvent rejects (billing must never affect screening outcomes)", async () => {
+    doEmbargoCheck.mockResolvedValue(clear("TRANSACTION", "D", "IR"));
+    recordUsageEvent.mockRejectedValue(new Error("billing unavailable"));
+
+    const result = await runCountryEmbargoScreening(baseInput());
+    expect(result.status).toBe("CLEAR");
+  });
 });
 
 describe("runCountryEmbargoScreening", () => {

@@ -427,15 +427,16 @@ export class ComplianceAuditAgent {
         }
         for (const hit of countryEmbargoScreening.hits) {
           const isPrivate = hit.matcher === "PRIVATE";
+          const citationSuffix = hit.citationText ? ` Citation: ${hit.citationText}` : "";
           auditResults.push({
             ruleId: hit.ruleId ? `RULE-${isPrivate ? "PRIVATE" : "COUNTRY"}-EMBARGO-${hit.ruleId}` : "RULE-COUNTRY-EMBARGO",
             ruleName: isPrivate ? "Private Embargo Screening" : "Country Embargo Screening",
             category: isPrivate ? "PRIVATE_EMBARGO" : "COUNTRY_EMBARGO",
             passed: false,
             severity: "CRITICAL",
-            details: isPrivate
+            details: (isPrivate
               ? `${hit.screeningLevel}/${hit.type === "D" ? "destination" : "origin"} screening: "${hit.country}" matched an active private/account-configured embargo rule (not a government sanction) for compliance country "${hit.complianceCountry}".${hit.lineItemId ? ` Line ${hit.lineItemId}.` : ""}`
-              : `${hit.screeningLevel}/${hit.type === "D" ? "destination" : "origin"} screening: compliance country "${hit.complianceCountry}" embargoes "${hit.country}" (matcher: ${hit.matcher}).${hit.lineItemId ? ` Line ${hit.lineItemId}.` : ""}`,
+              : `${hit.screeningLevel}/${hit.type === "D" ? "destination" : "origin"} screening: compliance country "${hit.complianceCountry}" embargoes "${hit.country}" (matcher: ${hit.matcher}).${hit.lineItemId ? ` Line ${hit.lineItemId}.` : ""}`) + citationSuffix,
             lineNumber: hit.lineItemId ? Number(hit.lineItemId) || undefined : undefined,
           });
         }

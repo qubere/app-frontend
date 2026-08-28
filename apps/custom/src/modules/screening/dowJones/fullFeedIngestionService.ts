@@ -8,13 +8,18 @@ import { recordReferenceDataChanges } from "../referenceDataChangeTracking";
 // Dow Jones has no scheduled cron entry in datasetRegistry.ts (it's a
 // manual, operator-triggered file upload, not a polled feed), so there is
 // no DatasetDefinition.id to reuse -- this is a locally-defined constant.
-const DOW_JONES_DATASET_ID = "dow-jones-full-feed";
+// Matches the "dow-jones-djrc-full" id the manual seed script
+// (run-dow-jones-full-load.ts) already uses for DatasetRefreshLog rows, so
+// ReferenceDataChangeSet.datasetId and DatasetRefreshLog.datasetId share one
+// namespace for this dataset, as the reference-data health rollup relies on.
+const DOW_JONES_DATASET_ID = "dow-jones-djrc-full";
 
 // Same batch size as ofacSdnIngestionService.ts -- tuned against the
 // Supabase pgbouncer pooler's connection_limit=10; a larger batch blows
 // past the pool and hangs.
-const UPSERT_BATCH_SIZE = 8;
-const PROVIDER = "DOW_JONES" as const;
+export const UPSERT_BATCH_SIZE = 8;
+export const PROVIDER = "DOW_JONES" as const;
+export const FULL_FEED_DATASET_ID = DOW_JONES_DATASET_ID;
 
 // Transient network/pool errors seen against the Supabase pgbouncer pooler
 // over a long-running (multi-hour, ~62k-entity) batch -- e.g. a momentary
@@ -26,7 +31,7 @@ const PROVIDER = "DOW_JONES" as const;
 const TRANSIENT_PRISMA_ERROR_CODES = new Set(["P1001", "P1017", "P2024"]);
 const MAX_TRANSIENT_RETRIES = 5;
 
-async function withTransientRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+export async function withTransientRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn();
@@ -132,7 +137,7 @@ interface ParsedFeed {
  * ofacSdnIngestionService.ts's parse-fully-then-write pattern: the parsed
  * objects are what stay in memory, not the source XML.
  */
-async function parseDowJonesEntities(filePath: string): Promise<ParsedFeed> {
+export async function parseDowJonesEntities(filePath: string): Promise<ParsedFeed> {
   const entities: RawEntity[] = [];
   let feedDate = new Date();
   let feedType = "full";
@@ -286,6 +291,93 @@ async function parseDowJonesEntities(filePath: string): Promise<ParsedFeed> {
   return { feedDate, feedType, entities, associationsCount, personRecordsEncountered };
 }
 
+export interface DowJonesEntityWriteResult {
+  id: string;
+  sourceList: string;
+  wasCreated: boolean;
+}
+
+/**
+ * Upserts one transformed Dow Jones entity (keyed on
+ * (provider="DOW_JONES", providerRecordId)) plus its alias/address/
+ * identifier/reference child rows. Shared by full-feed and delta-feed
+ * ingestion -- a delta file's "changed since last full/delta run" entities
+ * are written through exactly the same create-or-update + replace-children
+ * path as a full file's entities, so there is only one place that can get
+ * the upsert/child-replace semantics wrong.
+ */
+export async function upsertDowJonesEntity(
+  mapped: import("./entityTransformer").TransformedEntity
+): Promise<DowJonesEntityWriteResult> {
+  return withTransientRetry(async () => {
+    const existing = await db.screeningEntity.findUnique({
+      where: { provider_providerRecordId: { provider: PROVIDER, providerRecordId: mapped.providerRecordId } },
+      select: { id: true },
+    });
+
+    const entityData = {
+      entityHash: mapped.entityHash,
+      sourceList: mapped.sourceList ?? "DOW_JONES_UNCLASSIFIED",
+      entityType: mapped.entityType,
+      name: mapped.name,
+      alternateNames: mapped.alternateNames,
+      address: mapped.address,
+      city: mapped.city,
+      country: mapped.country,
+      programCodes: mapped.programCodes,
+      agency: mapped.sourceAuthority,
+      publicationStatus: mapped.publicationStatus,
+      publishedAt: mapped.publicationStatus === "PUBLISHED" ? new Date() : undefined,
+      sourcePublishedAt: mapped.sourceFileDate,
+      provider: mapped.provider,
+      providerRecordId: mapped.providerRecordId,
+      providerUpdatedAt: mapped.providerUpdatedAt,
+      sourceAuthority: mapped.sourceAuthority,
+      sourceFileDate: mapped.sourceFileDate,
+      sourceFileType: mapped.sourceFileType,
+      providerMetadata: mapped.providerMetadata as any,
+    };
+
+    const screeningEntity = existing
+      ? await db.screeningEntity.update({ where: { id: existing.id }, data: entityData })
+      : await db.screeningEntity.create({ data: entityData });
+
+    // Child rows are entirely owned by this ingestion (scoped to this one
+    // Dow Jones ScreeningEntity's id) -- replacing them on re-run is not a
+    // violation of "don't touch existing data", since nothing outside rows
+    // this service itself created is deleted.
+    await db.$transaction([
+      db.screeningEntityAlias.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
+      db.screeningEntityAddress.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
+      db.screeningEntityIdentifier.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
+      db.screeningEntityReference.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
+    ]);
+
+    if (mapped.aliases.length) {
+      await db.screeningEntityAlias.createMany({
+        data: mapped.aliases.map((a) => ({ ...a, screeningEntityId: screeningEntity.id })),
+      });
+    }
+    if (mapped.addresses.length) {
+      await db.screeningEntityAddress.createMany({
+        data: mapped.addresses.map((a) => ({ ...a, screeningEntityId: screeningEntity.id })),
+      });
+    }
+    if (mapped.identifiers.length) {
+      await db.screeningEntityIdentifier.createMany({
+        data: mapped.identifiers.map((idf) => ({ ...idf, screeningEntityId: screeningEntity.id })),
+      });
+    }
+    if (mapped.references.length) {
+      await db.screeningEntityReference.createMany({
+        data: mapped.references.map((r) => ({ ...r, screeningEntityId: screeningEntity.id })),
+      });
+    }
+
+    return { id: screeningEntity.id, sourceList: entityData.sourceList, wasCreated: !existing };
+  }, `entity providerRecordId=${mapped.providerRecordId}`);
+}
+
 /**
  * Full-load ingestion of one Dow Jones DJRC_SOR_XML file. Purely additive:
  * upserts only rows keyed by (provider="DOW_JONES", providerRecordId) and
@@ -345,73 +437,7 @@ export async function ingestDowJonesFullFeed(
           return;
         }
 
-        const writeResult = await withTransientRetry(async () => {
-          const existing = await db.screeningEntity.findUnique({
-            where: { provider_providerRecordId: { provider: PROVIDER, providerRecordId: mapped.providerRecordId } },
-            select: { id: true },
-          });
-
-          const entityData = {
-            entityHash: mapped.entityHash,
-            sourceList: mapped.sourceList ?? "DOW_JONES_UNCLASSIFIED",
-            entityType: mapped.entityType,
-            name: mapped.name,
-            alternateNames: mapped.alternateNames,
-            address: mapped.address,
-            city: mapped.city,
-            country: mapped.country,
-            programCodes: mapped.programCodes,
-            agency: mapped.sourceAuthority,
-            publicationStatus: mapped.publicationStatus,
-            publishedAt: mapped.publicationStatus === "PUBLISHED" ? new Date() : undefined,
-            sourcePublishedAt: mapped.sourceFileDate,
-            provider: mapped.provider,
-            providerRecordId: mapped.providerRecordId,
-            providerUpdatedAt: mapped.providerUpdatedAt,
-            sourceAuthority: mapped.sourceAuthority,
-            sourceFileDate: mapped.sourceFileDate,
-            sourceFileType: mapped.sourceFileType,
-            providerMetadata: mapped.providerMetadata as any,
-          };
-
-          const screeningEntity = existing
-            ? await db.screeningEntity.update({ where: { id: existing.id }, data: entityData })
-            : await db.screeningEntity.create({ data: entityData });
-
-          // Child rows are entirely owned by this ingestion (scoped to this
-          // one Dow Jones ScreeningEntity's id) -- replacing them on re-run is
-          // not a violation of "don't touch existing data", since nothing
-          // outside rows this service itself created is deleted.
-          await db.$transaction([
-            db.screeningEntityAlias.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
-            db.screeningEntityAddress.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
-            db.screeningEntityIdentifier.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
-            db.screeningEntityReference.deleteMany({ where: { screeningEntityId: screeningEntity.id } }),
-          ]);
-
-          if (mapped.aliases.length) {
-            await db.screeningEntityAlias.createMany({
-              data: mapped.aliases.map((a) => ({ ...a, screeningEntityId: screeningEntity.id })),
-            });
-          }
-          if (mapped.addresses.length) {
-            await db.screeningEntityAddress.createMany({
-              data: mapped.addresses.map((a) => ({ ...a, screeningEntityId: screeningEntity.id })),
-            });
-          }
-          if (mapped.identifiers.length) {
-            await db.screeningEntityIdentifier.createMany({
-              data: mapped.identifiers.map((idf) => ({ ...idf, screeningEntityId: screeningEntity.id })),
-            });
-          }
-          if (mapped.references.length) {
-            await db.screeningEntityReference.createMany({
-              data: mapped.references.map((r) => ({ ...r, screeningEntityId: screeningEntity.id })),
-            });
-          }
-
-          return { id: screeningEntity.id, sourceList: entityData.sourceList, wasCreated: !existing };
-        }, `entity providerRecordId=${mapped.providerRecordId}`);
+        const writeResult = await upsertDowJonesEntity(mapped);
 
         if (writeResult.wasCreated) created++;
         else updated++;

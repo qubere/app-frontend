@@ -80,6 +80,15 @@ export interface PermissionDefinition {
   description: string;
   category: PermissionCategory;
   defaultRoles: readonly SystemRole[];
+  /**
+   * Names this permission was seeded under previously. Lets the seed tell a
+   * rename apart from a brand-new permission and update the existing
+   * Permission row's name in place -- preserving its id so every
+   * RolePermission grant already pointing at it (system AND custom roles)
+   * follows the rename automatically, instead of being left orphaned while a
+   * duplicate row is created under the new name.
+   */
+  formerNames?: readonly string[];
 }
 
 const BILLING_ADMINS: readonly SystemRole[] = ["BROKER_ADMIN", "TMS_ADMIN", "OWNER", "ADMIN"];
@@ -159,8 +168,8 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "compliance.review", description: "Review compliance exceptions and warnings.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
   { name: "compliance.approve", description: "Approve compliance clearance.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
   { name: "compliance.override", description: "Waive or override compliance exception.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
-  { name: "compliance.restricted_party_approve", description: "Approve a Party for restricted-party screening reuse (pre-approval).", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
-  { name: "compliance.restricted_party_revoke", description: "Revoke a Party's restricted-party screening pre-approval.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "compliance.restricted_party.approve", description: "Approve a Party for restricted-party screening reuse (pre-approval).", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"], formerNames: ["compliance.restricted_party_approve"] },
+  { name: "compliance.restricted_party.revoke", description: "Revoke a Party's restricted-party screening pre-approval.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"], formerNames: ["compliance.restricted_party_revoke"] },
   { name: "compliance.rdps.read", description: "View Continuous Party Monitoring (RDPS) runs, alerts, and reference-data changes.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
   { name: "compliance.rdps.manage", description: "Trigger manual/targeted RDPS scans and disposition RDPS worsening alerts.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
   { name: "compliance.community_screening.read", description: "View Community Screening runs, results, and findings.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
@@ -441,4 +450,18 @@ export function roleGrantGap(roleName: string, granted: readonly string[]): Role
     missing: defaults.filter((name) => !held.has(name)),
     extra: [...held].filter((name) => !defaultSet.has(name)).sort(),
   };
+}
+
+/**
+ * Grant names a role holds that no longer exist in PERMISSION_CATALOGUE --
+ * e.g. left behind by a permission rename, since the seed sync upserts by
+ * name and never renames/removes the old DB row. Unlike roleGrantGap's
+ * `extra` (which flags any grant beyond a system role's defaults, including
+ * intentional customization), this applies to every role, system or custom,
+ * because an uncatalogued name is never intentional -- the permission it
+ * once named doesn't exist anymore.
+ */
+export function staleGrantNames(granted: readonly string[]): string[] {
+  const catalogued = new Set(PERMISSION_NAMES);
+  return granted.filter((name) => !catalogued.has(name));
 }

@@ -10,3 +10,4 @@ export * from "./audit-service";
 export * from "./authorization-service";
 export * from "./portal-auth";
 export * from "./client-auth";
+export * from "./logger";

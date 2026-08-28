@@ -12,6 +12,7 @@ import { getAccountEmbargoConfig } from "@/modules/agents/compliance/embargo/emb
 import { doEmbargoCheck } from "@/modules/agents/compliance/embargo/doEmbargoCheck";
 import type { EmbargoCheckContext } from "@/modules/agents/compliance/embargo/types";
 import { aggregatePartyStatus } from "./aggregation";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 import type {
   CommunityScreeningChecksEnabled,
   CommunityScreeningFindingCategory,
@@ -231,4 +232,21 @@ export async function evaluateParty(
       evaluatedAt: new Date(),
     },
   });
+
+  try {
+    await recordUsageEvent({
+      accountId: params.accountId,
+      eventCode: "COMMUNITY_SCREENING_COMPLETED",
+      userId: params.requestedByUserId ?? undefined,
+      quantity: 1,
+      unit: "party",
+      sourceFunction: "evaluateParty",
+      automated: true,
+      success: aggregateStatus !== "ERROR",
+      idempotencyKey: `billing:community-screening:${params.runId}:${row.id}`,
+      metadata: { runId: params.runId, rowId: row.id, partyId: row.partyId ?? null, aggregateStatus },
+    });
+  } catch (billingError) {
+    console.error("Failed to record community screening billing usage", billingError);
+  }
 }

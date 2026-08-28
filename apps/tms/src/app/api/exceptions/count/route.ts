@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
+import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 
-export async function GET() {
-  try {
-    const count = await db.exceptionItem.count({ where: { status: "Open" } }).catch(() => 8);
-    return NextResponse.json({ count });
-  } catch {
-    return NextResponse.json({ count: 8 });
-  }
-}
+export const GET = withAuthenticatedRoute(async ({ ctx }) => {
+  const count = await db.exceptionItem.count({ where: { status: "Open", accountId: ctx.accountId } });
+  return NextResponse.json({ count });
+});

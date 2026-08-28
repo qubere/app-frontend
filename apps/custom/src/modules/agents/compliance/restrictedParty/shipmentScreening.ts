@@ -12,6 +12,7 @@ import { runRestrictedPartyScreening } from "./restrictedPartyScreening";
 import { persistScreeningRun } from "./persistResult";
 import { checkPreApprovalGate } from "./preApproval";
 import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 import type { RestrictedPartyPassType, RestrictedPartyScreeningStatus } from "./types";
 
 const STATUS_SEVERITY: Record<RestrictedPartyScreeningStatus, number> = {
@@ -182,6 +183,30 @@ export async function runRestrictedPartyScreeningForShipment(
       finalStatus: passStatuses.join(","),
       durationMs: runResult.passes.reduce((sum, p) => sum + (p.screeningDurationMs ?? 0), 0),
     });
+
+    try {
+      await recordUsageEvent({
+        accountId,
+        eventCode: "RPS_SCREENING_COMPLETED",
+        shipmentId,
+        userId: options?.userId ?? undefined,
+        quantity: 1,
+        unit: "party",
+        sourceFunction: "runRestrictedPartyScreeningForShipment",
+        sourceAgent: "Compliance Audit Agent",
+        success: executionStatus !== "FAILED",
+        automated: true,
+        idempotencyKey: `billing:rps-shipment:${runResult.correlationId}`,
+        metadata: {
+          partyRole: party.role,
+          partyId: party.partyId ?? null,
+          complianceExecutionCorrelationId: runResult.correlationId,
+          status: passStatuses.join(","),
+        },
+      });
+    } catch (billingError) {
+      console.error("Failed to record RPS shipment billing usage", billingError);
+    }
 
     for (const pass of runResult.passes) {
       overall = worseStatus(overall, pass.status);

@@ -85,14 +85,30 @@ export class RdpsDeltaImpactDispatcher {
 
       const index = await buildPartyIdentityIndex();
 
-      const candidatesByParty = new Map<string, { accountId: string; reasons: Set<CandidateReason> }>();
+      // Per-entity matches are cached once so each claimed change-set row can
+      // attribute its own id to the parties it (specifically) impacted --
+      // without this, changeSet-level attribution would be indistinguishable
+      // from any other change-set in the same batch that happened to touch
+      // the same entity.
+      const matchesByEntityId = new Map<string, ReturnType<typeof findImpactedParties>>();
       for (const entity of changedEntities) {
-        for (const match of findImpactedParties(entity, index)) {
+        matchesByEntityId.set(entity.id, findImpactedParties(entity, index));
+      }
+
+      const candidatesByParty = new Map<string, { accountId: string; reasons: Set<CandidateReason>; changeSetIds: Set<string> }>();
+      for (const changeSet of claimed) {
+        const matches = matchesByEntityId.get(changeSet.screeningEntityId) ?? [];
+        for (const match of matches) {
           const existing = candidatesByParty.get(match.partyId);
           if (existing) {
             match.reasons.forEach((r) => existing.reasons.add(r));
+            existing.changeSetIds.add(changeSet.id);
           } else {
-            candidatesByParty.set(match.partyId, { accountId: match.accountId, reasons: new Set(match.reasons) });
+            candidatesByParty.set(match.partyId, {
+              accountId: match.accountId,
+              reasons: new Set(match.reasons),
+              changeSetIds: new Set([changeSet.id]),
+            });
           }
         }
       }
@@ -100,8 +116,14 @@ export class RdpsDeltaImpactDispatcher {
       let screenedCount = 0;
       let worsenedCount = 0;
       let erroredCount = 0;
-      for (const [partyId, { accountId, reasons }] of candidatesByParty) {
-        const outcome = await recordRdpsOutcome({ runId: run.id, accountId, partyId, candidateReasons: Array.from(reasons) });
+      for (const [partyId, { accountId, reasons, changeSetIds }] of candidatesByParty) {
+        const outcome = await recordRdpsOutcome({
+          runId: run.id,
+          accountId,
+          partyId,
+          candidateReasons: Array.from(reasons),
+          triggeringChangeSetIds: Array.from(changeSetIds),
+        });
         screenedCount += 1;
         if (outcome.isWorsening) worsenedCount += 1;
         if (outcome.errored) erroredCount += 1;

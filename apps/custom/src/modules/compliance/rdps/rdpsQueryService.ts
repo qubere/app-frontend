@@ -13,6 +13,7 @@
 import { db } from "@/lib/db";
 import type { Prisma, RdpsRunStatus, RdpsRunType } from "@prisma/client";
 import { ExceptionService, type ExceptionResolver } from "@/modules/exceptions/exception.service";
+import { buildPartyIdentityIndex, findImpactedParties } from "../../agents/compliance/restrictedParty/impactAnalysis";
 
 const PARTY_DISPLAY_NAME_INCLUDE = {
   names: {
@@ -229,6 +230,223 @@ export async function getReferenceChange(id: string) {
   return db.referenceDataChangeSet.findUnique({
     where: { id },
     include: { screeningEntity: { select: { id: true, name: true, sourceList: true, country: true } } },
+  });
+}
+
+export interface ListImpactsForChangeFilters {
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * Per-change-set Impacted Parties drill-down (spec section on Reference
+ * Changes -> Impacted Parties): every RdpsPartyOutcome that named this
+ * ReferenceDataChangeSet id in triggeringChangeSetIds, scoped to the
+ * caller's tenant. Only DELTA_IMPACT outcomes ever populate that array (see
+ * deltaImpactDispatcher.ts), so a change set that has not yet been claimed
+ * -- or was superseded by an EXPIRED-only sweep with no matched parties --
+ * legitimately returns an empty list, not an error.
+ */
+export async function listImpactsForChange(accountId: string, changeSetId: string, filters: ListImpactsForChangeFilters) {
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 50));
+
+  const where: Prisma.RdpsPartyOutcomeWhereInput = {
+    accountId,
+    triggeringChangeSetIds: { has: changeSetId },
+  };
+
+  const [impacts, total] = await Promise.all([
+    db.rdpsPartyOutcome.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        party: { include: PARTY_DISPLAY_NAME_INCLUDE },
+        run: { select: { id: true, runType: true, startedAt: true } },
+      },
+    }),
+    db.rdpsPartyOutcome.count({ where }),
+  ]);
+
+  return {
+    impacts: impacts.map((i) => ({ ...i, partyDisplayName: partyDisplayName(i.party) })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+export class ReferenceChangeNotFoundError extends Error {
+  constructor() {
+    super("Reference data change set not found");
+  }
+}
+
+export interface PreviewImpactCandidate {
+  partyId: string;
+  accountId: string;
+  partyDisplayName: string;
+  reasons: string[];
+  currentStatus: string | null;
+  lastScreenedAt: Date | null;
+}
+
+/**
+ * Preview Impact (spec: strictly read-only). Runs the EXACT same reverse
+ * impact-matching logic the delta-impact dispatcher uses
+ * (buildPartyIdentityIndex + findImpactedParties over the whole active
+ * Party population) against one ReferenceDataChangeSet's ScreeningEntity,
+ * but does NOT create an RdpsRun, does NOT write any RdpsPartyOutcome, does
+ * NOT create an alert/exception/notification, and does NOT call
+ * rescreenParty. Candidates are filtered to the caller's tenant and
+ * enriched with the party's LAST KNOWN screening status/timestamp only --
+ * never a freshly computed one, since computing one would itself mutate
+ * PartyScreeningSummary via rescreenParty.
+ */
+export async function previewReferenceChangeImpact(accountId: string, changeSetId: string): Promise<PreviewImpactCandidate[]> {
+  const changeSet = await db.referenceDataChangeSet.findUnique({
+    where: { id: changeSetId },
+    include: { screeningEntity: { include: { addresses: true, aliases: true } } },
+  });
+  if (!changeSet || !changeSet.screeningEntity) {
+    throw new ReferenceChangeNotFoundError();
+  }
+
+  const index = await buildPartyIdentityIndex();
+  const matches = findImpactedParties(changeSet.screeningEntity, index).filter((m) => m.accountId === accountId);
+  if (matches.length === 0) return [];
+
+  const partyIds = matches.map((m) => m.partyId);
+  const parties = await db.party.findMany({
+    where: { id: { in: partyIds } },
+    select: {
+      id: true,
+      ...PARTY_DISPLAY_NAME_INCLUDE,
+      screeningSummary: { select: { screeningStatus: true, lastScreenedAt: true } },
+    },
+  });
+  const partyById = new Map(parties.map((p) => [p.id, p]));
+
+  return matches.map((m) => {
+    const party = partyById.get(m.partyId);
+    return {
+      partyId: m.partyId,
+      accountId: m.accountId,
+      partyDisplayName: partyDisplayName(party),
+      reasons: Array.from(m.reasons),
+      currentStatus: party?.screeningSummary?.screeningStatus ?? null,
+      lastScreenedAt: party?.screeningSummary?.lastScreenedAt ?? null,
+    };
+  });
+}
+
+// RPS reference-data health rollup (spec: Provider / List / Last Successful
+// Import / Published Version / Record Count / Added / Updated / Removed /
+// Import Status). Deliberately reuses the existing DatasetRefreshLog +
+// ReferenceDataChangeSet rows every ingestion service already writes rather
+// than re-deriving counts from ScreeningEntity: OFAC's "SDN" sourceList and
+// BIS CSL's mirrored "SDN" sourceList can resolve to the same entityHash (and
+// therefore the same row), so per-entity counts grouped by sourceList can't
+// be attributed to one dataset unambiguously. DatasetRefreshLog.itemsIngested
+// and ReferenceDataChangeSet's changeType counts, in contrast, are written by
+// the specific run that produced them and need no such attribution.
+const RPS_REFERENCE_DATASETS: { datasetId: string; label: string; provider: string | null }[] = [
+  { datasetId: "ofac-sdn", label: "OFAC SDN + Consolidated Non-SDN", provider: null },
+  { datasetId: "bis-csl", label: "BIS Consolidated Screening List (CSL)", provider: null },
+  { datasetId: "uflpa-entity-list", label: "UFLPA Entity List (DHS FLETF)", provider: null },
+  { datasetId: "dow-jones-djrc-full", label: "Dow Jones Risk & Compliance -- Full Feed", provider: "DOW_JONES" },
+  { datasetId: "dow-jones-djrc-delta", label: "Dow Jones Risk & Compliance -- Delta Feed", provider: "DOW_JONES" },
+  // Cross-cutting sweep, not owned by any one ingestion pipeline -- see
+  // referenceDataExpirySweep.ts. Origin dataset attribution for an expired
+  // entity is often ambiguous (OFAC's and BIS CSL's "SDN" sourceLists can
+  // resolve to the same entityHash), so it's tracked as its own row instead.
+  { datasetId: "reference-data-expiry-sweep", label: "Reference Data Expiry Sweep", provider: null },
+];
+
+export interface ReferenceDataHealthRow {
+  datasetId: string;
+  label: string;
+  provider: string | null;
+  importStatus: string | null; // last DatasetRefreshLog.status, or null if never run
+  lastImportStartedAt: Date | null;
+  lastImportCompletedAt: Date | null;
+  lastImportErrorMessage: string | null;
+  lastSuccessfulImportAt: Date | null;
+  publishedVersion: Date | null; // sourcePublishDate reported by the last successful run
+  recordCount: number | null; // itemsIngested on the last successful run
+  sourceReportedTotal: number | null;
+  added: number;
+  updated: number;
+  removed: number;
+  expired: number;
+}
+
+export async function getReferenceDataHealth(): Promise<ReferenceDataHealthRow[]> {
+  const datasetIds = RPS_REFERENCE_DATASETS.map((d) => d.datasetId);
+
+  const [lastLogs, lastSuccessLogs, latestRunRows] = await Promise.all([
+    db.datasetRefreshLog.findMany({
+      where: { datasetId: { in: datasetIds } },
+      orderBy: { startedAt: "desc" },
+      distinct: ["datasetId"],
+    }),
+    db.datasetRefreshLog.findMany({
+      where: { datasetId: { in: datasetIds }, status: "SUCCESS" },
+      orderBy: { completedAt: "desc" },
+      distinct: ["datasetId"],
+    }),
+    db.referenceDataChangeSet.findMany({
+      where: { datasetId: { in: datasetIds } },
+      orderBy: { occurredAt: "desc" },
+      distinct: ["datasetId"],
+      select: { datasetId: true, ingestionRunId: true },
+    }),
+  ]);
+
+  const logByDataset = new Map(lastLogs.map((l) => [l.datasetId, l]));
+  const lastSuccessByDataset = new Map(lastSuccessLogs.map((l) => [l.datasetId, l]));
+  const runIdByDataset = new Map(latestRunRows.map((r) => [r.datasetId, r.ingestionRunId]));
+
+  const relevantRunIds = Array.from(new Set(Array.from(runIdByDataset.values())));
+  const changeCounts = relevantRunIds.length
+    ? await db.referenceDataChangeSet.groupBy({
+        by: ["datasetId", "ingestionRunId", "changeType"],
+        where: { datasetId: { in: datasetIds }, ingestionRunId: { in: relevantRunIds } },
+        _count: { _all: true },
+      })
+    : [];
+
+  return RPS_REFERENCE_DATASETS.map(({ datasetId, label, provider }) => {
+    const lastLog = logByDataset.get(datasetId) ?? null;
+    const lastSuccess = lastSuccessByDataset.get(datasetId) ?? null;
+    const currentRunId = runIdByDataset.get(datasetId);
+
+    const counts = { ADDED: 0, UPDATED: 0, SUPERSEDED: 0, EXPIRED: 0 };
+    for (const row of changeCounts) {
+      if (row.datasetId === datasetId && row.ingestionRunId === currentRunId) {
+        counts[row.changeType as keyof typeof counts] = row._count._all;
+      }
+    }
+
+    return {
+      datasetId,
+      label,
+      provider,
+      importStatus: lastLog?.status ?? null,
+      lastImportStartedAt: lastLog?.startedAt ?? null,
+      lastImportCompletedAt: lastLog?.completedAt ?? null,
+      lastImportErrorMessage: lastLog?.errorMessage ?? null,
+      lastSuccessfulImportAt: lastSuccess?.completedAt ?? null,
+      publishedVersion: lastSuccess?.sourcePublishDate ?? null,
+      recordCount: lastSuccess?.itemsIngested ?? null,
+      sourceReportedTotal: lastSuccess?.sourceReportedTotal ?? null,
+      added: counts.ADDED,
+      updated: counts.UPDATED,
+      removed: counts.SUPERSEDED,
+      expired: counts.EXPIRED,
+    };
   });
 }
 

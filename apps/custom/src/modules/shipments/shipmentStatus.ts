@@ -17,6 +17,10 @@ export const ERP_INTAKE_INITIAL_STATUS = "In Progress";
 
 // Matches the vocabulary documented in schema.prisma's comment on
 // Shipment.status; any value outside this list is not persistable.
+// "DELIVERED" and "Delivered with Exception" are written by apps/tms's POD
+// pipeline (podPipeline.ts) once a shipment completes freight execution --
+// included here so apps/custom's status checks recognize them instead of
+// treating a TMS-delivered shipment as an invalid/non-terminal status.
 export const SHIPMENT_STATUSES = [
   "Draft",
   "In Progress",
@@ -24,6 +28,8 @@ export const SHIPMENT_STATUSES = [
   "On Hold",
   "Submitted",
   "Completed",
+  "DELIVERED",
+  "Delivered with Exception",
 ] as const;
 
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
@@ -33,7 +39,12 @@ export function isShipmentStatus(value: unknown): value is ShipmentStatus {
 }
 
 /** Statuses from which no further status change is legal. */
-export const TERMINAL_SHIPMENT_STATUSES: readonly ShipmentStatus[] = ["Submitted", "Completed"];
+export const TERMINAL_SHIPMENT_STATUSES: readonly ShipmentStatus[] = [
+  "Submitted",
+  "Completed",
+  "DELIVERED",
+  "Delivered with Exception",
+];
 
 export function isTerminalShipmentStatus(status: string): boolean {
   return isShipmentStatus(status) && TERMINAL_SHIPMENT_STATUSES.includes(status);

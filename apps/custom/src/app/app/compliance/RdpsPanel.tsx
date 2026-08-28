@@ -24,7 +24,7 @@ import {
 
 const PAGE_SIZE = 25;
 
-type SubTab = "overview" | "alerts" | "population" | "runs" | "reference-changes" | "reports";
+type SubTab = "overview" | "alerts" | "population" | "runs" | "reference-changes" | "reference-data-health" | "reports";
 
 interface RdpsRunSummary {
   id: string;
@@ -89,6 +89,43 @@ interface RdpsReferenceChange {
   screeningEntity: { id: string; name: string; sourceList: string } | null;
 }
 
+interface RdpsImpactedParty {
+  id: string;
+  partyId: string;
+  partyDisplayName: string;
+  previousStatus: string | null;
+  newStatus: string;
+  transitionType: string | null;
+  createdAt: string;
+  run: { id: string; runType: string; startedAt: string } | null;
+}
+
+interface RdpsPreviewImpactCandidate {
+  partyId: string;
+  accountId: string;
+  partyDisplayName: string;
+  reasons: string[];
+  currentStatus: string | null;
+  lastScreenedAt: string | null;
+}
+
+interface RdpsReferenceDataHealthRow {
+  datasetId: string;
+  label: string;
+  provider: string | null;
+  importStatus: string | null;
+  lastImportStartedAt: string | null;
+  lastImportCompletedAt: string | null;
+  lastImportErrorMessage: string | null;
+  lastSuccessfulImportAt: string | null;
+  publishedVersion: string | null;
+  recordCount: number | null;
+  sourceReportedTotal: number | null;
+  added: number;
+  updated: number;
+  removed: number;
+}
+
 interface RdpsReportsSummary {
   totalMonitoredParties: number;
   openAlerts: number;
@@ -127,6 +164,7 @@ export function RdpsPanel({ mayManageRdps }: RdpsPanelProps) {
     { id: "population", label: "Population" },
     { id: "runs", label: "Runs" },
     { id: "reference-changes", label: "Reference Changes" },
+    { id: "reference-data-health", label: "Reference Data Health" },
     { id: "reports", label: "Reports" },
   ];
 
@@ -152,6 +190,7 @@ export function RdpsPanel({ mayManageRdps }: RdpsPanelProps) {
       {subTab === "population" && <PopulationSubTab />}
       {subTab === "runs" && <RunsSubTab mayManageRdps={mayManageRdps} />}
       {subTab === "reference-changes" && <ReferenceChangesSubTab />}
+      {subTab === "reference-data-health" && <ReferenceDataHealthSubTab />}
       {subTab === "reports" && <ReportsSubTab />}
     </div>
   );
@@ -948,6 +987,8 @@ function ReferenceChangesSubTab() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedChangeId, setExpandedChangeId] = useState<string | null>(null);
+  const [previewChange, setPreviewChange] = useState<RdpsReferenceChange | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -990,18 +1031,43 @@ function ReferenceChangesSubTab() {
                 <th className="py-2 pr-3">Dataset / Entity</th>
                 <th className="py-2 pr-3">Change Type</th>
                 <th className="py-2 pr-3">Occurred</th>
+                <th className="py-2 pr-3" />
               </tr>
             </thead>
             <tbody>
               {changes.map((c) => (
-                <tr key={c.id} className="border-b border-border/50 last:border-0">
-                  <td className="py-2 pr-3 font-semibold text-ink">
-                    {c.screeningEntity?.name ?? c.datasetId}
-                    <span className="block text-[10px] text-ink-muted font-mono">{c.screeningEntity?.sourceList ?? c.sourceList}</span>
-                  </td>
-                  <td className="py-2 pr-3 text-ink-muted">{c.changeType}</td>
-                  <td className="py-2 pr-3 text-ink-muted">{displayDate(c.occurredAt)}</td>
-                </tr>
+                <>
+                  <tr key={c.id} className="border-b border-border/50 last:border-0">
+                    <td className="py-2 pr-3 font-semibold text-ink">
+                      {c.screeningEntity?.name ?? c.datasetId}
+                      <span className="block text-[10px] text-ink-muted font-mono">{c.screeningEntity?.sourceList ?? c.sourceList}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-ink-muted">{c.changeType}</td>
+                    <td className="py-2 pr-3 text-ink-muted">{displayDate(c.occurredAt)}</td>
+                    <td className="py-2 pr-3">
+                      <div className="flex items-center gap-2">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setPreviewChange(c)}>
+                          Preview Impact
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setExpandedChangeId(expandedChangeId === c.id ? null : c.id)}
+                        >
+                          {expandedChangeId === c.id ? "Hide impacted parties" : "Impacted parties"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedChangeId === c.id && (
+                    <tr key={`${c.id}-impacts`}>
+                      <td colSpan={4} className="py-3 bg-surface-muted/50">
+                        <ImpactedParties changeSetId={c.id} />
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>
@@ -1021,6 +1087,265 @@ function ReferenceChangesSubTab() {
           </Button>
         </div>
       </div>
+
+      {previewChange && <PreviewImpactModal change={previewChange} onClose={() => setPreviewChange(null)} />}
+    </Card>
+  );
+}
+
+function ImpactedParties({ changeSetId }: { changeSetId: string }) {
+  const [impacts, setImpacts] = useState<RdpsImpactedParty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/compliance/rdps/reference-changes/${changeSetId}/impacts?pageSize=50`)
+      .then((res) => {
+        if (!res.ok) throw new Error("failed");
+        return res.json();
+      })
+      .then((body) => {
+        if (!cancelled) setImpacts(body.impacts ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Impacted parties could not be loaded.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [changeSetId]);
+
+  if (loading) return <p className="text-xs text-ink-muted px-3">Loading impacted parties…</p>;
+  if (error) return <p role="alert" className="text-xs text-red-700 px-3">{error}</p>;
+  if (impacts.length === 0)
+    return <p className="text-xs text-ink-muted px-3">No parties were re-screened as a result of this change.</p>;
+
+  return (
+    <div className="overflow-x-auto px-3">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[10px] uppercase text-ink-muted border-b border-border">
+            <th className="py-1.5 pr-3">Party</th>
+            <th className="py-1.5 pr-3">Status Change</th>
+            <th className="py-1.5 pr-3">Transition</th>
+            <th className="py-1.5 pr-3">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {impacts.map((i) => (
+            <tr key={i.id} className="border-b border-border/50 last:border-0">
+              <td className="py-1.5 pr-3 font-semibold text-ink">{i.partyDisplayName || "Unnamed party"}</td>
+              <td className="py-1.5 pr-3 text-ink-muted">
+                {i.previousStatus ?? "—"} <span className="text-ink">→</span> {i.newStatus}
+              </td>
+              <td className="py-1.5 pr-3">
+                {i.transitionType ? <Badge variant={transitionBadgeVariant(i.transitionType)}>{i.transitionType}</Badge> : "—"}
+              </td>
+              <td className="py-1.5 pr-3 text-ink-muted">{displayDate(i.createdAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function transitionBadgeVariant(transitionType: string): BadgeProps["variant"] {
+  if (transitionType === "NEW_HIT" || transitionType === "ESCALATED") return "danger";
+  if (transitionType === "NEW_REVIEW" || transitionType === "PARTIAL") return "warning";
+  if (transitionType === "RISK_REDUCED" || transitionType === "CLEARED") return "success";
+  if (transitionType === "ERROR") return "danger";
+  return "neutral";
+}
+
+function PreviewImpactModal({ change, onClose }: { change: RdpsReferenceChange; onClose: () => void }) {
+  const [candidates, setCandidates] = useState<RdpsPreviewImpactCandidate[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/compliance/rdps/reference-changes/${change.id}/preview-impact`, { method: "POST" })
+      .then((res) => {
+        if (!res.ok) throw new Error("failed");
+        return res.json();
+      })
+      .then((body) => {
+        if (!cancelled) setCandidates(body.candidates ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setError("The impact preview could not be loaded.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [change.id]);
+
+  return (
+    <Modal isOpen onClose={onClose}>
+      <ModalHeader
+        title="Preview Impact"
+        subtitle={change.screeningEntity?.name ?? change.datasetId}
+        onClose={onClose}
+      />
+      <ModalBody className="space-y-3">
+        <p className="text-xs text-ink-muted">
+          Read-only preview of parties this change would match today. No rescreen is performed and nothing is recorded.
+        </p>
+        {loading ? (
+          <p className="text-xs text-ink-muted py-6 text-center">Loading…</p>
+        ) : error ? (
+          <p role="alert" className="text-xs text-red-700 py-6 text-center">{error}</p>
+        ) : !candidates || candidates.length === 0 ? (
+          <p className="text-xs text-ink-muted py-6 text-center">No parties would be impacted by this change.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase text-ink-muted border-b border-border">
+                  <th className="py-1.5 pr-3">Party</th>
+                  <th className="py-1.5 pr-3">Current Status</th>
+                  <th className="py-1.5 pr-3">Match Reasons</th>
+                </tr>
+              </thead>
+              <tbody>
+                {candidates.map((c) => (
+                  <tr key={c.partyId} className="border-b border-border/50 last:border-0">
+                    <td className="py-1.5 pr-3 font-semibold text-ink">{c.partyDisplayName || "Unnamed party"}</td>
+                    <td className="py-1.5 pr-3 text-ink-muted">
+                      {c.currentStatus ? <Badge variant="neutral">{c.currentStatus}</Badge> : "Not yet screened"}
+                    </td>
+                    <td className="py-1.5 pr-3 text-ink-muted">{c.reasons.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ModalBody>
+      <ModalFooter>
+        <Button type="button" variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+function importStatusBadgeVariant(status: string | null): BadgeProps["variant"] {
+  if (status === "SUCCESS") return "success";
+  if (status === "FAILED") return "danger";
+  if (status === "RUNNING") return "warning";
+  return "neutral";
+}
+
+function ReferenceDataHealthSubTab() {
+  const [rows, setRows] = useState<RdpsReferenceDataHealthRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/compliance/rdps/reference-data-health");
+      if (!res.ok) throw new Error("failed");
+      const body = await res.json();
+      setRows(body.datasets ?? []);
+    } catch {
+      setError("Reference data health could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-extrabold text-ink uppercase tracking-wider">Reference Data Health</h3>
+        <Button type="button" variant="secondary" size="sm" onClick={load}>
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
+      </div>
+
+      {loading && rows.length === 0 ? (
+        <p className="text-xs text-ink-muted py-6 text-center">Loading…</p>
+      ) : error ? (
+        <p role="alert" className="text-xs text-red-700 py-6 text-center">{error}</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-ink-muted py-6 text-center">No reference-data datasets found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-ink-muted border-b border-border">
+                <th className="py-2 pr-3">List</th>
+                <th className="py-2 pr-3">Last Successful Import</th>
+                <th className="py-2 pr-3">Published Version</th>
+                <th className="py-2 pr-3">Record Count</th>
+                <th className="py-2 pr-3">Added</th>
+                <th className="py-2 pr-3">Updated</th>
+                <th className="py-2 pr-3">Removed</th>
+                <th className="py-2 pr-3">Import Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.datasetId} className="border-b border-border/50 last:border-0">
+                  <td className="py-2 pr-3 font-semibold text-ink">
+                    {row.label}
+                    <span className="block text-[10px] text-ink-muted font-mono">
+                      {row.provider ?? row.datasetId}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-3 text-ink-muted">
+                    {row.lastSuccessfulImportAt ? displayDate(row.lastSuccessfulImportAt) : "Never"}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-muted">
+                    {row.publishedVersion ? displayDate(row.publishedVersion) : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-muted">
+                    {row.recordCount ?? "—"}
+                    {row.sourceReportedTotal != null && row.sourceReportedTotal !== row.recordCount && (
+                      <span className="text-[10px] text-ink-muted"> / {row.sourceReportedTotal} reported</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-emerald-700">{row.added}</td>
+                  <td className="py-2 pr-3 text-amber-700">{row.updated}</td>
+                  <td className="py-2 pr-3 text-red-700">{row.removed}</td>
+                  <td className="py-2 pr-3">
+                    {row.importStatus ? (
+                      <Badge variant={importStatusBadgeVariant(row.importStatus)}>{row.importStatus}</Badge>
+                    ) : (
+                      <Badge variant="neutral">No runs yet</Badge>
+                    )}
+                    {row.importStatus === "FAILED" && row.lastImportErrorMessage && (
+                      <span className="block text-[10px] text-red-700 mt-0.5 max-w-[220px] truncate" title={row.lastImportErrorMessage}>
+                        {row.lastImportErrorMessage}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }

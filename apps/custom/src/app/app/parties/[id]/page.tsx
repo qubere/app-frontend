@@ -48,8 +48,8 @@ export default async function PartyDetailPage(props: {
   const mayReadScreening = holdsPermission(context, "compliance.restrictedParty.read");
   const mayScreen = writable && holdsPermission(context, "compliance.restrictedParty.screen");
   const mayDisposeScreening = writable && holdsPermission(context, "compliance.restrictedParty.dispose");
-  const mayApprovePreScreening = writable && holdsPermission(context, "compliance.restricted_party_approve");
-  const mayRevokePreScreening = writable && holdsPermission(context, "compliance.restricted_party_revoke");
+  const mayApprovePreScreening = writable && holdsPermission(context, "compliance.restricted_party.approve");
+  const mayRevokePreScreening = writable && holdsPermission(context, "compliance.restricted_party.revoke");
 
   const status = partyStatusPresentation(party.status);
   const review = reviewStatusPresentation(party.reviewStatus);

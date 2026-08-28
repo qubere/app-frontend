@@ -41,6 +41,11 @@ vi.mock("@/modules/agents/compliance/embargo/doEmbargoCheck", () => ({
   doEmbargoCheck: (...args: unknown[]) => doEmbargoCheck(...args),
 }));
 
+const recordUsageEvent = vi.fn();
+vi.mock("@/lib/billing/telemetry", () => ({
+  recordUsageEvent: (...args: unknown[]) => recordUsageEvent(...args),
+}));
+
 const { evaluateParty } = await import("@/modules/compliance/communityScreening/evaluator");
 
 function baseRow(overrides: Record<string, unknown> = {}) {
@@ -77,6 +82,30 @@ beforeEach(() => {
   persistScreeningRun.mockResolvedValue([{ id: "psr_1", status: "CLEAR" }]);
   getAccountEmbargoConfig.mockResolvedValue({ someConfig: true });
   doEmbargoCheck.mockResolvedValue({ result: "CLEAR", matcher: "EXACT" });
+  recordUsageEvent.mockResolvedValue({ status: "RECORDED" });
+});
+
+describe("evaluateParty: billing usage metering", () => {
+  it("records a COMMUNITY_SCREENING_COMPLETED usage event keyed by run and row id", async () => {
+    await evaluateParty(baseRow(), baseParams());
+
+    expect(recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acct_1",
+        eventCode: "COMMUNITY_SCREENING_COMPLETED",
+        quantity: 1,
+        unit: "party",
+        idempotencyKey: "billing:community-screening:run_1:row_1",
+      })
+    );
+  });
+
+  it("still resolves normally when recordUsageEvent rejects (billing must never affect screening outcomes)", async () => {
+    recordUsageEvent.mockRejectedValue(new Error("billing unavailable"));
+
+    await expect(evaluateParty(baseRow(), baseParams())).resolves.toBeUndefined();
+    expect(dbMock.communityScreeningPartyResult.update).toHaveBeenCalled();
+  });
 });
 
 describe("evaluateParty: restrictedParty check", () => {

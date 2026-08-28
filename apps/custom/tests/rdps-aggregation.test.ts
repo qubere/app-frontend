@@ -40,6 +40,11 @@ vi.mock("@/lib/audit", () => ({
   AuditAction: { RDPS_WORSENING_DETECTED: "RDPS_WORSENING_DETECTED" },
 }));
 
+const recordUsageEvent = vi.fn();
+vi.mock("@/lib/billing/telemetry", () => ({
+  recordUsageEvent: (...args: unknown[]) => recordUsageEvent(...args),
+}));
+
 const { recordRdpsOutcome } = await import("@/modules/compliance/rdps/outcomeRecorder");
 
 function rescreenResult(overallStatus: string, resultId = "psr_1") {
@@ -52,6 +57,36 @@ beforeEach(() => {
   dbMock.rdpsPartyOutcome.create.mockImplementation(({ data }: any) => Promise.resolve({ id: "outcome_1", ...data }));
   createExceptionItem.mockResolvedValue({ id: "exc_1" });
   createAuditLog.mockResolvedValue(undefined);
+  recordUsageEvent.mockResolvedValue({ status: "RECORDED" });
+});
+
+describe("recordRdpsOutcome: billing usage metering", () => {
+  it("records an RDPS_RESCREEN_COMPLETED usage event keyed by run and party id, success:true on the success path", async () => {
+    dbMock.partyScreeningSummary.findUnique.mockResolvedValue({ screeningStatus: "CLEAR" });
+    rescreenParty.mockResolvedValue(rescreenResult("CLEAR"));
+
+    await recordRdpsOutcome({ runId: "run_1", accountId: "acct_1", partyId: "party_1", candidateReasons: [] });
+
+    expect(recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acct_1",
+        eventCode: "RDPS_RESCREEN_COMPLETED",
+        quantity: 1,
+        unit: "party",
+        success: true,
+        idempotencyKey: "billing:rdps:run_1:party_1",
+      })
+    );
+  });
+
+  it("still returns the normal outcome when recordUsageEvent rejects (billing must never affect the outcome)", async () => {
+    dbMock.partyScreeningSummary.findUnique.mockResolvedValue({ screeningStatus: "CLEAR" });
+    rescreenParty.mockResolvedValue(rescreenResult("CLEAR"));
+    recordUsageEvent.mockRejectedValue(new Error("billing unavailable"));
+
+    const result = await recordRdpsOutcome({ runId: "run_1", accountId: "acct_1", partyId: "party_1", candidateReasons: [] });
+    expect(result.errored).toBe(false);
+  });
 });
 
 describe("recordRdpsOutcome: worsening detection", () => {

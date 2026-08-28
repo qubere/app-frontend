@@ -11,6 +11,7 @@ import {
   markProgress,
   clearProgress,
 } from "@/modules/screening/dowJones/fullFeedIngestionService";
+import { assertDeltaFeedType } from "@/modules/screening/dowJones/deltaFeedIngestionService";
 
 // entityTransformer.transformEntity is exercised directly against hand-built
 // RawEntity fixtures (the shape produced by fullFeedIngestionService's SAX
@@ -162,6 +163,21 @@ describe("dowJones/entityTransformer", () => {
     const raw = baseEntity({ activeStatus: "Inactive", names: [{ nameType: "Primary Name", entityName: "Delisted Corp" }] });
     const result = transformEntity(raw, DICTIONARY, FEED_DATE, FEED_TYPE);
     expect(result.publicationStatus).toBe("SUPERSEDED");
+  });
+});
+
+describe("dowJones/deltaFeedIngestionService: feed-type guard", () => {
+  it("accepts a feedType of 'delta'", () => {
+    expect(() => assertDeltaFeedType("delta")).not.toThrow();
+  });
+
+  it("accepts case-variant/whitespace-padded delta feed-type values", () => {
+    expect(() => assertDeltaFeedType(" Delta ")).not.toThrow();
+  });
+
+  it("rejects a feedType of 'full', refusing to run the delta path against a full-feed file", () => {
+    expect(() => assertDeltaFeedType("full")).toThrow(/not a delta feed/i);
+    expect(() => assertDeltaFeedType("Full")).toThrow(/not a delta feed/i);
   });
 });
 

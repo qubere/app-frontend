@@ -42,7 +42,7 @@ if ! gcloud artifacts repositories describe "${ARTIFACT_REPOSITORY}" --location=
   gcloud artifacts repositories create "${ARTIFACT_REPOSITORY}" --repository-format=docker --location="${GCP_REGION}" --project="${GCP_PROJECT_ID}"
 fi
 
-gcloud builds submit --project="${GCP_PROJECT_ID}" --config=infrastructure/gcp/cloudbuild.demo.yaml \
+gcloud builds submit --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --config=infrastructure/gcp/cloudbuild.demo.yaml \
   --substitutions="_REGION=${GCP_REGION},_REPOSITORY=${ARTIFACT_REPOSITORY},_IMAGE_TAG=${IMAGE_TAG},_CUSTOMS_APP_URL=${NEXT_PUBLIC_CUSTOMS_APP_URL},_TMS_APP_URL=${NEXT_PUBLIC_TMS_APP_URL},_NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" .
 
 gcloud run jobs deploy "${MIGRATION_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${DATABASE_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-secrets="${SECRET_BINDINGS}" --max-retries=0 --task-timeout=15m

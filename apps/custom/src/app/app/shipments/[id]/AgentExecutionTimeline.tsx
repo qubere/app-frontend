@@ -49,7 +49,12 @@ const STATUS_STYLES: Record<AgentInvocation["status"], { badge: string; label: s
   },
   RUNNING: {
     badge: "bg-blue-50 text-blue-700 border-blue-200",
-    label: "Running",
+    label: "Processing",
+    icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+  },
+  PROCESSING: {
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    label: "Processing",
     icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
   },
   PROCESSING: {
@@ -195,7 +200,13 @@ export function AgentExecutionTimeline({
                     <Clock className="w-3 h-3" />
                     <span>{formatTimestamp(inv.startedAt)}</span>
                     <span>&middot;</span>
-                    <span>{inv.steps.length} agent{inv.steps.length !== 1 ? "s" : ""}</span>
+                    {inv.status === "PROCESSING" || inv.isProcessing ? (
+                      <span className="text-blue-600 font-bold">
+                        Processing {inv.currentStep || inv.steps.length}/{inv.totalSteps || 10}
+                      </span>
+                    ) : (
+                      <span>{inv.steps.length} agent{inv.steps.length !== 1 ? "s" : ""}</span>
+                    )}
                     <span>&middot;</span>
                     <span>{formatDuration(inv.totalDurationMs)} total</span>
                   </p>
@@ -206,7 +217,7 @@ export function AgentExecutionTimeline({
                   {style.icon}
                   <span>
                     {inv.status === "PROCESSING" || inv.isProcessing
-                      ? `Processing (${inv.currentStep || inv.steps.length}/${inv.totalSteps || 10})`
+                      ? `Processing ${inv.currentStep || inv.steps.length}/${inv.totalSteps || 10}`
                       : style.label}
                   </span>
                 </span>
