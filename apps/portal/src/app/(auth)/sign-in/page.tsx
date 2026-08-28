@@ -7,12 +7,18 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Loader2 } from "lucide-react";
 
+/** Only allow same-origin relative paths as a post-sign-in redirect. */
+function safeRedirect(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
+  return raw;
+}
+
 export default function SignInPage() {
   const { client, setActive, loaded } = useClerk();
   const router = useRouter();
 
-  const [email, setEmail] = useState("porter@target.com");
-  const [password, setPassword] = useState("QuberePass2026!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +37,10 @@ export default function SignInPage() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.push("/");
+        const redirectTo = safeRedirect(
+          new URLSearchParams(window.location.search).get("redirect_url")
+        );
+        router.push(redirectTo);
       } else {
         setError("Sign in requires additional verification.");
       }
@@ -73,7 +82,7 @@ export default function SignInPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="porter@target.com"
+              placeholder="you@company.com"
               className="w-full bg-white border border-[#E5E5EA] text-[#1D1D1F] rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#0071E3] focus:outline-none transition shadow-2xs"
             />
           </div>
@@ -99,7 +108,7 @@ export default function SignInPage() {
         </form>
 
         <div className="mt-6 text-center text-xs text-[#86868B]">
-          Default demo login: <code className="bg-[#E5E5EA] px-1.5 py-0.5 rounded text-[#1D1D1F] font-mono">porter@target.com</code> / <code className="bg-[#E5E5EA] px-1.5 py-0.5 rounded text-[#1D1D1F] font-mono">QuberePass2026!</code>
+          Access is by invitation from your customs broker.
         </div>
       </Card>
     </div>

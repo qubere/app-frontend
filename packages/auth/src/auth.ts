@@ -56,6 +56,22 @@ export interface AccountContext {
 
 export const ACTIVE_ACCOUNT_COOKIE = "qubere_active_account_id";
 
+/**
+ * Whether the "no Clerk session -> act as the first user in the DB" fallback is
+ * allowed. This is a LOCAL developer convenience only.
+ *
+ * It is deliberately NOT gated on `NEXT_PUBLIC_APP_ENV === "demo"` — the hosted
+ * demo sets that too, and it runs on `--allow-unauthenticated` Cloud Run, so
+ * gating on it would turn every anonymous visitor into an authenticated account
+ * owner. Requires `NODE_ENV=development` or an explicit `QUBERE_ALLOW_DEMO_AUTH=1`
+ * that is never set in any deployment. See
+ * docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P1-9).
+ */
+function isDemoAuthFallbackEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  return process.env.NODE_ENV === "development" || process.env.QUBERE_ALLOW_DEMO_AUTH === "1";
+}
+
 async function loadAccountContext(): Promise<AccountContext | null> {
   const startTime = Date.now();
   try {
@@ -69,7 +85,7 @@ async function loadAccountContext(): Promise<AccountContext | null> {
 
     const authDuration = Date.now() - startTime;
     if (!clerkUserId) {
-      if (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_APP_ENV === "demo") {
+      if (isDemoAuthFallbackEnabled()) {
         return await getDemoAccountContext();
       }
       return null;
@@ -366,7 +382,10 @@ async function loadAccountContext(): Promise<AccountContext | null> {
       throw error;
     }
     console.error("Error retrieving account context:", error);
-    if (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_APP_ENV === "demo") {
+    // Only fall back to demo identity on error in true local dev — never in a
+    // deployment, where an error must fail closed (return null / 401), not
+    // silently authenticate as the first user. See CUSTOMER-PORTAL-PR97-REVIEW (P1-9).
+    if (process.env.NODE_ENV === "development") {
       return await getDemoAccountContext();
     }
     return null;

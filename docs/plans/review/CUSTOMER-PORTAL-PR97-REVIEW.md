@@ -1,6 +1,17 @@
 # Customer Portal (PR #97) — Review & Fix Plan
 
 **Reviewed:** 2026-08-28 · **Branch:** `feature/customer-portal` · **Base:** `main`
+
+> **Status (2026-08-28, follow-up commits on this branch):**
+> DONE — P0-1 (migration), P0-2 (proxy auth), P0-3/P0-5/P0-6 (`resolvePortalClientScope`
+> on all list routes + services), P0-4 (scope-engine), P0-7 (passwordless provisioning
+> + seed env var + sign-in page), P0-8 (permission enforcement), P1-1 (invite acceptance
+> flow), P1-2 (attach-doc authz + projection), P1-3 (request projection), P1-4
+> (inbound-email demo gate), P1-7/P1-8 (upload validation), P1-9 (demo-auth single flag),
+> P2-2 (untrack uploads).
+> STILL OPEN — P1-5 (object storage — needs a runtime session; portal uploads still
+> only hit local disk / rawContent), P1-6 (real 7501/invoice PDFs — no PDF lib in repo),
+> P2-1 (real two-tenant route tests), P2-3..P2-10, P3.
 **Scope:** `apps/portal/**`, `packages/auth/**`, portal-touching routes in `apps/custom/**`, schema, Dockerfile, GCP deploy.
 **Deployment target:** Docker on GCP Cloud Run, `NEXT_PUBLIC_APP_ENV=demo`, `--allow-unauthenticated`.
 
