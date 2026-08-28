@@ -89,6 +89,7 @@ upsert_job qubere-rdps-recall-validation "0 5 * * *" /api/cron/rdps-recall-valid
 upsert_job qubere-origin-re-eval "0 6 * * *" /api/cron/origin-re-eval
 upsert_job qubere-rdps-delta-impact-dispatch "*/10 * * * *" /api/cron/rdps-delta-impact-dispatch
 upsert_job qubere-rdps-full-population-dispatch "0 * * * *" /api/cron/rdps-full-population-dispatch
+upsert_job qubere-reference-data-expiry-sweep "0 * * * *" /api/cron/reference-data-expiry-sweep
 upsert_job qubere-community-screening-dispatch "*/2 * * * *" /api/cron/community-screening-dispatch
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"

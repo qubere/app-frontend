@@ -64,7 +64,10 @@ export function classifyRdpsTransition(
   const baselineRank = RISK_RANK[baseline];
   const freshRank = RISK_RANK[fresh];
 
-  if (freshRank === baselineRank) return `UNCHANGED_${fresh}` as RdpsTransitionType;
+  if (freshRank === baselineRank) {
+    const label = fresh === "REVIEW_REQUIRED" ? "REVIEW" : fresh;
+    return `UNCHANGED_${label}` as RdpsTransitionType;
+  }
   if (freshRank > baselineRank) {
     if (fresh === "HIT" && baseline === "REVIEW_REQUIRED") return "ESCALATED";
     return fresh === "HIT" ? "NEW_HIT" : "NEW_REVIEW";

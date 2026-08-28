@@ -5730,6 +5730,9 @@ model ScreeningEntity {
   // Dow Jones' ~62k rows.
   @@index([publicationStatus, sourceList])
   @@index([publicationStatus, provider])
+  // referenceDataExpirySweep.ts's WHERE publicationStatus = "PUBLISHED" AND
+  // expirationDate <= now() scan.
+  @@index([publicationStatus, expirationDate])
 }
 
 /// One name variant (Also Known As, Formerly Known As, Spelling Variation, ...)
@@ -6334,6 +6337,12 @@ enum ReferenceDataChangeType {
   ADDED
   UPDATED
   SUPERSEDED
+  /// Written only by referenceDataExpirySweep.ts when a PUBLISHED entity's own
+  /// expirationDate has passed -- distinct from SUPERSEDED (sweep-by-omission
+  /// or an explicit delist/ActiveStatus flip) so reference-data-health and the
+  /// Reference Changes UI can tell "this entity's own effective window ended"
+  /// apart from "the source list no longer lists this entity at all".
+  EXPIRED
 }
 
 /// One per-entity change record, written by an ingestion service immediately
@@ -6451,6 +6460,19 @@ model RdpsPartyOutcome {
 
   previousStatus RestrictedPartyScreeningStatus?
   newStatus      RestrictedPartyScreeningStatus
+
+  /// Deterministic previous->new classification (see classifyRdpsTransition
+  /// in outcomeRecorder.ts), e.g. NEW_HIT/ESCALATED/RISK_REDUCED/CLEARED/
+  /// UNCHANGED_(status)/ERROR. Nullable only for outcome rows written before
+  /// this column existed; every row created after this migration always sets it.
+  transitionType String?
+
+  /// ReferenceDataChangeSet ids that contributed this party as a candidate in
+  /// a DELTA_IMPACT run (a party can be triggered by more than one changed
+  /// entity in the same batch -- see deltaImpactDispatcher.ts's candidate
+  /// union). Empty for FULL_POPULATION/MANUAL/TARGETED outcomes, which have
+  /// no triggering change set.
+  triggeringChangeSetIds String[] @default([])
 
   isWorsening          Boolean @default(false)
   hadActivePreApproval Boolean @default(false)

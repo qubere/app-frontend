@@ -102,6 +102,14 @@ export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "detai
     description: "Proactively walks the account's entire screened-party population as a periodic safety net, independent of reference-data changes.",
   },
   {
+    id: "reference-data-expiry-sweep",
+    name: "Reference Data Expiry Sweep",
+    endpoint: "/api/cron/reference-data-expiry-sweep",
+    method: "POST",
+    schedule: "0 * * * * (Hourly)",
+    description: "Supersedes published reference-data entities whose own expirationDate has passed and records an EXPIRED change so RDPS re-screens affected parties.",
+  },
+  {
     id: "community-screening-dispatch",
     name: "Community Screening Dispatcher",
     endpoint: "/api/cron/community-screening-dispatch",

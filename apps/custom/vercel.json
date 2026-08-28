@@ -41,6 +41,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/cron/reference-data-expiry-sweep",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/community-screening-dispatch",
       "schedule": "*/2 * * * *"
     }
