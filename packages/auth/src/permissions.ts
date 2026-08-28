@@ -417,3 +417,17 @@ export function roleGrantGap(roleName: string, granted: readonly string[]): Role
     extra: [...held].filter((name) => !defaultSet.has(name)).sort(),
   };
 }
+
+/**
+ * Grant names a role holds that no longer exist in PERMISSION_CATALOGUE --
+ * e.g. left behind by a permission rename, since the seed sync upserts by
+ * name and never renames/removes the old DB row. Unlike roleGrantGap's
+ * `extra` (which flags any grant beyond a system role's defaults, including
+ * intentional customization), this applies to every role, system or custom,
+ * because an uncatalogued name is never intentional -- the permission it
+ * once named doesn't exist anymore.
+ */
+export function staleGrantNames(granted: readonly string[]): string[] {
+  const catalogued = new Set(PERMISSION_NAMES);
+  return granted.filter((name) => !catalogued.has(name));
+}

@@ -79,6 +79,16 @@ function RoleCard({ role }: { role: FormattedRole }) {
           </span>
         </div>
       )}
+
+      {role.staleGrants && (
+        <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 p-2 text-xs text-red-900 mt-2">
+          <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600" />
+          <span>
+            Stale grants (not in the current permission catalogue -- likely renamed or removed):{" "}
+            <span className="font-mono">{role.staleGrants.join(", ")}</span>
+          </span>
+        </div>
+      )}
     </section>
   );
 }
