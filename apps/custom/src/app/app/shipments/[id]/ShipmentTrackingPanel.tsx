@@ -1,3 +1,5 @@
+"use client";
+
 import {
   AlertTriangle,
   Anchor,
@@ -11,6 +13,7 @@ import {
   Ship,
 } from "lucide-react";
 import type { ShipmentTrackingProjection, TrackingHealth } from "@/modules/tracking/shipmentTracking";
+import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
 
 interface ShipmentTrackingPanelProps {
   projection: ShipmentTrackingProjection;
@@ -129,9 +132,11 @@ function Rail({
 }
 
 export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps) {
-  const isUnconfigured = projection.health.reasonCodes.includes("TRACKING_NOT_CONFIGURED");
-  const delta = etaDelta(projection.movement.etaDeltaMinutes);
-  const activeDeadlines = projection.deadlines.filter((deadline) => deadline.status === "OPEN").slice(0, 4);
+  if (!projection) return null;
+
+  const isUnconfigured = projection.health?.reasonCodes?.includes("TRACKING_NOT_CONFIGURED") ?? true;
+  const delta = etaDelta(projection.movement?.etaDeltaMinutes ?? null);
+  const activeDeadlines = (projection.deadlines ?? []).filter((deadline) => deadline.status === "OPEN").slice(0, 4);
 
   return (
     <div className="space-y-6">
@@ -206,12 +211,21 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
         </div>
       </div>
 
+      {projection.journey ? (
+        <JourneyRibbon
+          data={projection.journey}
+          onRefresh={() => {
+            if (typeof window !== "undefined") window.location.reload();
+          }}
+        />
+      ) : null}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-6">
         <div className="apple-card rounded-3xl border border-border bg-white p-6 shadow-sm space-y-7">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-extrabold text-ink flex items-center gap-2">
-                <Route className="w-4 h-4 text-brand" /> Journey and clearance
+                <Route className="w-4 h-4 text-brand" /> Physical movement and customs rail
               </h3>
               <p className="text-xs text-ink-muted mt-1">Movement and customs remain independent so an arrival never implies release.</p>
             </div>
@@ -225,33 +239,6 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
             current={projection.customs.status}
             blocked={projection.customs.blockingExceptionCount > 0 || ["REJECTED", "HOLD"].includes(projection.customs.status)}
           />
-
-          {projection.legs.length > 0 ? (
-            <div className="space-y-3 border-t border-border pt-5">
-              {projection.legs.map((leg) => (
-                <div key={leg.id} className="rounded-2xl bg-slate-50 border border-slate-100 p-4 flex flex-col md:flex-row md:items-center gap-3">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <Anchor className="w-4 h-4 text-brand shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-extrabold text-ink truncate">
-                        {leg.originName ?? leg.originUnlocode ?? "Origin not reported"} → {leg.destinationName ?? leg.destinationUnlocode ?? "Destination not reported"}
-                      </p>
-                      <p className="text-[10px] text-ink-muted mt-1">
-                        {[leg.carrierName ?? leg.carrierCode, leg.vesselName, leg.voyageNumber ?? leg.flightNumber].filter(Boolean).join(" · ") || "Carrier details not reported"}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase text-ink-muted">{titleCase(leg.status)}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-              <MapPin className="w-6 h-6 text-slate-400 mx-auto" />
-              <p className="text-xs font-extrabold text-ink mt-2">Route not available</p>
-              <p className="text-[11px] text-ink-muted mt-1">Qubere will show verified legs and stops after a carrier reference is connected.</p>
-            </div>
-          )}
         </div>
 
         <div className="space-y-6">

@@ -28,6 +28,7 @@
     "@qubere/cloud-runtime": "*",
     "@qubere/db": "*",
     "@qubere/decisions": "*",
+    "@qubere/shipment-legs": "*",
     "@qubere/storage": "*",
     "@types/nodemailer": "^8.0.1",
     "@vercel/blob": "^2.6.1",

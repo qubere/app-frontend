@@ -43,10 +43,17 @@ function calcDurationText(start?: string | Date | null, end?: string | Date | nu
 }
 
 export function computeShipmentLifecycleStatus(shipment: any): ShipmentLifecycleStatus {
+  const dbLegs = shipment.legs ?? [];
   const shipmentMovements = shipment.shipmentMovements ?? [];
-  const movements = shipmentMovements
-    .map((sm: any) => sm.movement)
-    .filter(Boolean);
+
+  const movements = dbLegs.length > 0
+    ? dbLegs.map((leg: any) => ({
+        id: leg.id,
+        mode: leg.mode,
+        status: leg.status,
+        actualStart: leg.actualDeparture,
+      }))
+    : shipmentMovements.map((sm: any) => sm.movement).filter(Boolean);
 
   const hasMultiLeg = movements.length > 1;
   const movementsSummary: MovementDetail[] | undefined = hasMultiLeg

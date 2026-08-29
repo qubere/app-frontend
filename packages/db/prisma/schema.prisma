@@ -90,6 +90,42 @@ enum TrackingSubscriptionStatus {
   ENDED
 }
 
+enum LegMode {
+  OCEAN
+  AIR
+  RAIL
+  TRUCK
+  BARGE
+  COURIER
+}
+
+enum LegType {
+  EXPORT_HAULAGE
+  MAIN_CARRIAGE
+  TRANSSHIPMENT
+  IMPORT_HAULAGE
+  ON_CARRIAGE
+}
+
+enum LegStatus {
+  PLANNED
+  BOOKED
+  READY_FOR_PICKUP
+  IN_TRANSIT
+  ARRIVED
+  COMPLETED
+  EXCEPTION
+  CANCELLED
+}
+
+enum LegDocumentRequirement {
+  REQUIRED
+  CONDITIONAL
+  OPTIONAL
+  INFO_ONLY
+}
+
+
 // ---------------------------------------------------------------------------
 // COMPLIANCE DEADLINE ENUMS
 // ---------------------------------------------------------------------------
@@ -218,7 +254,10 @@ model Account {
   statementRecords            StatementRecord[]
   shipmentTrackingIdentifiers ShipmentTrackingIdentifier[]
   transportLegs               TransportLeg[]
+  shipmentLegs                ShipmentLeg[]
   shipmentStops               ShipmentStop[]
+  shipmentLegDocuments        ShipmentLegDocument[]
+  shipmentLegEquipment        ShipmentLegEquipment[]
   shipmentEquipment           ShipmentEquipment[]
   trackingEvents              TrackingEvent[]
   etaObservations             EtaObservation[]
@@ -674,8 +713,10 @@ model Shipment {
   complianceExecutions            ComplianceExecution[]
   trackingIdentifiers             ShipmentTrackingIdentifier[]
   transportLegs                   TransportLeg[]
+  legs                            ShipmentLeg[]
   trackingStops                   ShipmentStop[]
   trackingEquipment               ShipmentEquipment[]
+  legEquipment                    ShipmentLegEquipment[]
   trackingEvents                  TrackingEvent[]
   etaObservations                 EtaObservation[]
   trackingSubscriptions           TrackingSubscription[]
@@ -737,6 +778,73 @@ model ShipmentTrackingIdentifier {
   @@index([accountId, shipmentId])
 }
 
+model ShipmentLeg {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  sequence Int
+  legType  LegType
+  mode     LegMode
+
+  originStopId      String
+  originStop        ShipmentStop @relation("LegOrigin", fields: [originStopId], references: [id])
+  destinationStopId String
+  destinationStop   ShipmentStop @relation("LegDestination", fields: [destinationStopId], references: [id])
+
+  // Carrier
+  carrierName    String?
+  carrierScac    String?
+  carrierPartyId String?
+  carrierParty   Party?   @relation(fields: [carrierPartyId], references: [id], onDelete: SetNull)
+
+  // Conveyance
+  vesselName   String?
+  imoNumber    String?
+  voyageNumber String?
+  flightNumber String?
+  trainNumber  String?
+  tripNumber   String?
+
+  // Reference numbers that identify THIS leg's contract of carriage
+  billOfLadingNumber String?
+  billOfLadingType   String?
+  bookingNumber      String?
+
+  // Timeline
+  plannedDeparture   DateTime?
+  estimatedDeparture DateTime?
+  actualDeparture    DateTime?
+  plannedArrival     DateTime?
+  estimatedArrival   DateTime?
+  actualArrival      DateTime?
+
+  status       LegStatus @default(PLANNED)
+  statusReason String?
+
+  // Provenance
+  source            String    @default("INFERRED")
+  inferredFromRunId String?
+  confidence        Float?
+  confirmedAt       DateTime?
+  confirmedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  legDocuments    ShipmentLegDocument[]
+  events          TrackingEvent[]
+  etaObservations EtaObservation[]
+  equipment       ShipmentLegEquipment[]
+
+  @@unique([shipmentId, sequence])
+  @@index([accountId, shipmentId])
+  @@index([shipmentId, status])
+  @@index([mode, status])
+}
+
 model TransportLeg {
   id                  String                @id @default(cuid())
   accountId           String
@@ -789,6 +897,7 @@ model ShipmentStop {
   latitude           Float?
   longitude          Float?
   timezone           String?
+  role               String?          // "ORIGIN" | "PORT_OF_LADING" | "TRANSSHIPMENT" | "PORT_OF_DISCHARGE" | "RAMP" | "AIRPORT" | "DEACONSOLIDATION" | "DESTINATION"
   plannedArrival     DateTime?
   estimatedArrival   DateTime?
   actualArrival      DateTime?
@@ -799,11 +908,60 @@ model ShipmentStop {
   updatedAt          DateTime         @updatedAt
   events             TrackingEvent[]
   etaObservations    EtaObservation[]
+  legsFromHere       ShipmentLeg[]    @relation("LegOrigin")
+  legsToHere         ShipmentLeg[]    @relation("LegDestination")
 
   @@unique([shipmentId, sequence])
   @@index([accountId, shipmentId])
   @@index([transportLegId])
   @@index([unlocode])
+}
+
+model ShipmentLegDocument {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  legId       String
+  leg         ShipmentLeg @relation(fields: [legId], references: [id], onDelete: Cascade)
+
+  documentId  String?
+  document    ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  expectedDocType   DocumentType
+  requirement       LegDocumentRequirement @default(REQUIRED)
+  requirementReason String?
+
+  source            String  @default("INFERRED")
+  inferredFromRunId String?
+  confidence        Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([legId, expectedDocType])
+  @@index([accountId, legId])
+  @@index([documentId])
+}
+
+model ShipmentLegEquipment {
+  id              String       @id @default(cuid())
+  accountId       String
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId      String
+  shipment        Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  legId           String?
+  leg             ShipmentLeg? @relation(fields: [legId], references: [id], onDelete: SetNull)
+  equipmentType   String
+  equipmentNumber String
+  sealNumber      String?
+  tareWeightKg    Decimal?     @db.Decimal(10, 2)
+  grossWeightKg   Decimal?     @db.Decimal(10, 2)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([accountId, shipmentId])
+  @@index([legId])
 }
 
 model ShipmentEquipment {
@@ -835,6 +993,8 @@ model TrackingEvent {
   account           Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId        String
   shipment          Shipment                @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  legId             String?
+  leg               ShipmentLeg?            @relation(fields: [legId], references: [id], onDelete: SetNull)
   transportLegId    String?
   transportLeg      TransportLeg?           @relation(fields: [transportLegId], references: [id], onDelete: SetNull)
   shipmentStopId    String?
@@ -870,6 +1030,7 @@ model TrackingEvent {
   @@unique([accountId, idempotencyKey])
   @@index([shipmentId, occurredAt])
   @@index([accountId, shipmentId, occurredAt])
+  @@index([legId])
   @@index([transportLegId])
   @@index([shipmentStopId])
   @@index([equipmentId])
@@ -883,6 +1044,8 @@ model EtaObservation {
   account        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   shipmentId     String
   shipment       Shipment      @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  legId          String?
+  leg            ShipmentLeg?  @relation(fields: [legId], references: [id], onDelete: SetNull)
   transportLegId String?
   transportLeg   TransportLeg? @relation(fields: [transportLegId], references: [id], onDelete: SetNull)
   shipmentStopId String?
@@ -898,6 +1061,7 @@ model EtaObservation {
 
   @@index([shipmentId, estimatedAt])
   @@index([accountId, shipmentId, estimatedAt])
+  @@index([legId])
   @@index([transportLegId])
   @@index([shipmentStopId])
 }
@@ -1053,6 +1217,7 @@ model ShipmentDocument {
   extractionFields   ExtractionField[]
   parseVersions      DocumentParseVersion[]
   hydrationRuns      HydrationRun[]
+  legDocuments       ShipmentLegDocument[]
   hydrationCandidates HydrationCandidate[]
   exceptionItems     ExceptionItem[]
   fieldApprovals     FieldApproval[]
@@ -4876,8 +5041,9 @@ model Party {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  legalEntities     LegalEntity[]
-  names             PartyName[]
+  legalEntities       LegalEntity[]
+  names               PartyName[]
+  carrierShipmentLegs ShipmentLeg[]
   identifiers       PartyIdentifier[]
   registrations     PartyRegistration[]
   addresses         PartyAddress[]

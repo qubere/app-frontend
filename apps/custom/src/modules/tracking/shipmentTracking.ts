@@ -137,6 +137,59 @@ export interface ShipmentTrackingProjection {
   events: TrackingEventRecord[];
   deadlines: TrackingDeadlineRecord[];
   subscriptions: TrackingSubscriptionRecord[];
+  journey?: {
+    shipmentId: string;
+    shipmentNumber: string;
+    journeyStatus: {
+      overallStage: string;
+      headline: string;
+      percentComplete: number;
+      blocked: boolean;
+      blockingReasons: string[];
+    };
+    stops: Array<{
+      id: string;
+      sequence: number;
+      role: string | null;
+      name: string;
+      unlocode: string | null;
+      firmsCode: string | null;
+      timezone: string | null;
+    }>;
+    legs: Array<{
+      id: string;
+      sequence: number;
+      legType: string;
+      mode: string;
+      status: string;
+      statusReason: string | null;
+      origin: { stopId: string; name: string; unlocode: string | null };
+      destination: { stopId: string; name: string; unlocode: string | null };
+      carrier: { name: string | null; scac: string | null };
+      conveyance: { vesselName?: string; voyageNumber?: string; flightNumber?: string; imoNumber?: string };
+      references: { billOfLadingNumber?: string; billOfLadingType?: string; bookingNumber?: string };
+      timeline: {
+        plannedDeparture: Date | null; estimatedDeparture: Date | null; actualDeparture: Date | null;
+        plannedArrival: Date | null; estimatedArrival: Date | null; actualArrival: Date | null;
+      };
+      documents: {
+        total: number; onFile: number; missingRequired: number;
+        rows: Array<{
+          legDocumentId: string;
+          expectedDocType: string;
+          requirement: string;
+          requirementReason: string | null;
+          status: "MISSING" | "RECEIVED" | "REVIEW_REQUIRED" | "PROCESSED";
+          document: { id: string; fileName: string; fileUrl: string | null; confidence: number | null } | null;
+        }>;
+      };
+      events: TrackingEventRecord[];
+      eta: { current: Date | null; deltaMinutes: number | null; provider: string | null };
+      inference: { source: string; confidence: number | null; needsConfirmation: boolean } | null;
+    }>;
+    customs: { status: CustomsTrackingStatus };
+    inferenceProposal: any | null;
+  };
 }
 
 export interface BuildTrackingProjectionInput {
@@ -450,12 +503,27 @@ export async function getShipmentTrackingProjection(
         take: 1,
         select: { id: true, filingStatus: true },
       },
+      legs: {
+        orderBy: { sequence: "asc" },
+        include: {
+          originStop: true,
+          destinationStop: true,
+          events: { orderBy: { occurredAt: "desc" } },
+          legDocuments: {
+            include: {
+              document: {
+                select: { id: true, fileName: true, fileUrl: true, confidence: true, status: true },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
   if (!shipment) return null;
 
-  return buildTrackingProjection({
+  const baseProjection = buildTrackingProjection({
     shipment,
     identifiers: shipment.trackingIdentifiers,
     legs: shipment.transportLegs,
@@ -467,4 +535,139 @@ export async function getShipmentTrackingProjection(
     latestFiling: shipment.customsFilings[0] ?? null,
     now,
   });
+
+  // Assemble canonical JourneyProjection block
+  const dbLegs = shipment.legs ?? [];
+  const uniqueStopsMap = new Map<string, any>();
+  dbLegs.forEach((leg) => {
+    if (leg.originStop) uniqueStopsMap.set(leg.originStop.id, leg.originStop);
+    if (leg.destinationStop) uniqueStopsMap.set(leg.destinationStop.id, leg.destinationStop);
+  });
+
+  const stops = Array.from(uniqueStopsMap.values()).sort((a, b) => a.sequence - b.sequence);
+
+  const completedCount = dbLegs.filter((l) => l.status === "COMPLETED").length;
+  const totalLegs = dbLegs.length;
+  const percentComplete = totalLegs > 0 ? Math.round((completedCount / totalLegs) * 100) : 0;
+  const activeLeg = dbLegs.find((l) => l.status !== "COMPLETED") ?? dbLegs[dbLegs.length - 1];
+
+  const overallStage = activeLeg ? `${activeLeg.legType}_${activeLeg.status}` : "NOT_STARTED";
+  const headline = activeLeg
+    ? `Leg ${activeLeg.sequence} of ${totalLegs} (${activeLeg.mode}) — ${activeLeg.status.toLowerCase().replace("_", " ")} to ${activeLeg.destinationStop.name}`
+    : "No journey scheduled";
+
+  const blocked = dbLegs.some((l) => l.status === "EXCEPTION") || shipment.exceptionItems.some((e) => e.blocking);
+  const blockingReasons = shipment.exceptionItems.filter((e) => e.blocking).map((e) => e.severity || "Exception item");
+
+  const journeyLegs = dbLegs.map((leg) => {
+    const totalDocs = leg.legDocuments.length;
+    const onFile = leg.legDocuments.filter((d) => d.documentId !== null).length;
+    const missingReq = leg.legDocuments.filter((d) => d.requirement === "REQUIRED" && d.documentId === null).length;
+
+    return {
+      id: leg.id,
+      sequence: leg.sequence,
+      legType: leg.legType,
+      mode: leg.mode,
+      status: leg.status,
+      statusReason: leg.statusReason,
+      origin: { stopId: leg.originStopId, name: leg.originStop.name, unlocode: leg.originStop.unlocode },
+      destination: { stopId: leg.destinationStopId, name: leg.destinationStop.name, unlocode: leg.destinationStop.unlocode },
+      carrier: { name: leg.carrierName, scac: leg.carrierScac },
+      conveyance: {
+        vesselName: leg.vesselName || undefined,
+        voyageNumber: leg.voyageNumber || undefined,
+        flightNumber: leg.flightNumber || undefined,
+        imoNumber: leg.imoNumber || undefined,
+      },
+      references: {
+        billOfLadingNumber: leg.billOfLadingNumber || undefined,
+        billOfLadingType: leg.billOfLadingType || undefined,
+        bookingNumber: leg.bookingNumber || undefined,
+      },
+      timeline: {
+        plannedDeparture: leg.plannedDeparture,
+        estimatedDeparture: leg.estimatedDeparture,
+        actualDeparture: leg.actualDeparture,
+        plannedArrival: leg.plannedArrival,
+        estimatedArrival: leg.estimatedArrival,
+        actualArrival: leg.actualArrival,
+      },
+      documents: {
+        total: totalDocs,
+        onFile,
+        missingRequired: missingReq,
+        rows: leg.legDocuments.map((ld) => ({
+          legDocumentId: ld.id,
+          expectedDocType: ld.expectedDocType,
+          requirement: ld.requirement,
+          requirementReason: ld.requirementReason,
+          status: (ld.documentId ? "RECEIVED" : "MISSING") as any,
+          document: ld.document
+            ? {
+                id: ld.document.id,
+                fileName: ld.document.fileName,
+                fileUrl: ld.document.fileUrl,
+                confidence: ld.document.confidence,
+              }
+            : null,
+        })),
+      },
+      events: leg.events.map((e) => ({
+        id: e.id,
+        eventType: e.eventType,
+        classifier: e.classifier,
+        occurredAt: e.occurredAt,
+        receivedAt: e.receivedAt,
+        sourceUpdatedAt: e.sourceUpdatedAt,
+        locationName: e.locationName,
+        unlocode: e.unlocode,
+        timezone: e.timezone,
+        provider: e.provider,
+        sourceType: e.sourceType,
+        confidence: e.confidence,
+        isInferred: e.isInferred,
+        isCorrection: e.isCorrection,
+      })),
+      eta: {
+        current: leg.estimatedArrival || leg.plannedArrival,
+        deltaMinutes: null,
+        provider: "CARRIER",
+      },
+      inference: {
+        source: leg.source,
+        confidence: leg.confidence,
+        needsConfirmation: leg.confirmedAt === null,
+      },
+    };
+  });
+
+  return {
+    ...baseProjection,
+    journey: {
+      shipmentId: shipment.id,
+      shipmentNumber: shipment.shipmentNumber,
+      journeyStatus: {
+        overallStage,
+        headline,
+        percentComplete,
+        blocked,
+        blockingReasons,
+      },
+      stops: stops.map((s) => ({
+        id: s.id,
+        sequence: s.sequence,
+        role: s.role,
+        name: s.name,
+        unlocode: s.unlocode,
+        firmsCode: s.firmsCode,
+        timezone: s.timezone,
+      })),
+      legs: journeyLegs,
+      customs: {
+        status: baseProjection.customs.status,
+      },
+      inferenceProposal: null,
+    },
+  };
 }
