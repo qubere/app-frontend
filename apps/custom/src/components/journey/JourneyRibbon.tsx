@@ -180,6 +180,10 @@ export function JourneyRibbon({ data, onRefresh }: JourneyRibbonProps) {
     }
   };
 
+  if (!data.legs || data.legs.length === 0 || journeyStatus.headline === "No journey scheduled") {
+    return null;
+  }
+
   return (
     <div className="rounded-3xl border border-slate-200/80 bg-white p-5 md:p-6 shadow-2xs space-y-6">
       {/* Header Bar */}

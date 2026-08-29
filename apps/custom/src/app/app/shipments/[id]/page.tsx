@@ -22,6 +22,8 @@ import { ExceptionsDrawer } from "./ExceptionsDrawer";
 import { LineItemsTable } from "./LineItemsTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
 import { PreFilingReadiness } from "./PreFilingReadiness";
+import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
+import { AddLegModalButton } from "@/components/journey/AddLegModalButton";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
 import { buildAgentInvocations } from "./agentInvocations";
 import { displayCurrency } from "@/lib/honest";
@@ -38,7 +40,6 @@ import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracki
 import { ShipmentTrackingPanel } from "./ShipmentTrackingPanel";
 import { ShipmentAuditTrail, type ShipmentAuditEntry } from "./ShipmentAuditTrail";
 import { AccessDenied } from "@/components/auth/AccessDenied";
-import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
 
 /**
  * Sums the quantities on a document's extracted line items.
@@ -1571,6 +1572,9 @@ export default async function ShipmentWorkspacePage(props: {
           </div>
 
           <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+            {/* Add Leg button right before Health Status (At Risk / Critical) */}
+            <AddLegModalButton shipmentId={shipment.id} />
+
             {/* Health status badge — derived by CanonicalShipmentService or last reconciliation. */}
             {shipment.healthStatus && (
               <span
@@ -1637,7 +1641,7 @@ export default async function ShipmentWorkspacePage(props: {
         </div>
 
         {/* Multi-Leg Journey Ribbon -- Prominently placed horizontal node rail */}
-        {trackingProjection?.journey && (
+        {trackingProjection?.journey && trackingProjection.journey.legs.length > 0 && (
           <div className="bg-white p-6 rounded-3xl border border-border shadow-2xs">
             <JourneyRibbon data={trackingProjection.journey} />
           </div>
