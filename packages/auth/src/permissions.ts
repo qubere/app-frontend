@@ -177,10 +177,10 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "compliance.community_screening.override", description: "Override Community Screening name/address thresholds, country-match, and red-flag settings for a run.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
 
   // Export/Import License Determination
-  { name: "licenseDetermination.view", description: "View license determination results.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
-  { name: "licenseDetermination.execute", description: "Run a new license determination.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
-  { name: "licenseDetermination.review", description: "Disposition (verify/return-for-info) a license determination result.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
-  { name: "licenseDetermination.override", description: "Formally override a license determination result.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
+  { name: "license_determination.view", description: "View license determination results.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"], formerNames: ["licenseDetermination.view"] },
+  { name: "license_determination.execute", description: "Run a new license determination.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"], formerNames: ["licenseDetermination.execute"] },
+  { name: "license_determination.review", description: "Disposition (verify/return-for-info) a license determination result.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"], formerNames: ["licenseDetermination.review"] },
+  { name: "license_determination.override", description: "Formally override a license determination result.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"], formerNames: ["licenseDetermination.override"] },
 
   // License Management (managed authorization portfolio, utilization, allocation)
   { name: "licenses.view", description: "View the managed license portfolio, utilization, and events.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
