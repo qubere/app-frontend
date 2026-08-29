@@ -41,7 +41,11 @@ async function seed() {
       deletedAt: null,
       account: { OR: [{ slug: "target" }, { name: { contains: "Target" } }] },
     },
-    select: { id: true, accountId: true, estimatedArrival: true, shipmentNumber: true, account: { select: { name: true } } },
+    select: {
+      id: true, accountId: true, estimatedArrival: true, shipmentNumber: true,
+      account: { select: { name: true } },
+      _count: { select: { lineItems: true } },
+    },
   });
 
   if (!shipment) {
@@ -51,6 +55,67 @@ async function seed() {
   }
 
   const { id: shipmentId, accountId } = shipment;
+
+  // --- de-duplicate: an earlier botched seed run can leave an EMPTY second
+  //     SHP-TGT-2026-001 on another account. Only soft-delete a copy that has
+  //     no real content (no line items, filings or customer requests) — never
+  //     one that another demo (e.g. the customer-portal seed) is using.
+  const dupes = await db.shipment.findMany({
+    where: { shipmentNumber: SHIPMENT_NUMBER, deletedAt: null, id: { not: shipmentId } },
+    select: {
+      id: true,
+      account: { select: { name: true } },
+      _count: { select: { lineItems: true, customsFilings: true, customerRequests: true, legs: true } },
+    },
+  });
+  for (const d of dupes) {
+    const c = d._count;
+    if (c.lineItems === 0 && c.customsFilings === 0 && c.customerRequests === 0 && c.legs === 0) {
+      await db.shipment.update({ where: { id: d.id }, data: { deletedAt: new Date() } });
+      console.log(`  soft-deleted empty duplicate ${SHIPMENT_NUMBER} on "${d.account.name}"`);
+    } else {
+      console.log(`  left non-empty ${SHIPMENT_NUMBER} on "${d.account.name}" (${JSON.stringify(c)}) — another demo owns it`);
+    }
+  }
+
+  // --- backfill line items if the shipment has none (a destructive earlier
+  //     seed wiped the original 20). Representative Target consumer-goods import.
+  if (shipment._count.lineItems === 0) {
+    const items: Array<[string, string, string, number, number]> = [
+      // description, htsCode, countryOfOrigin, quantity, unitPrice
+      ["Bluetooth wireless over-ear headphones", "8518.30.2000", "CN", 4200, 18.4],
+      ["Injection-moulded polypropylene storage bins, 30L", "3924.90.5650", "CN", 9600, 2.15],
+      ["LED desk lamp, dimmable, USB-C", "9405.20.6010", "CN", 3100, 6.8],
+      ["Cotton bath towels, 500 GSM, assorted", "6302.60.0020", "CN", 12000, 3.25],
+      ["Stainless steel insulated water bottle, 750ml", "9617.00.1000", "CN", 5400, 4.1],
+      ["Ceramic dinner plate set, 12-piece", "6912.00.4810", "CN", 1800, 9.5],
+      ["ABS hard-shell carry-on suitcase, 20in", "4202.12.2120", "CN", 900, 22.0],
+      ["Silicone kitchen utensil set, 10-piece", "3924.10.4000", "CN", 4600, 3.6],
+      ["Polyester microfibre throw blanket", "6301.40.0020", "CN", 7200, 5.4],
+      ["Rechargeable AA NiMH batteries, 4-pack", "8507.50.0000", "CN", 8000, 2.9],
+      ["Wooden picture frame, 8x10in", "4414.90.0000", "CN", 3300, 1.95],
+      ["Non-stick aluminium frying pan, 28cm", "7615.10.7125", "CN", 2100, 7.2],
+      ["Memory foam bed pillow, queen", "9404.90.2000", "CN", 2600, 8.9],
+      ["PVC-free vinyl shower curtain liner", "3924.90.1050", "CN", 5000, 1.4],
+      ["Acrylic knit beanie hat, assorted", "6505.00.6090", "CN", 6800, 1.75],
+      ["Glass food-storage container set with lids", "7013.49.2000", "CN", 1500, 6.3],
+    ];
+    await db.shipmentLineItem.createMany({
+      data: items.map(([description, htsCode, countryOfOrigin, quantity, unitPrice], i) => ({
+        shipmentId,
+        accountId,
+        lineNumber: i + 1,
+        description,
+        htsCode,
+        countryOfOrigin,
+        quantity,
+        unitPrice,
+        totalValue: Math.round(quantity * unitPrice * 100) / 100,
+        status: "Unreviewed",
+      })),
+    });
+    console.log(`  backfilled ${items.length} line items (shipment had none)`);
+  }
   const eta = shipment.estimatedArrival ?? new Date("2026-08-31T06:00:00Z");
   const at = (hours: number) => new Date(eta.getTime() + hours * 3_600_000);
   console.log(`Seeding 4-leg journey onto ${shipment.shipmentNumber} (${shipmentId}) — account ${shipment.account.name}`);
