@@ -6898,11 +6898,18 @@ enum RpsEmailFormat {
 /// new exception (see rescreenParty/checkPreApprovalGate); PARTY_RESCREEN_HIT
 /// is any other Party Master re-screen exception with no pre-approval
 /// history. Exactly one of these applies per RestrictedPartyScreeningResult.
+/// LICENSE_ALERT is an account-level portfolio digest (expiry/utilization
+/// thresholds, see alertsService.ts) with no single screeningResultId --
+/// its content is snapshotted onto `payload` at queue time instead.
+/// LICENSE_DETERMINATION_REVIEW_REQUIRED is queued for one
+/// LicenseDeterminationResult whose status is REVIEW_REQUIRED/BLOCKED.
 enum ComplianceNotificationType {
   RPS_HIT
   RPS_REVIEW_REQUIRED
   PAL_RESCREEN_HIT
   PARTY_RESCREEN_HIT
+  LICENSE_ALERT
+  LICENSE_DETERMINATION_REVIEW_REQUIRED
 }
 
 enum NotificationDeliveryStatus {
@@ -6942,9 +6949,25 @@ model ComplianceNotification {
   shipmentId            String?
   partyId               String?
 
+  /// Set only for LICENSE_DETERMINATION_REVIEW_REQUIRED -- the
+  /// LicenseDeterminationResult this notification concerns. Combined with
+  /// notificationType as a second duplicate-send guard (see @@unique below);
+  /// always null for RPS/LICENSE_ALERT notification types.
+  licenseDeterminationResultId String?
+  /// Set only for LICENSE_ALERT digests -- which license the alert-triggering
+  /// portfolio belongs to when the digest concerns a single account (always
+  /// null today, reserved for a future per-license digest granularity).
+  licenseId String?
+
   /// Resolved recipient addresses at queue time -- a later change to account
   /// preferences must never alter what an already-queued notification sends to.
   recipients Json
+
+  /// Snapshotted email content for notification types with no single
+  /// screening-result row to re-query at send time (LICENSE_ALERT,
+  /// LICENSE_DETERMINATION_REVIEW_REQUIRED). Always null for RPS types,
+  /// which render from the live RestrictedPartyScreeningResult instead.
+  payload Json?
 
   deliveryStatus NotificationDeliveryStatus @default(PENDING)
 
@@ -6969,11 +6992,13 @@ model ComplianceNotification {
   createdByUserId String?
 
   @@unique([screeningResultId, notificationType])
+  @@unique([licenseDeterminationResultId, notificationType])
   @@index([accountId, deliveryStatus])
   @@index([deliveryStatus, nextAttemptAt])
   @@index([accountId, createdAt])
   @@index([partyId])
   @@index([shipmentId])
+  @@index([licenseDeterminationResultId])
 }
 
 /// Generic, append-only compliance screening finding — one row per failing

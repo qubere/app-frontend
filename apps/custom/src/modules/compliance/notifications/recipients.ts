@@ -27,5 +27,10 @@ export function resolveRecipients(
       return normalizeRecipientList(config.rpsPalRescreenRecipients);
     case "PARTY_RESCREEN_HIT":
       return normalizeRecipientList(config.rpsGeneralRecipients);
+    default:
+      // LICENSE_ALERT / LICENSE_DETERMINATION_REVIEW_REQUIRED recipients come
+      // from AccountLicenseConfig.licenseAlertRecipients, resolved separately
+      // in licenseEligibility.ts -- this resolver is RPS-config-specific.
+      return [];
   }
 }

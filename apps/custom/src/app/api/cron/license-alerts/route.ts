@@ -26,7 +26,7 @@ async function handleAlerts() {
     await runWithAccountId(config.accountId, async () => {
       try {
         const result = await deliverLicenseAlerts(config.accountId);
-        if (result.sent) sent += 1;
+        if (result.queued) sent += 1;
         else skipped += 1;
       } catch {
         errors += 1;

@@ -4,8 +4,7 @@
 // re-used by the scheduled Inngest job for email delivery.
 import { db } from "@/lib/db";
 import { Decimal } from "@/lib/tariff/decimal";
-import { getEmailProvider } from "@/modules/email/emailProviderFactory";
-import { getEmailConfig, EmailConfigError } from "@/modules/email/emailConfig";
+import { queueLicenseAlertDigest } from "@/modules/compliance/notifications/licenseNotificationService";
 
 export interface LicenseAlert {
   type: "EXPIRING" | "REMAINING_QUANTITY_LOW" | "REMAINING_VALUE_LOW" | "COMMITTED_UNSHIPPED_HIGH";
@@ -26,9 +25,6 @@ async function loadConfig(accountId: string) {
     remainingValueThresholdPct: config?.remainingValueThresholdPct ?? 20,
     committedButUnshippedQuantityThresholdPct: config?.committedButUnshippedQuantityThresholdPct ?? 50,
     committedButUnshippedValueThresholdPct: config?.committedButUnshippedValueThresholdPct ?? 50,
-    recipients: ((config?.licenseAlertRecipients as string[] | null) ?? []).filter(
-      (r): r is string => typeof r === "string" && r.includes("@")
-    ),
   };
 }
 
@@ -114,30 +110,9 @@ export async function computeLicenseAlerts(accountId: string): Promise<LicenseAl
   return alerts;
 }
 
-/** Best-effort email delivery of an account's current alert list. Never throws. */
-export async function deliverLicenseAlerts(accountId: string): Promise<{ sent: boolean; alertCount: number }> {
-  const config = await loadConfig(accountId);
+/** Queues (never sends synchronously) a durable ComplianceNotification digest of an account's current alert list for async delivery via ComplianceNotificationDispatcher. Never throws. */
+export async function deliverLicenseAlerts(accountId: string): Promise<{ queued: boolean; alertCount: number }> {
   const alerts = await computeLicenseAlerts(accountId);
-  if (alerts.length === 0 || config.recipients.length === 0) {
-    return { sent: false, alertCount: alerts.length };
-  }
-
-  try {
-    getEmailConfig();
-  } catch (err) {
-    if (err instanceof EmailConfigError) return { sent: false, alertCount: alerts.length };
-    throw err;
-  }
-
-  const listHtml = alerts.map((a) => `<li>[${a.type}] ${a.message}</li>`).join("");
-  const listText = alerts.map((a) => `[${a.type}] ${a.message}`).join("\n");
-
-  const result = await getEmailProvider().send({
-    to: config.recipients,
-    subject: `License Management alerts (${alerts.length})`,
-    html: `<p>The following license alerts require attention:</p><ul>${listHtml}</ul>`,
-    text: `The following license alerts require attention:\n${listText}`,
-  });
-
-  return { sent: result.outcome === "SUCCESS", alertCount: alerts.length };
+  return queueLicenseAlertDigest(db, { accountId, alerts });
 }
+

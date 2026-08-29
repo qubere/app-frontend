@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { recordUsageEvent } from "@/lib/billing/telemetry";
 import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
+import { queueLicenseDeterminationReview } from "@/modules/compliance/notifications/licenseNotificationService";
 import type { Prisma } from "@prisma/client";
 import { resolveLicenseDetermination, type AccountLicenseGates } from "./ruleResolver";
 import { applyLicenseExceptionClaim, type LicenseExceptionClaim } from "./exceptionEvaluator";
@@ -122,6 +123,22 @@ export async function runLicenseDetermination(
     source: (input.source as "UI" | "API" | "SYSTEM" | undefined) ?? "API",
     metadata: { status: outcome.status, baseDecision: outcome.baseDecision, finalDecision: outcome.finalDecision },
   });
+
+  try {
+    await queueLicenseDeterminationReview(db, {
+      accountId: input.accountId,
+      licenseDeterminationResultId: result.id,
+      status: outcome.status,
+      reason: outcome.reason,
+      operationType: input.operationType,
+      shipmentId: input.shipmentId ?? null,
+      productId: input.productId ?? null,
+      transactionId: input.transactionId ?? null,
+      createdByUserId: input.userId ?? null,
+    });
+  } catch (notificationError) {
+    console.error("Failed to queue License Determination review notification", notificationError);
+  }
 
   try {
     await recordUsageEvent({
