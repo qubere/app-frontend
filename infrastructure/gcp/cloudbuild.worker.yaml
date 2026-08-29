@@ -1,6 +1,6 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    id: worker
+    id: build
     args:
       - "build"
       - "--target=document-worker"
@@ -9,6 +9,12 @@ steps:
       - "-t"
       - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/document-worker:latest"
       - "."
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - "push"
+      - "--all-tags"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/document-worker"
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy
     entrypoint: gcloud

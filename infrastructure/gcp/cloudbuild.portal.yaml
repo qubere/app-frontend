@@ -1,6 +1,6 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    id: portal
+    id: build
     args:
       - "build"
       - "--target=portal-web"
@@ -13,6 +13,12 @@ steps:
       - "-t"
       - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:latest"
       - "."
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - "push"
+      - "--all-tags"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web"
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy
     entrypoint: gcloud
