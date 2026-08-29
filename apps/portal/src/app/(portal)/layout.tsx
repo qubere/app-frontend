@@ -47,12 +47,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const [accountId, setAccountId] = useState<string>("");
+  // Deny by default — these are only ever widened by a successful /api/me.
   const [capabilities, setCapabilities] = useState<Capability>({
-    hasPorterView: true,
-    hasCustomsAccess: true,
-    hasTmsAccess: true,
-    canUploadDocuments: true,
-    canRespondRequests: true,
+    hasPorterView: false,
+    hasCustomsAccess: false,
+    hasTmsAccess: false,
+    canUploadDocuments: false,
+    canRespondRequests: false,
   });
   const [clients, setClients] = useState<ClientScope[]>([]);
   const [selectedClient, setSelectedClient] = useState<ClientScope | null>(null);
@@ -83,9 +84,21 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
     // 2. Background fetch to revalidate HTML5 cache
     fetch("/api/me")
-      .then((res) => res.json())
+      .then(async (res) => {
+        // No valid session -> this is not a logged-in portal. Clear any stale
+        // cache and send the visitor to sign-in rather than rendering the shell
+        // with placeholder identity.
+        if (res.status === 401) {
+          try {
+            sessionStorage.removeItem(SESSION_CACHE_KEY);
+          } catch {}
+          window.location.href = "/sign-in";
+          return null;
+        }
+        return res.ok ? res.json() : null;
+      })
       .then((data) => {
-        if (data.user) {
+        if (data && data.user) {
           setUser(data.user);
           if (data.account?.id) setAccountId(data.account.id);
           if (data.capabilities) setCapabilities(data.capabilities);
@@ -104,8 +117,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       .catch(() => {});
   }, []);
 
-  const userName = user?.name || clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress || "Porter User";
-  const userEmail = user?.email || clerkUser?.primaryEmailAddress?.emailAddress || "porter@target.com";
+  const userName = user?.name || clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress || "";
+  const userEmail = user?.email || clerkUser?.primaryEmailAddress?.emailAddress || "";
 
   const navItems = [
     { label: "Actions", href: "/", icon: LayoutDashboard, visible: true },
@@ -218,7 +231,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               </select>
             ) : (
               <span className="font-bold text-[#1D1D1F]">
-                {selectedClient?.name || "Target Corporation"}
+                {selectedClient?.name || "—"}
               </span>
             )}
             <span className="text-[#86868B] font-light">/</span>
@@ -306,7 +319,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                       <div className="flex justify-between items-center text-[#86868B]">
                         <span>Client Scope:</span>
                         <span className="font-semibold text-[#1D1D1F] truncate max-w-[140px]">
-                          {selectedClient?.name || "Target Corporation"}
+                          {selectedClient?.name || "—"}
                         </span>
                       </div>
                     </div>
@@ -432,13 +445,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                   <div className="flex justify-between items-center">
                     <span className="text-[#86868B] font-medium">Organization / Account ID:</span>
                     <span className="font-mono font-bold text-[#1D1D1F] bg-[#F5F5F7] px-2 py-0.5 rounded border border-[#E5E5EA]">
-                      {accountId || "cmtcfi6r7000ifx6vpmkuymwk"}
+                      {accountId || "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-[#86868B] font-medium">Authorized Client Account:</span>
                     <span className="font-bold text-[#1D1D1F]">
-                      {selectedClient?.name || "Target Corporation"}
+                      {selectedClient?.name || "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
