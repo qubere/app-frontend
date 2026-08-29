@@ -65,7 +65,7 @@ interface ComplianceWorkspaceClientProps {
   mayReadAuditHistory: boolean;
   partyScreeningResults: PartyScreeningResultProps[];
   partySummaryCounts: Record<string, number>;
-  /** Gates the "Service Usage & History" tab -- true when the session holds `audit.read` or `compliance.read`. */
+  /** Gates the "Service Usage" tab -- true when the session holds `audit.read` or `compliance.read`. */
   mayReadExecutionHistory: boolean;
   /** Gates the "Notifications" tab -- true when the session holds `compliance.restrictedParty.settings.manage`. */
   mayManageNotificationSettings: boolean;
@@ -74,7 +74,7 @@ interface ComplianceWorkspaceClientProps {
   mayReadCommunityScreening: boolean;
   /** Gates the override fields (name/address threshold, country-match, red-flag) in Community Screening -- true when the session holds `compliance.community_screening.override`. */
   mayOverrideThresholds: boolean;
-  /** Gates the "Continuous Monitoring" (RDPS) tab -- true when the session holds `compliance.rdps.read`. */
+  /** Gates the "Continuous Party Monitoring" (RDPS) tab -- true when the session holds `compliance.rdps.read`. */
   mayReadRdps: boolean;
   /** Gates scan-trigger/disposition actions within the RDPS tab -- true when the session holds `compliance.rdps.manage`. */
   mayManageRdps: boolean;
@@ -117,11 +117,11 @@ export function ComplianceWorkspaceClient({
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "screening", label: "Screening", icon: Search },
     { id: "review", label: "Review Queue", icon: ListChecks },
-    { id: "audit", label: "Audit History", icon: Clock, hidden: !mayReadAuditHistory },
-    { id: "history", label: "Service Usage & History", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
-    { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
     { id: "community-screening", label: "Community Screening", icon: Users, hidden: !mayReadCommunityScreening },
-    { id: "rdps", label: "Continuous Monitoring", icon: Radar, hidden: !mayReadRdps },
+    { id: "rdps", label: "Continuous Party Monitoring", icon: Radar, hidden: !mayReadRdps },
+    { id: "audit", label: "Audit & History", icon: Clock, hidden: !mayReadAuditHistory },
+    { id: "history", label: "Service Usage", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
+    { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
   ];
 
   useEffect(() => {
