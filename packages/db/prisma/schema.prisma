@@ -348,11 +348,25 @@ model Account {
   complianceNotifications         ComplianceNotification[]
   communityScreeningRuns          CommunityScreeningRun[]
   communityScreeningPartyResults  CommunityScreeningPartyResult[]
+  complianceBatches               ComplianceBatch[]
+  batchRecords                    BatchRecord[]
+  batchArtifacts                  BatchArtifact[]
+  complianceBatchColumnMappingTemplates ComplianceBatchColumnMappingTemplate[]
   rdpsPartyOutcomes               RdpsPartyOutcome[]
   reportDefinitions               ReportDefinition[]
   reportRuns                      ReportRun[]
   reportArtifacts                 ReportArtifact[]
   reportSchedules                 ReportSchedule[]
+  licenseDeterminationResults     LicenseDeterminationResult[]
+  licenses                        License[]
+  licenseLines                    LicenseLine[]
+  licenseParties                  LicenseParty[]
+  licenseDocuments                LicenseDocument[]
+  licenseEvents                   LicenseEvent[]
+  licenseAdjustments              LicenseAdjustment[]
+  licenseNotes                    LicenseNote[]
+  licenseAllocations              LicenseAllocation[]
+  licenseConfig                   AccountLicenseConfig?
 
   @@index([type])
   @@index([slug])
@@ -710,6 +724,9 @@ model Shipment {
   restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
   complianceScreeningFindings     ComplianceScreeningFinding[]
   complianceExecutions            ComplianceExecution[]
+  licenseDeterminationResults     LicenseDeterminationResult[]
+  licenseEvents                   LicenseEvent[]
+  licenseAllocations              LicenseAllocation[]
   trackingIdentifiers             ShipmentTrackingIdentifier[]
   transportLegs                   TransportLeg[]
   legs                            ShipmentLeg[]
@@ -1459,6 +1476,7 @@ model ShipmentLineItem {
   ftzDetails                      FtzDetail[]
   adcvdLineDetails                AdcvdLineDetail[]
   complianceExecutions            ComplianceExecution[]
+  licenseDeterminationResults     LicenseDeterminationResult[]
 
   @@index([shipmentId])
   @@index([accountId])
@@ -4502,6 +4520,8 @@ model Product {
   shipmentLineItems    ShipmentLineItem[]
   canonicalProducts    CanonicalProduct[]
   complianceExecutions ComplianceExecution[]
+  licenseDeterminationResults LicenseDeterminationResult[]
+  licenseLines LicenseLine[]
 
   /// Postgres treats NULLs as distinct, so any number of products may have no
   /// internal SKU while no two may share one.
@@ -5112,6 +5132,8 @@ model Party {
   complianceExecutions            ComplianceExecution[]
   communityScreeningResults       CommunityScreeningPartyResult[]
   rdpsOutcomes                    RdpsPartyOutcome[]
+  licensesAsPurchaser             License[]
+  licenseParties                  LicenseParty[]
 
   /// Postgres treats NULLs as distinct, so any number of parties may have no
   /// internal code while no two may share one.
@@ -6220,6 +6242,7 @@ enum RestrictedPartyScreeningSource {
   COPILOT
   MANUAL
   COMMUNITY_SCREENING
+  BULK_COMPLIANCE_SCREENING
 }
 
 enum RestrictedPartyScreeningStatus {
@@ -6505,6 +6528,255 @@ model CommunityScreeningPartyResult {
   @@unique([runId, rowNumber])
   @@index([runId, aggregateStatus])
   @@index([accountId, partyId])
+}
+
+enum ComplianceBatchType {
+  TRANSACTION_COMPLIANCE
+  PARTY_SCREENING
+  PRODUCT_CLASSIFICATION
+  PRE_APPROVED_PARTY_IMPORT
+}
+
+enum ComplianceBatchFormat {
+  CSV
+  XLSX
+  JSON
+  XML
+}
+
+/// Technical/lifecycle state of the batch itself -- never conflated with
+/// complianceStatus (see ComplianceBatchComplianceStatus). A batch can reach
+/// COMPLETED here while complianceStatus is COMPLETED_WITH_FINDINGS.
+enum ComplianceBatchProcessingStatus {
+  UPLOADED
+  VALIDATING
+  VALIDATION_FAILED
+  READY
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// Aggregate compliance outcome across the batch's records -- independent of
+/// processingStatus. NOT_EVALUATED until at least one record has an
+/// evaluated complianceStatus.
+enum ComplianceBatchComplianceStatus {
+  NOT_EVALUATED
+  PASSED
+  COMPLETED_WITH_FINDINGS
+  COMPLETED_WITH_ERRORS
+}
+
+enum BatchRecordParseStatus {
+  VALID
+  INVALID
+}
+
+enum BatchRecordProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+/// Mirrors the fail-safe aggregation used by CommunityScreeningPartyStatus:
+/// a technical ERROR is never rendered as a compliance PASSED, and a record
+/// with no enabled/executed service stays NOT_EVALUATED rather than a false
+/// PASSED.
+enum BatchRecordComplianceStatus {
+  NOT_EVALUATED
+  PASSED
+  FAILED
+  REVIEW_REQUIRED
+  INCOMPLETE
+  ERROR
+}
+
+enum BatchArtifactType {
+  INPUT
+  RESULTS
+  VALIDATION_ERRORS
+  REJECTED_RECORDS
+  PROCESSING_SUMMARY
+}
+
+/// Bulk Compliance Screening (prompt: Qubere_Bulk_Compliance_Screening) --
+/// one uploaded/submitted file's batch-level orchestration record. Never
+/// duplicates RPS/Embargo/License matching logic itself: BatchRecord rows
+/// fan out to the same canonical services used by interactive/API
+/// workflows (see BatchRecord doc comment). This table is not the
+/// authoritative compliance evidence -- ComplianceExecution and the
+/// canonical domain result tables are.
+model ComplianceBatch {
+  id              String  @id @default(cuid())
+  accountId       String
+  account         Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdByUserId String?
+
+  batchType ComplianceBatchType
+  format    ComplianceBatchFormat
+
+  processingStatus ComplianceBatchProcessingStatus @default(UPLOADED)
+  complianceStatus ComplianceBatchComplianceStatus @default(NOT_EVALUATED)
+
+  originalFileName String
+  fileSha256       String
+
+  /// ComplianceBatchServiceFlags (partyScreening, licenseScreening,
+  /// embargoScreening, productClassification) -- account policy-gated
+  /// defaults, optionally overridden per request (never silently bypassing
+  /// a disabled account policy).
+  servicesEnabled Json
+
+  correlationId String @unique
+
+  totalRecords      Int @default(0)
+  validRecords      Int @default(0)
+  processedRecords  Int @default(0)
+  passedRecords     Int @default(0)
+  failedRecords     Int @default(0)
+  reviewRecords     Int @default(0)
+  errorRecords      Int @default(0)
+  incompleteRecords Int @default(0)
+
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  records   BatchRecord[]
+  artifacts BatchArtifact[]
+
+  @@index([accountId, createdAt])
+  @@index([accountId, processingStatus])
+}
+
+/// A tenant-saved column-header -> TransactionColumnField mapping so a
+/// recurring non-standard export (e.g. an ERP's own header spellings) can be
+/// reused across uploads instead of re-mapped by hand each time. Only
+/// overrides/supplements modules/complianceBatch/columns.ts's built-in alias
+/// table -- a field the template doesn't mention still falls back to normal
+/// alias auto-detection.
+model ComplianceBatchColumnMappingTemplate {
+  id              String  @id @default(cuid())
+  accountId       String
+  account         Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdByUserId String?
+
+  name String
+
+  /// Record<TransactionColumnField, string> -- the exact header text this
+  /// tenant's file uses for each field.
+  fieldMappings Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+/// One normalized row/transaction within a ComplianceBatch. Holds only
+/// canonical result IDs (rpsResultId / licenseDeterminationResultId) --
+/// never a copy of evidence, which stays owned by the canonical result
+/// tables. Not the authoritative compliance record; ComplianceExecution is.
+model BatchRecord {
+  id        String          @id @default(cuid())
+  accountId String
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  batchId   String
+  batch     ComplianceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  recordNumber      Int
+  sourceRowNumber   Int?
+  transactionId     String?
+  transactionLineId String?
+  partyId           String?
+  productId         String?
+
+  correlationId String
+
+  parseStatus      BatchRecordParseStatus      @default(VALID)
+  processingStatus BatchRecordProcessingStatus @default(PENDING)
+  complianceStatus BatchRecordComplianceStatus @default(NOT_EVALUATED)
+
+  /// The CanonicalComplianceRequest this row was normalized into (see
+  /// modules/complianceBatch/types.ts) -- parser-specific DTOs never drive
+  /// compliance logic beyond this point.
+  normalizedInput Json
+  inputHash       String
+
+  rpsResultId                   String?
+  licenseDeterminationResultId String?
+
+  /// Embargo screening has no persisted per-check result row (mirrors
+  /// communityScreening's evaluator.ts, which calls doEmbargoCheck directly
+  /// rather than the shipment-only runCountryEmbargoScreening orchestrator)
+  /// -- the outcome is stored inline here instead of via a resultId.
+  embargoStatus   String?
+  embargoEvidence Json?
+
+  /// ClassificationService.classifyProduct has no persisted case row for a
+  /// standalone batch call (unlike the ClassificationCaseEngine/BatchClassificationService
+  /// async job path, which this domain deliberately does not use -- batch
+  /// rows are processed synchronously like every other canonical service
+  /// here). agentDecisionId is populated only when classifyProduct itself
+  /// created one, which it only does when handed a shipmentId (never true
+  /// for a standalone batch row).
+  classificationStatus       String?
+  classificationHtsCode      String?
+  classificationAgentDecisionId String?
+
+  /// Links to the unified ComplianceExecution audit envelope (prompt §25) for
+  /// each canonical service actually run against this row. Separate columns,
+  /// not one -- a single record can run RPS, License Determination, Embargo,
+  /// and Product Classification independently and each produces its own
+  /// ComplianceExecution row.
+  rpsComplianceExecutionId     String?
+  licenseComplianceExecutionId String?
+  embargoComplianceExecutionId String?
+  classificationComplianceExecutionId String?
+
+  errorCode    String?
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([batchId, recordNumber])
+  @@index([accountId, batchId, processingStatus])
+  @@index([accountId, batchId, complianceStatus])
+}
+
+/// Metadata for one file artifact (input, results export, error export, ...)
+/// belonging to a batch. Bytes live in private object storage (@qubere/storage);
+/// this row never holds a raw, unguarded storage path -- downloads resolve
+/// through a signed/authorized read, never this storageKey directly.
+model BatchArtifact {
+  id        String          @id @default(cuid())
+  accountId String
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  batchId   String
+  batch     ComplianceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  artifactType     BatchArtifactType
+  storageKey       String
+  originalFileName String?
+  mimeType         String?
+  sizeBytes        Int?
+  sha256           String?
+
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([accountId, batchId])
 }
 
 /// One denial-order candidate match. Immutable — corrections are recorded
@@ -6873,11 +7145,18 @@ enum RpsEmailFormat {
 /// new exception (see rescreenParty/checkPreApprovalGate); PARTY_RESCREEN_HIT
 /// is any other Party Master re-screen exception with no pre-approval
 /// history. Exactly one of these applies per RestrictedPartyScreeningResult.
+/// LICENSE_ALERT is an account-level portfolio digest (expiry/utilization
+/// thresholds, see alertsService.ts) with no single screeningResultId --
+/// its content is snapshotted onto `payload` at queue time instead.
+/// LICENSE_DETERMINATION_REVIEW_REQUIRED is queued for one
+/// LicenseDeterminationResult whose status is REVIEW_REQUIRED/BLOCKED.
 enum ComplianceNotificationType {
   RPS_HIT
   RPS_REVIEW_REQUIRED
   PAL_RESCREEN_HIT
   PARTY_RESCREEN_HIT
+  LICENSE_ALERT
+  LICENSE_DETERMINATION_REVIEW_REQUIRED
 }
 
 enum NotificationDeliveryStatus {
@@ -6917,9 +7196,25 @@ model ComplianceNotification {
   shipmentId            String?
   partyId               String?
 
+  /// Set only for LICENSE_DETERMINATION_REVIEW_REQUIRED -- the
+  /// LicenseDeterminationResult this notification concerns. Combined with
+  /// notificationType as a second duplicate-send guard (see @@unique below);
+  /// always null for RPS/LICENSE_ALERT notification types.
+  licenseDeterminationResultId String?
+  /// Set only for LICENSE_ALERT digests -- which license the alert-triggering
+  /// portfolio belongs to when the digest concerns a single account (always
+  /// null today, reserved for a future per-license digest granularity).
+  licenseId String?
+
   /// Resolved recipient addresses at queue time -- a later change to account
   /// preferences must never alter what an already-queued notification sends to.
   recipients Json
+
+  /// Snapshotted email content for notification types with no single
+  /// screening-result row to re-query at send time (LICENSE_ALERT,
+  /// LICENSE_DETERMINATION_REVIEW_REQUIRED). Always null for RPS types,
+  /// which render from the live RestrictedPartyScreeningResult instead.
+  payload Json?
 
   deliveryStatus NotificationDeliveryStatus @default(PENDING)
 
@@ -6944,11 +7239,13 @@ model ComplianceNotification {
   createdByUserId String?
 
   @@unique([screeningResultId, notificationType])
+  @@unique([licenseDeterminationResultId, notificationType])
   @@index([accountId, deliveryStatus])
   @@index([deliveryStatus, nextAttemptAt])
   @@index([accountId, createdAt])
   @@index([partyId])
   @@index([shipmentId])
+  @@index([licenseDeterminationResultId])
 }
 
 /// Generic, append-only compliance screening finding — one row per failing
@@ -7002,6 +7299,7 @@ enum ComplianceExecutionType {
   MILITARY_END_USE_SCREENING
   ANTI_BOYCOTT_SCREENING
   LICENSE_DETERMINATION
+  IMPORT_CONTROL_DETERMINATION
 }
 
 enum ComplianceExecutionStatus {
@@ -7316,6 +7614,408 @@ model ReportSchedule {
 
   @@index([accountId, nextRunAt])
   @@index([reportDefinitionId])
+}
+
+// =====================================================================
+// License Determination & License Management
+// (Qubere_Export_Import_License_Determination_Management_Data_Ingestion_
+// Modern_UIUX_Claude_Code_Prompt.md). Additive only -- no existing model is
+// renamed, dropped, or repurposed. Reuses Country/CommerceControlList
+// reference data (see above) and Product/ProductClassification/Party for
+// classification and party linkage rather than duplicating masters.
+//
+// Regulatory rule datasets (country export controls, license exceptions,
+// generic control numbers, EU/country rules, end-use/encryption/RPL rule
+// tables) are NOT modeled here yet -- no legacy source data for them has
+// been provided to this repo (only commerce_control_list exists). Per the
+// prompt's fail-safe rule (section 103), the determination engine returns
+// RULE_DATA_UNAVAILABLE/INCOMPLETE/REVIEW_REQUIRED rather than fabricating
+// jurisdiction-specific outcomes until those datasets are ingested -- see
+// docs/LICENSE-DETERMINATION-GAP-MATRIX.md.
+// =====================================================================
+
+/// Explicit result status -- never a boolean. ERROR/INCOMPLETE/
+/// INVALID_CLASSIFICATION/RULE_DATA_UNAVAILABLE/UNSUPPORTED_JURISDICTION must
+/// never be presented or stored as NO_LICENSE_REQUIRED.
+enum LicenseDeterminationStatus {
+  LICENSE_REQUIRED
+  NO_LICENSE_REQUIRED
+  LICENSE_EXCEPTION_APPLIES
+  REVIEW_REQUIRED
+  INCOMPLETE
+  INVALID_CLASSIFICATION
+  UNSUPPORTED_JURISDICTION
+  RULE_DATA_UNAVAILABLE
+  BLOCKED
+  ERROR
+}
+
+enum LicenseOperationType {
+  EXPORT
+  IMPORT
+}
+
+/// One row per LicenseDeterminationService invocation. Base and final
+/// decisions are both preserved -- a reviewer override or an applied license
+/// exception NEVER overwrites the original automated `baseDecision`.
+model LicenseDeterminationResult {
+  id                    String  @id @default(cuid())
+  accountId             String
+  account               Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  complianceExecutionId String?
+
+  shipmentId String?
+  shipment   Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  lineItemId String?
+  lineItem   ShipmentLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  productId  String?
+  product    Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  transactionId     String?
+  transactionLineId String?
+
+  operationType LicenseOperationType @default(EXPORT)
+
+  complianceCountry  String?
+  destinationCountry String?
+  originCountry      String?
+
+  status LicenseDeterminationStatus
+
+  /// The original, unedited automated determination. Never overwritten.
+  baseDecision String?
+  /// The decision after any applicable license exception or reviewer
+  /// override is applied. Equal to baseDecision when neither applies.
+  finalDecision String?
+
+  exceptionCode        String?
+  exceptionDescription String?
+
+  reason        String?
+  /// Structured input snapshot (classification values, end-use/end-user
+  /// flags, encryption attributes, RPL indicator, quantity/value/currency).
+  conditions    Json?
+  /// Which required inputs were missing/unknown when status is INCOMPLETE.
+  missingInputs Json?
+
+  ruleSource  String?
+  ruleVersion String?
+  /// Rule provenance and evidence: authority, jurisdiction, dataset/version,
+  /// ruleId, effective dates, citation. Never fabricated when absent.
+  evidence    Json?
+
+  automatedAt DateTime @default(now())
+
+  reviewerDisposition String?
+  reviewedByUserId    String?
+  reviewedAt          DateTime?
+  reviewReason        String?
+
+  overrideType   String?
+  overrideReason String?
+
+  createdAt DateTime @default(now())
+
+  allocations LicenseAllocation[]
+
+  @@index([accountId, automatedAt])
+  @@index([shipmentId])
+  @@index([lineItemId])
+}
+
+enum LicenseStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  REVOKED
+  CLOSED
+}
+
+/// License Management header record (one authorization document/grant).
+model License {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  licenseNumber   String
+  licenseType     String // BIS_LICENSE | DDTC_LICENSE | OFAC_LICENSE | GENERIC_EXCEPTION | OTHER
+  agency          String? // BIS | DDTC | OFAC | OTHER
+  jurisdiction    String? // US | EU | OTHER
+  referenceNumber String?
+
+  effectiveDate          DateTime
+  originalExpirationDate DateTime?
+  expirationDate         DateTime?
+
+  status LicenseStatus @default(DRAFT)
+
+  purchaserPartyId String?
+  purchaserParty   Party?  @relation(fields: [purchaserPartyId], references: [id], onDelete: SetNull)
+
+  description String?
+
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines        LicenseLine[]
+  parties      LicenseParty[]
+  documents    LicenseDocument[]
+  licenseNotes LicenseNote[]
+
+  @@unique([accountId, licenseNumber])
+  @@index([accountId, status])
+  @@index([accountId, expirationDate])
+}
+
+/// One licensed product/classification line, carrying the quantity/value
+/// ledger totals. Authoritative movement history lives in LicenseEvent
+/// (event-sourced) -- these totals are derived/cached, never the sole record.
+model LicenseLine {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseId String
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  lineNumber Int
+
+  productId           String?
+  product              Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productDescription   String?
+  classificationType   String? // ECCN | USML | HTS | SCHEDULE_B | ICN
+  classificationNumber String?
+
+  licensedQuantity Decimal? @db.Decimal(18, 4)
+  licensedValue    Decimal? @db.Decimal(18, 2)
+  uom              String?
+  currency         String?
+
+  committedQuantity Decimal @default(0) @db.Decimal(18, 4)
+  committedValue    Decimal @default(0) @db.Decimal(18, 2)
+  shippedQuantity   Decimal @default(0) @db.Decimal(18, 4)
+  shippedValue      Decimal @default(0) @db.Decimal(18, 2)
+  adjustedQuantity  Decimal @default(0) @db.Decimal(18, 4)
+  adjustedValue     Decimal @default(0) @db.Decimal(18, 2)
+
+  replacementIndicator Boolean @default(false)
+
+  /// Optimistic concurrency token -- every event/adjustment post increments
+  /// this inside the same transaction that recomputes the ledger totals.
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events      LicenseEvent[]
+  adjustments LicenseAdjustment[]
+  parties     LicenseParty[]
+  allocations LicenseAllocation[]
+
+  @@unique([licenseId, lineNumber])
+  @@index([accountId])
+  @@index([productId])
+}
+
+/// Role-based link from a License (or one of its lines) to an existing Party
+/// row -- never a duplicate party master.
+model LicenseParty {
+  id        String       @id @default(cuid())
+  accountId String
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseId String
+  license   License      @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  lineId    String?
+  line      LicenseLine? @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party        @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  role      String // PURCHASER | END_USER | CONSIGNEE | LICENSEE | OTHER
+
+  createdAt DateTime @default(now())
+
+  @@unique([licenseId, lineId, partyId, role])
+  @@index([accountId])
+  @@index([partyId])
+}
+
+/// Reuses the existing object-storage architecture (@qubere/storage) -- only
+/// the storage key/metadata are recorded here. Document Intelligence
+/// extractions are recorded in `extractedFields` and MUST be treated as
+/// proposed/unverified until `verified` is set true by a reviewer.
+model LicenseDocument {
+  id               String   @id @default(cuid())
+  accountId        String
+  account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseId        String
+  license          License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  documentType     String // AUTHORIZATION | AMENDMENT | CONDITIONS | CORRESPONDENCE | SUPPORTING_EVIDENCE
+  fileName         String
+  storageKey       String
+  mimeType         String
+  sizeBytes        Int?
+  extractedFields  Json?
+  verified         Boolean  @default(false)
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+
+  @@index([accountId])
+  @@index([licenseId])
+}
+
+enum LicenseEventType {
+  ORDER_COMMITMENT
+  SHIPMENT
+  ASSIGNMENT
+  RELEASE
+  REVERSAL
+  RENEWAL
+  EXPIRATION
+  UPDATE
+  OPENING_BALANCE
+}
+
+/// Immutable utilization ledger entry -- the authoritative event-sourced
+/// record of License Line consumption. Duplicate detection key:
+/// (accountId, licenseLineId, eventType, transactionId, transactionLineId).
+/// A row is never edited or deleted; corrections are posted as new
+/// REVERSAL/UPDATE events or as a LicenseAdjustment.
+model LicenseEvent {
+  id            String      @id @default(cuid())
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseLineId String
+  licenseLine   LicenseLine @relation(fields: [licenseLineId], references: [id], onDelete: Cascade)
+
+  eventType LicenseEventType
+
+  quantityDelta Decimal @default(0) @db.Decimal(18, 4)
+  valueDelta    Decimal @default(0) @db.Decimal(18, 2)
+
+  sourceSystem      String?
+  sourceEventId     String?
+  transactionId     String?
+  transactionLineId String?
+
+  shipmentId String?
+  shipment   Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  reason         String?
+  postedByUserId String?
+
+  /// Post-event ledger snapshot on the line, captured at posting time for
+  /// point-in-time reconstruction without replaying the full event stream.
+  quantityAfter Decimal? @db.Decimal(18, 4)
+  valueAfter    Decimal? @db.Decimal(18, 2)
+
+  eventAt   DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  relatedAdjustments LicenseAdjustment[]
+
+  @@unique([accountId, licenseLineId, eventType, transactionId, transactionLineId], name: "LicenseEvent_dedupe_key")
+  @@index([licenseLineId, eventAt])
+  @@index([accountId])
+}
+
+/// Immutable, reason-required correction to a License Line's ledger totals
+/// (e.g. opening-balance migration entry, manual correction). Never a
+/// silent counter edit.
+model LicenseAdjustment {
+  id            String       @id @default(cuid())
+  accountId     String
+  account       Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseLineId String
+  licenseLine   LicenseLine  @relation(fields: [licenseLineId], references: [id], onDelete: Cascade)
+
+  adjustmentType String // INCREASE | DECREASE | CORRECTION | OPENING_BALANCE
+  quantityDelta  Decimal @default(0) @db.Decimal(18, 4)
+  valueDelta     Decimal @default(0) @db.Decimal(18, 2)
+
+  reason         String
+  relatedEventId String?
+  relatedEvent   LicenseEvent? @relation(fields: [relatedEventId], references: [id], onDelete: SetNull)
+
+  quantityBefore Decimal? @db.Decimal(18, 4)
+  quantityAfter  Decimal? @db.Decimal(18, 4)
+  valueBefore    Decimal? @db.Decimal(18, 2)
+  valueAfter     Decimal? @db.Decimal(18, 2)
+
+  postedByUserId String?
+  createdAt      DateTime @default(now())
+
+  @@index([licenseLineId])
+  @@index([accountId])
+}
+
+model LicenseNote {
+  id           String   @id @default(cuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseId    String
+  license      License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  authorUserId String?
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([licenseId])
+  @@index([accountId])
+}
+
+/// Reservation of remaining license-line capacity against a LICENSE_REQUIRED
+/// determination. LicenseApplicabilityService finds candidates; this table
+/// only records an explicit reservation once a caller commits to one --
+/// never an automatic/implicit allocation.
+model LicenseAllocation {
+  id              String                      @id @default(cuid())
+  accountId       String
+  account         Account                     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseLineId   String
+  licenseLine     LicenseLine                 @relation(fields: [licenseLineId], references: [id], onDelete: Cascade)
+  determinationId String?
+  determination   LicenseDeterminationResult? @relation(fields: [determinationId], references: [id], onDelete: SetNull)
+
+  shipmentId String?
+  shipment   Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  lineItemId String?
+
+  quantity Decimal? @db.Decimal(18, 4)
+  value    Decimal? @db.Decimal(18, 2)
+
+  status           String    @default("RESERVED") // RESERVED | CONSUMED | RELEASED
+  reservedByUserId String?
+  reservedAt       DateTime  @default(now())
+  releasedAt       DateTime?
+  evidence         Json?
+
+  @@index([licenseLineId])
+  @@index([accountId])
+}
+
+/// Account-level License Determination/Management configuration, mirroring
+/// AccountEmbargoConfig's pattern: absence of a row means safe defaults.
+model AccountLicenseConfig {
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  licenseDeterminationEnabled               Boolean @default(true)
+  importControlDeterminationEnabled         Boolean @default(false)
+  genericExportLicenseDeterminationEnabled  Boolean @default(true)
+  licenseManagementEnabled                  Boolean @default(true)
+
+  licenseExpiryLeadDays                     Int @default(90)
+  remainingQuantityThresholdPct             Int @default(20)
+  remainingValueThresholdPct                Int @default(20)
+  committedButUnshippedQuantityThresholdPct Int @default(50)
+  committedButUnshippedValueThresholdPct    Int @default(50)
+
+  /// string[] of email recipients for license alerts.
+  licenseAlertRecipients Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// CBP ACE 4-digit port codes — reference table for pre-filing validation.

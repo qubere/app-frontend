@@ -5,4 +5,6 @@ export const NOTIFICATION_TYPE_LABELS: Record<ComplianceNotificationType, string
   RPS_REVIEW_REQUIRED: "Restricted Party Review Required",
   PAL_RESCREEN_HIT: "Pre-Approved Party Re-Screen Exception",
   PARTY_RESCREEN_HIT: "Party Master Re-Screen Exception",
+  LICENSE_ALERT: "License Management Alert",
+  LICENSE_DETERMINATION_REVIEW_REQUIRED: "License Determination Review Required",
 };

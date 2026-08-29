@@ -125,6 +125,22 @@ export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "detai
     schedule: "0 6 * * * (Daily at 06:00 UTC)",
     description: "Re-evaluates country of origin determinations for line items affected by recent product country fact updates.",
   },
+  {
+    id: "compliance-batch-dispatch",
+    name: "Bulk Compliance Screening Dispatcher",
+    endpoint: "/api/cron/compliance-batch-dispatch",
+    method: "POST",
+    schedule: "*/2 * * * * (Every 2 minutes)",
+    description: "Processes queued Bulk Compliance Screening batch records claimed row-by-row through Party/License screening.",
+  },
+  {
+    id: "compliance-batch-retention-sweep",
+    name: "Bulk Compliance Screening Retention Sweep",
+    endpoint: "/api/cron/compliance-batch-retention-sweep",
+    method: "POST",
+    schedule: "0 4 * * * (Daily at 04:00 UTC)",
+    description: "Marks terminal Bulk Compliance Screening batches older than the retention window as EXPIRED (status flag only, never deletes data).",
+  },
 ];
 
 export async function getSystemCronJobs(): Promise<SystemCronJob[]> {

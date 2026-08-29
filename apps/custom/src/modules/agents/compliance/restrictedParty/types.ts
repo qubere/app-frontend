@@ -30,7 +30,8 @@ export type RestrictedPartyScreeningSource =
   | "PUBLIC_API"
   | "COPILOT"
   | "MANUAL"
-  | "COMMUNITY_SCREENING";
+  | "COMMUNITY_SCREENING"
+  | "BULK_COMPLIANCE_SCREENING";
 
 /** The identity actually being screened -- richer than EmbargoParty (which lacks address/contact). */
 export interface RestrictedPartyIdentity {

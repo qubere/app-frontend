@@ -23,12 +23,18 @@ sends are retried with backoff rather than dropped.
 
 ### What triggers a notification today
 
-Notification types are currently scoped to RPS only:
+Notification types span two domains, sharing one dispatcher/outbox:
 `RPS_HIT`, `RPS_REVIEW_REQUIRED`, `PAL_RESCREEN_HIT`, `PARTY_RESCREEN_HIT`
-(`src/modules/compliance/notifications/templates/notificationLabels.ts`).
-There is **no** embargo-hit notification type and no broader PAL-lifecycle
-notification (e.g. "approval expiring soon") — those are gaps, not
-placeholders with dead code behind them.
+(`src/modules/compliance/notifications/templates/notificationLabels.ts`), plus
+`LICENSE_ALERT` (portfolio expiry/utilization-threshold digest, one email per
+account per day, see `licenseEligibility.ts`/`licenseNotificationService.ts`)
+and `LICENSE_DETERMINATION_REVIEW_REQUIRED` (queued when a License
+Determination result lands on `REVIEW_REQUIRED`/`BLOCKED`). The two License
+types render from a `payload` column snapshotted at queue time rather than
+re-querying a live result row, since a portfolio digest has no single backing
+record. There is **no** embargo-hit notification type and no broader
+PAL-lifecycle notification (e.g. "approval expiring soon") — those are gaps,
+not placeholders with dead code behind them.
 
 ### Recipients and eligibility
 
@@ -72,6 +78,20 @@ matches any cataloged action, and nothing at the type level catches that.
 - `api/audit/export/route.ts` — CSV export of the audit trail for a given
   scope, gated the same way the panels are.
 
+### Formal overrides
+
+A `ComplianceFormalOverride` is a distinct, human-only correction of a
+compliance decision — separate from a domain's own reviewer disposition
+field (e.g. License Determination's `reviewerDisposition`) — recorded via
+`createFormalOverride`/`revokeFormalOverride`
+(`src/modules/compliance/formalOverride.ts`) and exposed as
+`POST /api/v1/compliance/overrides` / `POST /api/v1/compliance/overrides/[id]/revoke`,
+both gated by `compliance.override`. It is domain-agnostic (`resultRefType`/
+`resultRefId` are plain strings, not a relation), so it applies uniformly
+across every `ComplianceExecution` type. `ExecutionHistoryPanel.tsx`'s
+execution detail view surfaces a create-override form and a per-active-
+override revoke control, gated by the same permission.
+
 ### Retention
 
 There is no retention or purge policy — `AuditLog` rows accumulate
@@ -79,8 +99,8 @@ indefinitely; nothing in this codebase schedules a cleanup.
 
 ## Known gaps
 
-- Email: RPS-only notification types; no embargo-hit or PAL-lifecycle
-  notifications; SMTP-only provider with no local/dev fallback.
+- Email: no embargo-hit or PAL-lifecycle notifications; SMTP-only provider
+  with no local/dev fallback.
 - Audit: `action` parameter not type-checked against the `AuditAction` enum;
   logging is best-effort (never blocks the audited action); no retention
   policy.

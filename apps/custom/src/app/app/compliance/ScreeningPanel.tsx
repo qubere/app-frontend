@@ -208,12 +208,12 @@ export function ScreeningPanel({ screeningBuckets, mayReadPartyScreening, partyS
   const partyOpenCount = partyScreeningResults.filter((r) => !r.disposition || r.disposition.status === "PENDING").length;
 
   const subTabs: { id: SubTab; label: string; count: number; hidden?: boolean }[] = [
-    { id: "party", label: "Party Screening", count: partyOpenCount, hidden: !mayReadPartyScreening },
-    { id: "embargo", label: "Country Embargo", count: openCount("COUNTRY_EMBARGO", "PRIVATE_EMBARGO") },
-    { id: "uflpa", label: "Forced Labor / UFLPA", count: openCount("UFLPA") },
-    { id: "endUse", label: "End-Use / End-User", count: openCount("END_USE_RESTRICTION", "END_USER_RESTRICTION") },
-    { id: "military", label: "Military End-Use / End-User", count: openCount("MILITARY_END_USE", "MILITARY_END_USER") },
-    { id: "antiBoycott", label: "Anti-Boycott", count: openCount("ANTI_BOYCOTT") },
+    { id: "party", label: "Restricted Party Screening", count: partyOpenCount, hidden: !mayReadPartyScreening },
+    { id: "embargo", label: "Embargo Screening", count: openCount("COUNTRY_EMBARGO", "PRIVATE_EMBARGO") },
+    { id: "uflpa", label: "UFLPA Screening", count: openCount("UFLPA") },
+    { id: "endUse", label: "End-Use Screening", count: openCount("END_USE_RESTRICTION", "END_USER_RESTRICTION") },
+    { id: "military", label: "Military End-User Screening", count: openCount("MILITARY_END_USE", "MILITARY_END_USER") },
+    { id: "antiBoycott", label: "Anti-Boycott Screening", count: openCount("ANTI_BOYCOTT") },
   ];
 
   return (

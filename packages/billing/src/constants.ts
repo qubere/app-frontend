@@ -175,4 +175,32 @@ export const DEFAULT_BILLING_EVENT_DEFINITIONS: readonly BillingEventDefItem[] =
     defaultUnit: "invoice",
     productLine: "TMS",
   },
+  {
+    eventCode: "BULK_COMPLIANCE_BATCH_RECORD_SCREENED",
+    name: "Bulk Compliance Screening Record",
+    description: "One record within a Bulk Compliance Screening batch completed Party/License screening",
+    category: "CUSTOM",
+    defaultUnit: "record",
+  },
+  {
+    eventCode: "COMPLIANCE_REPORT_GENERATED",
+    name: "Compliance Report Generated",
+    description: "A compliance report run completed generation and produced a downloadable artifact",
+    category: "CUSTOM",
+    defaultUnit: "report",
+  },
+  {
+    eventCode: "LICENSE_DETERMINATION_COMPLETED",
+    name: "License Determination Completed",
+    description: "Export/import license or import-control determination run for a shipment or line item",
+    category: "CUSTOM",
+    defaultUnit: "determination",
+  },
+  {
+    eventCode: "LICENSE_UTILIZATION_EVENT_POSTED",
+    name: "License Utilization Event Posted",
+    description: "A ledger event (assignment/shipment/release/reversal) posted against a license line's utilization",
+    category: "CUSTOM",
+    defaultUnit: "event",
+  },
 ] as const;

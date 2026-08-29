@@ -7,10 +7,20 @@ import { db } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { getEmailProvider } from "@/modules/email/emailProviderFactory";
 import { getEmailConfig, EmailConfigError } from "@/modules/email/emailConfig";
-import { renderRpsEmail } from "./templates";
-import type { RpsEmailMatchSummary, RpsEmailResultView } from "./templates/types";
+import { renderRpsEmail, renderLicenseAlertEmail, renderLicenseDeterminationReviewEmail } from "./templates";
+import type { RpsEmailMatchSummary, RpsEmailResultView, RenderedEmail } from "./templates/types";
+import type { LicenseAlertPayload, LicenseDeterminationReviewPayload } from "./templates/licenseTemplates";
+import type { ComplianceNotificationType } from "@prisma/client";
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Notification types rendered from a live RestrictedPartyScreeningResult. Everything else (LICENSE_*) renders from the notification's own snapshotted `payload`. */
+const RPS_NOTIFICATION_TYPES: ReadonlySet<ComplianceNotificationType> = new Set([
+  "RPS_HIT",
+  "RPS_REVIEW_REQUIRED",
+  "PAL_RESCREEN_HIT",
+  "PARTY_RESCREEN_HIT",
+]);
 
 function retryAt(attempt: number, baseSeconds: number): Date {
   return new Date(Date.now() + Math.min(30 * 60_000, baseSeconds * 1000 * 2 ** Math.max(0, attempt - 1)));
@@ -68,48 +78,71 @@ export class ComplianceNotificationDispatcher {
       if (claimed.count !== 1) continue;
 
       try {
-        if (!notification.screeningResultId) {
-          throw new Error("ComplianceNotification has no screeningResultId to render.");
+        let rendered: RenderedEmail;
+        let format: string = "HTML";
+
+        if (RPS_NOTIFICATION_TYPES.has(notification.notificationType)) {
+          if (!notification.screeningResultId) {
+            throw new Error("ComplianceNotification has no screeningResultId to render.");
+          }
+
+          const result = await db.restrictedPartyScreeningResult.findUnique({
+            where: { id: notification.screeningResultId },
+            include: { matches: true },
+          });
+          if (!result) throw new Error(`Screening result ${notification.screeningResultId} no longer exists.`);
+
+          const accountConfig = await db.accountScreeningConfig.findUnique({ where: { accountId: notification.accountId } });
+          const matches: RpsEmailMatchSummary[] = result.matches
+            .filter((m) => !m.suppressedByApprovedParty)
+            .map((m) => ({ sourceList: m.sourceList, matchedName: m.matchedName, nameScore: m.nameScore, matchMethod: m.matchMethod }));
+
+          rendered = renderRpsEmail({
+            notificationType: notification.notificationType,
+            appBaseUrl: config.appBaseUrl,
+            secure: accountConfig?.rpsSecureEmailEnabled === true,
+            result: {
+              id: result.id,
+              // Notifications are only ever queued for HIT/REVIEW_REQUIRED results
+              // (see persistResult.ts) -- the DB enum's extra STALE value can't occur here.
+              status: result.status as RpsEmailResultView["status"],
+              screenedName: result.screenedName,
+              screenedAddress: result.screenedAddress,
+              screenedCity: result.screenedCity,
+              screenedCountry: result.screenedCountry,
+              hitCount: result.hitCount,
+              redFlagCount: result.redFlagCount,
+              partyId: result.partyId,
+              shipmentId: result.shipmentId,
+              matches,
+            },
+          });
+          format = accountConfig?.rpsEmailFormat ?? "HTML";
+        } else if (notification.notificationType === "LICENSE_ALERT") {
+          const payload = notification.payload as unknown as LicenseAlertPayload | null;
+          if (!payload?.alerts) throw new Error("LICENSE_ALERT notification has no payload to render.");
+          rendered = renderLicenseAlertEmail(payload);
+        } else if (notification.notificationType === "LICENSE_DETERMINATION_REVIEW_REQUIRED") {
+          if (!notification.licenseDeterminationResultId) {
+            throw new Error("ComplianceNotification has no licenseDeterminationResultId to render.");
+          }
+          const payload = notification.payload as unknown as LicenseDeterminationReviewPayload | null;
+          if (!payload) throw new Error("LICENSE_DETERMINATION_REVIEW_REQUIRED notification has no payload to render.");
+          rendered = renderLicenseDeterminationReviewEmail(notification.licenseDeterminationResultId, payload, config.appBaseUrl);
+        } else {
+          throw new Error(`Unsupported notification type "${notification.notificationType}".`);
         }
-
-        const result = await db.restrictedPartyScreeningResult.findUnique({
-          where: { id: notification.screeningResultId },
-          include: { matches: true },
-        });
-        if (!result) throw new Error(`Screening result ${notification.screeningResultId} no longer exists.`);
-
-        const accountConfig = await db.accountScreeningConfig.findUnique({ where: { accountId: notification.accountId } });
-        const matches: RpsEmailMatchSummary[] = result.matches
-          .filter((m) => !m.suppressedByApprovedParty)
-          .map((m) => ({ sourceList: m.sourceList, matchedName: m.matchedName, nameScore: m.nameScore, matchMethod: m.matchMethod }));
-
-        const rendered = renderRpsEmail({
-          notificationType: notification.notificationType,
-          appBaseUrl: config.appBaseUrl,
-          secure: accountConfig?.rpsSecureEmailEnabled === true,
-          result: {
-            id: result.id,
-            // Notifications are only ever queued for HIT/REVIEW_REQUIRED results
-            // (see persistResult.ts) -- the DB enum's extra STALE value can't occur here.
-            status: result.status as RpsEmailResultView["status"],
-            screenedName: result.screenedName,
-            screenedAddress: result.screenedAddress,
-            screenedCity: result.screenedCity,
-            screenedCountry: result.screenedCountry,
-            hitCount: result.hitCount,
-            redFlagCount: result.redFlagCount,
-            partyId: result.partyId,
-            shipmentId: result.shipmentId,
-            matches,
-          },
-        });
 
         const recipients = Array.isArray(notification.recipients)
           ? (notification.recipients as unknown[]).filter((r): r is string => typeof r === "string")
           : [];
         if (recipients.length === 0) throw new Error("Notification has no resolved recipients.");
 
-        const format = accountConfig?.rpsEmailFormat ?? "HTML";
+        const isRpsType = RPS_NOTIFICATION_TYPES.has(notification.notificationType);
+        const sentAction = isRpsType ? AuditAction.RPS_NOTIFICATION_SENT : AuditAction.LICENSE_NOTIFICATION_SENT;
+        const retryAction = isRpsType ? AuditAction.RPS_NOTIFICATION_RETRY : AuditAction.LICENSE_NOTIFICATION_RETRY;
+        const failedAction = isRpsType ? AuditAction.RPS_NOTIFICATION_FAILED : AuditAction.LICENSE_NOTIFICATION_FAILED;
+
         const provider = getEmailProvider();
         const sendResult = await provider.send({
           to: recipients,
@@ -133,7 +166,7 @@ export class ComplianceNotificationDispatcher {
           });
           await createAuditLog({
             accountId: notification.accountId,
-            action: AuditAction.RPS_NOTIFICATION_SENT,
+            action: sentAction,
             entity: "ComplianceNotification",
             entityId: notification.id,
             source: "SYSTEM",
@@ -153,7 +186,7 @@ export class ComplianceNotificationDispatcher {
           });
           await createAuditLog({
             accountId: notification.accountId,
-            action: AuditAction.RPS_NOTIFICATION_RETRY,
+            action: retryAction,
             entity: "ComplianceNotification",
             entityId: notification.id,
             source: "SYSTEM",
@@ -173,7 +206,7 @@ export class ComplianceNotificationDispatcher {
           });
           await createAuditLog({
             accountId: notification.accountId,
-            action: AuditAction.RPS_NOTIFICATION_FAILED,
+            action: failedAction,
             entity: "ComplianceNotification",
             entityId: notification.id,
             source: "SYSTEM",

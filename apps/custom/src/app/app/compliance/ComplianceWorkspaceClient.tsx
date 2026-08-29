@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users, Radar } from "lucide-react";
+import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users, Radar, UploadCloud } from "lucide-react";
 import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
 import type { AuditRecordProps } from "./AuditHistoryPanel";
 
@@ -18,6 +18,7 @@ const ExecutionHistoryPanel = dynamic(() => import("./ExecutionHistoryPanel").th
 const NotificationSettingsPanel = dynamic(() => import("./NotificationSettingsPanel").then((m) => m.NotificationSettingsPanel), { ssr: false });
 const CommunityScreeningPanel = dynamic(() => import("./CommunityScreeningPanel").then((m) => m.CommunityScreeningPanel), { ssr: false });
 const RdpsPanel = dynamic(() => import("./RdpsPanel").then((m) => m.RdpsPanel), { ssr: false });
+const BulkScreeningPanel = dynamic(() => import("./BulkScreeningPanel").then((m) => m.BulkScreeningPanel), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -65,8 +66,9 @@ interface ComplianceWorkspaceClientProps {
   mayReadAuditHistory: boolean;
   partyScreeningResults: PartyScreeningResultProps[];
   partySummaryCounts: Record<string, number>;
-  /** Gates the "Service Usage & History" tab -- true when the session holds `audit.read` or `compliance.read`. */
+  /** Gates the "Service Usage" tab -- true when the session holds `audit.read` or `compliance.read`. */
   mayReadExecutionHistory: boolean;
+  mayCreateFormalOverride: boolean;
   /** Gates the "Notifications" tab -- true when the session holds `compliance.restrictedParty.settings.manage`. */
   mayManageNotificationSettings: boolean;
   notificationSettings: NotificationSettingsProps;
@@ -74,10 +76,15 @@ interface ComplianceWorkspaceClientProps {
   mayReadCommunityScreening: boolean;
   /** Gates the override fields (name/address threshold, country-match, red-flag) in Community Screening -- true when the session holds `compliance.community_screening.override`. */
   mayOverrideThresholds: boolean;
-  /** Gates the "Continuous Monitoring" (RDPS) tab -- true when the session holds `compliance.rdps.read`. */
+  /** Gates the "Continuous Party Monitoring" (RDPS) tab -- true when the session holds `compliance.rdps.read`. */
   mayReadRdps: boolean;
   /** Gates scan-trigger/disposition actions within the RDPS tab -- true when the session holds `compliance.rdps.manage`. */
   mayManageRdps: boolean;
+  /** Gates the "Bulk Compliance Screening" tab -- true when the session holds `compliance.bulk_screening.view`. */
+  mayReadBulkCompliance: boolean;
+  /** Gates the upload action within the Bulk Compliance Screening tab -- true when the session holds `compliance.bulk_screening.create`. */
+  mayCreateBulkCompliance: boolean;
+  mayImportPreApprovals: boolean;
 }
 
 type WorkspaceTab =
@@ -88,7 +95,8 @@ type WorkspaceTab =
   | "history"
   | "notifications"
   | "community-screening"
-  | "rdps";
+  | "rdps"
+  | "bulk-screening";
 
 export function ComplianceWorkspaceClient({
   initialTab = "overview",
@@ -100,12 +108,16 @@ export function ComplianceWorkspaceClient({
   partyScreeningResults,
   partySummaryCounts,
   mayReadExecutionHistory,
+  mayCreateFormalOverride,
   mayManageNotificationSettings,
   notificationSettings,
   mayReadCommunityScreening,
   mayOverrideThresholds,
   mayReadRdps,
   mayManageRdps,
+  mayReadBulkCompliance,
+  mayCreateBulkCompliance,
+  mayImportPreApprovals,
 }: ComplianceWorkspaceClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -117,11 +129,12 @@ export function ComplianceWorkspaceClient({
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "screening", label: "Screening", icon: Search },
     { id: "review", label: "Review Queue", icon: ListChecks },
-    { id: "audit", label: "Audit History", icon: Clock, hidden: !mayReadAuditHistory },
-    { id: "history", label: "Service Usage & History", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
-    { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
     { id: "community-screening", label: "Community Screening", icon: Users, hidden: !mayReadCommunityScreening },
-    { id: "rdps", label: "Continuous Monitoring", icon: Radar, hidden: !mayReadRdps },
+    { id: "rdps", label: "Continuous Party Monitoring", icon: Radar, hidden: !mayReadRdps },
+    { id: "bulk-screening", label: "Bulk Compliance Screening", icon: UploadCloud, hidden: !mayReadBulkCompliance },
+    { id: "audit", label: "Audit & History", icon: Clock, hidden: !mayReadAuditHistory },
+    { id: "history", label: "Service Usage", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
+    { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
   ];
 
   useEffect(() => {
@@ -136,6 +149,8 @@ export function ComplianceWorkspaceClient({
       setActiveTab(mayReadCommunityScreening ? "community-screening" : "overview");
     } else if (tabParam === "rdps") {
       setActiveTab(mayReadRdps ? "rdps" : "overview");
+    } else if (tabParam === "bulk-screening") {
+      setActiveTab(mayReadBulkCompliance ? "bulk-screening" : "overview");
     } else if (tabParam === "screening" || tabParam === "review") {
       setActiveTab(tabParam);
     } else if (!tabParam) {
@@ -148,6 +163,7 @@ export function ComplianceWorkspaceClient({
     mayManageNotificationSettings,
     mayReadCommunityScreening,
     mayReadRdps,
+    mayReadBulkCompliance,
   ]);
 
   const selectTab = (tab: WorkspaceTab) => {
@@ -208,7 +224,7 @@ export function ComplianceWorkspaceClient({
         )}
         {activeTab === "review" && <ComplianceFindingsClient findings={findings} recentAudits={[]} />}
         {activeTab === "audit" && mayReadAuditHistory && <AuditHistoryPanel recentAudits={recentAudits} />}
-        {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel />}
+        {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel mayCreateFormalOverride={mayCreateFormalOverride} />}
         {activeTab === "notifications" && mayManageNotificationSettings && (
           <NotificationSettingsPanel initialSettings={notificationSettings} mayManage={mayManageNotificationSettings} />
         )}
@@ -216,6 +232,9 @@ export function ComplianceWorkspaceClient({
           <CommunityScreeningPanel mayOverrideThresholds={mayOverrideThresholds} />
         )}
         {activeTab === "rdps" && mayReadRdps && <RdpsPanel mayManageRdps={mayManageRdps} />}
+        {activeTab === "bulk-screening" && mayReadBulkCompliance && (
+          <BulkScreeningPanel mayCreate={mayCreateBulkCompliance} mayImportPreApprovals={mayImportPreApprovals} />
+        )}
       </div>
     </div>
   );

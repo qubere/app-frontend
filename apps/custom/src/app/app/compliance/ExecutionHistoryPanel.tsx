@@ -79,7 +79,7 @@ function statusBadgeVariant(status: string): BadgeProps["variant"] {
 
 const PAGE_SIZE = 25;
 
-export function ExecutionHistoryPanel() {
+export function ExecutionHistoryPanel({ mayCreateFormalOverride }: { mayCreateFormalOverride: boolean }) {
   const [filters, setFilters] = useState({
     shipmentId: "", partyId: "", executionType: "", status: "", source: "", correlationId: "",
   });
@@ -91,6 +91,12 @@ export function ExecutionHistoryPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ExecutionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [showOverrideForm, setShowOverrideForm] = useState(false);
+  const [overrideDraft, setOverrideDraft] = useState({ originalDecision: "", overrideDecision: "", reason: "" });
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [revokeDraftById, setRevokeDraftById] = useState<Record<string, string>>({});
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const buildQuery = useCallback(
     (extra?: Record<string, string>) => {
@@ -131,12 +137,16 @@ export function ExecutionHistoryPanel() {
     load();
   }, [load]);
 
+  const loadDetail = async (id: string) => {
+    const res = await fetch(`/api/v1/compliance/executions/${id}`);
+    if (res.ok) setDetail(await res.json());
+  };
+
   const openDetail = async (id: string) => {
     setSelectedId(id);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/v1/compliance/executions/${id}`);
-      if (res.ok) setDetail(await res.json());
+      await loadDetail(id);
     } finally {
       setDetailLoading(false);
     }
@@ -145,6 +155,61 @@ export function ExecutionHistoryPanel() {
   const closeDetail = () => {
     setSelectedId(null);
     setDetail(null);
+    setShowOverrideForm(false);
+    setOverrideDraft({ originalDecision: "", overrideDecision: "", reason: "" });
+    setOverrideError(null);
+  };
+
+  const submitOverride = async () => {
+    if (!detail) return;
+    setOverrideSubmitting(true);
+    setOverrideError(null);
+    try {
+      const res = await fetch("/api/v1/compliance/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          executionId: detail.execution.id,
+          resultRefType: detail.execution.resultRefType ?? detail.execution.executionType,
+          resultRefId: detail.execution.resultRefId ?? detail.execution.id,
+          originalDecision: overrideDraft.originalDecision,
+          overrideDecision: overrideDraft.overrideDecision,
+          reason: overrideDraft.reason,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setOverrideError(json.error ?? "Failed to create override.");
+        return;
+      }
+      setShowOverrideForm(false);
+      setOverrideDraft({ originalDecision: "", overrideDecision: "", reason: "" });
+      await loadDetail(detail.execution.id);
+      await load();
+    } finally {
+      setOverrideSubmitting(false);
+    }
+  };
+
+  const submitRevoke = async (overrideId: string) => {
+    if (!detail) return;
+    const revokedReason = revokeDraftById[overrideId]?.trim();
+    if (!revokedReason) return;
+    setRevokingId(overrideId);
+    try {
+      const res = await fetch(`/api/v1/compliance/overrides/${overrideId}/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revokedReason }),
+      });
+      if (res.ok) {
+        setRevokeDraftById((d) => { const next = { ...d }; delete next[overrideId]; return next; });
+        await loadDetail(detail.execution.id);
+        await load();
+      }
+    } finally {
+      setRevokingId(null);
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -193,7 +258,7 @@ export function ExecutionHistoryPanel() {
             onChange={(e) => setFilters((f) => ({ ...f, executionType: e.target.value }))}
           >
             <option value="">All types</option>
-            {["RESTRICTED_PARTY_SCREENING", "EMBARGO_SCREENING", "CLASSIFICATION", "FORCED_LABOR_SCREENING", "END_USE_SCREENING", "END_USER_SCREENING", "MILITARY_END_USE_SCREENING", "ANTI_BOYCOTT_SCREENING"].map((t) => (
+            {["RESTRICTED_PARTY_SCREENING", "EMBARGO_SCREENING", "CLASSIFICATION", "FORCED_LABOR_SCREENING", "END_USE_SCREENING", "END_USER_SCREENING", "MILITARY_END_USE_SCREENING", "ANTI_BOYCOTT_SCREENING", "LICENSE_DETERMINATION", "IMPORT_CONTROL_DETERMINATION"].map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
@@ -331,7 +396,14 @@ export function ExecutionHistoryPanel() {
               </section>
 
               <section className="space-y-1">
-                <h4 className="text-[10px] font-extrabold uppercase text-ink-muted">Formal Overrides ({detail.execution.overrides.length})</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-extrabold uppercase text-ink-muted">Formal Overrides ({detail.execution.overrides.length})</h4>
+                  {mayCreateFormalOverride && !showOverrideForm && (
+                    <Button size="sm" variant="secondary" onClick={() => setShowOverrideForm(true)}>
+                      Create Override
+                    </Button>
+                  )}
+                </div>
                 {detail.execution.overrides.length === 0 ? (
                   <p className="text-xs text-ink-muted">No formal overrides recorded against this execution.</p>
                 ) : (
@@ -344,8 +416,69 @@ export function ExecutionHistoryPanel() {
                         </div>
                         <p className="text-ink-muted">{o.reason}</p>
                         <p className="text-ink-muted">by {o.overriddenByUserId} on {displayDate(o.overriddenAt)}</p>
+                        {o.revokedAt ? (
+                          <p className="text-ink-muted">revoked on {displayDate(o.revokedAt)}{o.revokedReason ? `: ${o.revokedReason}` : ""}</p>
+                        ) : (
+                          mayCreateFormalOverride && (
+                            <div className="flex items-center gap-2 pt-1">
+                              <Input
+                                placeholder="Revocation reason"
+                                value={revokeDraftById[o.id] ?? ""}
+                                onChange={(e) => setRevokeDraftById((d) => ({ ...d, [o.id]: e.target.value }))}
+                              />
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={revokingId === o.id || !(revokeDraftById[o.id]?.trim())}
+                                onClick={() => submitRevoke(o.id)}
+                              >
+                                Revoke
+                              </Button>
+                            </div>
+                          )
+                        )}
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {showOverrideForm && (
+                  <div className="border border-border rounded-lg p-3 space-y-2">
+                    <Input
+                      placeholder="Original decision (e.g. LICENSE_REQUIRED)"
+                      value={overrideDraft.originalDecision}
+                      onChange={(e) => setOverrideDraft((d) => ({ ...d, originalDecision: e.target.value }))}
+                    />
+                    <Input
+                      placeholder="Override decision (e.g. NO_LICENSE_REQUIRED)"
+                      value={overrideDraft.overrideDecision}
+                      onChange={(e) => setOverrideDraft((d) => ({ ...d, overrideDecision: e.target.value }))}
+                    />
+                    <textarea
+                      placeholder="Reason (required)"
+                      value={overrideDraft.reason}
+                      onChange={(e) => setOverrideDraft((d) => ({ ...d, reason: e.target.value }))}
+                      rows={3}
+                      className="w-full px-3.5 py-2.5 bg-surface-muted border border-border rounded-xl text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                    />
+                    {overrideError && <p className="text-xs text-red-600">{overrideError}</p>}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        disabled={
+                          overrideSubmitting ||
+                          !overrideDraft.originalDecision.trim() ||
+                          !overrideDraft.overrideDecision.trim() ||
+                          !overrideDraft.reason.trim()
+                        }
+                        onClick={submitOverride}
+                      >
+                        Submit Override
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => { setShowOverrideForm(false); setOverrideError(null); }}>
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
                 )}
               </section>

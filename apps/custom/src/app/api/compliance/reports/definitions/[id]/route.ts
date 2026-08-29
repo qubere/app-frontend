@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
+import { createAuditLog } from "@/lib/audit";
 
 async function loadOwnedDefinition(accountId: string, userId: string, id: string) {
   return db.reportDefinition.findFirst({ where: { id, accountId, ownerUserId: userId } });
@@ -32,6 +33,16 @@ export const PUT = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, par
     },
   });
 
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_DEFINITION_UPDATED",
+    entity: "ReportDefinition",
+    entityId: definition.id,
+    source: "UI",
+    metadata: { isShared },
+  });
+
   return NextResponse.json({ definition });
 }, { permission: "compliance.reports.generate", write: true });
 
@@ -42,5 +53,15 @@ export const DELETE = withAuthenticatedRoute<{ id: string }>(async ({ ctx, param
     return NextResponse.json({ error: "Saved report not found.", code: "NOT_FOUND" }, { status: 404 });
   }
   await db.reportDefinition.update({ where: { id }, data: { isActive: false } });
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_DEFINITION_DELETED",
+    entity: "ReportDefinition",
+    entityId: id,
+    source: "UI",
+  });
+
   return NextResponse.json({ ok: true });
 }, { permission: "compliance.reports.generate", write: true });

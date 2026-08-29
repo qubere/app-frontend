@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { computeNextRun } from "@/modules/reports/scheduler";
+import { createAuditLog } from "@/lib/audit";
 
 async function loadOwnedSchedule(accountId: string, id: string) {
   return db.reportSchedule.findFirst({ where: { id, accountId } });
@@ -31,6 +32,15 @@ export const PUT = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, par
     },
   });
 
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_SCHEDULE_UPDATED",
+    entity: "ReportSchedule",
+    entityId: schedule.id,
+    source: "UI",
+  });
+
   return NextResponse.json({ schedule });
 }, { permission: "compliance.reports.manage", write: true });
 
@@ -41,5 +51,15 @@ export const DELETE = withAuthenticatedRoute<{ id: string }>(async ({ ctx, param
     return NextResponse.json({ error: "Schedule not found.", code: "NOT_FOUND" }, { status: 404 });
   }
   await db.reportSchedule.delete({ where: { id } });
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_SCHEDULE_DELETED",
+    entity: "ReportSchedule",
+    entityId: id,
+    source: "UI",
+  });
+
   return NextResponse.json({ ok: true });
 }, { permission: "compliance.reports.manage", write: true });

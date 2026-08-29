@@ -32,7 +32,8 @@ export type NavIcon =
   | "tradeData"
   | "tariffs"
   | "billing"
-  | "reports";
+  | "reports"
+  | "licenses";
 
 export interface NavItem {
   id: string;
@@ -68,9 +69,17 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "actions", labelKey: "actions", href: "/app/actions", icon: "actions" },
       { id: "dashboard", labelKey: "commandCenter", href: "/app/dashboard", icon: "dashboard" },
       { id: "shipments", labelKey: "shipments", href: "/app/shipments", icon: "shipments" },
-      { id: "compliance", labelKey: "complianceMonitoring", href: "/app/compliance", icon: "compliance" },
       { id: "filing", labelKey: "customsFiling", href: "/app/filing", icon: "filing" },
       { id: "post-entry", labelKey: "postEntry", href: "/app/post-entry", icon: "postEntry" },
+    ],
+  },
+  {
+    id: "compliance-licensing",
+    labelKey: "complianceAndLicensing",
+    items: [
+      { id: "compliance", labelKey: "complianceMonitoring", href: "/app/compliance", icon: "compliance" },
+      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
+      { id: "license-management", labelKey: "licenseManagement", href: "/app/license-management", icon: "licenses", permission: "licenses.view" },
     ],
   },
   {
@@ -83,7 +92,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "billing", labelKey: "billing", href: "/app/billing", icon: "billing", permission: "billing.view" },
       { id: "trade-data", labelKey: "tradeData", href: "/app/trade-data", icon: "tradeData" },
       { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
-      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
       { id: "filingConfig", labelKey: "filingConfiguration", href: "/app/filing-config", icon: "settings", platformAdminOnly: true },
     ],
   },

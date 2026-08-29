@@ -68,7 +68,8 @@ module (private embargo, RDPS, PAL, Community Screening, settings) against a
 `action` parameter itself is a loose `string`, not type-checked against that
 enum. Compliance events additionally queue outbox-pattern emails
 (`ComplianceNotification` → `ComplianceNotificationDispatcher`) over SMTP,
-currently scoped to RPS hit/review/rescreen notification types only. See
+covering RPS hit/review/rescreen types plus License Determination review-
+required alerts and the license portfolio expiry/utilization digest. See
 [docs/compliance-notifications-and-audit.md](docs/compliance-notifications-and-audit.md)
 for the full mechanism, audit-history UI surfaces, export, and known gaps.
 
@@ -407,6 +408,47 @@ Every agent operates under a strict **Additive Intelligence Mandate**:
 
 ---
 
+### 16. License Determination & Management
+
+License Determination (`src/modules/licenses/`) evaluates whether an
+export/import operation needs a government authorization and, if it does,
+tracks that authorization's remaining capacity for the life of the license.
+It is a **deterministic engine, never an LLM**: classification format
+validation (ECCN/USML/HTS/Schedule B/ICN), tri-state (true/false/unknown)
+end-use and end-user condition handling, and license-exception claim
+evaluation all run as pure functions with no external rule lookup. No
+jurisdiction-specific control-rule datasets (country export-control
+matrices, encryption/RPL eligibility tables) have been ingested into this
+repository, so per its fail-safe design the engine **never fabricates** a
+`LICENSE_REQUIRED`/`NO_LICENSE_REQUIRED` outcome — it returns
+`RULE_DATA_UNAVAILABLE`, `INCOMPLETE`, or `REVIEW_REQUIRED` with full
+evidence of what was and wasn't evaluated instead, and any sensitive
+end-use/end-user flag always hard-stops to `REVIEW_REQUIRED` regardless of
+rule-data availability.
+
+License Management layers a full authorization lifecycle on top of a
+positive determination: license/line/party/document CRUD, an event-sourced
+utilization ledger (`utilizationService.ts` — the single writer of ledger
+totals, with an idempotent dedupe key and optimistic-concurrency `version`
+CAS updates inside a Serializable transaction), reason-required manual
+adjustments, allocation reserve/release against remaining capacity, and a
+daily expiry/utilization-threshold alert cron. Both the alert digest and a
+review-required determination outcome queue a durable `ComplianceNotification`
+through the same outbox/dispatcher pipeline RPS uses, rather than sending
+email inline. Reporting is integrated into the existing Compliance Reports
+catalog rather than a separate export pipeline. Surfaced at
+`/app/license-management` (portfolio list, run determination, alerts) and
+its detail page (lines, utilization/adjustment/allocation history, parties,
+documents, close license), gated by a dedicated `licenseDetermination.*` /
+`licenses.*` permission set. Formal compliance overrides against a License
+Determination result can be created/revoked from the Audit & History panel's
+execution detail view (`compliance.override`-gated), the same generic
+`ComplianceFormalOverride` mechanism every compliance domain shares. See
+[docs/LICENSE-DETERMINATION-GAP-MATRIX.md](docs/LICENSE-DETERMINATION-GAP-MATRIX.md)
+for the full implementation status, fail-safe rationale, and test coverage.
+
+---
+
 ## 💰 AI Cost Controls
 
 Every AI capability here — the Copilot, HTS classification, document
@@ -512,7 +554,8 @@ provenance cannot claim one model while another did the reading.
 │   ├── rdps-continuous-monitoring.md # Reverse/continuous denied-party re-screening reference
 │   ├── compliance-notifications-and-audit.md # Email notification pipeline + audit logging reference
 │   ├── ai-chat-interface.md # AI assistant design spec — see "AI Chat Assistant" above for the built shape
-│   └── customs-filing-canonical-messaging-changelog.md # Multi-country filing/messaging implementation history
+│   ├── customs-filing-canonical-messaging-changelog.md # Multi-country filing/messaging implementation history
+│   └── LICENSE-DETERMINATION-GAP-MATRIX.md # License Determination & Management implementation status reference
 ├── prisma/
 │   ├── schema.prisma        # Prisma data models & database relationships
 │   ├── migrations/          # Versioned schema migrations

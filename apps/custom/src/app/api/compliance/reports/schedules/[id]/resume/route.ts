@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { computeNextRun } from "@/modules/reports/scheduler";
+import { createAuditLog } from "@/lib/audit";
 
 export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params }) => {
   const { id } = params;
@@ -15,5 +16,15 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params 
     lastRunAt: schedule.lastRunAt,
   });
   await db.reportSchedule.update({ where: { id }, data: { isActive: true, nextRunAt } });
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_SCHEDULE_RESUMED",
+    entity: "ReportSchedule",
+    entityId: id,
+    source: "UI",
+  });
+
   return NextResponse.json({ ok: true });
 }, { permission: "compliance.reports.manage", write: true });

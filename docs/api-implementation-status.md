@@ -41,6 +41,12 @@
 | **Advisory** | `POST /api/advisory/query` | Production Foundation — bare HTS codes get a direct DB lookup (no LLM); free-text queries are grounded in real `RegulatoryUpdate` rows and account metrics before being passed to a real Anthropic/Gemini call. A second undocumented surface, `POST /api/advisory/origin-determination`, also exists | Zod Schema | `ai.use` | Yes (`accountId`) | N/A | N/A | Mock only |
 | **Admin** | `POST /api/admin/users` | Production Foundation | Zod Schema | `users.manage` | Yes (`accountId`) | Yes | N/A | Token Hashed |
 | **Health** | `GET /api/health` | Production Foundation — blocks mock provider in production | None | Public | N/A | N/A | N/A | N/A |
+| **License Determination** | `POST /api/compliance/license-determination` | Production Foundation — deterministic engine only, never fabricates `LICENSE_REQUIRED`/`NO_LICENSE_REQUIRED` without ingested rule data (returns `RULE_DATA_UNAVAILABLE`/`INCOMPLETE`/`REVIEW_REQUIRED` instead); see `docs/LICENSE-DETERMINATION-GAP-MATRIX.md` | Zod Schema | `licenseDetermination.execute` | Yes (`accountId`) | Yes | N/A | Included |
+| **License Determination** | `PATCH /api/compliance/license-determinations/[id]` | Production Foundation — reviewer disposition only, never overwrites `baseDecision` | Zod Schema | `licenseDetermination.review`/`.override` | Yes (`accountId`) | N/A | N/A | Included |
+| **License Management** | `POST/GET/PATCH/DELETE /api/compliance/licenses[/:id]` | Production Foundation — `DELETE` soft-closes (`status: CLOSED`), never a hard delete | Zod Schema | `licenses.*` | Yes (`accountId`) | Yes | N/A | Included |
+| **License Management** | `POST/GET /api/compliance/license-lines/[id]/events` | Production Foundation — event-sourced ledger, single writer, idempotent dedupe key, optimistic-concurrency `version` CAS in a Serializable transaction | Zod Schema | `licenses.post_events`/`.view` | Yes (`accountId`) | Yes | Versioned (409) | Included |
+| **License Management** | `POST/GET /api/compliance/license-lines/[id]/adjustments` | Production Foundation — reason-required, before/after snapshots persisted | Zod Schema | `licenses.adjust`/`.view` | Yes (`accountId`) | No | Versioned (409) | Included |
+| **License Management** | `POST/GET /api/compliance/license-lines/[id]/allocate` | Production Foundation — reservation posts an `ASSIGNMENT` ledger event first so allocation and ledger state cannot drift | Zod Schema | `licenses.allocate`/`.view` | Yes (`accountId`) | No | Versioned (409) | Included |
 
 ## Partner API (`/api/v1`, API-key authenticated)
 
@@ -55,6 +61,7 @@
 | **Compliance** | `POST /api/v1/compliance/embargo-screening` | Production Foundation — reuses last completed screening unless `forceRescreen`; rescreen requires `embargo.screen` scope | Zod Schema | API Key (`embargo.read` + `embargo.screen` scopes) | Yes (`accountId` from key) | N/A | Yes (pipeline-serialized) | Included |
 
 ---
+*Last updated: 2026-08-29 — added License Determination & Management rows (`/api/compliance/license-determination[s]`, `/api/compliance/licenses`, `/api/compliance/license-lines/[id]/{events,adjustments,allocate}`); see `docs/LICENSE-DETERMINATION-GAP-MATRIX.md` for the full implementation matrix.*
 *Last updated: 2026-08-15 — corrected stale Drawback/Documents-upload/Simulator-calculate/Refunds/Screening-dps/Advisory rows (several had been upgraded from Dummy/Prototype to real duty-engine/lot-reservation logic without the doc being updated), fixed wrong paths (`/api/advisory`→`/api/advisory/query`, `/api/screening/dps`→`/api/demo/screening/dps`) and wrong Auth Guard permission names, and added a disclosure that the main table is not an exhaustive route inventory.*
 *Documented by Antigravity AI — Implementation Status Tracker*
 

@@ -6,6 +6,8 @@ import { generateCsv } from "./export/csv";
 import { generateXlsx } from "./export/xlsx";
 import { generateReportPdf } from "./export/pdf";
 import { MAX_EXPORT_ROWS } from "./queryHelpers";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
+import { logEvent } from "@/lib/logging/logger";
 
 export class ReportGenerationError extends Error {
   constructor(
@@ -130,16 +132,54 @@ export async function executeReportRun(runId: string): Promise<void> {
         },
       }),
     ]);
+
+    try {
+      await recordUsageEvent({
+        accountId: run.accountId,
+        eventCode: "COMPLIANCE_REPORT_GENERATED",
+        quantity: 1,
+        unit: "report",
+        sourceFunction: "executeReportRun",
+        sourceAgent: "Compliance Reporting",
+        automated: true,
+        success: true,
+        idempotencyKey: `billing:compliance-report:${runId}`,
+        metadata: { reportType: run.reportType, format: run.format, rowCount: totalCount },
+      });
+    } catch (billingError) {
+      console.error("Failed to record compliance report billing usage", billingError);
+    }
+
+    logEvent({
+      action: "COMPLIANCE_REPORT_GENERATED",
+      message: `Compliance report ${catalogEntry.id} (run ${runId}) generated successfully.`,
+      accountId: run.accountId,
+      userId: run.requestedByUserId,
+      resourceType: "ReportRun",
+      resourceId: runId,
+      metadata: { reportType: run.reportType, format: run.format, rowCount: totalCount },
+    });
   } catch (err) {
     const code = err instanceof ReportGenerationError ? err.code : "QUERY_ERROR";
+    const errorMessage = err instanceof Error ? err.message : "Unknown error generating report.";
     await db.reportRun.update({
       where: { id: runId },
       data: {
         generationStatus: "FAILED",
         errorCode: code,
-        errorMessage: err instanceof Error ? err.message : "Unknown error generating report.",
+        errorMessage,
         completedAt: new Date(),
       },
+    });
+
+    logEvent({
+      action: "COMPLIANCE_REPORT_GENERATION_FAILED",
+      message: `Compliance report ${catalogEntry.id} (run ${runId}) failed to generate: ${errorMessage}`,
+      accountId: run.accountId,
+      userId: run.requestedByUserId,
+      resourceType: "ReportRun",
+      resourceId: runId,
+      metadata: { reportType: run.reportType, format: run.format, errorCode: code },
     });
   }
 }

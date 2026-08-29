@@ -202,6 +202,7 @@ describe("Qubere Unified Authorization & Permissions Framework", () => {
       ] as any);
 
       vi.spyOn(db.accountTeamMembership, "findMany").mockResolvedValue([] as any);
+      vi.spyOn(db.shipment, "findMany").mockResolvedValue([] as any);
 
       // Attempting to access Client B's shipment
       const result = await authorizeResource({
@@ -240,6 +241,7 @@ describe("Qubere Unified Authorization & Permissions Framework", () => {
       ] as any);
 
       vi.spyOn(db.accountTeamMembership, "findMany").mockResolvedValue([] as any);
+      vi.spyOn(db.shipment, "findMany").mockResolvedValue([] as any);
 
       const result = await authorizeResource({
         userId: "user-spec",
