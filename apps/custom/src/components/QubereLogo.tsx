@@ -29,13 +29,13 @@ export function QubereMark({ className }: QubereMarkProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <path
-        d="M29 40L24 43L6 33V15L24 5L42 15V30"
+        d="M28 38.5L24 41L8 32V16L24 7L40 16V28.5"
         stroke="#1D1D1F"
-        strokeWidth="8.5"
+        strokeWidth="7.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="M23.5 27L43.236 36.991L38.764 43.009L23.5 27Z" fill="#0071E3" />
+      <path d="M22.5 26.5L45.7 37.9L40.3 45.1L22.5 26.5Z" fill="#0071E3" />
     </svg>
   );
 }
