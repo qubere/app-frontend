@@ -27,4 +27,4 @@ steps:
 images:
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/customs-web:$SHORT_SHA"
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/customs-web:latest"
-options: { machineType: E2_HIGHCPU_8, logging: CLOUD_LOGGING_ONLY }
+options: { logging: CLOUD_LOGGING_ONLY }
