@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ShieldCheck, Code2, Bot } from "lucide-react";
+import { Code2, Bot } from "lucide-react";
 import { ApiStatusDrawer } from "./ApiStatusDrawer";
+import { QubereLogo } from "./QubereLogo";
 
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
@@ -15,11 +16,15 @@ export function LandingPageHeader() {
     <>
       <header className="sticky top-0 z-50 bg-surface-muted/80 backdrop-blur-md border-b border-border">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center space-x-3 group">
-            <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center text-white shadow-md shadow-brand/20 group-hover:scale-105 transition-transform">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-ink">Qubere</span>
+          <Link
+            href="/"
+            aria-label="Qubere home"
+            className="flex items-center rounded-md transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          >
+            <QubereLogo
+              className="text-xl text-ink"
+              markClassName="h-9 w-9"
+            />
           </Link>
 
           <nav className="flex items-center space-x-3">

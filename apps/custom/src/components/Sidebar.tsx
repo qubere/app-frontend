@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { QubereLogo } from "./QubereLogo";
 import { activeNavHref, visibleNavigation, type NavIcon } from "@/lib/navigation";
 import { usePolling } from "@/lib/hooks/usePolling";
 
@@ -183,17 +184,15 @@ export function Sidebar({
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setMobileOpen(false)}
-            className="flex items-center space-x-3 group min-w-0"
+            aria-label="Open Qubere pitch deck"
+            className="flex items-center min-w-0 rounded-md transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             title="Open Qubere pitch deck"
           >
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-brand flex items-center justify-center text-white shadow-md shadow-brand/20 group-hover:scale-105 transition-transform">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            {!collapsed && (
-              <span className="block text-xl font-bold tracking-tight text-ink truncate min-w-0">
-                Qubere
-              </span>
-            )}
+            <QubereLogo
+              className="text-xl text-ink truncate min-w-0"
+              markClassName="h-9 w-9"
+              showWordmark={!collapsed}
+            />
           </a>
           <button
             type="button"

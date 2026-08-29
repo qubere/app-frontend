@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { QubereMark, QubereWordmark } from "./QubereLogo";
 import { activeNavHref, visibleNavigation, type NavIcon } from "@/lib/navigation";
 import { usePolling } from "@/lib/hooks/usePolling";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -166,17 +167,14 @@ export function TmsSidebar({
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setMobileOpen(false)}
-            className="flex items-center space-x-3 group min-w-0"
+            aria-label="Open Qubere pitch deck"
+            className="flex items-center gap-3 min-w-0 rounded-md transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             title="Open Qubere pitch deck"
           >
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-brand flex items-center justify-center text-white shadow-md shadow-brand/20 group-hover:scale-105 transition-transform font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
+            <QubereMark className="h-9 w-9" />
             {!collapsed && (
               <div className="flex flex-col min-w-0">
-                <span className="block text-lg font-bold tracking-tight text-ink truncate min-w-0">
-                  Qubere TMS
-                </span>
+                <QubereWordmark className="text-lg text-ink truncate min-w-0" suffix="TMS" />
                 <span className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider -mt-1">
                   Freight OS
                 </span>
