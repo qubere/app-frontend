@@ -16,6 +16,7 @@
 // instead of double-counting.
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 import { Decimal } from "@/lib/tariff/decimal";
 import type { LicenseEventType } from "@prisma/client";
 
@@ -151,6 +152,27 @@ export async function postLicenseEvent(input: PostLicenseEventInput) {
     source: "API",
     metadata: { eventType: input.eventType, licenseLineId: input.licenseLineId },
   });
+
+  // Idempotent replays (deduped) already billed on first post -- never double-count.
+  if (!result.deduped) {
+    try {
+      await recordUsageEvent({
+        accountId: input.accountId,
+        eventCode: "LICENSE_UTILIZATION_EVENT_POSTED",
+        quantity: 1,
+        unit: "event",
+        sourceFunction: "postLicenseEvent",
+        userId: input.userId ?? undefined,
+        shipmentId: input.shipmentId ?? undefined,
+        success: true,
+        automated: false,
+        idempotencyKey: `billing:license-event:${result.event.id}`,
+        metadata: { eventType: input.eventType, licenseLineId: input.licenseLineId },
+      });
+    } catch (billingError) {
+      console.error("Failed to record License Utilization billing usage", billingError);
+    }
+  }
 
   return result;
 }

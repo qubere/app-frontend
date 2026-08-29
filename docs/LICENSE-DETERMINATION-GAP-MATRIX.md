@@ -65,6 +65,7 @@ fact.
 | UI -- adjustment posting, allocation reserve/release, party/document management forms | EXISTS | `LicenseDetailClient.tsx` -- per-line "Adjust"/"Allocate" modals, header "Attach Party"/"Upload"/"Close License" actions, all gated by their respective permissions. |
 | Dedicated utilization-history list endpoints (events/adjustments by line) | EXISTS | `GET /api/compliance/license-lines/[id]/events`, `.../adjustments`, and `.../allocate` (list allocations) -- each scoped by `accountId`, newest first, `licenses.view`-gated. |
 | License closure / delete endpoint | EXISTS | `DELETE /api/compliance/licenses/[id]` -- soft-close to `status: CLOSED`, `licenses.delete`-gated, audit-logged with previous status + optional reason. Rejects if already `CLOSED` (409). |
+| Usage/billing metering (Service Usage & Billing prompt) | EXISTS | `LICENSE_DETERMINATION_COMPLETED` emitted from `determinationService.runLicenseDetermination` (one event per determination, idempotency key `billing:license-determination:<resultId>`); `LICENSE_UTILIZATION_EVENT_POSTED` emitted from `utilizationService.postLicenseEvent` (one event per non-deduped ledger post, idempotency key `billing:license-event:<licenseEventId>`). Both event codes registered in `packages/billing/src/constants.ts`; both call sites wrapped in try/catch so a billing failure never blocks the underlying determination/ledger write. |
 
 ## Testing
 

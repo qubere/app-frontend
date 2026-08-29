@@ -6,6 +6,7 @@
 // the outcome, and never let an LLM shortcut this function.
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import { recordUsageEvent } from "@/lib/billing/telemetry";
 import { recordComplianceExecution } from "@/modules/compliance/executionHistory";
 import type { Prisma } from "@prisma/client";
 import { resolveLicenseDetermination, type AccountLicenseGates } from "./ruleResolver";
@@ -121,6 +122,25 @@ export async function runLicenseDetermination(
     source: (input.source as "UI" | "API" | "SYSTEM" | undefined) ?? "API",
     metadata: { status: outcome.status, baseDecision: outcome.baseDecision, finalDecision: outcome.finalDecision },
   });
+
+  try {
+    await recordUsageEvent({
+      accountId: input.accountId,
+      eventCode: "LICENSE_DETERMINATION_COMPLETED",
+      quantity: 1,
+      unit: "determination",
+      sourceFunction: "runLicenseDetermination",
+      sourceApi: (input.source as "UI" | "API" | "SYSTEM" | undefined) ?? "API",
+      userId: input.userId ?? undefined,
+      shipmentId: input.shipmentId ?? undefined,
+      success: true,
+      automated: true,
+      idempotencyKey: `billing:license-determination:${result.id}`,
+      metadata: { operationType: input.operationType, status: outcome.status, finalDecision: outcome.finalDecision },
+    });
+  } catch (billingError) {
+    console.error("Failed to record License Determination billing usage", billingError);
+  }
 
   return { id: result.id, outcome, complianceExecutionId };
 }
