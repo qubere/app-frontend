@@ -15,7 +15,7 @@ ARG GIT_COMMIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_URL=${CUSTOMS_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} GIT_COMMIT_SHA=${GIT_COMMIT_SHA} NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 RUN export NEXT_PUBLIC_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
-    export NEXT_PUBLIC_DEPLOYMENT_LOG=$(git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
+    export NEXT_PUBLIC_DEPLOYMENT_LOG=$([ -d .git ] && git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
     npm run build --workspace=apps/custom
 
 FROM node:20-alpine AS customs-web
@@ -37,7 +37,7 @@ ARG GIT_COMMIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_URL=${TMS_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} GIT_COMMIT_SHA=${GIT_COMMIT_SHA} NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 RUN export NEXT_PUBLIC_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
-    export NEXT_PUBLIC_DEPLOYMENT_LOG=$(git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
+    export NEXT_PUBLIC_DEPLOYMENT_LOG=$([ -d .git ] && git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
     npm run build --workspace=apps/tms
 
 FROM node:20-alpine AS tms-web
@@ -59,7 +59,7 @@ ARG GIT_COMMIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_URL=${PORTAL_APP_URL} NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} GIT_COMMIT_SHA=${GIT_COMMIT_SHA} NEXT_PUBLIC_GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 RUN export NEXT_PUBLIC_BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
-    export NEXT_PUBLIC_DEPLOYMENT_LOG=$(git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
+    export NEXT_PUBLIC_DEPLOYMENT_LOG=$([ -d .git ] && git log -n 15 --pretty=format:'{"hash":"%h","date":"%aI","summary":"%s","author":"%an"}' 2>/dev/null | jq -cs . 2>/dev/null || echo "[]") && \
     npm run build --workspace=apps/portal
 
 FROM node:20-alpine AS portal-web
