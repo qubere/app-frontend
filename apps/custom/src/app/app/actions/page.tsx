@@ -48,11 +48,36 @@ export default async function ActionsPage(props: {
   const shipmentId =
     typeof searchParams.shipmentId === "string" ? searchParams.shipmentId : undefined;
 
+  const scope =
+    typeof searchParams.scope === "string" &&
+    ["mine", "team", "unassigned", "all"].includes(searchParams.scope)
+      ? (searchParams.scope as "mine" | "team" | "unassigned" | "all")
+      : "all";
+
   // AgentDecision/ShipmentDocument/ExceptionItem all carry an Account relation
   // (dataMode-scoped, as does everything loadWorkQueueForAccount below queries)
   // -- without this wrapper these queries silently default to PRODUCTION
   // isolation for any DEMO/SANDBOX account.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
+
+  // Scope filter for the routed queue: My / Team / Unassigned tabs. Applied to
+  // decisions and exceptions (the two work-item kinds that carry an assignee).
+  let scopeWhere: Record<string, unknown> = {};
+  if (scope === "mine") {
+    scopeWhere = { assignedToUserId: context.userId };
+  } else if (scope === "unassigned") {
+    scopeWhere = { assignedToUserId: null };
+  } else if (scope === "team") {
+    const myTeams = await db.accountTeamMembership.findMany({
+      where: { userId: context.userId },
+      select: { teamId: true },
+    });
+    const teammates = await db.accountTeamMembership.findMany({
+      where: { teamId: { in: myTeams.map((t) => t.teamId) } },
+      select: { userId: true },
+    });
+    scopeWhere = { assignedToUserId: { in: Array.from(new Set(teammates.map((m) => m.userId))) } };
+  }
 
   const [decisions, allDocuments, exceptions, writable, mayWaive, memberships] = await Promise.all([
     db.agentDecision.findMany({
@@ -60,6 +85,7 @@ export default async function ActionsPage(props: {
         accountId: context.accountId,
         ...getAllReviewableDecisionWhereFilter(),
         ...(shipmentId ? { shipmentId } : {}),
+        ...scopeWhere,
       },
       select: {
         id: true,
@@ -120,6 +146,7 @@ export default async function ActionsPage(props: {
         status: { in: openStatusVariants() },
         shipmentId: { not: null },
         ...(shipmentId ? { shipmentId } : {}),
+        ...scopeWhere,
       },
       select: exceptionSelect,
       orderBy: { createdAt: "desc" },
@@ -241,6 +268,7 @@ export default async function ActionsPage(props: {
       documents={documents}
       urgencyByShipment={urgencyByShipment}
       teamMembers={teamMembers}
+      scope={scope}
     />
   );
   });

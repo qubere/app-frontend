@@ -31,7 +31,11 @@ export async function buildStageCheckContext(
       where: {
         shipmentId,
         accountId,
-        triageState: { notIn: ["BLOCKED", "REJECTED"] },
+        // A stage's agent counts as "done" only when its decision has reached a
+        // terminal-positive state. A decision still awaiting human review
+        // (NEEDS_REVIEW) or re-running (IN_PROGRESS) does NOT complete the
+        // stage — the shipment waits until it's approved/auto-verified.
+        triageState: { in: ["AUTO_VERIFIED", "APPROVED", "COMPLETED"] },
       },
       select: { agentName: true },
     }),
@@ -98,6 +102,22 @@ export async function evaluateAndAdvanceShipmentStage(
   }
 
   const current = (shipment.currentStage as ShipmentStage) || INITIAL_STAGE;
+
+  // First time the engine sees this shipment: persist the initial stage so the
+  // stepper, stageEnteredAt (the #16 gate floor), and history all have a
+  // concrete anchor instead of an implicit null.
+  if (!shipment.currentStage) {
+    const now = new Date();
+    await db.shipment.update({
+      where: { id: shipmentId },
+      data: { currentStage: current, stageStatus: "IN_PROGRESS", stageEnteredAt: now, stageUpdatedAt: now },
+    });
+    await db.shipmentStageHistory.create({
+      data: { accountId, shipmentId, stage: current, enteredAt: now, outcome: "INITIALIZED", advancedBy: "SYSTEM" },
+    });
+    shipment.stageEnteredAt = now;
+  }
+
   const ctx = await buildStageCheckContext(shipmentId, accountId);
   const def = stageDefinition(current);
 

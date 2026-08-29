@@ -68,10 +68,12 @@ export const STAGE_DEFINITIONS: readonly StageDefinition[] = [
   {
     stage: "CLASSIFICATION",
     label: "Classification",
-    agentNames: ["Classification Agent", "Product Intelligence Agent"],
+    // Persisted AgentDecision.agentName is "HTS Classification Agent" (not
+    // "Classification Agent") — the stepper/engine match on the persisted name.
+    agentNames: ["HTS Classification Agent", "Product Intelligence Agent"],
     blockingExceptionCategories: ["CLASSIFICATION", "MISSING_DATA"],
     isComplete: ({ completedAgents, openExceptionCategories }) =>
-      completedAgents.has("Classification Agent") &&
+      completedAgents.has("HTS Classification Agent") &&
       !openExceptionCategories.has("CLASSIFICATION") &&
       !openExceptionCategories.has("MISSING_DATA"),
   },
@@ -140,6 +142,29 @@ export function nextStage(stage: ShipmentStage): ShipmentStage | null {
 
 export function isTerminalStage(stage: ShipmentStage): boolean {
   return stage === TERMINAL_STAGE;
+}
+
+/**
+ * Maps a PipelineOrchestrator agent name to the lifecycle stage it belongs
+ * to, for circuit-breaker accounting. Returns null for agents that don't map
+ * to a gated stage (their failure doesn't block the pipeline stepper).
+ */
+const AGENT_TO_STAGE: Record<string, ShipmentStage> = {
+  "Document Intake Agent": "DOCUMENT_INTAKE",
+  "Document Intelligence Agent": "DOCUMENT_INTAKE",
+  "Product Intelligence Agent": "CLASSIFICATION",
+  "HTS Classification Agent": "CLASSIFICATION",
+  "Valuation & Assists Agent": "VALUATION",
+  "Valuation Agent": "VALUATION",
+  "Origin Rules Agent": "ORIGIN",
+  "Origin Agent": "ORIGIN",
+  "Compliance Audit Agent": "COMPLIANCE",
+  "Compliance Agent": "COMPLIANCE",
+  "Filing Readiness Agent": "FILING_PREP",
+};
+
+export function stageForAgent(agentName: string): ShipmentStage | null {
+  return AGENT_TO_STAGE[agentName] ?? null;
 }
 
 /**

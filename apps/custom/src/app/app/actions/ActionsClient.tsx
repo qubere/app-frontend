@@ -57,6 +57,8 @@ interface ActionsClientProps {
   /** shipmentNumber → urgency context for countdown chips */
   urgencyByShipment?: Record<string, SerializedUrgency>;
   teamMembers?: TeamMember[];
+  /** Server-applied routed-queue scope (from ?scope=). */
+  scope?: "mine" | "team" | "unassigned" | "all";
 }
 
 const PRIORITY_LABEL: Record<WorkPriority, string> = {
@@ -87,12 +89,25 @@ export function ActionsClient({
   documents,
   urgencyByShipment = {},
   teamMembers = [],
+  scope = "all",
 }: ActionsClientProps) {
   const router = useRouter();
   const [localGroups, setLocalGroups] = useState(initialGroups);
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<WorkPriority | "all">("all");
-  const [scopeTab, setScopeTab] = useState<"mine" | "team" | "unassigned" | "all">("mine");
+  const [scopeTab, setScopeTab] = useState<"mine" | "team" | "unassigned" | "all">(scope);
+
+  // Scope is applied server-side — switching tabs re-navigates so the page
+  // re-queries with the new ?scope=.
+  const goToScope = (next: "mine" | "team" | "unassigned" | "all") => {
+    setScopeTab(next);
+    const params = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    if (next === "all") params.delete("scope");
+    else params.set("scope", next);
+    router.push(`/app/actions${params.toString() ? `?${params.toString()}` : ""}`);
+  };
   const [taskFilter, setTaskFilter] = useState<"all" | "mine">("mine");
   const [assignedToMe, setAssignedToMe] = useState<boolean>(false);
   const [kindFilter, setKindFilter] = useState<string>("all");
@@ -350,7 +365,7 @@ export function ActionsClient({
           {/* Scope Tabs: My queue · Team queue · Unassigned · All */}
           <div className="flex items-center bg-surface-muted border border-border rounded-xl p-1 gap-1">
             <button
-              onClick={() => { setScopeTab("mine"); setTaskFilter("mine"); setAssignedToMe(true); }}
+              onClick={() => goToScope("mine")}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 scopeTab === "mine" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
               }`}
@@ -358,7 +373,7 @@ export function ActionsClient({
               My queue
             </button>
             <button
-              onClick={() => { setScopeTab("team"); setTaskFilter("all"); setAssignedToMe(false); }}
+              onClick={() => goToScope("team")}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 scopeTab === "team" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
               }`}
@@ -366,7 +381,7 @@ export function ActionsClient({
               Team queue
             </button>
             <button
-              onClick={() => { setScopeTab("unassigned"); setTaskFilter("all"); setAssignedToMe(false); }}
+              onClick={() => goToScope("unassigned")}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 scopeTab === "unassigned" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
               }`}
@@ -374,7 +389,7 @@ export function ActionsClient({
               Unassigned
             </button>
             <button
-              onClick={() => { setScopeTab("all"); setTaskFilter("all"); setAssignedToMe(false); }}
+              onClick={() => goToScope("all")}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 scopeTab === "all" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
               }`}

@@ -7,19 +7,24 @@ clocks + escalation, circuit breaker.
 
 ## Verdict
 
-The PR delivers the **schema, HTTP endpoints, admin panels, and engine
-functions** for all five slices. It does **not** deliver the autonomous
-behaviour: the engine, circuit breaker, auto-router and SLA sweep are written
-but **never invoked** by anything in the pipeline, and the shipped schema had
-**no migration**. As-is, none of the six demo workflows in the requirements doc
-runs end to end on a deployed environment. This is a strong scaffold that needs
-a wiring pass before it is demoable or shippable.
+The PR as opened delivered the **schema, HTTP endpoints, admin panels, and
+engine functions** for all five slices, but the autonomous behaviour was never
+wired in (engine/breaker/auto-router/SLA-sweep were dead code) and the schema
+shipped with **no migration**.
 
-Fixes applied on this branch during review are marked **[fixed]** — the P0
-security/data-integrity holes and every self-contained P1/P2 correctness bug.
-What remains (the "Still open" list) is the pipeline wiring that makes the
-feature actually autonomous; it needs integration points outside this diff and
-is best done as a follow-up PR.
+Two passes on this branch have closed that:
+
+- **Pass 1** — the P0 security/data-integrity holes (missing migration,
+  unauthenticated all-account cron) and every self-contained P1/P2 correctness
+  bug (route auth, gate-role enforcement, escalation targeting, breaker
+  counting, SLA exemption, stale-gate, cadence). All marked **[fixed]** below.
+- **Pass 2** — the pipeline wiring, so all six demo workflows run end to end.
+  Summarised in "Pipeline wiring — now done"; step-by-step in
+  `WORK-MANAGEMENT-PR100-DEMO.md`.
+
+`tsc --noEmit` and `eslint` pass on `apps/custom` with everything applied. What
+is left ("Still open — genuine follow-up") is a concurrency guard, one index,
+tests, and licensed-broker sign-off on the gate defaults.
 
 ---
 
@@ -222,22 +227,32 @@ index on `EscalationEvent` is still worth adding as belt-and-braces — logged.)
 
 `tsc --noEmit` on `apps/custom` passes with all changes applied.
 
-## Still open — follow-up PR (feature not wired to the pipeline)
+## Pipeline wiring — now done (second pass)
 
-These are why the PR isn't demoable yet; each needs integration points outside
-the WM diff, and #3 needs a design call on the trigger surface.
+The feature is now demoable end to end. See
+`WORK-MANAGEMENT-PR100-DEMO.md` for the runbook.
 
-1. **Item-creation hook** — set `reviewSlaDueAt`/`slaDueAt` from `SlaPolicy` and
-   call `computeAutoAssignment` when a NEEDS_REVIEW decision / Open exception is
-   created (#5, #6).
-2. **Inngest `shipment.stage.advance`** — subscribe to decision-approved /
-   exception-resolved events and call the engine; add the transaction +
-   conditional-update concurrency guard (#3, #14).
-3. **Breaker invocation** — call `recordStageFailureAndCheckBreaker` /
-   `recordStageSuccess` from the stage-agent execution path (#4).
-4. **Register `runSlaSweep`** as an Inngest cron step, paged per account, in a
-   data-mode-aware context (#3/#13 tail).
-5. **Queue scope tabs** — make `ActionsClient` fetch `/api/actions?scope=…`
-   instead of only restyling buttons (#7).
-6. **Tests** for the engine, gate/role interaction, bulk assign partial
-   success, escalation cadence.
+| # | Wired | How |
+|---|---|---|
+| 5 | SLA due-date on creation | `createAgentDecision` / `createExceptionItem` → new `modules/work/workItemLifecycle.ts` (`SlaPolicy` lookup + built-in defaults) |
+| 6 | Auto-route on creation | same hook → `computeAutoAssignment` (client owner / team) |
+| 3 | Engine trigger | `PipelineOrchestrator.processEvent` calls `evaluateAndAdvanceShipmentStage` after reconcile; also from `/api/decisions/bulk` (on approve) and `/api/exceptions/[id]` + `/exceptions/bulk` (on resolve) |
+| 4 | Breaker invocation | orchestrator per-agent loop → `recordStageFailureAndCheckBreaker` on FAILED, `recordStageSuccess` on COMPLETED, keyed by `stageForAgent()` |
+| 4 | Demo/diagnostic | `POST /api/shipments/[id]/stage/simulate-failure` (manager-only) |
+| — | Engine first-touch | persists `INITIAL_STAGE` + `stageEnteredAt` + history on first evaluation |
+| — | Stage/agent name mismatch | `stages.ts` CLASSIFICATION now matches the persisted `"HTS Classification Agent"` (it was `"Classification Agent"` — the pipeline could **never** clear that stage) |
+| — | Stage-complete semantics | `buildStageCheckContext` now counts an agent done only at `AUTO_VERIFIED` / `APPROVED` / `COMPLETED`, not while a decision is still `NEEDS_REVIEW` |
+| 4b | SLA sweep registered | `qubere-sla-sweep` cron (`*/15`) **and** `work-sla-sweep` Inngest fn (per-account, `runWithAccountId`); `POST /api/admin/work/run-sla-sweep` for an account-scoped manual run |
+| 7 | Queue scope tabs | `?scope=` is server-applied in `page.tsx`; tabs re-navigate |
+| — | Demo seed | `apps/custom/scripts/seed-work-management-demo.ts` — idempotent, stages 4 shipments across all 6 workflows |
+
+## Still open — genuine follow-up
+
+1. **Concurrency guard** (#14) — the engine still reads-then-writes `currentStage`
+   without a transaction. Low risk at demo scale; wrap in a tx with
+   `update({ where: { id, currentStage: current } })` before high traffic.
+2. **`EscalationEvent (workItemId, level)` unique index** (#17 belt-and-braces).
+3. **Tests** — engine advance/gate/role, breaker consecutive-count, bulk assign
+   partial success, SLA cadence, `workItemLifecycle` defaults.
+4. **Real broker sign-off** on which stages gate for which entry types
+   (`StageGatePolicy.entryType`) and the SLA default hours.

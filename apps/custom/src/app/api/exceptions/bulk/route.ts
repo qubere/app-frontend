@@ -62,13 +62,14 @@ export const PATCH = withAuthenticatedRoute(async ({ req, ctx }) => {
 
   type BulkResult = { id: string; status: "ok" | "skipped" | "error"; reason?: string };
   const results: BulkResult[] = [];
+  const resolvedShipmentIds = new Set<string>();
 
   for (const id of ids) {
     try {
       // Fetch current version for the optimistic lock in ExceptionService
       const existing = await db.exceptionItem.findFirst({
         where: { id, accountId: ctx.accountId },
-        select: { version: true, status: true },
+        select: { version: true, status: true, shipmentId: true },
       });
 
       if (!existing) {
@@ -105,6 +106,9 @@ export const PATCH = withAuthenticatedRoute(async ({ req, ctx }) => {
         metadata: { newStatus: requestedState, bulkAction: true, resolutionReason: reason, resolutionReasonCode: code },
       });
 
+      if (requestedState === "RESOLVED" && existing.shipmentId) {
+        resolvedShipmentIds.add(existing.shipmentId);
+      }
       results.push({ id, status: "ok" });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -114,6 +118,18 @@ export const PATCH = withAuthenticatedRoute(async ({ req, ctx }) => {
         results.push({ id, status: "error", reason: msg });
       }
     }
+  }
+
+  // Work Management: resolving blocking exceptions may unblock a stage.
+  if (resolvedShipmentIds.size > 0) {
+    const { evaluateAndAdvanceShipmentStage } = await import("@/lib/workflow/stageEngine");
+    await Promise.allSettled(
+      Array.from(resolvedShipmentIds).map((sid) =>
+        evaluateAndAdvanceShipmentStage(sid, ctx.accountId, ctx.userId).catch((err) => {
+          console.error(`[exceptions/bulk] Stage evaluation failed for shipment ${sid}:`, err);
+        })
+      )
+    );
   }
 
   const succeeded = results.filter((r) => r.status === "ok").length;
