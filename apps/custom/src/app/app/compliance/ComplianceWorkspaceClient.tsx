@@ -68,6 +68,7 @@ interface ComplianceWorkspaceClientProps {
   partySummaryCounts: Record<string, number>;
   /** Gates the "Service Usage" tab -- true when the session holds `audit.read` or `compliance.read`. */
   mayReadExecutionHistory: boolean;
+  mayCreateFormalOverride: boolean;
   /** Gates the "Notifications" tab -- true when the session holds `compliance.restrictedParty.settings.manage`. */
   mayManageNotificationSettings: boolean;
   notificationSettings: NotificationSettingsProps;
@@ -107,6 +108,7 @@ export function ComplianceWorkspaceClient({
   partyScreeningResults,
   partySummaryCounts,
   mayReadExecutionHistory,
+  mayCreateFormalOverride,
   mayManageNotificationSettings,
   notificationSettings,
   mayReadCommunityScreening,
@@ -222,7 +224,7 @@ export function ComplianceWorkspaceClient({
         )}
         {activeTab === "review" && <ComplianceFindingsClient findings={findings} recentAudits={[]} />}
         {activeTab === "audit" && mayReadAuditHistory && <AuditHistoryPanel recentAudits={recentAudits} />}
-        {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel />}
+        {activeTab === "history" && mayReadExecutionHistory && <ExecutionHistoryPanel mayCreateFormalOverride={mayCreateFormalOverride} />}
         {activeTab === "notifications" && mayManageNotificationSettings && (
           <NotificationSettingsPanel initialSettings={notificationSettings} mayManage={mayManageNotificationSettings} />
         )}
