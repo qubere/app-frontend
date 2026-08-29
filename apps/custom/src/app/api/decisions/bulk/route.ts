@@ -273,6 +273,19 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
     )
   );
 
+  // Work Management: approving a decision may clear the last thing blocking a
+  // lifecycle stage — re-evaluate advancement for each affected shipment.
+  if (affectedShipmentIds.size > 0) {
+    const { evaluateAndAdvanceShipmentStage } = await import("@/lib/workflow/stageEngine");
+    await Promise.allSettled(
+      Array.from(affectedShipmentIds).map((shipmentId) =>
+        evaluateAndAdvanceShipmentStage(shipmentId, ctx.accountId, ctx.userId).catch((err) => {
+          console.error(`[decisions/bulk] Stage evaluation failed for shipment ${shipmentId}:`, err);
+        })
+      )
+    );
+  }
+
   const succeeded = results.filter((r) => r.status === "ok").length;
   const failed = results.filter((r) => r.status === "error").length;
   const skipped = results.filter((r) => r.status === "skipped").length;

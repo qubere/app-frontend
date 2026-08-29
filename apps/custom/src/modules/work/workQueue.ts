@@ -22,6 +22,11 @@ export interface DecisionRow {
   createdAt: Date;
   shipmentId: string | null;
   shipmentNumber: string | null;
+  assignedToUserId?: string | null;
+  assignedToUser?: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
+  reviewSlaDueAt?: Date | null;
+  slaBreachedAt?: Date | null;
+  escalationLevel?: number;
   filingDeadline?: Date | null;
   /** Sum of ShipmentLineItem.totalValue for the shipment, in USD. Used for B-1 ranking. */
   valueAtRisk?: number | null;
@@ -68,6 +73,10 @@ export interface ExceptionRow {
   shipmentId: string | null;
   shipmentNumber: string | null;
   assignedToUserId: string | null;
+  assignedToUser?: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
+  slaDueAt?: Date | null;
+  slaBreachedAt?: Date | null;
+  escalationLevel?: number;
   filingDeadline?: Date | null;
   /** True when this exception is marked as blocking downstream pipeline stages. */
   blocking?: boolean | null;
@@ -303,6 +312,18 @@ export function buildWorkQueue(input: WorkQueueInput): WorkItem[] {
       valueAtRisk: decision.valueAtRisk,
     });
 
+    const assignedToMe = decision.assignedToUserId === input.userId;
+    const slaDueAt = decision.reviewSlaDueAt ?? null;
+    const hoursLeft = slaDueAt ? Math.round((slaDueAt.getTime() - now.getTime()) / (1000 * 60 * 60)) : null;
+    const slaState: "ok" | "due_soon" | "breached" =
+      decision.slaBreachedAt || (slaDueAt && slaDueAt.getTime() <= now.getTime())
+        ? "breached"
+        : hoursLeft !== null && hoursLeft <= 4
+        ? "due_soon"
+        : "ok";
+
+    const sla = slaDueAt ? { dueAt: slaDueAt, state: slaState, hoursLeft } : null;
+
     items.push({
       id: `decision:${decision.id}`,
       kind: "decision",
@@ -313,7 +334,11 @@ export function buildWorkQueue(input: WorkQueueInput): WorkItem[] {
       score,
       createdAt: decision.createdAt,
       shipmentNumber: decision.shipmentNumber,
-      assignedToMe: false,
+      assignedToMe,
+      assignedToUserId: decision.assignedToUserId ?? null,
+      assignedToUser: decision.assignedToUser ?? null,
+      sla,
+      escalationLevel: decision.escalationLevel ?? 0,
       filingDeadline: decision.filingDeadline ?? null,
       urgency,
     });
@@ -403,6 +428,17 @@ export function buildWorkQueue(input: WorkQueueInput): WorkItem[] {
     const priority = assignedToMe ? raise(base) : base;
     const score = computeScore({ urgency, priority, blocking: isBlocking, assignedToMe, valueAtRisk: exception.valueAtRisk });
 
+    const slaDueAt = exception.slaDueAt ?? null;
+    const hoursLeft = slaDueAt ? Math.round((slaDueAt.getTime() - now.getTime()) / (1000 * 60 * 60)) : null;
+    const slaState: "ok" | "due_soon" | "breached" =
+      exception.slaBreachedAt || (slaDueAt && slaDueAt.getTime() <= now.getTime())
+        ? "breached"
+        : hoursLeft !== null && hoursLeft <= 4
+        ? "due_soon"
+        : "ok";
+
+    const sla = slaDueAt ? { dueAt: slaDueAt, state: slaState, hoursLeft } : null;
+
     items.push({
       id: `exception:${exception.id}`,
       kind: "exception",
@@ -414,6 +450,10 @@ export function buildWorkQueue(input: WorkQueueInput): WorkItem[] {
       createdAt: exception.createdAt,
       shipmentNumber: exception.shipmentNumber,
       assignedToMe,
+      assignedToUserId: exception.assignedToUserId ?? null,
+      assignedToUser: exception.assignedToUser ?? null,
+      sla,
+      escalationLevel: exception.escalationLevel ?? 0,
       filingDeadline: exception.filingDeadline ?? null,
       urgency,
     });

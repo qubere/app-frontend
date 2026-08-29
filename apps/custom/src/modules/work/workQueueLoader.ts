@@ -38,6 +38,11 @@ interface RawDecisionRow {
   confidence: number | null;
   createdAt: Date;
   shipmentId: string | null;
+  assignedToUserId?: string | null;
+  assignedToUser?: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
+  reviewSlaDueAt?: Date | null;
+  slaBreachedAt?: Date | null;
+  escalationLevel?: number | null;
   shipment: { shipmentNumber: string | null; filingDeadline: Date | null } | null;
 }
 
@@ -59,7 +64,11 @@ interface RawExceptionRow {
   blocking: boolean | null;
   createdAt: Date;
   shipmentId: string | null;
-  assignedToUserId: string | null;
+  assignedToUserId?: string | null;
+  assignedToUser?: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
+  slaDueAt?: Date | null;
+  slaBreachedAt?: Date | null;
+  escalationLevel?: number | null;
   shipment: { shipmentNumber: string | null; filingDeadline: Date | null } | null;
 }
 
@@ -75,6 +84,11 @@ function toDecisionRow(d: RawDecisionRow): DecisionRow {
     createdAt: d.createdAt,
     shipmentId: d.shipmentId,
     shipmentNumber: d.shipment?.shipmentNumber ?? null,
+    assignedToUserId: d.assignedToUserId ?? null,
+    assignedToUser: d.assignedToUser ?? null,
+    reviewSlaDueAt: d.reviewSlaDueAt ?? null,
+    slaBreachedAt: d.slaBreachedAt ?? null,
+    escalationLevel: d.escalationLevel ?? 0,
     filingDeadline: d.shipment?.filingDeadline ?? null,
   };
 }
@@ -101,18 +115,59 @@ function toExceptionRow(e: RawExceptionRow): ExceptionRow {
     createdAt: e.createdAt,
     shipmentId: e.shipmentId,
     shipmentNumber: e.shipment?.shipmentNumber ?? null,
-    assignedToUserId: e.assignedToUserId,
+    assignedToUserId: e.assignedToUserId ?? null,
+    assignedToUser: e.assignedToUser ?? null,
+    slaDueAt: e.slaDueAt ?? null,
+    slaBreachedAt: e.slaBreachedAt ?? null,
+    escalationLevel: e.escalationLevel ?? 0,
     filingDeadline: e.shipment?.filingDeadline ?? null,
   };
+}
+
+export interface WorkQueueOptions {
+  shipmentId?: string;
+  scope?: "mine" | "team" | "unassigned" | "all";
+  stage?: string;
 }
 
 export async function loadWorkQueueForAccount(
   accountId: string,
   userId: string,
-  options: { shipmentId?: string } = {}
+  options: WorkQueueOptions = {}
 ): Promise<WorkQueueLoaderResult> {
-  const { shipmentId } = options;
-  const shipmentFilter = shipmentId ? { shipmentId } : {};
+  const { shipmentId, scope, stage } = options;
+  const shipmentFilter: Record<string, unknown> = shipmentId ? { shipmentId } : {};
+
+  if (stage) {
+    shipmentFilter.shipment = { currentStage: stage };
+  }
+
+  // Filings and documents carry no assignee, so a person-scoped view
+  // (mine / team / unassigned) must exclude them rather than dump every
+  // account-wide filing into "My queue".
+  const personalScope = scope === "mine" || scope === "team" || scope === "unassigned";
+
+  // Resolve DB scope filter
+  let scopeFilter: Record<string, unknown> = {};
+  if (scope === "mine") {
+    scopeFilter = { assignedToUserId: userId };
+  } else if (scope === "unassigned") {
+    scopeFilter = { assignedToUserId: null };
+  } else if (scope === "team") {
+    const userTeams = await db.accountTeamMembership.findMany({
+      where: { userId },
+      select: { teamId: true },
+    });
+    const teamIds = userTeams.map((t) => t.teamId);
+    const teamMembers = await db.accountTeamMembership.findMany({
+      where: { teamId: { in: teamIds } },
+      select: { userId: true },
+    });
+    const memberUserIds = Array.from(new Set(teamMembers.map((m) => m.userId)));
+    scopeFilter = { assignedToUserId: { in: memberUserIds } };
+  }
+
+  const userSelect = { select: { id: true, firstName: true, lastName: true, email: true } };
 
   const [decisions, filings, documents, exceptions, deadlines] = await Promise.all([
     db.agentDecision.findMany({
@@ -120,6 +175,7 @@ export async function loadWorkQueueForAccount(
         accountId,
         ...getActionableDecisionWhereFilter(),
         ...shipmentFilter,
+        ...scopeFilter,
       },
       select: {
         id: true,
@@ -131,6 +187,11 @@ export async function loadWorkQueueForAccount(
         confidence: true,
         createdAt: true,
         shipmentId: true,
+        assignedToUserId: true,
+        assignedToUser: userSelect,
+        reviewSlaDueAt: true,
+        slaBreachedAt: true,
+        escalationLevel: true,
         shipment: { select: { shipmentNumber: true, filingDeadline: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -152,7 +213,7 @@ export async function loadWorkQueueForAccount(
         shipment: { select: { shipmentNumber: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: ROW_CAP,
+      take: personalScope ? 0 : ROW_CAP,
     }),
 
     db.shipmentDocument.findMany({
@@ -170,7 +231,7 @@ export async function loadWorkQueueForAccount(
         shipment: { select: { shipmentNumber: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: ROW_CAP,
+      take: personalScope ? 0 : ROW_CAP,
     }),
 
     db.exceptionItem.findMany({
@@ -178,6 +239,7 @@ export async function loadWorkQueueForAccount(
         accountId,
         status: { in: EXCEPTION_ACTIONABLE_STATUSES },
         ...shipmentFilter,
+        ...scopeFilter,
       },
       select: {
         id: true,
@@ -189,6 +251,10 @@ export async function loadWorkQueueForAccount(
         createdAt: true,
         shipmentId: true,
         assignedToUserId: true,
+        assignedToUser: userSelect,
+        slaDueAt: true,
+        slaBreachedAt: true,
+        escalationLevel: true,
         shipment: { select: { shipmentNumber: true, filingDeadline: true } },
       },
       orderBy: { createdAt: "desc" },

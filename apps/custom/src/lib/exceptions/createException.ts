@@ -30,6 +30,16 @@ export async function createExceptionItem(
   if (existing) return existing;
 
   const item = await db.exceptionItem.create({ data });
+
+  // Work Management: stamp the resolve SLA clock and auto-route to the client's
+  // owner. Best-effort — never block exception creation on it.
+  try {
+    const { initializeExceptionWorkItem } = await import("@/modules/work/workItemLifecycle");
+    await initializeExceptionWorkItem(item.id);
+  } catch (err) {
+    console.error("[createExceptionItem] work-item init failed:", err);
+  }
+
   deliverWebhookEvent(item.accountId, "exception.created", {
     exceptionId: item.id,
     shipmentId: item.shipmentId ?? null,

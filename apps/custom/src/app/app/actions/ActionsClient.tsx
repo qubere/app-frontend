@@ -39,6 +39,13 @@ interface SerializedUrgency {
   exposureUsd: number | null;
 }
 
+interface TeamMember {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+}
+
 interface ActionsClientProps {
   groups: ShipmentActionGroup[];
   canWrite: boolean;
@@ -49,6 +56,9 @@ interface ActionsClientProps {
   documents: DocSummary[];
   /** shipmentNumber → urgency context for countdown chips */
   urgencyByShipment?: Record<string, SerializedUrgency>;
+  teamMembers?: TeamMember[];
+  /** Server-applied routed-queue scope (from ?scope=). */
+  scope?: "mine" | "team" | "unassigned" | "all";
 }
 
 const PRIORITY_LABEL: Record<WorkPriority, string> = {
@@ -69,12 +79,36 @@ const PRIORITY_TEXT: Record<WorkPriority, string> = {
   normal: "text-ink-muted",
 };
 
-export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initialShipmentId, userId, userName, documents, urgencyByShipment = {} }: ActionsClientProps) {
+export function ActionsClient({
+  groups: initialGroups,
+  canWrite,
+  canWaive,
+  initialShipmentId,
+  userId,
+  userName,
+  documents,
+  urgencyByShipment = {},
+  teamMembers = [],
+  scope = "all",
+}: ActionsClientProps) {
   const router = useRouter();
   const [localGroups, setLocalGroups] = useState(initialGroups);
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<WorkPriority | "all">("all");
-  const [taskFilter, setTaskFilter] = useState<"all" | "mine">("all");
+  const [scopeTab, setScopeTab] = useState<"mine" | "team" | "unassigned" | "all">(scope);
+
+  // Scope is applied server-side — switching tabs re-navigates so the page
+  // re-queries with the new ?scope=.
+  const goToScope = (next: "mine" | "team" | "unassigned" | "all") => {
+    setScopeTab(next);
+    const params = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    if (next === "all") params.delete("scope");
+    else params.set("scope", next);
+    router.push(`/app/actions${params.toString() ? `?${params.toString()}` : ""}`);
+  };
+  const [taskFilter, setTaskFilter] = useState<"all" | "mine">("mine");
   const [assignedToMe, setAssignedToMe] = useState<boolean>(false);
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -98,8 +132,12 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
     setLocalGroups(initialGroups);
   }, [initialGroups]);
 
-  // Derive available team members from both shipment assigned brokers and exception assignees
+  // Derive available team members from both props and local shipment groups
   const teamMemberEntries: [string, { id: string; name: string }][] = [
+    ...teamMembers.map((m): [string, { id: string; name: string }] => [
+      m.id,
+      { id: m.id, name: [m.firstName, m.lastName].filter(Boolean).join(" ") || m.email || m.id },
+    ]),
     ...localGroups
       .filter((g) => g.assignedBrokerId)
       .map((g): [string, { id: string; name: string }] => [
@@ -118,7 +156,7 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
         ])
     ),
   ];
-  const teamMembers = Array.from(new Map(teamMemberEntries).values()).filter((m) => m.id);
+  const effectiveTeamMembers = Array.from(new Map(teamMemberEntries).values()).filter((m) => m.id);
 
   // Derive available clients
   const clients = Array.from(
@@ -324,23 +362,39 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
             />
           </div>
 
-          {/* Assigned to me toggle & Task filters */}
-          <div className="flex items-center bg-surface-muted border border-border rounded-xl p-0.5 gap-0.5">
+          {/* Scope Tabs: My queue · Team queue · Unassigned · All */}
+          <div className="flex items-center bg-surface-muted border border-border rounded-xl p-1 gap-1">
             <button
-              onClick={() => { setAssignedToMe(!assignedToMe); setTaskFilter(assignedToMe ? "all" : "mine"); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                assignedToMe || taskFilter === "mine" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
+              onClick={() => goToScope("mine")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                scopeTab === "mine" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
               }`}
             >
-              Assigned to me
+              My queue
             </button>
             <button
-              onClick={() => { setAssignedToMe(false); setTaskFilter("all"); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                !assignedToMe && taskFilter === "all" ? "bg-white text-ink shadow-2xs" : "text-ink-muted hover:text-ink"
+              onClick={() => goToScope("team")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                scopeTab === "team" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
               }`}
             >
-              All Tasks
+              Team queue
+            </button>
+            <button
+              onClick={() => goToScope("unassigned")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                scopeTab === "unassigned" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              Unassigned
+            </button>
+            <button
+              onClick={() => goToScope("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                scopeTab === "all" ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              All queue
             </button>
           </div>
 
@@ -388,7 +442,7 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
               {taskFilter === "all" && (
                 <option value={userId}>My Tasks ({userName})</option>
               )}
-              {teamMembers.filter((m) => m.id !== userId).map((m) => (
+              {effectiveTeamMembers.filter((m) => m.id !== userId).map((m) => (
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
@@ -723,21 +777,49 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 bg-ink text-white rounded-2xl shadow-xl border border-white/10 animate-in slide-in-from-bottom-2">
           <span className="text-sm font-semibold">{selectedDecisionIds.size} item{selectedDecisionIds.size !== 1 ? "s" : ""} selected</span>
           <div className="w-px h-5 bg-white/20" />
+          <select
+            onChange={(e) => {
+              if (e.target.value) {
+                const targetId = e.target.value;
+                const items = Array.from(selectedDecisionIds).map((id) => ({ kind: "decision" as const, id }));
+                fetch("/api/work/assign", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ items, action: "assign", assigneeUserId: targetId }),
+                }).then((res) => {
+                  if (res.ok) {
+                    setSelectedDecisionIds(new Set());
+                    setActionSuccess(`Assigned ${items.length} items to team member.`);
+                    router.refresh();
+                  }
+                });
+              }
+            }}
+            defaultValue=""
+            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-500 transition-colors border border-indigo-400 cursor-pointer"
+          >
+            <option value="" disabled>Assign to...</option>
+            {effectiveTeamMembers.map((m) => (
+              <option key={m.id} value={m.id} className="bg-slate-900 text-white">
+                {m.name}
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => triggerBulkDecision("APPROVE", Array.from(selectedDecisionIds))}
-            className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400 transition-colors cursor-pointer"
           >
             Approve
           </button>
           <button
             onClick={() => triggerBulkDecision("REJECT", Array.from(selectedDecisionIds))}
-            className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-400 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-400 transition-colors cursor-pointer"
           >
             Reject
           </button>
           <button
             onClick={() => setSelectedDecisionIds(new Set())}
-            className="ml-1 text-white/50 hover:text-white transition-colors"
+            className="ml-1 text-white/50 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -765,7 +847,7 @@ export function ActionsClient({ groups: initialGroups, canWrite, canWaive, initi
           shipmentId={exceptionSlideOver.shipmentId}
           canWrite={canWrite}
           canWaive={canWaive}
-          teamMembers={teamMembers}
+          teamMembers={effectiveTeamMembers}
           onResolved={() => {
             handleExceptionResolved(exceptionSlideOver.exceptionId);
             setExceptionSlideOver(null);

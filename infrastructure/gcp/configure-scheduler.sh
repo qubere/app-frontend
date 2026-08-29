@@ -84,6 +84,7 @@ upsert_job qubere-outbox-dispatch "*/5 * * * *" /api/cron/outbox-dispatch
 upsert_job qubere-compliance-notification-dispatch "*/2 * * * *" /api/cron/compliance-notification-dispatch
 upsert_job qubere-compliance-audit "0 1 * * *" /api/cron/compliance-audit
 upsert_job qubere-deadline-sweep "*/15 * * * *" /api/cron/deadline-sweep
+upsert_job qubere-sla-sweep "*/15 * * * *" /api/cron/sla-sweep
 upsert_job qubere-regulatory-ingest "0 4 * * *" /api/cron/regulatory-ingest POST
 upsert_job qubere-rdps-recall-validation "0 5 * * *" /api/cron/rdps-recall-validation
 upsert_job qubere-origin-re-eval "0 6 * * *" /api/cron/origin-re-eval
