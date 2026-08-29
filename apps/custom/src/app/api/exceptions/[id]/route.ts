@@ -110,6 +110,17 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
       }
     }
 
+    // Work Management: resolving a blocking exception may unblock a lifecycle
+    // stage — re-evaluate advancement. Best-effort.
+    if (requestedState === "RESOLVED" && updated.shipmentId) {
+      try {
+        const { evaluateAndAdvanceShipmentStage } = await import("@/lib/workflow/stageEngine");
+        await evaluateAndAdvanceShipmentStage(updated.shipmentId, ctx.accountId, ctx.userId);
+      } catch (stageErr) {
+        console.error("[exceptions/[id]] Stage evaluation failed:", stageErr);
+      }
+    }
+
     return NextResponse.json({ exception: updated, requestId });
   } catch (error: unknown) {
     if (errorMessage(error) === "NOT_FOUND") return buildErrorResponse(404, "NOT_FOUND", "Exception item not found", undefined, requestId);

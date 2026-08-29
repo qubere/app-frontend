@@ -14,6 +14,7 @@ import { CanonicalShipmentService } from "@/modules/shipment/canonicalShipmentSe
 import { Badge } from "@/components/ui/Badge";
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";
 import { PipelineProgressTracker } from "./PipelineProgressTracker";
+import { StageStepper } from "@/components/workflow/StageStepper";
 import { ShipmentTitleEditor } from "./ShipmentTitleEditor";
 import { ShipmentClientEditor } from "./ShipmentClientEditor";
 import { DestinationCountryEditor } from "./DestinationCountryEditor";
@@ -1443,6 +1444,7 @@ export default async function ShipmentWorkspacePage(props: {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+      <StageStepper shipmentId={shipment.id} />
       <PipelineProgressTracker shipmentId={shipment.id} />
 
       {/* Top Banner & Multi-Dimensional Readiness Header */}

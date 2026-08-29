@@ -24,6 +24,7 @@ import { persistComplianceScreeningFindings } from "@/modules/compliance/screeni
 import { PgQueue } from "@/lib/queue/pgQueue";
 import { recordUsageEvent, AGENT_BILLING_EVENT_MAP } from "@/lib/billing/telemetry";
 import { logEvent, logger } from "@/lib/logging/logger";
+import { stageForAgent } from "@/lib/workflow/stages";
 
 /**
  * Replaces ComplianceWorkflowEngine/AgentOrchestrator (the fixed 10-step
@@ -300,6 +301,28 @@ export class PipelineOrchestrator {
         }
       }
 
+      // Work Management circuit breaker: track consecutive failures per
+      // lifecycle stage. Three in a row blocks the shipment and raises a
+      // SYSTEM exception instead of retrying forever. Best-effort.
+      try {
+        const stage = stageForAgent(agentName);
+        if (stage) {
+          const wf = await import("@/lib/workflow/stageEngine");
+          if (status === "FAILED") {
+            await wf.recordStageFailureAndCheckBreaker(
+              shipmentId,
+              accountId,
+              stage,
+              error || "Agent execution failed"
+            );
+          } else if (status === "COMPLETED") {
+            await wf.recordStageSuccess(shipmentId, accountId, stage);
+          }
+        }
+      } catch (breakerErr) {
+        console.error("[PipelineOrchestrator] Circuit-breaker accounting failed:", breakerErr);
+      }
+
       if (isSkipped || status === "FAILED") {
         const stopReason = isSkipped
           ? `Agent ${agentName} skipped (${summary})`
@@ -342,6 +365,21 @@ export class PipelineOrchestrator {
     // state into human-visible ExceptionItem action items. The old upload
     // path never called this at all; every trigger does now.
     await ReconciliationEngine.reconcileShipment(shipmentId, accountId, triggerEvent);
+
+    // Work Management: this run's decisions and exceptions are now settled, so
+    // re-evaluate the shipment's lifecycle stage. Auto-advances through any
+    // stage with no human gate; raises a "Stage Gate" review card where one is
+    // configured. Never throws into the pipeline.
+    try {
+      const { evaluateAndAdvanceShipmentStage } = await import("@/lib/workflow/stageEngine");
+      await evaluateAndAdvanceShipmentStage(
+        shipmentId,
+        accountId,
+        userId === "usr_system" ? undefined : userId
+      );
+    } catch (err) {
+      console.error("[PipelineOrchestrator] Stage evaluation failed:", err);
+    }
 
     const canonicalState = await CanonicalShipmentService.getCanonicalState(shipmentId);
     const totalDurationMs = Date.now() - startTime;

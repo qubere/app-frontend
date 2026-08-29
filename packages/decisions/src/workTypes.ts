@@ -18,6 +18,19 @@ export interface UrgencyContext {
   exposureUsd: number | null;
 }
 
+export interface WorkItemSla {
+  dueAt: Date | string | null;
+  state: "ok" | "due_soon" | "breached";
+  hoursLeft: number | null;
+}
+
+export interface WorkItemUser {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+}
+
 export interface WorkItem {
   id: string;
   kind: WorkItemKind;
@@ -29,6 +42,10 @@ export interface WorkItem {
   createdAt: Date;
   shipmentNumber: string | null;
   assignedToMe: boolean;
+  assignedToUserId?: string | null;
+  assignedToUser?: WorkItemUser | null;
+  sla?: WorkItemSla | null;
+  escalationLevel?: number;
   filingDeadline: Date | null;
   urgency: UrgencyContext | null;
 }

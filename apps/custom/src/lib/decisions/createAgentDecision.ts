@@ -40,5 +40,16 @@ export async function createAgentDecision(args: {
   });
   if (existing) return existing;
 
-  return db.agentDecision.create(args);
+  const created = await db.agentDecision.create(args);
+
+  // Work Management: stamp the review SLA clock and auto-route to the client's
+  // owner. Best-effort — never block decision creation on it.
+  try {
+    const { initializeDecisionWorkItem } = await import("@/modules/work/workItemLifecycle");
+    await initializeDecisionWorkItem(created.id);
+  } catch (err) {
+    console.error("[createAgentDecision] work-item init failed:", err);
+  }
+
+  return created;
 }

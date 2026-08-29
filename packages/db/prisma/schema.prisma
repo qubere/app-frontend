@@ -203,6 +203,13 @@ model Account {
   aiUsageWindows              AiUsageWindow[]
   controlEvidence             ControlEvidence[]
   assistantChatSessions       AssistantChatSession[]
+  stageHistories              ShipmentStageHistory[]
+  pipelineStageRuns           PipelineStageRun[]
+  stageGatePolicies           StageGatePolicy[]
+  slaPolicies                 SlaPolicy[]
+  escalationRules             EscalationRule[]
+  escalationEvents            EscalationEvent[]
+
   filingMessages              FilingMessage[]
   agentPolicyConfigs          AgentPolicyConfig[]
   abiFilerCredential          AbiFilerCredential?
@@ -381,6 +388,8 @@ model User {
   closedCustomerRequests      CustomerRequest[]        @relation("RequestCloser")
   assignedCustomerRequests     CustomerRequest[]        @relation("RequestAssignee")
   authoredRequestMessages     CustomerRequestMessage[] @relation("MessageAuthor")
+  assignedDecisions           AgentDecision[]          @relation("DecisionAssignee")
+
 
   @@index([clerkUserId])
   @@index([email])
@@ -603,6 +612,13 @@ model Shipment {
   customsRequired    Boolean           @default(false)
   // Workflow lifecycle stage. Values: DOCUMENT_INTAKE | CLASSIFICATION | VALUATION | ORIGIN | COMPLIANCE | FILING_PREP | READY_TO_FILE
   currentStage       String?
+  stageStatus        String? // IN_PROGRESS | GATE_PENDING | BLOCKED | COMPLETE
+  stageEnteredAt     DateTime?
+  stageUpdatedAt     DateTime?
+  autoAdvance        Boolean           @default(true) // per-shipment kill switch
+  stageHistory       ShipmentStageHistory[]
+  stageRuns          PipelineStageRun[]
+
   healthStatus       String? // Healthy, At Risk, Critical — derived, null until evaluated
   readinessScore     Int? // 0 - 100 percentage, null until calculated
   riskScore          Int? // 0 - 100 risk score, null until calculated
@@ -1303,6 +1319,17 @@ model AgentDecision {
   humanNotes          String?
   reviewedByUserId    String?
   reviewedByUser      User?             @relation("DecisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  assignedToUserId    String?
+  assignedToUser      User?             @relation("DecisionAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedAt          DateTime?
+  assignedBy          String? // userId or "SYSTEM"
+  assignmentSource    String? // MANUAL | CLIENT_ROUTE | TEAM_ROUTE | ROUND_ROBIN
+  reviewSlaDueAt      DateTime?
+  firstTouchedAt      DateTime?
+  slaBreachedAt       DateTime?
+  escalationLevel     Int               @default(0)
+  escalatedAt         DateTime?
+
   // The document that triggered this run, when there was one. Set for
   // genuinely document-scoped agents (Document Intake/Intelligence, Product
   // Intelligence, HTS Classification) and for shipment-scoped agents
@@ -1326,6 +1353,7 @@ model AgentDecision {
   @@index([autoApproved])
   @@index([documentId])
   @@index([reviewedByUserId])
+  @@index([assignedToUserId])
   @@index([accountId, createdAt])
   @@index([accountId, triageState, createdAt])
   @@index([accountId, status, createdAt])
@@ -2654,6 +2682,14 @@ model ExceptionItem {
   version              Int               @default(1)
   assignedToUserId     String?
   assignedToUser       User?             @relation("ExceptionAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedAt           DateTime?
+  assignmentSource     String?
+  slaDueAt             DateTime?
+  firstTouchedAt       DateTime?
+  slaBreachedAt        DateTime?
+  escalationLevel      Int               @default(0)
+  escalatedAt          DateTime?
+
   createdAt            DateTime          @default(now())
   resolvedAt           DateTime?
   resolvedBy           String?
@@ -9308,3 +9344,113 @@ model CarrierInvoiceLine {
 
   @@index([accountId])
 }
+
+// -----------------------------------------------------------------------------
+// WORK MANAGEMENT DOMAIN MODELS (WM-S-01 to WM-S-04)
+// -----------------------------------------------------------------------------
+
+model ShipmentStageHistory {
+  id             String    @id @default(cuid())
+  accountId      String
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId     String
+  shipment       Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  stage          String
+  enteredAt      DateTime  @default(now())
+  exitedAt       DateTime?
+  outcome        String?   // ADVANCED | GATE_APPROVED | GATE_REJECTED | BREAKER_TRIPPED
+  advancedBy     String?   // userId, or "SYSTEM" for auto-advance
+  gateDecisionId String?   // AgentDecision that gated this transition, if any
+  note           String?
+  createdAt      DateTime  @default(now())
+
+  @@index([shipmentId, enteredAt])
+  @@index([accountId, stage])
+}
+
+model PipelineStageRun {
+  id               String    @id @default(cuid())
+  accountId        String
+  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId       String
+  shipment         Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  stage            String
+  attempt          Int       @default(1)
+  status           String    // RUNNING | SUCCEEDED | FAILED | BREAKER_OPEN
+  failureReason    String?
+  breakerTrippedAt DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([shipmentId, stage, attempt])
+  @@index([accountId, status])
+}
+
+model StageGatePolicy {
+  id                    String   @id @default(cuid())
+  accountId             String
+  account               Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stage                 String   // one of SHIPMENT_STAGES
+  entryType             String?  // null = default; else per entry type (T01, T11, …)
+  mode                  String   @default("AUTO_ADVANCE") // AUTO_ADVANCE | HUMAN_GATE
+  minimumReviewerRole   String   @default("SPECIALIST")   // SPECIALIST | LICENSED_BROKER | MANAGER
+  requireLicensedBroker Boolean  @default(false)
+  gateReason            String?  // shown on the generated review card
+  createdBy             String?
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
+
+  @@unique([accountId, stage, entryType])
+  @@index([accountId])
+}
+
+model SlaPolicy {
+  id                String   @id @default(cuid())
+  accountId         String
+  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workKind          String   // decision | exception | finding | filing | document
+  priority          String?  // null = all; else critical | high | normal
+  reviewHours       Int      // hours from creation to first human touch
+  resolveHours      Int?     // optional hours to terminal state
+  businessHoursOnly Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([accountId, workKind, priority])
+  @@index([accountId])
+}
+
+model EscalationRule {
+  id             String   @id @default(cuid())
+  accountId      String
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  appliesToKinds String[] // ["decision","exception"]
+  trigger        String   @default("SLA_BREACH") // SLA_BREACH | UNASSIGNED_HOURS | DEADLINE_WITHIN
+  thresholdHours Int      // e.g. escalate 4h after breach / unassigned
+  escalateTo     String   // TEAM_MANAGER | ROLE:LICENSED_BROKER | USER:<id> | ACCOUNT_OWNER
+  maxLevel       Int      @default(2)
+  notifyChannel  String   @default("in_app") // in_app | email | both
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([accountId, active])
+}
+
+model EscalationEvent {
+  id             String    @id @default(cuid())
+  accountId      String
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workKind       String
+  workItemId     String    // decisionId / exceptionId
+  ruleId         String
+  fromUserId     String?
+  toUserId       String?
+  level          Int
+  reason         String    // "Review SLA breached by 2h · $180k declared value"
+  createdAt      DateTime  @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([accountId, workItemId])
+  @@index([toUserId, acknowledgedAt])
+}
+

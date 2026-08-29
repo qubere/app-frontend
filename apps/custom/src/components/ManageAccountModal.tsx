@@ -10,6 +10,8 @@ import { UserManagementPanel } from "@/app/app/admin/users/UserManagementPanel";
 import { type MemberItem } from "@/app/app/admin/users/UserManagementTable";
 import { RolesPermissionsPanel } from "@/app/app/admin/roles/RolesPermissionsPanel";
 import { SettingsAuditPanel } from "@/app/app/admin/settings/SettingsAuditPanel";
+import { StageGatesPanel } from "@/app/app/admin/settings/StageGatesPanel";
+import { EscalationRulesPanel } from "@/app/app/admin/settings/EscalationRulesPanel";
 import { DocumentEmailPanel, type InboundSenderRouteRow, type TeamMemberOption } from "@/app/app/admin/settings/DocumentEmailPanel";
 import { ClientsPanel } from "@/app/app/clients/ClientsPanel";
 import { IntegrationsPanel, type IntegrationsApiResponse } from "@/app/app/admin/settings/IntegrationsPanel";
@@ -229,7 +231,27 @@ export function ManageAccountModal({ isOpen, onClose, accountName, items, extern
       }
       case "settings": {
         const data = entry.data as SettingsApiResponse;
-        return <SettingsAuditPanel accountName={data.accountName} auditLogs={data.auditLogs} compact />;
+        return (
+          <div className="space-y-6 p-4 overflow-y-auto max-h-full">
+            <div className="flex items-center justify-between bg-brand/5 border border-brand/20 p-4 rounded-xl">
+              <div>
+                <h4 className="text-sm font-bold text-ink">Full Admin Settings Workspace</h4>
+                <p className="text-xs text-ink-muted">Access full-screen configuration for Stage Gates, SLA Target Clocks, and System Escalations.</p>
+              </div>
+              <Link
+                href="/app/admin/settings"
+                onClick={onClose}
+                className="px-3.5 py-2 bg-brand text-white rounded-xl text-xs font-bold hover:bg-brand/90 transition-colors flex items-center space-x-1.5 shrink-0"
+              >
+                <span>Open Admin Settings Page</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+            <StageGatesPanel />
+            <EscalationRulesPanel />
+            <SettingsAuditPanel accountName={data.accountName} auditLogs={data.auditLogs} compact />
+          </div>
+        );
       }
       case "documentEmail": {
         const data = entry.data as DocumentEmailApiResponse;
