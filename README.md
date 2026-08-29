@@ -68,7 +68,8 @@ module (private embargo, RDPS, PAL, Community Screening, settings) against a
 `action` parameter itself is a loose `string`, not type-checked against that
 enum. Compliance events additionally queue outbox-pattern emails
 (`ComplianceNotification` → `ComplianceNotificationDispatcher`) over SMTP,
-currently scoped to RPS hit/review/rescreen notification types only. See
+covering RPS hit/review/rescreen types plus License Determination review-
+required alerts and the license portfolio expiry/utilization digest. See
 [docs/compliance-notifications-and-audit.md](docs/compliance-notifications-and-audit.md)
 for the full mechanism, audit-history UI surfaces, export, and known gaps.
 
@@ -431,12 +432,18 @@ utilization ledger (`utilizationService.ts` — the single writer of ledger
 totals, with an idempotent dedupe key and optimistic-concurrency `version`
 CAS updates inside a Serializable transaction), reason-required manual
 adjustments, allocation reserve/release against remaining capacity, and a
-daily expiry/utilization-threshold alert cron. Reporting is integrated into
-the existing Compliance Reports catalog rather than a separate export
-pipeline. Surfaced at `/app/license-management` (portfolio list, run
-determination, alerts) and its detail page (lines, utilization/adjustment/
-allocation history, parties, documents, close license), gated by a
-dedicated `licenseDetermination.*` / `licenses.*` permission set. See
+daily expiry/utilization-threshold alert cron. Both the alert digest and a
+review-required determination outcome queue a durable `ComplianceNotification`
+through the same outbox/dispatcher pipeline RPS uses, rather than sending
+email inline. Reporting is integrated into the existing Compliance Reports
+catalog rather than a separate export pipeline. Surfaced at
+`/app/license-management` (portfolio list, run determination, alerts) and
+its detail page (lines, utilization/adjustment/allocation history, parties,
+documents, close license), gated by a dedicated `licenseDetermination.*` /
+`licenses.*` permission set. Formal compliance overrides against a License
+Determination result can be created/revoked from the Audit & History panel's
+execution detail view (`compliance.override`-gated), the same generic
+`ComplianceFormalOverride` mechanism every compliance domain shares. See
 [docs/LICENSE-DETERMINATION-GAP-MATRIX.md](docs/LICENSE-DETERMINATION-GAP-MATRIX.md)
 for the full implementation status, fail-safe rationale, and test coverage.
 
