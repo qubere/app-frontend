@@ -43,10 +43,50 @@ function calcDurationText(start?: string | Date | null, end?: string | Date | nu
 }
 
 export function computeShipmentLifecycleStatus(shipment: any): ShipmentLifecycleStatus {
+  const dbLegs = shipment.legs ?? [];
   const shipmentMovements = shipment.shipmentMovements ?? [];
-  const movements = shipmentMovements
-    .map((sm: any) => sm.movement)
-    .filter(Boolean);
+
+  // Map the canonical ShipmentLeg model onto the movement shape this function
+  // (and the ribbon) consumes. LegStatus -> Movement.status vocabulary:
+  //   PLANNED/BOOKED/READY_FOR_PICKUP -> PLANNED|BOOKED
+  //   IN_TRANSIT -> IN_TRANSIT, ARRIVED -> ARRIVED
+  //   COMPLETED -> DELIVERED (leg handed off), EXCEPTION -> DELAYED
+  const legStatusToMovement = (s: string): string => {
+    switch (s) {
+      case "BOOKED":
+      case "READY_FOR_PICKUP":
+        return "BOOKED";
+      case "IN_TRANSIT":
+        return "IN_TRANSIT";
+      case "ARRIVED":
+        return "ARRIVED";
+      case "COMPLETED":
+        return "DELIVERED";
+      case "EXCEPTION":
+        return "DELAYED";
+      case "CANCELLED":
+        return "CANCELLED";
+      default:
+        return "PLANNED";
+    }
+  };
+
+  const movements = dbLegs.length > 0
+    ? dbLegs.map((leg: any) => ({
+        id: leg.id,
+        mode: leg.mode,
+        status: legStatusToMovement(leg.status),
+        actualStart: leg.actualDeparture,
+        actualEnd: leg.actualArrival,
+        createdAt: leg.createdAt,
+        carrierName: leg.carrierName,
+        vesselName: leg.vesselName,
+        voyageNumber: leg.voyageNumber,
+        bookingNumber: leg.bookingNumber,
+        containerNumber: null,
+        terminalName: leg.destinationStop?.name ?? null,
+      }))
+    : shipmentMovements.map((sm: any) => sm.movement).filter(Boolean);
 
   const hasMultiLeg = movements.length > 1;
   const movementsSummary: MovementDetail[] | undefined = hasMultiLeg

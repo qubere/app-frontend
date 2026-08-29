@@ -108,7 +108,7 @@ export function ActionsClient({
     else params.set("scope", next);
     router.push(`/app/actions${params.toString() ? `?${params.toString()}` : ""}`);
   };
-  const [taskFilter, setTaskFilter] = useState<"all" | "mine">("mine");
+  const [taskFilter, setTaskFilter] = useState<"all" | "mine">("all");
   const [assignedToMe, setAssignedToMe] = useState<boolean>(false);
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -131,6 +131,10 @@ export function ActionsClient({
   useEffect(() => {
     setLocalGroups(initialGroups);
   }, [initialGroups]);
+
+  useEffect(() => {
+    setScopeTab(scope);
+  }, [scope]);
 
   // Derive available team members from both props and local shipment groups
   const teamMemberEntries: [string, { id: string; name: string }][] = [
@@ -210,7 +214,7 @@ export function ActionsClient({
     }
   }, [filteredGroups, selectedShipmentId]);
 
-  const selectedGroup = localGroups.find((g) => g.shipmentId === selectedShipmentId) ?? localGroups[0];
+  const selectedGroup = filteredGroups.find((g) => g.shipmentId === selectedShipmentId);
 
   const docLookup = new Map(documents.map((d) => [d.id, d]));
 
@@ -321,18 +325,7 @@ export function ActionsClient({
     setActionSuccess("Exception closed and recorded in the audit log.");
   };
 
-  if (localGroups.length === 0) {
-    return (
-      <div className="bg-white p-12 rounded-3xl border border-border text-center space-y-3">
-        <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto opacity-70" />
-        <h3 className="text-sm font-bold text-ink">No open actions</h3>
-        <p className="text-xs text-ink-muted max-w-sm mx-auto">
-          Every AI decision has been reviewed and all exceptions are resolved. Check back after the next document
-          processing run.
-        </p>
-      </div>
-    );
-  }
+
 
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto pb-12">
@@ -595,7 +588,9 @@ export function ActionsClient({
                 );
               })}
               {filteredGroups.length === 0 && (
-                <p className="p-8 text-center text-xs text-ink-muted">No shipments match this filter.</p>
+                <p className="p-8 text-center text-xs text-ink-muted">
+                  {localGroups.length === 0 ? "No open actions in this queue." : "No shipments match this filter."}
+                </p>
               )}
             </div>
           </div>
@@ -765,8 +760,22 @@ export function ActionsClient({
               </div>
             </div>
           ) : (
-            <div className="p-12 text-center bg-white rounded-2xl border border-border text-xs text-ink-muted">
-              Select a shipment from the left to see its open actions.
+            <div className="bg-white p-12 rounded-3xl border border-border text-center space-y-3">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto opacity-70" />
+              <h3 className="text-sm font-bold text-ink">
+                {localGroups.length === 0 && scopeTab === "mine"
+                  ? "Your queue is empty"
+                  : localGroups.length === 0
+                    ? "No open actions"
+                    : "No shipments match this filter"}
+              </h3>
+              <p className="text-xs text-ink-muted max-w-sm mx-auto">
+                {localGroups.length === 0 && scopeTab === "mine"
+                  ? "You currently have no actions assigned to you. Select Team queue, Unassigned, or All queue above to view other tasks."
+                  : localGroups.length === 0
+                    ? "Every AI decision has been reviewed and all exceptions are resolved. Check back after the next document processing run."
+                    : "Try adjusting your search query, priority filter, or category/status dropdowns to find what you're looking for."}
+              </p>
             </div>
           )}
         </div>

@@ -86,6 +86,10 @@ export async function getShipmentWorkspaceDetails(
       exceptionItems: { orderBy: { createdAt: "desc" } },
       agentDecisions: { orderBy: { createdAt: "desc" } },
       transportLegs: { orderBy: { sequence: "asc" } },
+      legs: {
+        orderBy: { sequence: "asc" },
+        include: { originStop: { select: { name: true } }, destinationStop: { select: { name: true } } },
+      },
       trackingStops: { orderBy: { sequence: "asc" } },
       trackingEvents: { orderBy: { occurredAt: "desc" } },
       trackingIdentifiers: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },

@@ -477,6 +477,7 @@ export async function getDevOrDemoAccountContext(): Promise<AccountContext | nul
       targetUser = await db.user.findFirst({
         where: { deletedAt: null },
         include: {
+          platformRoles: { include: { platformRole: { select: { name: true } } } },
           memberships: {
             where: { deletedAt: null },
             include: {
@@ -521,6 +522,11 @@ export async function getDevOrDemoAccountContext(): Promise<AccountContext | nul
 
     const clientIds = account.clients?.map((c: any) => c.id) || [];
 
+    const platformRoleNames = ((targetUser as any).platformRoles || [])
+      .map((pr: any) => pr.platformRole?.name)
+      .filter(Boolean);
+    const isPlatformAdmin = platformRoleNames.includes("PLATFORM_ADMIN");
+
     const ctxResult: AccountContext = {
       userId: targetUser.id,
       actorUserId: targetUser.id,
@@ -530,8 +536,8 @@ export async function getDevOrDemoAccountContext(): Promise<AccountContext | nul
       firstName: targetUser.firstName,
       lastName: targetUser.lastName,
       isImpersonating: false,
-      isPlatformAdmin: false,
-      platformRoles: [],
+      isPlatformAdmin,
+      platformRoles: platformRoleNames,
       accountId: account.id,
       accountName: account.name,
       accountSlug: account.slug,

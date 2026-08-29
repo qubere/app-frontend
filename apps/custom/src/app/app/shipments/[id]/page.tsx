@@ -22,6 +22,7 @@ import { ExceptionsDrawer } from "./ExceptionsDrawer";
 import { LineItemsTable } from "./LineItemsTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
 import { PreFilingReadiness } from "./PreFilingReadiness";
+import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
 import { buildAgentInvocations } from "./agentInvocations";
 import { displayCurrency } from "@/lib/honest";
@@ -88,6 +89,15 @@ export default async function ShipmentWorkspacePage(props: {
   const canEditClient =
     isEnterpriseAdmin ||
     (context.roleNames.includes("PLANNER") && shipment.assignedBrokerId === context.userId);
+
+  // Journey/leg management mirrors the write permission the
+  // /api/shipments/[id]/legs routes enforce, so the UI never shows an action
+  // the API will reject.
+  const canManageJourney =
+    context.isPlatformAdmin ||
+    isEnterpriseAdmin ||
+    context.permissions.includes("shipment.update");
+
 
   // None of these nine depend on each other; run them in parallel.
   const [
@@ -1471,6 +1481,31 @@ export default async function ShipmentWorkspacePage(props: {
               initialDestinationCountry={shipment.destinationCountry}
               canEdit={canEditClient}
             />
+            {trackingProjection?.movement && trackingProjection.movement.status !== "UNKNOWN" && (
+              <span
+                className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-2xs border transition-all cursor-help ${
+                  trackingProjection.movement.status === "IN_TRANSIT"
+                    ? "bg-blue-50 text-blue-800 border-blue-200/80"
+                    : trackingProjection.movement.status === "DELIVERED"
+                    ? "bg-emerald-50 text-emerald-800 border-emerald-200/80"
+                    : trackingProjection.movement.status === "CANCELLED"
+                    ? "bg-rose-50 text-rose-800 border-rose-200/80"
+                    : "bg-slate-50 text-slate-700 border-slate-200/80"
+                }`}
+                title={trackingProjection.journey?.journeyStatus.headline || "Live tracking status"}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    trackingProjection.movement.status === "IN_TRANSIT"
+                      ? "bg-blue-600 animate-pulse"
+                      : trackingProjection.movement.status === "DELIVERED"
+                      ? "bg-emerald-600"
+                      : "bg-slate-400"
+                  }`}
+                />
+                <span>{trackingProjection.movement.status.replace(/_/g, " ")}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center space-x-3 flex-wrap gap-y-2">
@@ -1538,6 +1573,15 @@ export default async function ShipmentWorkspacePage(props: {
             )}
           </div>
         </div>
+
+        {/* Multi-Leg Journey Ribbon -- full end-to-end route with per-leg status + documents */}
+        {trackingProjection?.journey && trackingProjection.journey.legs.length > 0 && (
+          <JourneyRibbon
+            data={trackingProjection.journey}
+            canManage={canManageJourney}
+            documents={documents.map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType }))}
+          />
+        )}
 
         {/* Pre-Filing Readiness Ribbon -- moved directly under the shipment
             name so status (at risk / ready) is the first thing visible. */}
