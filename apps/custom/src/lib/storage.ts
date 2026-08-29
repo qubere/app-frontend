@@ -27,6 +27,7 @@ export {
   readProcessingArtifact,
   readStoredObject,
   writeRemoteObject,
+  deleteStoredObject,
   createSignedReadUrl,
   resolveStorageOrigin,
   resolveLocalFilePath,

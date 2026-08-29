@@ -31,7 +31,8 @@ export type NavIcon =
   | "postEntry"
   | "tradeData"
   | "tariffs"
-  | "billing";
+  | "billing"
+  | "reports";
 
 export interface NavItem {
   id: string;
@@ -82,6 +83,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "billing", labelKey: "billing", href: "/app/billing", icon: "billing", permission: "billing.view" },
       { id: "trade-data", labelKey: "tradeData", href: "/app/trade-data", icon: "tradeData" },
       { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
+      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
       { id: "filingConfig", labelKey: "filingConfiguration", href: "/app/filing-config", icon: "settings", platformAdminOnly: true },
     ],
   },

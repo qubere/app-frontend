@@ -303,6 +303,10 @@ model Account {
   communityScreeningRuns          CommunityScreeningRun[]
   communityScreeningPartyResults  CommunityScreeningPartyResult[]
   rdpsPartyOutcomes               RdpsPartyOutcome[]
+  reportDefinitions               ReportDefinition[]
+  reportRuns                      ReportRun[]
+  reportArtifacts                 ReportArtifact[]
+  reportSchedules                 ReportSchedule[]
 
   @@index([type])
   @@index([slug])
@@ -6920,6 +6924,151 @@ model ComplianceFormalOverride {
   @@index([accountId, resultRefType, resultRefId])
   @@index([accountId, executionId])
   @@index([accountId, overriddenAt])
+}
+
+// ============================================================================
+// COMPLIANCE REPORTING & ANALYTICS
+//
+// Export artifacts (ReportRun/ReportArtifact) are derived views over the
+// authoritative compliance domain models above (ComplianceExecution,
+// RestrictedPartyScreeningResult, EmbargoUsageHeader/Line, RdpsPartyOutcome,
+// ComplianceFinding, ComplianceFormalOverride, AuditLog, etc). This module
+// never recalculates compliance decisions -- it only queries, formats and
+// stores exports of what the authoritative models already recorded.
+// ============================================================================
+
+enum ReportGenerationStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ReportDeliveryStatus {
+  NOT_REQUESTED
+  PENDING
+  DELIVERED
+  FAILED
+  PARTIAL
+}
+
+enum ReportScheduleFrequency {
+  ONCE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+/// A saved, reusable report configuration (name + filters + columns + sort).
+model ReportDefinition {
+  id            String   @id @default(cuid())
+  accountId     String
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerUserId   String
+  name          String
+  reportType    String // matches an id in the Compliance Reports catalog (e.g. "compliance-audit")
+  filters       Json
+  columns       Json?
+  sort          Json?
+  defaultFormat String   @default("CSV") // CSV | XLSX | PDF
+  isShared      Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  runs      ReportRun[]
+  schedules ReportSchedule[]
+
+  @@index([accountId, reportType])
+  @@index([accountId, ownerUserId])
+}
+
+/// One request to generate a report -- generation status and delivery status
+/// are tracked independently so a successful export with failed email
+/// delivery never appears as a failed report.
+model ReportRun {
+  id                 String                 @id @default(cuid())
+  accountId          String
+  account            Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reportDefinitionId String?
+  reportDefinition   ReportDefinition?      @relation(fields: [reportDefinitionId], references: [id], onDelete: SetNull)
+  scheduleId         String?
+  schedule           ReportSchedule?        @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  reportType         String
+  format             String // CSV | XLSX | PDF
+  requestedByUserId  String
+  requestedAt        DateTime               @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  generationStatus   ReportGenerationStatus @default(QUEUED)
+  deliveryStatus     ReportDeliveryStatus   @default(NOT_REQUESTED)
+  filterSnapshot     Json
+  columnSnapshot     Json?
+  sortSnapshot       Json?
+  rowCount           Int?
+  errorCode          String?
+  errorMessage       String?
+  correlationId      String?
+  createdAt          DateTime               @default(now())
+
+  artifacts ReportArtifact[]
+
+  @@index([accountId, requestedAt])
+  @@index([accountId, reportType])
+  @@index([generationStatus])
+  @@index([scheduleId])
+}
+
+/// A generated export file (CSV/XLSX/PDF). Storage details are behind the
+/// existing storage abstraction (@/lib/storage) -- storageKey is opaque and
+/// never exposed directly to clients.
+model ReportArtifact {
+  id            String    @id @default(cuid())
+  accountId     String
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reportRunId   String
+  reportRun     ReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  fileName      String
+  mimeType      String
+  format        String
+  storageKey    String
+  sizeBytes     BigInt?
+  sha256        String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime?
+  retentionHold Boolean   @default(false)
+  deletedAt     DateTime?
+
+  @@index([accountId, createdAt])
+  @@index([reportRunId])
+  @@index([expiresAt])
+}
+
+/// Recurring generation of a saved ReportDefinition (once/daily/weekly/monthly).
+model ReportSchedule {
+  id                 String                  @id @default(cuid())
+  accountId          String
+  account            Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reportDefinitionId String
+  reportDefinition   ReportDefinition        @relation(fields: [reportDefinitionId], references: [id], onDelete: Cascade)
+  ownerUserId        String
+  frequency          ReportScheduleFrequency
+  timezone           String                  @default("UTC")
+  scheduleConfig     Json // { runAtHour, runAtMinute, daysOfWeek?, dayOfMonth?, nthWeekday? }
+  format             String                  @default("CSV")
+  nextRunAt          DateTime?
+  lastRunAt          DateTime?
+  lockedAt           DateTime? // claim lock so two schedulers can't double-fire the same occurrence
+  deliveryConfig      Json? // { email?: { recipients: string[] } }
+  isActive           Boolean                 @default(true)
+  createdAt          DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  runs ReportRun[]
+
+  @@index([accountId, nextRunAt])
+  @@index([reportDefinitionId])
 }
 
 /// CBP ACE 4-digit port codes — reference table for pre-filing validation.

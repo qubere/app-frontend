@@ -204,6 +204,12 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "report.export", description: "Export report datasets to CSV/Excel.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_BILLING", "OWNER", "ADMIN"] },
   { name: "dashboard.read", description: "Access operational command center dashboard.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
 
+  // Compliance Reports (audit-ready screening/embargo/RDPS/exceptions reporting)
+  { name: "compliance.reports.view", description: "View the Compliance Reports library, generated reports, and schedules.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
+  { name: "compliance.reports.generate", description: "Generate and download compliance reports.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "compliance.reports.manage", description: "Create, share, and schedule saved compliance reports.", category: "Reporting", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+
+
   // Billing. Legacy umbrella codes remain registered during rollout, but all
   // financial mutations enforce the granular codes below.
   { name: "billing.view", description: "View the billing workspace overview and billing navigation.", category: "Billing", defaultRoles: BILLING_VIEWERS },

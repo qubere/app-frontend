@@ -35,6 +35,7 @@ export const en = {
     tradeData: "Trade Data",
     tariffsAndRegulations: "Tariffs & Regs",
     billing: "Billing",
+    complianceReports: "Compliance Reports",
     accountAdmin: "Account Admin",
     platformAdmin: "Platform Admin",
     qubereConsole: "Qubere Console",
