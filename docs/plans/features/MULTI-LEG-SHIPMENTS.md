@@ -22,16 +22,32 @@ Key deltas from the original design below:
   Real transport docs (booking confirmation, shipping instructions, arrival
   notice, delivery order) all map to `DocumentType.OTHER`; `slotKey` is the
   stable per-leg slot identity and the unique constraint is `@@unique([legId, slotKey])`.
-- **`TransportLeg` / `Movement` are NOT yet removed.** Phase 1 adds `ShipmentLeg`
-  alongside them; the backfill (§5.5) and the drop are still pending — no
-  backfill script has been written yet (the interim `ShipmentTrackingPanel` still
-  reads `TransportLeg`; the new `JourneyRibbon` reads `ShipmentLeg`).
+- **The customs side no longer reads `TransportLeg`.** `getShipmentTrackingProjection`
+  derives both the journey ribbon *and* the physical-movement rail from
+  `ShipmentLeg`. `TransportLeg` remains in the schema only because
+  `apps/tms/.../planMovementStopsTool.ts` and `cargoRelease/fromCustomsFiling.ts`
+  still reference it. Backfill: `packages/db/scripts/backfill-shipment-legs.ts`
+  (`TransportLeg` → `ShipmentLeg` + synthesised stops, dry-run by default).
+- **`Movement` / `ShipmentMovement` / `MovementStop` are untouched.** They back the
+  entire apps/tms freight-ops domain (`movementService`, `appointmentService`,
+  `movementReadinessAgent`, assistant tools). Converging them onto `ShipmentLeg`
+  is a separate epic — the TMS lifecycle ribbon reads `ShipmentLeg` when present
+  and falls back to `Movement` otherwise.
 - The shipment-detail 403-vs-404 rework that rode along in the first commit was
   reverted — it widened cross-account read access and belongs in its own PR.
 - Inference is deterministic rule-based (`model: "rules-v1"`), persisted per run
   in `LegInferenceRun` keyed on a SHA-256 `inputsHash` so re-runs are idempotent.
   It never invents carrier/vessel values it can't derive — those stay null for
   the broker to confirm.
+
+Test coverage: `packages/shipment-legs/src/inference/inference.test.ts` (15) —
+leg-structure + document-checklist inference, slot-key uniqueness, diff proposals;
+`apps/custom/tests/leg-routes.test.ts` (14) — permission wiring, tenant 404s,
+shared-stop invariant on create, mode-lock / actuals / reorder guardrails,
+infer/accept flow; `apps/custom/src/modules/legs/legService.test.ts` (4) —
+two-phase re-sequencing under arbitrary permutation;
+`apps/custom/src/modules/tracking/assembleJourney.test.ts` (8) — projection
+shape, missing-doc counting, ETA drift, blocked/customs independence.
 
 ---
 

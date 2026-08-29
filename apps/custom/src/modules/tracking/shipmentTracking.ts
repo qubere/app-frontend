@@ -236,10 +236,58 @@ function movementStatus(events: TrackingEventRecord[], legs: TrackingLegRecord[]
   const actual = events
     .filter((event) => event.classifier === "ACTUAL")
     .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
-  const candidate = actual?.eventType ?? legs.find((leg) => leg.status)?.status;
+  // No verified events -> fall back to the furthest-along leg's status (the
+  // earliest leg still moving, or the last leg if all are done), not leg[0].
+  const orderedLegs = [...legs].sort((a, b) => a.sequence - b.sequence);
+  const fallbackLeg =
+    orderedLegs.find((leg) => leg.status && !/^(PLANNED|BOOKED|NOT_STARTED)$/i.test(leg.status)) ??
+    orderedLegs[orderedLegs.length - 1];
+  const candidate = actual?.eventType ?? fallbackLeg?.status;
   if (!candidate) return "UNKNOWN";
   const normalized = candidate.toUpperCase().replace(/[ -]+/g, "_");
   return MOVEMENT_EVENT_STATUS.find(([pattern]) => pattern.test(normalized))?.[1] ?? "UNKNOWN";
+}
+
+/** Map a canonical LegStatus onto a token movementStatus()'s regex table understands. */
+function legStatusToMovementToken(status: string): string {
+  switch (status) {
+    case "READY_FOR_PICKUP":
+      return "GATE_IN";
+    case "IN_TRANSIT":
+      return "DEPARTED";
+    case "ARRIVED":
+      return "ARRIVED";
+    case "COMPLETED":
+      return "DELIVERED";
+    case "CANCELLED":
+      return "CANCELLED";
+    default:
+      return "BOOKED";
+  }
+}
+
+function shipmentLegToTrackingRecord(leg: any): TrackingLegRecord {
+  return {
+    id: leg.id,
+    sequence: leg.sequence,
+    mode: leg.mode,
+    carrierCode: leg.carrierScac ?? null,
+    carrierName: leg.carrierName ?? null,
+    vesselName: leg.vesselName ?? null,
+    voyageNumber: leg.voyageNumber ?? null,
+    flightNumber: leg.flightNumber ?? null,
+    originName: leg.originStop?.name ?? null,
+    originUnlocode: leg.originStop?.unlocode ?? null,
+    destinationName: leg.destinationStop?.name ?? null,
+    destinationUnlocode: leg.destinationStop?.unlocode ?? null,
+    plannedDeparture: leg.plannedDeparture ?? null,
+    estimatedDeparture: leg.estimatedDeparture ?? null,
+    actualDeparture: leg.actualDeparture ?? null,
+    plannedArrival: leg.plannedArrival ?? null,
+    estimatedArrival: leg.estimatedArrival ?? null,
+    actualArrival: leg.actualArrival ?? null,
+    status: legStatusToMovementToken(leg.status),
+  };
 }
 
 export function customsTrackingStatus(status: string | null | undefined): CustomsTrackingStatus {
@@ -430,30 +478,6 @@ export async function getShipmentTrackingProjection(
         orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
         select: { type: true, value: true, issuer: true, isPrimary: true },
       },
-      transportLegs: {
-        orderBy: { sequence: "asc" },
-        select: {
-          id: true,
-          sequence: true,
-          mode: true,
-          carrierCode: true,
-          carrierName: true,
-          vesselName: true,
-          voyageNumber: true,
-          flightNumber: true,
-          originName: true,
-          originUnlocode: true,
-          destinationName: true,
-          destinationUnlocode: true,
-          plannedDeparture: true,
-          estimatedDeparture: true,
-          actualDeparture: true,
-          plannedArrival: true,
-          estimatedArrival: true,
-          actualArrival: true,
-          status: true,
-        },
-      },
       trackingEvents: {
         orderBy: { occurredAt: "desc" },
         take: 100,
@@ -538,7 +562,9 @@ export async function getShipmentTrackingProjection(
   const baseProjection = buildTrackingProjection({
     shipment,
     identifiers: shipment.trackingIdentifiers,
-    legs: shipment.transportLegs,
+    // The physical-movement rail derives from the canonical ShipmentLeg model
+    // (the deprecated TransportLeg model is no longer read on the customs side).
+    legs: (shipment.legs ?? []).map(shipmentLegToTrackingRecord),
     events: shipment.trackingEvents,
     etaObservations: shipment.etaObservations,
     subscriptions: shipment.trackingSubscriptions,
@@ -574,7 +600,7 @@ function legHeadline(leg: any, total: number): string {
   return `Leg ${leg.sequence} of ${total} · ${leg.mode.toLowerCase()} · ${state} → ${dest}`;
 }
 
-function assembleJourney(
+export function assembleJourney(
   shipment: any,
   customsStatus: CustomsTrackingStatus
 ): NonNullable<ShipmentTrackingProjection["journey"]> {

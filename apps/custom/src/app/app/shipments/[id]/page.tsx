@@ -90,13 +90,13 @@ export default async function ShipmentWorkspacePage(props: {
     isEnterpriseAdmin ||
     (context.roleNames.includes("PLANNER") && shipment.assignedBrokerId === context.userId);
 
-  // Journey/leg management mirrors the "shipments.manage" write permission the
+  // Journey/leg management mirrors the write permission the
   // /api/shipments/[id]/legs routes enforce, so the UI never shows an action
   // the API will reject.
   const canManageJourney =
     context.isPlatformAdmin ||
     isEnterpriseAdmin ||
-    context.permissions.includes("shipments.manage");
+    context.permissions.includes("shipment.update");
 
 
   // None of these nine depend on each other; run them in parallel.
