@@ -65,7 +65,9 @@ async function seed() {
   await db.shipmentTrackingIdentifier.deleteMany({ where: { shipmentId } });
   await db.complianceDeadline.deleteMany({ where: { shipmentId } });
   await db.shipmentDocument.deleteMany({ where: { shipmentId, fileName: { startsWith: DOC_PREFIX } } });
-  await db.exceptionItem.deleteMany({ where: { shipmentId, code: "MISSING_LEG_DOCUMENT" } });
+  await db.exceptionItem.deleteMany({
+    where: { shipmentId, OR: [{ code: "MISSING_LEG_DOCUMENT" }, { type: "MISSING_LEG_DOCUMENT" }] },
+  });
   console.log("  cleared prior leg artifacts");
 
   // --- tracking identifiers ----------------------------------------------
@@ -150,21 +152,28 @@ async function seed() {
   };
 
   let displayOrder = 200;
+  const docBySlot = new Map<string, string>(); // slotKey -> documentId, so a shared doc (MBL) is created once
   for (const { leg, type, mode, isFinal } of legs) {
     const { slots } = inferLegDocuments(type, mode, { isUsImport: true, hasPreferenceClaim: false, isFinalLeg: isFinal });
     for (const slot of slots) {
       const hit = filled[slot.slotKey];
       let documentId: string | null = null;
       if (hit) {
-        const doc = await db.shipmentDocument.create({
-          data: {
-            accountId, shipmentId, docType: slot.slotLabel, documentType: hit[0],
-            fileName: `${DOC_PREFIX}${hit[1]}`, status: hit[2], required: true,
-            portalVisibility: "INTERNAL", source: "UPLOAD", displayOrder: displayOrder++,
-            confidence: 90,
-          },
-        });
-        documentId = doc.id;
+        const cached = docBySlot.get(slot.slotKey);
+        if (cached) {
+          documentId = cached;
+        } else {
+          const doc = await db.shipmentDocument.create({
+            data: {
+              accountId, shipmentId, docType: slot.slotLabel, documentType: hit[0],
+              fileName: `${DOC_PREFIX}${hit[1]}`, status: hit[2], required: true,
+              portalVisibility: "INTERNAL", source: "UPLOAD", displayOrder: displayOrder++,
+              confidence: 90,
+            },
+          });
+          documentId = doc.id;
+          docBySlot.set(slot.slotKey, doc.id);
+        }
       }
       await db.shipmentLegDocument.create({
         data: {
