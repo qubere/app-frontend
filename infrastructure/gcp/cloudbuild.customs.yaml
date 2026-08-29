@@ -35,4 +35,6 @@ steps:
 images:
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/customs-web:$SHORT_SHA"
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/customs-web:latest"
-options: { logging: CLOUD_LOGGING_ONLY }
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE

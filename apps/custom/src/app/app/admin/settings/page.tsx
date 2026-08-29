@@ -6,6 +6,8 @@ import { DocumentEmailPanel } from "./DocumentEmailPanel";
 import { AgentPoliciesPanel } from "./AgentPoliciesPanel";
 import { ApiKeyPanel } from "./ApiKeyPanel";
 import { PrivateEmbargoRulesPanel } from "./PrivateEmbargoRulesPanel";
+import { StageGatesPanel } from "./StageGatesPanel";
+import { EscalationRulesPanel } from "./EscalationRulesPanel";
 
 export default async function AdminSettingsPage() {
   const context = await getAccountContext();
@@ -19,7 +21,7 @@ export default async function AdminSettingsPage() {
   // this wrapper these queries silently default to PRODUCTION isolation.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  const [data, routes, memberships, agentPolicies, policyHistory, apiKeys, embargoConfig, privateEmbargoRules] = await Promise.all([
+  const [data, routes, memberships, agentPolicies, policyHistory, apiKeys, embargoConfig, privateEmbargoRules, stageGatePolicies, slaPolicies, escalationRules, escalationEvents] = await Promise.all([
     getSettingsAuditData(context),
     db.inboundSenderRoute.findMany({
       where: { accountId: context.accountId },
@@ -52,6 +54,23 @@ export default async function AdminSettingsPage() {
     db.privateEmbargoRule.findMany({
       where: { accountId: context.accountId },
       orderBy: [{ status: "asc" }, { toCountryCode: "asc" }, { createdAt: "desc" }],
+    }),
+    db.stageGatePolicy.findMany({
+      where: { accountId: context.accountId },
+      orderBy: [{ stage: "asc" }, { entryType: "asc" }],
+    }),
+    db.slaPolicy.findMany({
+      where: { accountId: context.accountId },
+      orderBy: [{ workKind: "asc" }, { priority: "asc" }],
+    }),
+    db.escalationRule.findMany({
+      where: { accountId: context.accountId },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.escalationEvent.findMany({
+      where: { accountId: context.accountId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
     }),
   ]);
 
@@ -121,6 +140,45 @@ export default async function AdminSettingsPage() {
           reason: r.reason,
           reference: r.reference,
           status: r.status,
+        }))}
+      />
+      <StageGatesPanel
+        initialPolicies={stageGatePolicies.map((p) => ({
+          id: p.id,
+          stage: p.stage,
+          entryType: p.entryType,
+          mode: p.mode as any,
+          minimumReviewerRole: p.minimumReviewerRole as any,
+          requireLicensedBroker: p.requireLicensedBroker,
+          gateReason: p.gateReason,
+        }))}
+      />
+      <EscalationRulesPanel
+        initialSla={slaPolicies.map((s) => ({
+          id: s.id,
+          workKind: s.workKind,
+          priority: s.priority,
+          reviewHours: s.reviewHours,
+          resolveHours: s.resolveHours,
+          businessHoursOnly: s.businessHoursOnly,
+        }))}
+        initialRules={escalationRules.map((r) => ({
+          id: r.id,
+          appliesToKinds: r.appliesToKinds,
+          trigger: r.trigger,
+          thresholdHours: r.thresholdHours,
+          escalateTo: r.escalateTo,
+          maxLevel: r.maxLevel,
+          notifyChannel: r.notifyChannel,
+          active: r.active,
+        }))}
+        initialEvents={escalationEvents.map((e) => ({
+          id: e.id,
+          workKind: e.workKind,
+          workItemId: e.workItemId,
+          level: e.level,
+          reason: e.reason,
+          createdAt: e.createdAt.toISOString(),
         }))}
       />
       <SettingsAuditPanel accountName={context.accountName} {...data} />

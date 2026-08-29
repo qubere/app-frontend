@@ -54,7 +54,7 @@ export default async function ActionsPage(props: {
   // isolation for any DEMO/SANDBOX account.
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  const [decisions, allDocuments, exceptions, writable, mayWaive] = await Promise.all([
+  const [decisions, allDocuments, exceptions, writable, mayWaive, memberships] = await Promise.all([
     db.agentDecision.findMany({
       where: {
         accountId: context.accountId,
@@ -127,6 +127,10 @@ export default async function ActionsPage(props: {
     }),
     Promise.resolve(canWrite(context)),
     hasPermission(RISK_ACCEPTANCE_PERMISSION).then((ok) => canWrite(context) && ok),
+    db.accountMembership.findMany({
+      where: { accountId: context.accountId, status: "ACTIVE" },
+      include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    }),
   ]);
 
   const queueLoaderResult = await loadWorkQueueForAccountFromPrefetched(
@@ -224,6 +228,8 @@ export default async function ActionsPage(props: {
       ])
   );
 
+  const teamMembers = memberships.map((m) => m.user);
+
   return (
     <ActionsClient
       groups={groups}
@@ -234,6 +240,7 @@ export default async function ActionsPage(props: {
       userName={userName}
       documents={documents}
       urgencyByShipment={urgencyByShipment}
+      teamMembers={teamMembers}
     />
   );
   });
