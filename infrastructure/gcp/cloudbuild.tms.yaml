@@ -1,17 +1,17 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    id: portal
+    id: tms
     args:
       - "build"
-      - "--target=portal-web"
-      - "--build-arg=PORTAL_APP_URL=https://demo-portal.qubere.ai"
+      - "--target=tms-web"
+      - "--build-arg=TMS_APP_URL=https://demo-tms.qubere.ai"
       - "--build-arg=NEXT_PUBLIC_APP_ENV=demo"
       - "--build-arg=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsucXViZXJlLmFpJA"
       - "--build-arg=GIT_COMMIT_SHA=$SHORT_SHA"
       - "-t"
-      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:$SHORT_SHA"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:$SHORT_SHA"
       - "-t"
-      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:latest"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:latest"
       - "."
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy
@@ -19,12 +19,12 @@ steps:
     args:
       - "run"
       - "deploy"
-      - "qubere-customer-portal"
-      - "--image=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:$SHORT_SHA"
+      - "qubere-tms-demo"
+      - "--image=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:$SHORT_SHA"
       - "--region=us-west1"
       - "--project=$PROJECT_ID"
       - "--quiet"
 images:
-  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:$SHORT_SHA"
-  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web:latest"
+  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:$SHORT_SHA"
+  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:latest"
 options: { machineType: E2_HIGHCPU_8, logging: CLOUD_LOGGING_ONLY }
