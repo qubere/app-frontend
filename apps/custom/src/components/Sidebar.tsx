@@ -73,6 +73,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   tariffs: BookOpen,
   billing: DollarSign,
   reports: FileBarChart2,
+  licenses: ShieldCheck,
 };
 
 interface SidebarProps {

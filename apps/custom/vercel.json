@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/community-screening-dispatch",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/license-alerts",
+      "schedule": "0 7 * * *"
     }
   ]
 }

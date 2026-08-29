@@ -176,6 +176,24 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "compliance.community_screening.screen", description: "Run new Community Screening batches and rescreen failed/error/incomplete rows.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
   { name: "compliance.community_screening.override", description: "Override Community Screening name/address thresholds, country-match, and red-flag settings for a run.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
 
+  // Export/Import License Determination
+  { name: "licenseDetermination.view", description: "View license determination results.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
+  { name: "licenseDetermination.execute", description: "Run a new license determination.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "licenseDetermination.review", description: "Disposition (verify/return-for-info) a license determination result.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "licenseDetermination.override", description: "Formally override a license determination result.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
+
+  // License Management (managed authorization portfolio, utilization, allocation)
+  { name: "licenses.view", description: "View the managed license portfolio, utilization, and events.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
+  { name: "licenses.create", description: "Create new managed licenses and lines.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "licenses.update", description: "Edit managed licenses, lines, notes, and status.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "licenses.delete", description: "Close or remove a managed license.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
+  { name: "licenses.manage_parties", description: "Add or remove Party associations on a managed license.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "licenses.manage_documents", description: "Upload or remove documents attached to a managed license.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "licenses.allocate", description: "Reserve, release, or select a managed license against a determination.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "licenses.post_events", description: "Post utilization events (commitment/shipment/release/reversal) to a license line.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "licenses.adjust", description: "Post manual utilization adjustments to a license line.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
+  { name: "licenses.alerts", description: "View and manage license expiry/utilization alerts.", category: "Compliance", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
+
   // PGA
   { name: "pga.read", description: "View PGA message set requirements.", category: "PGA", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "VIEWER"] },
   { name: "pga.update", description: "Update PGA program data.", category: "PGA", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
