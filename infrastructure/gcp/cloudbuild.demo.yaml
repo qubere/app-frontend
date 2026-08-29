@@ -1,7 +1,6 @@
 steps:
   - name: gcr.io/cloud-builders/docker
     id: customs
-    waitFor: ["-"]
     args:
       - "build"
       - "--target=customs-web"
@@ -13,7 +12,6 @@ steps:
       - "."
   - name: gcr.io/cloud-builders/docker
     id: tms
-    waitFor: ["-"]
     args:
       - "build"
       - "--target=tms-web"
@@ -25,7 +23,6 @@ steps:
       - "."
   - name: gcr.io/cloud-builders/docker
     id: database
-    waitFor: ["-"]
     args:
       - "build"
       - "--target=database"
@@ -33,7 +30,6 @@ steps:
       - "."
   - name: gcr.io/cloud-builders/docker
     id: documents
-    waitFor: ["-"]
     args:
       - "build"
       - "--target=document-worker"
@@ -41,7 +37,6 @@ steps:
       - "."
   - name: gcr.io/cloud-builders/docker
     id: backup
-    waitFor: ["-"]
     args:
       - "build"
       - "--target=db-backup"
