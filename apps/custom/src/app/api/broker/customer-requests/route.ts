@@ -115,6 +115,8 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   return NextResponse.json({ requests });
 });
 
+import { PlatformEmailService } from "@/lib/email/platformEmailService";
+
 export const PATCH = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
   const { requestId, assignedUserId } = body;
@@ -125,8 +127,26 @@ export const PATCH = withAuthenticatedRoute(async ({ req, ctx }) => {
   const updated = await db.customerRequest.update({
     where: { id: requestId, accountId: ctx.accountId },
     data: { assignedUserId: assignedUserId || null },
-    include: { assignedUser: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    include: {
+      assignedUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+      shipment: { select: { shipmentNumber: true } },
+      createdByUser: { select: { firstName: true, lastName: true, email: true } },
+    },
   });
+
+  // If a user was assigned, send Resend notification email via PlatformEmailService
+  if (updated.assignedUser?.email) {
+    const assignedByName = ctx.email || (updated.createdByUser ? `${updated.createdByUser.firstName || ""} ${updated.createdByUser.lastName || ""}`.trim() : null);
+    PlatformEmailService.sendTaskAssignmentNotification({
+      toEmail: updated.assignedUser.email,
+      toName: `${updated.assignedUser.firstName || ""} ${updated.assignedUser.lastName || ""}`.trim() || undefined,
+      taskTitle: updated.title,
+      actionId: `ACT-${updated.id.slice(-4).toUpperCase()}`,
+      shipmentNumber: updated.shipment?.shipmentNumber || null,
+      assignedByName,
+      targetUrl: `${process.env.NEXT_PUBLIC_PORTAL_URL || "http://localhost:3002"}/requests/${updated.id}`,
+    }).catch((err) => console.error("Async email notification failure:", err));
+  }
 
   return NextResponse.json({ request: updated });
 });

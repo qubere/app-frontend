@@ -1,15 +1,16 @@
 export async function register() {
-  // Next.js's gzip middleware adds a 'drain' listener per concurrent streaming
-  // response; the default of 10 triggers a false-positive memory-leak warning
-  // when several document-proxy or SSE requests are in flight at the same time.
-  const { EventEmitter } = await import("events");
-  EventEmitter.defaultMaxListeners = 25;
-
-  // Node-only: edge runtime re-invokes register() without these globals.
-  // Dynamically imported (not a top-level import) so the edge bundler never
-  // statically parses this module's process.pid/require() usage — a static
-  // scan flags those even inside a runtime-guarded branch of the same file.
+  // Node-only: edge runtime re-invokes register() without node globals.
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const events = await import("events");
+      const EE = events?.EventEmitter || (events as any)?.default?.EventEmitter;
+      if (EE && typeof EE === "function" && "defaultMaxListeners" in EE) {
+        EE.defaultMaxListeners = 25;
+      }
+    } catch {
+      // Ignore listener setup if events module structure differs in bundler
+    }
+
     const { logBootConnections } = await import("./lib/bootLog");
     logBootConnections();
   }

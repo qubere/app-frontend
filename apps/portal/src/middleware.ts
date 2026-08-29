@@ -14,13 +14,9 @@ const isApiRoute = createRouteMatcher(["/api(.*)"]);
 export default clerkMiddleware(async (auth, req) => {
   if (isApiRoute(req) || isPublicRoute(req)) return;
 
-  // Local dev has no Clerk session — getAccountContext() serves a demo identity,
-  // so the redirect would break `next dev`. Every real deployment sets
-  // NODE_ENV=production, where an unauthenticated page load is bounced to
-  // Clerk's sign-in URL (defaults to /sign-in). Without this, `/` renders the
-  // full portal shell (with placeholder identity) for anonymous visitors.
-  if (process.env.NODE_ENV === "production") {
-    await auth.protect();
+  const { userId } = await auth();
+  if (!userId) {
+    return (await auth()).redirectToSignIn({ returnBackUrl: req.url });
   }
 });
 

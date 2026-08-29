@@ -6,6 +6,14 @@ This repository contains the **Phase 1 Multi-Tenant SaaS Application Foundation*
 
 ---
 
+## 🧩 Shared Platform Capabilities Directive
+
+To prevent code duplication, maintain consistent security, and enforce unified auditing across the monorepo, **all developers must consume shared platform capabilities** instead of building local helper implementations in individual apps/modules:
+
+- **[PLATFORM_CAPABILITIES.md](file:///Users/rachitlohani/Documents/GitHub/app-frontend/PLATFORM_CAPABILITIES.md)** — Complete Guide to Shared Platform Capabilities (`PlatformEmailService`, `@qubere/auth`, `@qubere/storage`, `@qubere/db`, `@qubere/ai`).
+
+---
+
 ## 🛠 Technology Stack
 
 - **Framework**: Next.js 16 (App Router, Server Components, Turbopack)

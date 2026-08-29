@@ -29,6 +29,8 @@ steps:
       - "--image=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/customs-web:$SHORT_SHA"
       - "--region=us-west1"
       - "--project=$PROJECT_ID"
+      - "--startup-probe-path=/api/health/live"
+      - "--liveness-probe-path=/api/health/live"
       - "--quiet"
 images:
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/customs-web:$SHORT_SHA"

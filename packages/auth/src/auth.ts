@@ -68,8 +68,9 @@ export const ACTIVE_ACCOUNT_COOKIE = "qubere_active_account_id";
  * docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P1-9).
  */
 function isDemoAuthFallbackEnabled(): boolean {
-  if (process.env.NODE_ENV === "production") return false;
-  return process.env.NODE_ENV === "development" || process.env.QUBERE_ALLOW_DEMO_AUTH === "1";
+  // Demo auth fallback is strictly disabled across all environments (including local dev)
+  // to ensure real Clerk authentication and authorization checks are always enforced.
+  return process.env.QUBERE_ALLOW_DEMO_AUTH === "1";
 }
 
 async function loadAccountContext(): Promise<AccountContext | null> {

@@ -70,9 +70,17 @@ export default function RequestThreadPage() {
 
   const fetchRequest = () => {
     fetch(`/api/requests/${id}`, { cache: "no-store" })
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 401) {
+          if (typeof window !== "undefined") {
+            window.location.href = `/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`;
+          }
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (data.request) {
+        if (data?.request) {
           setRequest(data.request);
         }
       })

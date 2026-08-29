@@ -4,8 +4,7 @@ import { parseAndValidateBody, validatePathParams } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { buildErrorResponse } from "@/lib/api/error";
 import { createClerkClient } from "@clerk/backend";
-import { Resend } from "resend";
-import { signUploadToken } from "@/lib/uploadToken";
+import { PlatformEmailService } from "@/lib/email/platformEmailService";
 import { z } from "zod";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
@@ -218,55 +217,19 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       console.error("[Counterparty Request] Error provisioning user:", err);
     }
 
-    // 4. Send Email Notification
-    const apiKey = process.env.RESEND_API_KEY;
+    // 4. Send Email Notification via Platform Email Service
     const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL || "http://localhost:3002";
     const requestPortalUrl = `${portalUrl}/requests/${customerRequest.id}`;
 
-    if (apiKey) {
-      try {
-        const token = await signUploadToken({
-          shipmentId,
-          accountId: ctx.accountId,
-          documentType,
-          recipientEmail,
-        });
-
-        const fromAddress = process.env.RESEND_FROM_ADDRESS ?? "noreply@qubere.ai";
-        const resend = new Resend(apiKey);
-        await resend.emails.send({
-          from: fromAddress,
-          to: [recipientEmail],
-          subject: `Action Required: Upload ${documentType} — Shipment ${shipmentRef}`,
-          html: `
-            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;color:#1a1a2e">
-              <h2 style="margin:0 0 16px;font-size:20px;font-weight:700">Qubere Customer Portal — Document Upload Request</h2>
-              <p style="margin:0 0 12px;font-size:15px;line-height:1.6">
-                You have been assigned Porter access to fulfill a document request for customs entry processing:
-              </p>
-              <div style="background:#f4f4f8;border-radius:10px;padding:16px 20px;margin:0 0 20px;border-left:4px solid #0071e3">
-                <strong style="font-size:15px">${documentType}</strong><br/>
-                <span style="color:#666;font-size:13px">Shipment reference: ${shipmentRef}</span>
-              </div>
-              <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#444">
-                Log into the Qubere Customer Portal to review your action items and upload the document.
-              </p>
-              <a href="${requestPortalUrl}"
-                 style="display:inline-block;background:#0071e3;color:white;font-weight:600;font-size:15px;
-                        padding:12px 28px;border-radius:8px;text-decoration:none">
-                Open Action Item in Customer Portal →
-              </a>
-              <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb"/>
-              <p style="margin:0;font-size:12px;color:#999">
-                Sent by Qubere · Trade Compliance Platform
-              </p>
-            </div>
-          `,
-        });
-      } catch (err) {
-        console.error("[Counterparty Request] Email send failure:", err);
-      }
-    }
+    PlatformEmailService.sendTaskAssignmentNotification({
+      toEmail: recipientEmail,
+      toName: recipientEmail.split("@")[0],
+      taskTitle: `Upload ${documentType}`,
+      actionId: `ACT-${customerRequest.id.slice(-4).toUpperCase()}`,
+      shipmentNumber: shipmentRef,
+      assignedByName: ctx.email || "Brokerage Admin",
+      targetUrl: requestPortalUrl,
+    }).catch((err) => console.error("[Counterparty Request] Email notification failure:", err));
 
     return NextResponse.json({
       sent: true,

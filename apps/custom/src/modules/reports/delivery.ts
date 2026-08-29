@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { createSignedReadUrl } from "@/lib/storage";
-import { getEmailProvider } from "@/modules/email/emailProviderFactory";
-import { getEmailConfig, EmailConfigError } from "@/modules/email/emailConfig";
+import { PlatformEmailService } from "@/lib/email/platformEmailService";
 import { getCatalogEntry } from "./catalog";
 
 interface ScheduleDeliveryConfig {
@@ -26,19 +25,6 @@ export async function deliverReportRun(runId: string): Promise<void> {
 
   await db.reportRun.update({ where: { id: runId }, data: { deliveryStatus: "PENDING" } });
 
-  try {
-    getEmailConfig();
-  } catch (err) {
-    if (err instanceof EmailConfigError) {
-      await db.reportRun.update({
-        where: { id: runId },
-        data: { deliveryStatus: "FAILED", errorMessage: "Email delivery is not configured for this environment." },
-      });
-      return;
-    }
-    throw err;
-  }
-
   const catalogEntry = getCatalogEntry(run.reportType);
   const reportName = catalogEntry?.name ?? run.reportType;
 
@@ -51,19 +37,30 @@ export async function deliverReportRun(runId: string): Promise<void> {
     );
 
     const linksHtml = links.map((l) => `<li><a href="${l.url}">${l.fileName}</a></li>`).join("");
-    const result = await getEmailProvider().send({
+    const result = await PlatformEmailService.sendEmail({
       to: recipients,
-      subject: `Scheduled report ready: ${reportName}`,
-      html: `<p>Your scheduled report <strong>${reportName}</strong> has been generated.</p><ul>${linksHtml}</ul><p>Links expire in 7 days.</p>`,
+      subject: `Scheduled Report Ready: ${reportName}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:24px;background:#ffffff;border-radius:16px;border:1px solid #e5e5ea">
+          <h2 style="color:#0071e3;margin-top:0">Scheduled Report Ready: ${reportName}</h2>
+          <p>Your scheduled compliance report <strong>${reportName}</strong> has been generated successfully.</p>
+          <div style="background:#f4f4f8;padding:16px;border-radius:10px;margin:16px 0">
+            <h4 style="margin:0 0 8px">Generated Report Artifacts:</h4>
+            <ul>${linksHtml}</ul>
+          </div>
+          <p style="font-size:12px;color:#86868b">Download links expire in 7 days. Sent by Qubere Platform.</p>
+        </div>
+      `,
       text: `Your scheduled report "${reportName}" has been generated:\n${links.map((l) => `${l.fileName}: ${l.url}`).join("\n")}\n\nLinks expire in 7 days.`,
+      fromName: "Qubere Compliance Reports",
     });
 
     await db.reportRun.update({
       where: { id: runId },
       data:
-        result.outcome === "SUCCESS"
+        result.success
           ? { deliveryStatus: "DELIVERED" }
-          : { deliveryStatus: "FAILED", errorMessage: result.errorMessage },
+          : { deliveryStatus: "FAILED", errorMessage: result.error },
     });
   } catch (err) {
     await db.reportRun.update({
