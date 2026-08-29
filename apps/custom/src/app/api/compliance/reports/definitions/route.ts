@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { getCatalogEntry } from "@/modules/reports/catalog";
+import { createAuditLog } from "@/lib/audit";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
   const definitions = await db.reportDefinition.findMany({
@@ -42,6 +43,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       defaultFormat: typeof body?.defaultFormat === "string" ? body.defaultFormat : "CSV",
       isShared,
     },
+  });
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_DEFINITION_CREATED",
+    entity: "ReportDefinition",
+    entityId: definition.id,
+    source: "UI",
+    metadata: { reportType, isShared },
   });
 
   return NextResponse.json({ definition }, { status: 201 });

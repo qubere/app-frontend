@@ -175,4 +175,18 @@ export const DEFAULT_BILLING_EVENT_DEFINITIONS: readonly BillingEventDefItem[] =
     defaultUnit: "invoice",
     productLine: "TMS",
   },
+  {
+    eventCode: "BULK_COMPLIANCE_BATCH_RECORD_SCREENED",
+    name: "Bulk Compliance Screening Record",
+    description: "One record within a Bulk Compliance Screening batch completed Party/License screening",
+    category: "CUSTOM",
+    defaultUnit: "record",
+  },
+  {
+    eventCode: "COMPLIANCE_REPORT_GENERATED",
+    name: "Compliance Report Generated",
+    description: "A compliance report run completed generation and produced a downloadable artifact",
+    category: "COMPLIANCE_REPORTING",
+    defaultUnit: "report",
+  },
 ] as const;

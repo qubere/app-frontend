@@ -5,6 +5,7 @@ import { queryRestrictedPartyScreening } from "./restrictedPartyScreening";
 import { queryEmbargoScreening } from "./embargoScreening";
 import { queryPartyCompliance } from "./partyCompliance";
 import { queryContinuousPartyMonitoring } from "./continuousPartyMonitoring";
+import { queryReferenceDataChanges } from "./referenceDataChanges";
 import { queryExceptionsOverrides } from "./exceptionsOverrides";
 import { queryClassificationDecisions } from "./classificationDecisions";
 import { queryLicenseDetermination } from "./licenseDetermination";
@@ -27,6 +28,7 @@ export const REPORT_QUERIES: Record<string, ReportQueryFn> = {
   "embargo-screening": queryEmbargoScreening,
   "party-compliance": queryPartyCompliance,
   "continuous-party-monitoring": queryContinuousPartyMonitoring,
+  "reference-data-changes": queryReferenceDataChanges,
   "compliance-exceptions-overrides": queryExceptionsOverrides,
   "classification-decisions": queryClassificationDecisions,
   "license-determination": queryLicenseDetermination,

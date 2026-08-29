@@ -172,6 +172,28 @@ export const REPORT_CATALOG: ReportCatalogEntry[] = [
     ],
   },
   {
+    id: "reference-data-changes",
+    name: "Reference Data Changes",
+    description: "Denied/restricted-party watchlist ingestion changes: additions, updates, supersessions and expirations.",
+    domain: "CONTINUOUS_MONITORING",
+    formats: ["CSV", "XLSX"],
+    filters: [
+      { key: "dateFrom", label: "Date From", type: "dateRange" },
+      { key: "dateTo", label: "Date To", type: "dateRange" },
+      { key: "changeType", label: "Change Type", type: "select", options: ["ADDED", "UPDATED", "SUPERSEDED", "EXPIRED"] },
+      { key: "sourceList", label: "Source List", type: "text" },
+    ],
+    columns: [
+      { key: "occurredAt", label: "Occurred At" },
+      { key: "sourceList", label: "Source List" },
+      { key: "entityName", label: "Entity" },
+      { key: "changeType", label: "Change Type" },
+      { key: "datasetId", label: "Dataset" },
+      { key: "ingestionRunId", label: "Ingestion Run ID" },
+      { key: "consumedAt", label: "RDPS Consumed At" },
+    ],
+  },
+  {
     id: "compliance-exceptions-overrides",
     name: "Compliance Exceptions & Overrides",
     description: "Every human override of an automated compliance decision, with original decision preserved.",

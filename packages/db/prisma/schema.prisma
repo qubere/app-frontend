@@ -302,6 +302,10 @@ model Account {
   complianceNotifications         ComplianceNotification[]
   communityScreeningRuns          CommunityScreeningRun[]
   communityScreeningPartyResults  CommunityScreeningPartyResult[]
+  complianceBatches               ComplianceBatch[]
+  batchRecords                    BatchRecord[]
+  batchArtifacts                  BatchArtifact[]
+  complianceBatchColumnMappingTemplates ComplianceBatchColumnMappingTemplate[]
   rdpsPartyOutcomes               RdpsPartyOutcome[]
   reportDefinitions               ReportDefinition[]
   reportRuns                      ReportRun[]
@@ -5991,6 +5995,7 @@ enum RestrictedPartyScreeningSource {
   COPILOT
   MANUAL
   COMMUNITY_SCREENING
+  BULK_COMPLIANCE_SCREENING
 }
 
 enum RestrictedPartyScreeningStatus {
@@ -6276,6 +6281,255 @@ model CommunityScreeningPartyResult {
   @@unique([runId, rowNumber])
   @@index([runId, aggregateStatus])
   @@index([accountId, partyId])
+}
+
+enum ComplianceBatchType {
+  TRANSACTION_COMPLIANCE
+  PARTY_SCREENING
+  PRODUCT_CLASSIFICATION
+  PRE_APPROVED_PARTY_IMPORT
+}
+
+enum ComplianceBatchFormat {
+  CSV
+  XLSX
+  JSON
+  XML
+}
+
+/// Technical/lifecycle state of the batch itself -- never conflated with
+/// complianceStatus (see ComplianceBatchComplianceStatus). A batch can reach
+/// COMPLETED here while complianceStatus is COMPLETED_WITH_FINDINGS.
+enum ComplianceBatchProcessingStatus {
+  UPLOADED
+  VALIDATING
+  VALIDATION_FAILED
+  READY
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// Aggregate compliance outcome across the batch's records -- independent of
+/// processingStatus. NOT_EVALUATED until at least one record has an
+/// evaluated complianceStatus.
+enum ComplianceBatchComplianceStatus {
+  NOT_EVALUATED
+  PASSED
+  COMPLETED_WITH_FINDINGS
+  COMPLETED_WITH_ERRORS
+}
+
+enum BatchRecordParseStatus {
+  VALID
+  INVALID
+}
+
+enum BatchRecordProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+/// Mirrors the fail-safe aggregation used by CommunityScreeningPartyStatus:
+/// a technical ERROR is never rendered as a compliance PASSED, and a record
+/// with no enabled/executed service stays NOT_EVALUATED rather than a false
+/// PASSED.
+enum BatchRecordComplianceStatus {
+  NOT_EVALUATED
+  PASSED
+  FAILED
+  REVIEW_REQUIRED
+  INCOMPLETE
+  ERROR
+}
+
+enum BatchArtifactType {
+  INPUT
+  RESULTS
+  VALIDATION_ERRORS
+  REJECTED_RECORDS
+  PROCESSING_SUMMARY
+}
+
+/// Bulk Compliance Screening (prompt: Qubere_Bulk_Compliance_Screening) --
+/// one uploaded/submitted file's batch-level orchestration record. Never
+/// duplicates RPS/Embargo/License matching logic itself: BatchRecord rows
+/// fan out to the same canonical services used by interactive/API
+/// workflows (see BatchRecord doc comment). This table is not the
+/// authoritative compliance evidence -- ComplianceExecution and the
+/// canonical domain result tables are.
+model ComplianceBatch {
+  id              String  @id @default(cuid())
+  accountId       String
+  account         Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdByUserId String?
+
+  batchType ComplianceBatchType
+  format    ComplianceBatchFormat
+
+  processingStatus ComplianceBatchProcessingStatus @default(UPLOADED)
+  complianceStatus ComplianceBatchComplianceStatus @default(NOT_EVALUATED)
+
+  originalFileName String
+  fileSha256       String
+
+  /// ComplianceBatchServiceFlags (partyScreening, licenseScreening,
+  /// embargoScreening, productClassification) -- account policy-gated
+  /// defaults, optionally overridden per request (never silently bypassing
+  /// a disabled account policy).
+  servicesEnabled Json
+
+  correlationId String @unique
+
+  totalRecords      Int @default(0)
+  validRecords      Int @default(0)
+  processedRecords  Int @default(0)
+  passedRecords     Int @default(0)
+  failedRecords     Int @default(0)
+  reviewRecords     Int @default(0)
+  errorRecords      Int @default(0)
+  incompleteRecords Int @default(0)
+
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  records   BatchRecord[]
+  artifacts BatchArtifact[]
+
+  @@index([accountId, createdAt])
+  @@index([accountId, processingStatus])
+}
+
+/// A tenant-saved column-header -> TransactionColumnField mapping so a
+/// recurring non-standard export (e.g. an ERP's own header spellings) can be
+/// reused across uploads instead of re-mapped by hand each time. Only
+/// overrides/supplements modules/complianceBatch/columns.ts's built-in alias
+/// table -- a field the template doesn't mention still falls back to normal
+/// alias auto-detection.
+model ComplianceBatchColumnMappingTemplate {
+  id              String  @id @default(cuid())
+  accountId       String
+  account         Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdByUserId String?
+
+  name String
+
+  /// Record<TransactionColumnField, string> -- the exact header text this
+  /// tenant's file uses for each field.
+  fieldMappings Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+/// One normalized row/transaction within a ComplianceBatch. Holds only
+/// canonical result IDs (rpsResultId / licenseDeterminationResultId) --
+/// never a copy of evidence, which stays owned by the canonical result
+/// tables. Not the authoritative compliance record; ComplianceExecution is.
+model BatchRecord {
+  id        String          @id @default(cuid())
+  accountId String
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  batchId   String
+  batch     ComplianceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  recordNumber      Int
+  sourceRowNumber   Int?
+  transactionId     String?
+  transactionLineId String?
+  partyId           String?
+  productId         String?
+
+  correlationId String
+
+  parseStatus      BatchRecordParseStatus      @default(VALID)
+  processingStatus BatchRecordProcessingStatus @default(PENDING)
+  complianceStatus BatchRecordComplianceStatus @default(NOT_EVALUATED)
+
+  /// The CanonicalComplianceRequest this row was normalized into (see
+  /// modules/complianceBatch/types.ts) -- parser-specific DTOs never drive
+  /// compliance logic beyond this point.
+  normalizedInput Json
+  inputHash       String
+
+  rpsResultId                   String?
+  licenseDeterminationResultId String?
+
+  /// Embargo screening has no persisted per-check result row (mirrors
+  /// communityScreening's evaluator.ts, which calls doEmbargoCheck directly
+  /// rather than the shipment-only runCountryEmbargoScreening orchestrator)
+  /// -- the outcome is stored inline here instead of via a resultId.
+  embargoStatus   String?
+  embargoEvidence Json?
+
+  /// ClassificationService.classifyProduct has no persisted case row for a
+  /// standalone batch call (unlike the ClassificationCaseEngine/BatchClassificationService
+  /// async job path, which this domain deliberately does not use -- batch
+  /// rows are processed synchronously like every other canonical service
+  /// here). agentDecisionId is populated only when classifyProduct itself
+  /// created one, which it only does when handed a shipmentId (never true
+  /// for a standalone batch row).
+  classificationStatus       String?
+  classificationHtsCode      String?
+  classificationAgentDecisionId String?
+
+  /// Links to the unified ComplianceExecution audit envelope (prompt §25) for
+  /// each canonical service actually run against this row. Separate columns,
+  /// not one -- a single record can run RPS, License Determination, Embargo,
+  /// and Product Classification independently and each produces its own
+  /// ComplianceExecution row.
+  rpsComplianceExecutionId     String?
+  licenseComplianceExecutionId String?
+  embargoComplianceExecutionId String?
+  classificationComplianceExecutionId String?
+
+  errorCode    String?
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([batchId, recordNumber])
+  @@index([accountId, batchId, processingStatus])
+  @@index([accountId, batchId, complianceStatus])
+}
+
+/// Metadata for one file artifact (input, results export, error export, ...)
+/// belonging to a batch. Bytes live in private object storage (@qubere/storage);
+/// this row never holds a raw, unguarded storage path -- downloads resolve
+/// through a signed/authorized read, never this storageKey directly.
+model BatchArtifact {
+  id        String          @id @default(cuid())
+  accountId String
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  batchId   String
+  batch     ComplianceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  artifactType     BatchArtifactType
+  storageKey       String
+  originalFileName String?
+  mimeType         String?
+  sizeBytes        Int?
+  sha256           String?
+
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([accountId, batchId])
 }
 
 /// One denial-order candidate match. Immutable — corrections are recorded

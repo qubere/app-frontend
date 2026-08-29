@@ -58,6 +58,9 @@ const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral"> 
   CANCELLED: "neutral",
 };
 
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
   const body = await res.json().catch(() => ({}));
@@ -75,6 +78,37 @@ export function ComplianceReportsClient({ canGenerate, canManage }: { canGenerat
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<ReportRun[]>([]);
   const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
+
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleDefinitionId, setScheduleDefinitionId] = useState<string | null>(null);
+  const [scheduleFrequency, setScheduleFrequency] = useState<"ONCE" | "DAILY" | "WEEKLY" | "MONTHLY">("WEEKLY");
+  const [scheduleMonthlyMode, setScheduleMonthlyMode] = useState<"dayOfMonth" | "nthWeekday">("dayOfMonth");
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(1);
+  const [scheduleNth, setScheduleNth] = useState<1 | 2 | 3 | 4 | 5 | -1>(1);
+  const [scheduleWeekday, setScheduleWeekday] = useState(2);
+  const [scheduleRunAtHour, setScheduleRunAtHour] = useState(6);
+  const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
+  const [scheduleRecipients, setScheduleRecipients] = useState("");
+  const [scheduleOccurrences, setScheduleOccurrences] = useState<string[]>([]);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+
+  const scheduleConfig = useMemo(() => {
+    if (scheduleFrequency !== "MONTHLY") return { runAtHour: scheduleRunAtHour, runAtMinute: 0 };
+    return scheduleMonthlyMode === "nthWeekday"
+      ? { runAtHour: scheduleRunAtHour, runAtMinute: 0, nthWeekday: { nth: scheduleNth, weekday: scheduleWeekday } }
+      : { runAtHour: scheduleRunAtHour, runAtMinute: 0, dayOfMonth: scheduleDayOfMonth };
+  }, [scheduleFrequency, scheduleMonthlyMode, scheduleDayOfMonth, scheduleNth, scheduleWeekday, scheduleRunAtHour]);
+
+  useEffect(() => {
+    if (!scheduleModalOpen) return;
+    fetchJson<{ occurrences: string[] }>("/api/compliance/reports/schedules/preview", {
+      method: "POST",
+      body: JSON.stringify({ frequency: scheduleFrequency, scheduleConfig }),
+    })
+      .then((data) => setScheduleOccurrences(data.occurrences))
+      .catch(() => setScheduleOccurrences([]));
+  }, [scheduleModalOpen, scheduleFrequency, scheduleConfig]);
+
 
   useEffect(() => {
     fetchJson<{ reports: ReportCatalogEntry[] }>("/api/compliance/reports/catalog")
@@ -151,6 +185,64 @@ export function ComplianceReportsClient({ canGenerate, canManage }: { canGenerat
       window.open(downloadUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to download report.");
+    }
+  };
+
+  const saveAndSchedule = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const cleanFilters = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ""));
+      const { definition } = await fetchJson<{ definition: { id: string } }>("/api/compliance/reports/definitions", {
+        method: "POST",
+        body: JSON.stringify({ name: selected.name, reportType: selected.id, filters: cleanFilters, defaultFormat: format }),
+      });
+      setScheduleDefinitionId(definition.id);
+      setScheduleFrequency("WEEKLY");
+      setScheduleMonthlyMode("dayOfMonth");
+      setScheduleDayOfMonth(1);
+      setScheduleNth(1);
+      setScheduleWeekday(2);
+      setScheduleRunAtHour(6);
+      setScheduleTimezone("UTC");
+      setScheduleRecipients("");
+      setSelected(null);
+      setScheduleModalOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save report.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createSchedule = async () => {
+    if (!scheduleDefinitionId) return;
+    setScheduleBusy(true);
+    setError(null);
+    try {
+      const recipients = scheduleRecipients
+        .split(",")
+        .map((r) => r.trim())
+        .filter((r) => r.includes("@"));
+      await fetchJson("/api/compliance/reports/schedules", {
+        method: "POST",
+        body: JSON.stringify({
+          reportDefinitionId: scheduleDefinitionId,
+          frequency: scheduleFrequency,
+          format,
+          timezone: scheduleTimezone,
+          scheduleConfig,
+          deliveryConfig: recipients.length ? { recipients } : undefined,
+        }),
+      });
+      setScheduleModalOpen(false);
+      setTab("schedules");
+      loadSchedules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create schedule.");
+    } finally {
+      setScheduleBusy(false);
     }
   };
 
@@ -391,12 +483,142 @@ export function ComplianceReportsClient({ canGenerate, canManage }: { canGenerat
               <Button variant="secondary" onClick={() => setSelected(null)}>
                 Cancel
               </Button>
+              {canManage && (
+                <Button variant="secondary" onClick={saveAndSchedule} disabled={busy}>
+                  Save / Schedule
+                </Button>
+              )}
               {canGenerate && (
                 <Button onClick={runReport} disabled={busy}>
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   Generate
                 </Button>
               )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {scheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-lg">
+            <CardHeader>
+              <div>
+                <h2 className="text-base font-bold text-ink">Schedule Report</h2>
+                <p className="text-xs text-ink-muted">Configure how often this saved report should run automatically.</p>
+              </div>
+            </CardHeader>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Frequency</label>
+                <select
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  value={scheduleFrequency}
+                  onChange={(e) => setScheduleFrequency(e.target.value as typeof scheduleFrequency)}
+                >
+                  <option value="ONCE">Once</option>
+                  <option value="DAILY">Daily</option>
+                  <option value="WEEKLY">Weekly</option>
+                  <option value="MONTHLY">Monthly</option>
+                </select>
+              </div>
+
+              {scheduleFrequency === "MONTHLY" && (
+                <div>
+                  <label className="block text-xs font-semibold text-ink-muted mb-1">Monthly Mode</label>
+                  <select
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm mb-2"
+                    value={scheduleMonthlyMode}
+                    onChange={(e) => setScheduleMonthlyMode(e.target.value as typeof scheduleMonthlyMode)}
+                  >
+                    <option value="dayOfMonth">Day of Month</option>
+                    <option value="nthWeekday">Nth Weekday (e.g. second Tuesday)</option>
+                  </select>
+
+                  {scheduleMonthlyMode === "dayOfMonth" ? (
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={scheduleDayOfMonth}
+                      onChange={(e) => setScheduleDayOfMonth(Number(e.target.value) || 1)}
+                    />
+                  ) : (
+                    <div className="flex gap-2">
+                      <select
+                        className="w-1/2 rounded-lg border border-border px-3 py-2 text-sm"
+                        value={scheduleNth}
+                        onChange={(e) => setScheduleNth(Number(e.target.value) as typeof scheduleNth)}
+                      >
+                        <option value={1}>First</option>
+                        <option value={2}>Second</option>
+                        <option value={3}>Third</option>
+                        <option value={4}>Fourth</option>
+                        <option value={5}>Fifth</option>
+                        <option value={-1}>Last</option>
+                      </select>
+                      <select
+                        className="w-1/2 rounded-lg border border-border px-3 py-2 text-sm"
+                        value={scheduleWeekday}
+                        onChange={(e) => setScheduleWeekday(Number(e.target.value))}
+                      >
+                        {WEEKDAY_LABELS.map((label, idx) => (
+                          <option key={label} value={idx}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Run At Hour (UTC)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={scheduleRunAtHour}
+                  onChange={(e) => setScheduleRunAtHour(Number(e.target.value) || 0)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Timezone</label>
+                <Input value={scheduleTimezone} onChange={(e) => setScheduleTimezone(e.target.value)} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">
+                  Email Recipients (comma-separated, optional)
+                </label>
+                <Input value={scheduleRecipients} onChange={(e) => setScheduleRecipients(e.target.value)} />
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface-muted p-3">
+                <div className="text-xs font-semibold text-ink-muted mb-1">Next 3 occurrences</div>
+                {scheduleOccurrences.length === 0 ? (
+                  <div className="text-xs text-ink-muted">No upcoming occurrences.</div>
+                ) : (
+                  <ul className="text-xs text-ink space-y-0.5">
+                    {scheduleOccurrences.map((iso) => (
+                      <li key={iso}>{new Date(iso).toLocaleString()}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="secondary" onClick={() => setScheduleModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={createSchedule} disabled={scheduleBusy}>
+                {scheduleBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Save Schedule
+              </Button>
             </div>
           </Card>
         </div>

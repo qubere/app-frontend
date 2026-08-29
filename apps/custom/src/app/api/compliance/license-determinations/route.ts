@@ -35,5 +35,5 @@ export const GET = withAuthenticatedRoute(
       nextCursor: determinations.length === take ? determinations[determinations.length - 1]?.id : null,
     });
   },
-  { permission: "license_determination.view" }
+  { permission: "compliance.license_determination.view" }
 );

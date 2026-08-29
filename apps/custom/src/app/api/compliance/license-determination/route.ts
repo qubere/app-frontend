@@ -83,5 +83,5 @@ export const POST = withAuthenticatedRoute(
 
     return NextResponse.json({ determination: record, requestId }, { status: 201 });
   },
-  { permission: "license_determination.execute", write: true }
+  { permission: "compliance.license_determination.execute", write: true }
 );

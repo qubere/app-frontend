@@ -3,6 +3,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { inngest } from "@/lib/inngest/client";
 import { REPORT_RUN_REQUESTED_EVENT } from "@/lib/inngest/functions/reportRun";
+import { createAuditLog } from "@/lib/audit";
 
 export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params }) => {
   const { id } = params;
@@ -27,6 +28,16 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params 
   });
 
   await inngest.send({ name: REPORT_RUN_REQUESTED_EVENT, data: { runId: run.id } });
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_SCHEDULE_RUN_NOW_TRIGGERED",
+    entity: "ReportSchedule",
+    entityId: id,
+    source: "UI",
+    metadata: { reportRunId: run.id },
+  });
 
   return NextResponse.json({ run }, { status: 202 });
 }, { permission: "compliance.reports.manage", write: true });

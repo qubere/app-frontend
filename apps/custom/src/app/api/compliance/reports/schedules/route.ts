@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { computeNextRun } from "@/modules/reports/scheduler";
+import { createAuditLog } from "@/lib/audit";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
   const schedules = await db.reportSchedule.findMany({
@@ -46,6 +47,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       nextRunAt,
       deliveryConfig: body?.deliveryConfig ?? undefined,
     },
+  });
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "COMPLIANCE_REPORT_SCHEDULE_CREATED",
+    entity: "ReportSchedule",
+    entityId: schedule.id,
+    source: "UI",
+    metadata: { reportDefinitionId, frequency, format },
   });
 
   return NextResponse.json({ schedule }, { status: 201 });

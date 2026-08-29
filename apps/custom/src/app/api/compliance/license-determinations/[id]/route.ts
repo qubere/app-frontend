@@ -19,7 +19,7 @@ export const GET = withAuthenticatedRoute<{ id: string }>(
     }
     return NextResponse.json({ determination, requestId });
   },
-  { permission: "license_determination.view" }
+  { permission: "compliance.license_determination.view" }
 );
 
 const reviewSchema = z.object({
@@ -66,5 +66,5 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
 
     return NextResponse.json({ determination: updated, requestId });
   },
-  { permission: "license_determination.review", write: true }
+  { permission: "compliance.license_determination.review", write: true }
 );
