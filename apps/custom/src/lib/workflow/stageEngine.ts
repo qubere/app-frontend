@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import {
-  SHIPMENT_STAGES,
   ShipmentStage,
   stageDefinition,
   nextStage,
@@ -69,6 +68,7 @@ export async function evaluateAndAdvanceShipmentStage(
       id: true,
       currentStage: true,
       stageStatus: true,
+      stageEnteredAt: true,
       entryType: true,
       autoAdvance: true,
     },
@@ -129,14 +129,20 @@ export async function evaluateAndAdvanceShipmentStage(
   const mode = policy?.mode || "AUTO_ADVANCE";
 
   if (mode === "HUMAN_GATE") {
-    // Check if an existing gate decision exists and is APPROVED
+    // Only a gate decision raised during the CURRENT visit to this stage
+    // counts. A stale APPROVED gate from a previous pass (before a manual
+    // override / breaker reset sent the shipment back here) must not
+    // silently auto-advance past a fresh gate.
+    const stageEntryFloor = shipment.stageEnteredAt ?? new Date(0);
     const existingGateDecision = await db.agentDecision.findFirst({
       where: {
         shipmentId,
         accountId,
         agentName: "Stage Gate",
         purpose: `Human gate review for stage ${current}`,
+        createdAt: { gte: stageEntryFloor },
       },
+      orderBy: { createdAt: "desc" },
     });
 
     if (existingGateDecision?.status === "Approved" || existingGateDecision?.triageState === "APPROVED") {
@@ -257,9 +263,14 @@ export async function evaluateAndAdvanceShipmentStage(
   };
 }
 
+/** Consecutive FAILED attempts at this stage trips the breaker. */
+const BREAKER_THRESHOLD = 3;
+
 /**
- * Records a stage execution failure attempt for a shipment.
- * Trips the circuit breaker on the 3rd consecutive failed attempt.
+ * Records a stage execution failure attempt for a shipment and trips the
+ * circuit breaker after BREAKER_THRESHOLD *consecutive* failures (a
+ * SUCCEEDED run or a breaker reset resets the streak). No-ops when the
+ * breaker is already open so it can't stack duplicate exceptions.
  */
 export async function recordStageFailureAndCheckBreaker(
   shipmentId: string,
@@ -267,38 +278,49 @@ export async function recordStageFailureAndCheckBreaker(
   stage: ShipmentStage,
   failureReason: string
 ) {
-  const existingRuns = await db.pipelineStageRun.findMany({
+  const shipmentRow = await db.shipment.findFirst({
+    where: { id: shipmentId, accountId },
+    select: { stageStatus: true },
+  });
+  if (shipmentRow?.stageStatus === "BLOCKED") {
+    return { breakerTripped: true, alreadyOpen: true, attempt: null as number | null };
+  }
+
+  const runs = await db.pipelineStageRun.findMany({
     where: { shipmentId, stage },
-    orderBy: { attempt: "desc" },
+    orderBy: { attempt: "asc" },
   });
 
-  const attemptCount = existingRuns.length + 1;
+  // `attempt` stays monotonic (satisfies @@unique([shipmentId, stage, attempt])).
+  const nextAttempt = (runs[runs.length - 1]?.attempt ?? 0) + 1;
+
+  // Count consecutive trailing FAILED runs, then add this one.
+  let consecutive = 1;
+  for (let i = runs.length - 1; i >= 0; i--) {
+    if (runs[i].status === "FAILED") consecutive++;
+    else break; // SUCCEEDED / BREAKER_OPEN ends the streak
+  }
+
   const now = new Date();
 
-  if (attemptCount >= 3) {
-    // 3rd failure -> Trip Circuit Breaker
+  if (consecutive >= BREAKER_THRESHOLD) {
     await db.pipelineStageRun.create({
       data: {
         accountId,
         shipmentId,
         stage,
-        attempt: attemptCount,
+        attempt: nextAttempt,
         status: "BREAKER_OPEN",
         failureReason,
         breakerTrippedAt: now,
       },
     });
 
-    // Update shipment stageStatus -> BLOCKED
     await db.shipment.update({
       where: { id: shipmentId },
-      data: {
-        stageStatus: "BLOCKED",
-        stageUpdatedAt: now,
-      },
+      data: { stageStatus: "BLOCKED", stageUpdatedAt: now },
     });
 
-    // Write stage history
     await db.shipmentStageHistory.create({
       data: {
         accountId,
@@ -306,11 +328,10 @@ export async function recordStageFailureAndCheckBreaker(
         stage,
         enteredAt: now,
         outcome: "BREAKER_TRIPPED",
-        note: `Circuit breaker tripped after 3 failed attempts: ${failureReason}`,
+        note: `Circuit breaker tripped after ${consecutive} consecutive failed attempts: ${failureReason}`,
       },
     });
 
-    // Create SYSTEM category ExceptionItem
     const def = stageDefinition(stage);
     await db.exceptionItem.create({
       data: {
@@ -319,28 +340,48 @@ export async function recordStageFailureAndCheckBreaker(
         category: "SYSTEM",
         type: "broker_hold",
         severity: "Critical",
-        description: `${def.label} stage failed 3× — manual review required.`,
+        description: `${def.label} stage failed ${consecutive}× — manual review required.`,
         requiredAction: `Review execution error: ${failureReason}. Reset breaker from stage stepper when resolved.`,
         blocking: true,
         sourceAgent: "Workflow Engine",
       },
     });
 
-    return { breakerTripped: true, attempt: attemptCount };
+    return { breakerTripped: true, attempt: nextAttempt };
   }
 
-  // Attempt < 3 -> Record failed run
   await db.pipelineStageRun.create({
     data: {
       accountId,
       shipmentId,
       stage,
-      attempt: attemptCount,
+      attempt: nextAttempt,
       status: "FAILED",
       failureReason,
     },
   });
 
-  return { breakerTripped: false, attempt: attemptCount };
+  return { breakerTripped: false, attempt: nextAttempt };
+}
+
+/**
+ * Records a successful stage execution — resets the consecutive-failure
+ * streak so a later failure starts counting from zero.
+ */
+export async function recordStageSuccess(
+  shipmentId: string,
+  accountId: string,
+  stage: ShipmentStage
+) {
+  const runs = await db.pipelineStageRun.findMany({
+    where: { shipmentId, stage },
+    orderBy: { attempt: "desc" },
+    take: 1,
+  });
+  if (runs.length === 0) return; // nothing failed, nothing to reset
+  const nextAttempt = (runs[0]?.attempt ?? 0) + 1;
+  await db.pipelineStageRun.create({
+    data: { accountId, shipmentId, stage, attempt: nextAttempt, status: "SUCCEEDED" },
+  });
 }
 

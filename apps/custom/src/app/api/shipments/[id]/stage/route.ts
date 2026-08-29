@@ -1,22 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAccountContext } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { evaluateStages, ShipmentStage, INITIAL_STAGE } from "@/lib/workflow/stages";
 import { buildStageCheckContext, evaluateAndAdvanceShipmentStage } from "@/lib/workflow/stageEngine";
 
-export async function GET(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
-  const params = await props.params;
-  const context = await getAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params }) => {
   const shipment = await db.shipment.findFirst({
     where: {
-      accountId: context.accountId,
+      accountId: ctx.accountId,
       OR: [{ id: params.id }, { shipmentNumber: params.id }],
       deletedAt: null,
     },
@@ -39,8 +30,8 @@ export async function GET(
   const currentStage = (shipment.currentStage as ShipmentStage) || INITIAL_STAGE;
   const stageStatus = shipment.stageStatus || "IN_PROGRESS";
 
-  const ctx = await buildStageCheckContext(shipment.id, context.accountId);
-  let stepper = evaluateStages(currentStage, ctx);
+  const ctxStages = await buildStageCheckContext(shipment.id, ctx.accountId);
+  let stepper = evaluateStages(currentStage, ctxStages);
 
   // If stageStatus is GATE_PENDING or BLOCKED, override active stage status for UI rendering
   stepper = stepper.map((step) => {
@@ -53,18 +44,18 @@ export async function GET(
 
   const [history, runs, gateDecision, openExceptions, pendingDecisions] = await Promise.all([
     db.shipmentStageHistory.findMany({
-      where: { shipmentId: shipment.id, accountId: context.accountId },
+      where: { shipmentId: shipment.id, accountId: ctx.accountId },
       orderBy: { enteredAt: "desc" },
     }),
     db.pipelineStageRun.findMany({
-      where: { shipmentId: shipment.id, accountId: context.accountId },
+      where: { shipmentId: shipment.id, accountId: ctx.accountId },
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
     db.agentDecision.findFirst({
       where: {
         shipmentId: shipment.id,
-        accountId: context.accountId,
+        accountId: ctx.accountId,
         agentName: "Stage Gate",
         purpose: `Human gate review for stage ${currentStage}`,
       },
@@ -78,13 +69,13 @@ export async function GET(
       },
     }),
     db.exceptionItem.findMany({
-      where: { shipmentId: shipment.id, accountId: context.accountId, status: "Open" },
+      where: { shipmentId: shipment.id, accountId: ctx.accountId, status: "Open" },
       select: { id: true, category: true, type: true, severity: true, description: true },
     }),
     db.agentDecision.findMany({
       where: {
         shipmentId: shipment.id,
-        accountId: context.accountId,
+        accountId: ctx.accountId,
         triageState: "NEEDS_REVIEW",
       },
       select: { id: true, agentName: true, status: true, decisionSummary: true, triageState: true },
@@ -106,19 +97,10 @@ export async function GET(
     openExceptions,
     pendingDecisions,
   });
-}
+}, { permission: "shipments.read" });
 
-export async function PATCH(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
-  const params = await props.params;
-  const context = await getAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = await request.json();
+export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, params }) => {
+  const body = await req.json();
   const { autoAdvance } = body;
 
   if (typeof autoAdvance !== "boolean") {
@@ -127,7 +109,7 @@ export async function PATCH(
 
   const shipment = await db.shipment.findFirst({
     where: {
-      accountId: context.accountId,
+      accountId: ctx.accountId,
       OR: [{ id: params.id }, { shipmentNumber: params.id }],
       deletedAt: null,
     },
@@ -144,7 +126,7 @@ export async function PATCH(
 
   let advanceResult = null;
   if (autoAdvance) {
-    advanceResult = await evaluateAndAdvanceShipmentStage(shipment.id, context.accountId, context.userId);
+    advanceResult = await evaluateAndAdvanceShipmentStage(shipment.id, ctx.accountId, ctx.userId);
   }
 
   return NextResponse.json({
@@ -152,4 +134,4 @@ export async function PATCH(
     autoAdvance,
     advanceResult,
   });
-}
+}, { permission: "shipments.manage", write: true });

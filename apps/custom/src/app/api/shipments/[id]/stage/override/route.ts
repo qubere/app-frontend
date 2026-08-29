@@ -1,33 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAccountContext } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { SHIPMENT_STAGES, ShipmentStage } from "@/lib/workflow/stages";
 
-export async function POST(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
-  const params = await props.params;
-  const context = await getAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 
-  // Manager or Enterprise Admin permission check
-  const isManagerOrAdmin =
-    context.roleNames.includes("ADMIN") ||
-    context.roleNames.includes("OWNER") ||
-    context.roleNames.includes("MANAGER") ||
-    context.accountType === "ENTERPRISE";
-
-  if (!isManagerOrAdmin) {
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, params }) => {
+  // Stage override is a privileged action — it can push a shipment past a
+  // human gate. Gate strictly on role, never on account tier.
+  if (!ctx.roleNames.some((r) => MANAGER_ROLES.includes(r))) {
     return NextResponse.json(
       { error: "Forbidden: Stage override requires MANAGER or ADMIN role." },
       { status: 403 }
     );
   }
 
-  const body = await request.json();
+  const body = await req.json();
   const { toStage, resetBreaker, reason } = body;
 
   if (!reason || typeof reason !== "string") {
@@ -40,7 +28,7 @@ export async function POST(
 
   const shipment = await db.shipment.findFirst({
     where: {
-      accountId: context.accountId,
+      accountId: ctx.accountId,
       OR: [{ id: params.id }, { shipmentNumber: params.id }],
       deletedAt: null,
     },
@@ -53,26 +41,23 @@ export async function POST(
   const newStage = (toStage as ShipmentStage) || shipment.currentStage || "DOCUMENT_INTAKE";
   const now = new Date();
 
-  // Close active history entry if any
   await db.shipmentStageHistory.updateMany({
     where: { shipmentId: shipment.id, exitedAt: null },
     data: { exitedAt: now, outcome: "MANUAL_OVERRIDE" },
   });
 
-  // Write new history entry
   const history = await db.shipmentStageHistory.create({
     data: {
-      accountId: context.accountId,
+      accountId: ctx.accountId,
       shipmentId: shipment.id,
       stage: newStage,
       enteredAt: now,
       outcome: resetBreaker ? "BREAKER_RESET" : "MANUAL_OVERRIDE",
-      advancedBy: context.userId,
+      advancedBy: ctx.userId,
       note: reason,
     },
   });
 
-  // Update shipment
   await db.shipment.update({
     where: { id: shipment.id },
     data: {
@@ -90,4 +75,4 @@ export async function POST(
     historyId: history.id,
     message: resetBreaker ? "Breaker reset and stage set to IN_PROGRESS." : "Stage manually overridden.",
   });
-}
+}, { permission: "shipments.manage", write: true });

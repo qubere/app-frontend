@@ -142,6 +142,11 @@ export async function loadWorkQueueForAccount(
     shipmentFilter.shipment = { currentStage: stage };
   }
 
+  // Filings and documents carry no assignee, so a person-scoped view
+  // (mine / team / unassigned) must exclude them rather than dump every
+  // account-wide filing into "My queue".
+  const personalScope = scope === "mine" || scope === "team" || scope === "unassigned";
+
   // Resolve DB scope filter
   let scopeFilter: Record<string, unknown> = {};
   if (scope === "mine") {
@@ -208,7 +213,7 @@ export async function loadWorkQueueForAccount(
         shipment: { select: { shipmentNumber: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: ROW_CAP,
+      take: personalScope ? 0 : ROW_CAP,
     }),
 
     db.shipmentDocument.findMany({
@@ -226,7 +231,7 @@ export async function loadWorkQueueForAccount(
         shipment: { select: { shipmentNumber: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: ROW_CAP,
+      take: personalScope ? 0 : ROW_CAP,
     }),
 
     db.exceptionItem.findMany({

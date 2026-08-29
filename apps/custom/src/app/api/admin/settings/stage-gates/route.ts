@@ -1,29 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAccountContext } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { createAuditLog } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { SHIPMENT_STAGES, ShipmentStage } from "@/lib/workflow/stages";
 
-export async function GET() {
-  const context = await getAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+export const GET = withAuthenticatedRoute(async ({ ctx }) => {
   const policies = await db.stageGatePolicy.findMany({
-    where: { accountId: context.accountId },
+    where: { accountId: ctx.accountId },
     orderBy: [{ stage: "asc" }, { entryType: "asc" }],
   });
-
   return NextResponse.json({ policies });
-}
+}, { permission: "settings.manage" });
 
-export async function PUT(request: NextRequest) {
-  const context = await getAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = await request.json();
+export const PUT = withAuthenticatedRoute(async ({ req, ctx }) => {
+  const body = await req.json();
   const { policies } = body;
 
   if (!Array.isArray(policies)) {
@@ -39,38 +29,45 @@ export async function PUT(request: NextRequest) {
 
     const entryType = pol.entryType || null;
     const mode = pol.mode === "HUMAN_GATE" ? "HUMAN_GATE" : "AUTO_ADVANCE";
-    const minimumReviewerRole = pol.minimumReviewerRole || "SPECIALIST";
+    const minimumReviewerRole = ["SPECIALIST", "LICENSED_BROKER", "MANAGER"].includes(pol.minimumReviewerRole)
+      ? pol.minimumReviewerRole
+      : "SPECIALIST";
     const requireLicensedBroker = Boolean(pol.requireLicensedBroker);
     const gateReason = pol.gateReason || null;
 
     const row = await db.stageGatePolicy.upsert({
       where: {
-        accountId_stage_entryType: {
-          accountId: context.accountId,
-          stage: pol.stage,
-          entryType,
-        },
+        accountId_stage_entryType: { accountId: ctx.accountId, stage: pol.stage, entryType },
       },
       create: {
-        accountId: context.accountId,
+        accountId: ctx.accountId,
         stage: pol.stage,
         entryType,
         mode,
         minimumReviewerRole,
         requireLicensedBroker,
         gateReason,
-        createdBy: context.userId,
+        createdBy: ctx.userId,
       },
-      update: {
-        mode,
-        minimumReviewerRole,
-        requireLicensedBroker,
-        gateReason,
-      },
+      update: { mode, minimumReviewerRole, requireLicensedBroker, gateReason },
     });
 
     upserted.push(row);
   }
 
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "STAGE_GATE_POLICY_UPDATED",
+    entity: "StageGatePolicy",
+    entityId: ctx.accountId,
+    source: "UI",
+    metadata: {
+      count: upserted.length,
+      stages: upserted.map((p) => `${p.stage}${p.entryType ? `:${p.entryType}` : ""}=${p.mode}`),
+    },
+    success: true,
+  });
+
   return NextResponse.json({ policies: upserted });
-}
+}, { permission: "settings.manage", write: true });

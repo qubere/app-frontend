@@ -1,19 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAccountContext } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { evaluateAndAdvanceShipmentStage } from "@/lib/workflow/stageEngine";
+import { ShipmentStage, INITIAL_STAGE } from "@/lib/workflow/stages";
 
-export async function POST(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
-  const params = await props.params;
-  const context = await getAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 
-  const body = await request.json();
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, params }) => {
+  const body = await req.json();
   const { gateDecisionId, action, note } = body;
 
   if (!action || !["approve", "reject"].includes(action)) {
@@ -22,7 +16,7 @@ export async function POST(
 
   const shipment = await db.shipment.findFirst({
     where: {
-      accountId: context.accountId,
+      accountId: ctx.accountId,
       OR: [{ id: params.id }, { shipmentNumber: params.id }],
       deletedAt: null,
     },
@@ -32,15 +26,60 @@ export async function POST(
     return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
   }
 
+  const currentStage = (shipment.currentStage as ShipmentStage) || INITIAL_STAGE;
+
+  // Enforce the stage gate's minimum reviewer authority before allowing an
+  // approval to advance. Resolution order matches the engine:
+  // (stage, entryType) -> (stage, null).
+  if (action === "approve") {
+    let policy = null;
+    if (shipment.entryType) {
+      policy = await db.stageGatePolicy.findFirst({
+        where: { accountId: ctx.accountId, stage: currentStage, entryType: shipment.entryType },
+      });
+    }
+    if (!policy) {
+      policy = await db.stageGatePolicy.findFirst({
+        where: { accountId: ctx.accountId, stage: currentStage, entryType: null },
+      });
+    }
+
+    if (policy) {
+      const needsManager = policy.minimumReviewerRole === "MANAGER";
+      const needsBroker =
+        policy.requireLicensedBroker || policy.minimumReviewerRole === "LICENSED_BROKER";
+
+      if (needsManager && !ctx.roleNames.some((r) => MANAGER_ROLES.includes(r))) {
+        return NextResponse.json(
+          { error: "This stage gate requires a MANAGER or ADMIN to approve advancement." },
+          { status: 403 }
+        );
+      }
+
+      if (needsBroker) {
+        const reviewer = await db.user.findUnique({
+          where: { id: ctx.userId },
+          select: { brokerLicenseNumber: true },
+        });
+        if (!reviewer?.brokerLicenseNumber) {
+          return NextResponse.json(
+            { error: "This stage gate requires a licensed customs broker to approve advancement." },
+            { status: 403 }
+          );
+        }
+      }
+    }
+  }
+
   // Find gate decision if provided, or look up active Stage Gate decision
   const gateDecision = gateDecisionId
     ? await db.agentDecision.findFirst({
-        where: { id: gateDecisionId, shipmentId: shipment.id, accountId: context.accountId },
+        where: { id: gateDecisionId, shipmentId: shipment.id, accountId: ctx.accountId },
       })
     : await db.agentDecision.findFirst({
         where: {
           shipmentId: shipment.id,
-          accountId: context.accountId,
+          accountId: ctx.accountId,
           agentName: "Stage Gate",
           triageState: "NEEDS_REVIEW",
         },
@@ -54,7 +93,7 @@ export async function POST(
           status: "Rejected",
           triageState: "REJECTED",
           humanNotes: note || "Stage gate advancement rejected by reviewer.",
-          reviewedByUserId: context.userId,
+          reviewedByUserId: ctx.userId,
         },
       });
     }
@@ -75,17 +114,16 @@ export async function POST(
         status: "Approved",
         triageState: "APPROVED",
         humanNotes: note || "Stage gate approved.",
-        reviewedByUserId: context.userId,
+        reviewedByUserId: ctx.userId,
       },
     });
   }
 
-  // Trigger stage engine evaluation & advancement
-  const result = await evaluateAndAdvanceShipmentStage(shipment.id, context.accountId, context.userId);
+  const result = await evaluateAndAdvanceShipmentStage(shipment.id, ctx.accountId, ctx.userId);
 
   return NextResponse.json({
     shipmentId: shipment.id,
     action: "approve",
     result,
   });
-}
+}, { permission: "specialist.write", write: true });

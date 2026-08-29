@@ -79,6 +79,10 @@ export async function runSlaSweep(accountId?: string): Promise<SlaSweepResult> {
           triageState: "NEEDS_REVIEW",
           reviewSlaDueAt: { lte: cutoff },
           escalationLevel: { lt: rule.maxLevel },
+          // Wait a full thresholdHours between successive bumps — otherwise a
+          // 15-min sweep walks an item to maxLevel within half an hour
+          // regardless of the rule's configured threshold.
+          OR: [{ escalatedAt: null }, { escalatedAt: { lte: cutoff } }],
         },
         include: {
           shipment: { select: { shipmentNumber: true, lineItems: { select: { totalValue: true } } } },
@@ -146,6 +150,7 @@ export async function runSlaSweep(accountId?: string): Promise<SlaSweepResult> {
           status: "Open",
           slaDueAt: { lte: cutoff },
           escalationLevel: { lt: rule.maxLevel },
+          OR: [{ escalatedAt: null }, { escalatedAt: { lte: cutoff } }],
         },
         include: {
           shipment: { select: { shipmentNumber: true } },
@@ -217,11 +222,14 @@ async function resolveEscalationUser(
   }
 
   if (escalateTo === "TEAM_MANAGER") {
-    const managerMembership = await db.accountMembership.findFirst({
-      where: { accountId, status: "ACTIVE" },
+    // A real team manager is an AccountTeamMembership with role MANAGER, not
+    // an arbitrary active account member. Fall back to the account owner when
+    // no team manager exists (solo operator / flat team).
+    const manager = await db.accountTeamMembership.findFirst({
+      where: { role: "MANAGER", team: { accountId } },
       select: { userId: true },
     });
-    return managerMembership?.userId || accountOwnerUserId || null;
+    return manager?.userId || accountOwnerUserId || null;
   }
 
   if (escalateTo.startsWith("ROLE:")) {

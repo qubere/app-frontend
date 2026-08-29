@@ -1335,6 +1335,7 @@ model AgentDecision {
   @@index([autoApproved])
   @@index([documentId])
   @@index([reviewedByUserId])
+  @@index([assignedToUserId])
   @@index([accountId, createdAt])
   @@index([accountId, triageState, createdAt])
   @@index([accountId, status, createdAt])
