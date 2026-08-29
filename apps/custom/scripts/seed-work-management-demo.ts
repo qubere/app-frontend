@@ -25,7 +25,7 @@
 import * as dotenv from "dotenv";
 dotenv.config();
 
-import { db } from "@qubere/db";
+import { db, withDataModeContext } from "@qubere/db";
 
 const STAGES = [
   "DOCUMENT_INTAKE",
@@ -42,7 +42,11 @@ const HOURS = (n: number) => new Date(Date.now() + n * 3_600_000);
 /** Every seeded AgentDecision.purpose starts with this so re-runs can clean up. */
 const DEMO_TAG = "Demo seed:";
 
-async function main() {
+// Cross-tenant admin script: bypass dataMode isolation so a DEMO account is
+// visible (Account carries a dataMode column and defaults reads to PRODUCTION).
+const main = () => withDataModeContext(null, run);
+
+async function run() {
   const accountName = process.argv[2];
 
   const account = accountName
