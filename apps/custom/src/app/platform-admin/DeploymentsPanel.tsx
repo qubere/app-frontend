@@ -77,6 +77,7 @@ export function DeploymentsPanel() {
         setDeployments(data.deployments || []);
         setServices(data.services || []);
         if (data.currentSha) setCurrentSha(data.currentSha);
+        if (data.healthResults) setHealthResults(data.healthResults);
       }
     } catch (err) {
       console.error("Failed to load deployments:", err);
