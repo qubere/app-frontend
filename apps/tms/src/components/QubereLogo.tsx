@@ -29,34 +29,20 @@ export function QubereMark({ className }: QubereMarkProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <path
-        d="M28 38.5L24 41L8 32V16L24 7L40 16V28.5"
-        stroke="#1D1D1F"
-        strokeWidth="7.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M13 5H35L46 24H35.5L30 15H18L12.5 24L18 33.5H30L35 43H13L2 24L13 5Z"
+        fill="#1D1D1F"
       />
-      <path d="M22.5 26.5L45.7 37.9L40.3 45.1L22.5 26.5Z" fill="#0071E3" />
+      <path d="M23 22L43.4 38.6L36.6 44.4L23 22Z" fill="#0071E3" />
     </svg>
   );
 }
 
-/**
- * Visual wordmark uses a restrained blue grave accent to cue "Q-bear".
- * The accessible name remains the canonical, unaccented company name.
- */
 export function QubereWordmark({ className, suffix }: QubereWordmarkProps) {
   const accessibleName = suffix ? `Qubere ${suffix}` : "Qubere";
 
   return (
     <span className={cn("inline-flex items-baseline gap-1.5", className)} role="img" aria-label={accessibleName}>
-      <span aria-hidden="true" className="font-bold tracking-tight leading-none whitespace-nowrap">
-        Qub
-        <span className="relative inline-block">
-          e
-          <span className="absolute left-[48%] -top-[0.08em] h-[0.1em] w-[0.34em] -translate-x-1/2 rotate-[35deg] rounded-full bg-brand" />
-        </span>
-        re
-      </span>
+      <span aria-hidden="true" className="font-bold tracking-tight leading-none whitespace-nowrap">Qubere</span>
       {suffix && (
         <span aria-hidden="true" className="font-semibold tracking-tight text-ink-muted">
           {suffix}
