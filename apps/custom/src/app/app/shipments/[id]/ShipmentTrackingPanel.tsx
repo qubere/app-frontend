@@ -1,19 +1,14 @@
-"use client";
-
 import {
   AlertTriangle,
-  Anchor,
   CheckCircle2,
   Circle,
   Clock3,
   FileCheck2,
-  MapPin,
   Radio,
   Route,
   Ship,
 } from "lucide-react";
 import type { ShipmentTrackingProjection, TrackingHealth } from "@/modules/tracking/shipmentTracking";
-import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
 
 interface ShipmentTrackingPanelProps {
   projection: ShipmentTrackingProjection;
@@ -210,15 +205,6 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
           </p>
         </div>
       </div>
-
-      {projection.journey ? (
-        <JourneyRibbon
-          data={projection.journey}
-          onRefresh={() => {
-            if (typeof window !== "undefined") window.location.reload();
-          }}
-        />
-      ) : null}
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-6">
         <div className="apple-card rounded-3xl border border-border bg-white p-6 shadow-sm space-y-7">

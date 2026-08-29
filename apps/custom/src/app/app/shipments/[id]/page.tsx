@@ -23,7 +23,6 @@ import { LineItemsTable } from "./LineItemsTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
 import { PreFilingReadiness } from "./PreFilingReadiness";
 import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
-import { AddLegModalButton } from "@/components/journey/AddLegModalButton";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
 import { buildAgentInvocations } from "./agentInvocations";
 import { displayCurrency } from "@/lib/honest";
@@ -39,7 +38,6 @@ import type { ReadinessBreakdown } from "@/lib/shipmentReadiness";
 import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracking";
 import { ShipmentTrackingPanel } from "./ShipmentTrackingPanel";
 import { ShipmentAuditTrail, type ShipmentAuditEntry } from "./ShipmentAuditTrail";
-import { AccessDenied } from "@/components/auth/AccessDenied";
 
 /**
  * Sums the quantities on a document's extracted line items.
@@ -68,90 +66,21 @@ export default async function ShipmentWorkspacePage(props: {
   const context = await getAccountContext();
   if (!context) return null;
 
-  // 1. Shipment lookup: First try matching under an account the user is entitled to (active account or memberships),
-  // falling back to system-wide lookup to evaluate 403 Forbidden vs 404 Not Found.
-  // Executed withDataModeContext(null) to bypass dataMode query filters during existence check.
-  const userAccountIds = [
-    context.accountId,
-    ...context.memberships.map((m) => m.accountId),
-  ].filter(Boolean);
+  // Shipment (and nearly everything queried below it) carries an Account
+  // relation, dataMode-scoped -- without this wrapper the queries silently
+  // default to PRODUCTION isolation and this page 404s for any DEMO/SANDBOX
+  // account even though the data genuinely exists.
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
-  let existingShipment = await withDataModeContext(null, async () => {
-    return db.shipment.findFirst({
-      where: {
-        OR: [{ id: params.id }, { shipmentNumber: params.id }],
-        deletedAt: null,
-        ...(context.isPlatformAdmin ? {} : { accountId: { in: userAccountIds } }),
-      },
-      select: {
-        id: true,
-        shipmentNumber: true,
-        accountId: true,
-        account: { select: { id: true, name: true, dataMode: true } },
-      },
-    });
+  const shipment = await db.shipment.findFirst({
+    where: {
+      accountId: context.accountId,
+      OR: [{ id: params.id }, { shipmentNumber: params.id }],
+      deletedAt: null,
+    },
   });
 
-  if (!existingShipment) {
-    existingShipment = await withDataModeContext(null, async () => {
-      return db.shipment.findFirst({
-        where: {
-          OR: [{ id: params.id }, { shipmentNumber: params.id }],
-          deletedAt: null,
-        },
-        select: {
-          id: true,
-          shipmentNumber: true,
-          accountId: true,
-          account: { select: { id: true, name: true, dataMode: true } },
-        },
-      });
-    });
-  }
-
-  // If shipment does not exist anywhere in the system -> 404 Not Found
-  if (!existingShipment) {
-    notFound();
-  }
-
-  // 2. Multitenant & Permission Authorization Resolution
-  const isTargetAccount = context.accountId === existingShipment.accountId;
-  const isPlatformAdmin = Boolean(context.isPlatformAdmin);
-  const userMembership = context.memberships.find((m) => m.accountId === existingShipment.accountId);
-  const hasMembership = Boolean(userMembership);
-
-  const canAccess = isTargetAccount || hasMembership || isPlatformAdmin;
-
-  // Fix 1: If user lacks permission -> Render Access Denied (403 Forbidden) UI
-  if (!canAccess) {
-    return (
-      <AccessDenied
-        title="Shipment Access Restricted"
-        message="You do not have authorization to view this shipment. Access is restricted to assigned account members or platform administrators."
-        resourceType="Shipment"
-        resourceId={existingShipment.shipmentNumber || existingShipment.id}
-        accountName={existingShipment.account.name}
-      />
-    );
-  }
-
-  // Fix 2: Effective Account Context for Qubere Admins & Multi-Tenant Users
-  const targetDataMode = isDataMode(existingShipment.account.dataMode)
-    ? existingShipment.account.dataMode
-    : isDataMode(context.dataMode)
-    ? context.dataMode
-    : null;
-
-  return withDataModeContext(targetDataMode, async () => {
-    const shipment = await db.shipment.findFirst({
-      where: {
-        id: existingShipment.id,
-        accountId: existingShipment.accountId,
-        deletedAt: null,
-      },
-    });
-
-    if (!shipment) notFound();
+  if (!shipment) notFound();
 
   const isEnterpriseAdmin =
     context.accountType === "ENTERPRISE" &&
@@ -161,7 +90,14 @@ export default async function ShipmentWorkspacePage(props: {
     isEnterpriseAdmin ||
     (context.roleNames.includes("PLANNER") && shipment.assignedBrokerId === context.userId);
 
-  const targetAccountId = existingShipment.accountId;
+  // Journey/leg management mirrors the "shipments.manage" write permission the
+  // /api/shipments/[id]/legs routes enforce, so the UI never shows an action
+  // the API will reject.
+  const canManageJourney =
+    context.isPlatformAdmin ||
+    isEnterpriseAdmin ||
+    context.permissions.includes("shipments.manage");
+
 
   // None of these nine depend on each other; run them in parallel.
   const [
@@ -181,7 +117,7 @@ export default async function ShipmentWorkspacePage(props: {
     CanonicalShipmentService.getCanonicalState(shipment.id),
     canEditClient
       ? db.client.findMany({
-          where: { accountId: targetAccountId },
+          where: { accountId: context.accountId },
           orderBy: { name: "asc" },
         })
       : Promise.resolve([]),
@@ -193,13 +129,13 @@ export default async function ShipmentWorkspacePage(props: {
     }),
     // Open cross-document reconciliation conflicts for the CONFLICT drawer cards.
     db.reconciliationIssue.findMany({
-      where: { shipmentId: shipment.id, accountId: targetAccountId, status: "Open" },
+      where: { shipmentId: shipment.id, accountId: context.accountId, status: "Open" },
       orderBy: { createdAt: "desc" },
     }),
-    getShipmentTrackingProjection(targetAccountId, shipment.id),
+    getShipmentTrackingProjection(context.accountId, shipment.id),
     db.auditLog.findMany({
       where: {
-        accountId: targetAccountId,
+        accountId: context.accountId,
         OR: [
           { entityId: shipment.id },
           { entityId: params.id },
@@ -213,13 +149,13 @@ export default async function ShipmentWorkspacePage(props: {
       take: 100,
     }),
     db.customsFiling.findMany({
-      where: { shipmentId: shipment.id, accountId: targetAccountId },
+      where: { shipmentId: shipment.id, accountId: context.accountId },
       orderBy: { createdAt: "desc" },
     }),
     db.exceptionItem.findMany({
       where: {
         shipmentId: shipment.id,
-        accountId: targetAccountId,
+        accountId: context.accountId,
         status: { in: ["Resolved", "RESOLVED", "ResolvedManual", "ResolvedAuto", "WAIVED", "Waived", "CLOSED", "Closed"] },
       },
       orderBy: { createdAt: "desc" },
@@ -227,7 +163,7 @@ export default async function ShipmentWorkspacePage(props: {
     db.reconciliationIssue.findMany({
       where: {
         shipmentId: shipment.id,
-        accountId: targetAccountId,
+        accountId: context.accountId,
         status: { in: ["Resolved", "RESOLVED", "Ignored", "IGNORED"] },
       },
       orderBy: { createdAt: "desc" },
@@ -258,7 +194,7 @@ export default async function ShipmentWorkspacePage(props: {
       },
     }),
     db.pipelineJob.findMany({
-      where: { shipmentId: shipment.id, accountId: targetAccountId },
+      where: { shipmentId: shipment.id, accountId: context.accountId },
       orderBy: { createdAt: "desc" },
     }),
   ]);
@@ -1518,6 +1454,7 @@ export default async function ShipmentWorkspacePage(props: {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+      <StageStepper shipmentId={shipment.id} />
       <PipelineProgressTracker shipmentId={shipment.id} />
 
       {/* Top Banner & Multi-Dimensional Readiness Header */}
@@ -1572,9 +1509,6 @@ export default async function ShipmentWorkspacePage(props: {
           </div>
 
           <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-            {/* Add Leg button right before Health Status (At Risk / Critical) */}
-            <AddLegModalButton shipmentId={shipment.id} />
-
             {/* Health status badge — derived by CanonicalShipmentService or last reconciliation. */}
             {shipment.healthStatus && (
               <span
@@ -1640,11 +1574,13 @@ export default async function ShipmentWorkspacePage(props: {
           </div>
         </div>
 
-        {/* Multi-Leg Journey Ribbon -- Prominently placed horizontal node rail */}
+        {/* Multi-Leg Journey Ribbon -- full end-to-end route with per-leg status + documents */}
         {trackingProjection?.journey && trackingProjection.journey.legs.length > 0 && (
-          <div className="bg-white p-6 rounded-3xl border border-border shadow-2xs">
-            <JourneyRibbon data={trackingProjection.journey} />
-          </div>
+          <JourneyRibbon
+            data={trackingProjection.journey}
+            canManage={canManageJourney}
+            documents={documents.map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType }))}
+          />
         )}
 
         {/* Pre-Filing Readiness Ribbon -- moved directly under the shipment

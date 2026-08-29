@@ -1,107 +1,73 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { runInference, applyInferredJourney } from "@qubere/shipment-legs";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { validatePathParams } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracking";
-import { inferShipmentLegs, generateDiffProposal } from "@qubere/shipment-legs";
+import { resolveOwnedShipment } from "@/modules/legs/legService";
+import { loadInferenceInputs, legSnapshots } from "@/modules/legs/inferenceInputs";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const shipment = await db.shipment.findFirst({
-    where: { id, deletedAt: null },
-    include: {
-      documents: true,
-      trackingIdentifiers: true,
-      legs: { orderBy: { sequence: "asc" } },
-    },
-  });
+const paramsSchema = z.object({ id: z.string().min(1) });
 
-  if (!shipment) {
-    return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
-  }
+/**
+ * Run journey inference. If the shipment has no legs yet, the inferred journey
+ * is applied immediately (source=INFERRED, unconfirmed). If it already has
+ * legs, a PROPOSED LegInferenceRun is persisted and the diff proposal is
+ * returned for the broker to accept or reject.
+ */
+export const POST = withAuthenticatedRoute<{ id: string }>(
+  async ({ ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
 
-  const inference = inferShipmentLegs(
-    shipment,
-    shipment.documents.map((d) => ({
-      id: d.id,
-      docType: d.docType,
-      documentType: d.documentType,
-      fileName: d.fileName,
-      extractedJson: d.extractedJson,
-    })),
-    shipment.trackingIdentifiers
-  );
+    const shipment = await resolveOwnedShipment(ctx.accountId, p.data.id);
+    if (!shipment) return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
 
-  const proposal = generateDiffProposal(
-    shipment.id,
-    shipment.legs.length,
-    inference.legs,
-    inference.overallConfidence
-  );
+    const { documents, identifiers, existingLegs } = await loadInferenceInputs(shipment.id);
+    const { inference, proposal } = runInference({
+      shipment: { ...shipment },
+      documents,
+      identifiers,
+      existingLegs: legSnapshots(existingLegs),
+      nowIso: new Date().toISOString(),
+    });
 
-  // If zero existing legs, auto-apply inferred legs
-  if (shipment.legs.length === 0 && inference.legs.length > 0) {
-    let lastStopId: string | null = null;
-
-    for (let i = 0; i < inference.legs.length; i++) {
-      const leg = inference.legs[i];
-      let originStopId: string;
-      if (lastStopId) {
-        originStopId = lastStopId;
-      } else {
-        const originStop = await db.shipmentStop.create({
-          data: {
-            accountId: shipment.accountId,
-            shipmentId: shipment.id,
-            sequence: i * 2 + 1,
-            type: i === 0 ? "FACILITY" : "PORT",
-            role: i === 0 ? "ORIGIN" : "TRANSSHIPMENT",
-            name: leg.originName,
-            unlocode: leg.originUnlocode,
-          },
-        });
-        originStopId = originStop.id;
-      }
-
-      const destStop = await db.shipmentStop.create({
-        data: {
-          accountId: shipment.accountId,
-          shipmentId: shipment.id,
-          sequence: i * 2 + 2,
-          type: i === inference.legs.length - 1 ? "DC" : "PORT",
-          role: i === inference.legs.length - 1 ? "DESTINATION" : "TRANSSHIPMENT",
-          name: leg.destinationName,
-          unlocode: leg.destinationUnlocode,
-        },
-      });
-      lastStopId = destStop.id;
-
-      await db.shipmentLeg.create({
-        data: {
-          accountId: shipment.accountId,
-          shipmentId: shipment.id,
-          sequence: leg.sequence,
-          legType: leg.legType,
-          mode: leg.mode,
-          originStopId,
-          destinationStopId: destStop.id,
-          carrierName: leg.carrierName,
-          carrierScac: leg.carrierScac,
-          vesselName: leg.vesselName,
-          voyageNumber: leg.voyageNumber,
-          billOfLadingNumber: leg.billOfLadingNumber,
-          bookingNumber: leg.bookingNumber,
-          confidence: leg.confidence,
-          source: "INFERRED",
-          confirmedAt: null,
-        },
-      });
+    if (existingLegs.length === 0 && inference.legs.length > 0) {
+      await db.$transaction((tx) =>
+        applyInferredJourney(tx, {
+          accountId: ctx.accountId,
+          shipment,
+          inference,
+          proposal,
+          appliedByUserId: ctx.userId,
+        })
+      );
+      const projection = await getShipmentTrackingProjection(ctx.accountId, shipment.id);
+      return NextResponse.json({ applied: true, proposal, journey: projection?.journey ?? null });
     }
 
-    const projection = await getShipmentTrackingProjection(shipment.accountId, shipment.id);
-    return NextResponse.json({ applied: true, proposal, projection });
-  }
+    // Persist the proposal so accept/reject can reference it by inputsHash.
+    await db.legInferenceRun.upsert({
+      where: { shipmentId_inputsHash: { shipmentId: shipment.id, inputsHash: inference.inputsHash } },
+      update: {
+        overallConfidence: inference.overallConfidence,
+        legCount: inference.legs.length,
+        proposal: proposal as unknown as object,
+        status: proposal.hasChanges ? "PROPOSED" : "SUPERSEDED",
+      },
+      create: {
+        accountId: ctx.accountId,
+        shipmentId: shipment.id,
+        inputsHash: inference.inputsHash,
+        overallConfidence: inference.overallConfidence,
+        legCount: inference.legs.length,
+        proposal: proposal as unknown as object,
+        status: proposal.hasChanges ? "PROPOSED" : "SUPERSEDED",
+      },
+    });
 
-  return NextResponse.json({ applied: false, proposal });
-}
+    return NextResponse.json({ applied: false, proposal });
+  },
+  { permission: "shipments.manage", write: true }
+);

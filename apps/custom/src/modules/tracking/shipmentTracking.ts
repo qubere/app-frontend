@@ -176,6 +176,8 @@ export interface ShipmentTrackingProjection {
         total: number; onFile: number; missingRequired: number;
         rows: Array<{
           legDocumentId: string;
+          slotKey: string;
+          slotLabel: string;
           expectedDocType: string;
           requirement: string;
           requirementReason: string | null;
@@ -188,7 +190,12 @@ export interface ShipmentTrackingProjection {
       inference: { source: string; confidence: number | null; needsConfirmation: boolean } | null;
     }>;
     customs: { status: CustomsTrackingStatus };
-    inferenceProposal: any | null;
+    inferenceProposal: {
+      inputsHash: string;
+      confidence: number;
+      createdAtIso: string;
+      changes: Array<{ type: string; description: string; legSequence?: number }>;
+    } | null;
   };
 }
 
@@ -508,15 +515,20 @@ export async function getShipmentTrackingProjection(
         include: {
           originStop: true,
           destinationStop: true,
-          events: { orderBy: { occurredAt: "desc" } },
+          events: { orderBy: { occurredAt: "desc" }, take: 40 },
+          etaObservations: { orderBy: { estimatedAt: "desc" }, take: 5 },
           legDocuments: {
+            orderBy: { createdAt: "asc" },
             include: {
-              document: {
-                select: { id: true, fileName: true, fileUrl: true, confidence: true, status: true },
-              },
+              document: { select: { id: true, fileName: true, fileUrl: true, confidence: true, status: true } },
             },
           },
         },
+      },
+      legInferenceRuns: {
+        where: { status: "PROPOSED" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
       },
     },
   });
@@ -536,33 +548,103 @@ export async function getShipmentTrackingProjection(
     now,
   });
 
-  // Assemble canonical JourneyProjection block
-  const dbLegs = shipment.legs ?? [];
-  const uniqueStopsMap = new Map<string, any>();
-  dbLegs.forEach((leg) => {
-    if (leg.originStop) uniqueStopsMap.set(leg.originStop.id, leg.originStop);
-    if (leg.destinationStop) uniqueStopsMap.set(leg.destinationStop.id, leg.destinationStop);
+  return {
+    ...baseProjection,
+    journey: assembleJourney(shipment, baseProjection.customs.status),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Multi-leg journey projection
+// ---------------------------------------------------------------------------
+
+type LegDocStatus = "MISSING" | "RECEIVED" | "REVIEW_REQUIRED" | "PROCESSED";
+
+function legDocStatus(documentId: string | null, docStatus: string | null | undefined): LegDocStatus {
+  if (!documentId) return "MISSING";
+  const s = (docStatus ?? "").toUpperCase();
+  if (s.includes("REVIEW") || s.includes("NEEDS_CLASSIFICATION") || s === "QUARANTINED") return "REVIEW_REQUIRED";
+  if (s === "PROCESSED" || s === "COMPLETED" || s === "READY") return "PROCESSED";
+  return "RECEIVED";
+}
+
+function legHeadline(leg: any, total: number): string {
+  const dest = leg.destinationStop?.name ?? "destination";
+  const state = String(leg.status).toLowerCase().replace(/_/g, " ");
+  return `Leg ${leg.sequence} of ${total} · ${leg.mode.toLowerCase()} · ${state} → ${dest}`;
+}
+
+function assembleJourney(
+  shipment: any,
+  customsStatus: CustomsTrackingStatus
+): NonNullable<ShipmentTrackingProjection["journey"]> {
+  const legs: any[] = [...(shipment.legs ?? [])].sort((a, b) => a.sequence - b.sequence);
+  const total = legs.length;
+
+  // Stops in journey order: first leg's origin, then each leg's destination.
+  const orderedStops: any[] = [];
+  const seen = new Set<string>();
+  legs.forEach((leg, i) => {
+    if (i === 0 && leg.originStop && !seen.has(leg.originStop.id)) {
+      seen.add(leg.originStop.id);
+      orderedStops.push(leg.originStop);
+    }
+    if (leg.destinationStop && !seen.has(leg.destinationStop.id)) {
+      seen.add(leg.destinationStop.id);
+      orderedStops.push(leg.destinationStop);
+    }
   });
 
-  const stops = Array.from(uniqueStopsMap.values()).sort((a, b) => a.sequence - b.sequence);
+  // percentComplete weighted by planned duration when available, else even.
+  const legWeight = (leg: any): number => {
+    const start = leg.plannedDeparture ?? leg.estimatedDeparture ?? leg.actualDeparture;
+    const end = leg.plannedArrival ?? leg.estimatedArrival ?? leg.actualArrival;
+    if (start && end) {
+      const ms = new Date(end).getTime() - new Date(start).getTime();
+      if (ms > 0) return ms;
+    }
+    return 1;
+  };
+  const totalWeight = legs.reduce((a, l) => a + legWeight(l), 0) || 1;
+  const doneWeight = legs
+    .filter((l) => l.status === "COMPLETED")
+    .reduce((a, l) => a + legWeight(l), 0);
+  const percentComplete = total > 0 ? Math.round((doneWeight / totalWeight) * 100) : 0;
 
-  const completedCount = dbLegs.filter((l) => l.status === "COMPLETED").length;
-  const totalLegs = dbLegs.length;
-  const percentComplete = totalLegs > 0 ? Math.round((completedCount / totalLegs) * 100) : 0;
-  const activeLeg = dbLegs.find((l) => l.status !== "COMPLETED") ?? dbLegs[dbLegs.length - 1];
-
+  const activeLeg = legs.find((l) => l.status !== "COMPLETED" && l.status !== "CANCELLED") ?? legs[legs.length - 1];
   const overallStage = activeLeg ? `${activeLeg.legType}_${activeLeg.status}` : "NOT_STARTED";
-  const headline = activeLeg
-    ? `Leg ${activeLeg.sequence} of ${totalLegs} (${activeLeg.mode}) — ${activeLeg.status.toLowerCase().replace("_", " ")} to ${activeLeg.destinationStop.name}`
-    : "No journey scheduled";
+  const headline = total === 0
+    ? "No journey scheduled"
+    : activeLeg
+      ? legHeadline(activeLeg, total)
+      : "Journey complete";
 
-  const blocked = dbLegs.some((l) => l.status === "EXCEPTION") || shipment.exceptionItems.some((e) => e.blocking);
-  const blockingReasons = shipment.exceptionItems.filter((e) => e.blocking).map((e) => e.severity || "Exception item");
+  const legExceptions = legs.filter((l) => l.status === "EXCEPTION");
+  const blockingExceptions = (shipment.exceptionItems ?? []).filter((e: any) => e.blocking);
+  const blocked = legExceptions.length > 0 || blockingExceptions.length > 0;
+  const blockingReasons = [
+    ...legExceptions.map((l: any) => l.statusReason || `Leg ${l.sequence} exception`),
+    ...blockingExceptions.map((e: any) => e.severity ? `${e.severity} exception` : "Blocking exception"),
+  ];
 
-  const journeyLegs = dbLegs.map((leg) => {
-    const totalDocs = leg.legDocuments.length;
-    const onFile = leg.legDocuments.filter((d) => d.documentId !== null).length;
-    const missingReq = leg.legDocuments.filter((d) => d.requirement === "REQUIRED" && d.documentId === null).length;
+  const journeyLegs = legs.map((leg) => {
+    const rows = (leg.legDocuments ?? []).map((ld: any) => ({
+      legDocumentId: ld.id,
+      slotKey: ld.slotKey,
+      slotLabel: ld.slotLabel,
+      expectedDocType: ld.expectedDocType,
+      requirement: ld.requirement,
+      requirementReason: ld.requirementReason,
+      status: legDocStatus(ld.documentId, ld.document?.status),
+      document: ld.document
+        ? { id: ld.document.id, fileName: ld.document.fileName, fileUrl: ld.document.fileUrl, confidence: ld.document.confidence }
+        : null,
+    }));
+    const missingRequired = rows.filter(
+      (r: any) => (r.requirement === "REQUIRED" || r.requirement === "CONDITIONAL") && r.status === "MISSING"
+    ).length;
+
+    const latestEta = (leg.etaObservations ?? [])[0];
 
     return {
       id: leg.id,
@@ -571,8 +653,8 @@ export async function getShipmentTrackingProjection(
       mode: leg.mode,
       status: leg.status,
       statusReason: leg.statusReason,
-      origin: { stopId: leg.originStopId, name: leg.originStop.name, unlocode: leg.originStop.unlocode },
-      destination: { stopId: leg.destinationStopId, name: leg.destinationStop.name, unlocode: leg.destinationStop.unlocode },
+      origin: { stopId: leg.originStopId, name: leg.originStop?.name ?? "", unlocode: leg.originStop?.unlocode ?? null },
+      destination: { stopId: leg.destinationStopId, name: leg.destinationStop?.name ?? "", unlocode: leg.destinationStop?.unlocode ?? null },
       carrier: { name: leg.carrierName, scac: leg.carrierScac },
       conveyance: {
         vesselName: leg.vesselName || undefined,
@@ -593,27 +675,8 @@ export async function getShipmentTrackingProjection(
         estimatedArrival: leg.estimatedArrival,
         actualArrival: leg.actualArrival,
       },
-      documents: {
-        total: totalDocs,
-        onFile,
-        missingRequired: missingReq,
-        rows: leg.legDocuments.map((ld) => ({
-          legDocumentId: ld.id,
-          expectedDocType: ld.expectedDocType,
-          requirement: ld.requirement,
-          requirementReason: ld.requirementReason,
-          status: (ld.documentId ? "RECEIVED" : "MISSING") as any,
-          document: ld.document
-            ? {
-                id: ld.document.id,
-                fileName: ld.document.fileName,
-                fileUrl: ld.document.fileUrl,
-                confidence: ld.document.confidence,
-              }
-            : null,
-        })),
-      },
-      events: leg.events.map((e) => ({
+      documents: { total: rows.length, onFile: rows.filter((r: any) => r.document).length, missingRequired, rows },
+      events: (leg.events ?? []).map((e: any) => ({
         id: e.id,
         eventType: e.eventType,
         classifier: e.classifier,
@@ -630,44 +693,49 @@ export async function getShipmentTrackingProjection(
         isCorrection: e.isCorrection,
       })),
       eta: {
-        current: leg.estimatedArrival || leg.plannedArrival,
-        deltaMinutes: null,
-        provider: "CARRIER",
+        current: latestEta?.eta ?? leg.estimatedArrival ?? leg.plannedArrival ?? null,
+        deltaMinutes: latestEta?.deltaMinutes ?? null,
+        provider: latestEta?.provider ?? null,
       },
       inference: {
         source: leg.source,
         confidence: leg.confidence,
-        needsConfirmation: leg.confirmedAt === null,
+        needsConfirmation: leg.source === "INFERRED" && leg.confirmedAt === null,
       },
     };
   });
 
+  const pendingRun = (shipment.legInferenceRuns ?? [])[0];
+  const inferenceProposal = pendingRun
+    ? {
+        inputsHash: pendingRun.inputsHash,
+        confidence: pendingRun.overallConfidence,
+        createdAtIso: new Date(pendingRun.createdAt).toISOString(),
+        changes: Array.isArray((pendingRun.proposal as any)?.changes)
+          ? (pendingRun.proposal as any).changes.map((c: any) => ({
+              type: c.type,
+              description: c.description,
+              legSequence: c.legSequence,
+            }))
+          : [],
+      }
+    : null;
+
   return {
-    ...baseProjection,
-    journey: {
-      shipmentId: shipment.id,
-      shipmentNumber: shipment.shipmentNumber,
-      journeyStatus: {
-        overallStage,
-        headline,
-        percentComplete,
-        blocked,
-        blockingReasons,
-      },
-      stops: stops.map((s) => ({
-        id: s.id,
-        sequence: s.sequence,
-        role: s.role,
-        name: s.name,
-        unlocode: s.unlocode,
-        firmsCode: s.firmsCode,
-        timezone: s.timezone,
-      })),
-      legs: journeyLegs,
-      customs: {
-        status: baseProjection.customs.status,
-      },
-      inferenceProposal: null,
-    },
+    shipmentId: shipment.id,
+    shipmentNumber: shipment.shipmentNumber,
+    journeyStatus: { overallStage, headline, percentComplete, blocked, blockingReasons },
+    stops: orderedStops.map((s) => ({
+      id: s.id,
+      sequence: s.sequence,
+      role: s.role,
+      name: s.name,
+      unlocode: s.unlocode,
+      firmsCode: s.firmsCode ?? null,
+      timezone: s.timezone,
+    })),
+    legs: journeyLegs,
+    customs: { status: customsStatus },
+    inferenceProposal,
   };
 }

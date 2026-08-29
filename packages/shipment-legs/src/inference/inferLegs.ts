@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { LegMode, LegType } from "@prisma/client";
 
 export interface DocumentInput {
@@ -8,6 +9,11 @@ export interface DocumentInput {
   extractedJson?: string | null;
 }
 
+export interface IdentifierInput {
+  type: string;
+  value: string;
+}
+
 export interface ShipmentInput {
   id: string;
   shipmentNumber: string;
@@ -16,6 +22,7 @@ export interface ShipmentInput {
   countryOfOrigin?: string | null;
   destinationCountry?: string | null;
   portOfEntry?: string | null;
+  incoterm?: string | null;
 }
 
 export interface InferredLeg {
@@ -24,188 +31,241 @@ export interface InferredLeg {
   mode: LegMode;
   originName: string;
   originUnlocode: string | null;
+  originRole: string;
   destinationName: string;
   destinationUnlocode: string | null;
+  destinationRole: string;
   carrierName: string | null;
   carrierScac: string | null;
   vesselName: string | null;
   voyageNumber: string | null;
   billOfLadingNumber: string | null;
+  billOfLadingType: string | null;
   bookingNumber: string | null;
   confidence: number;
   needsConfirmation: boolean;
+  /** Which document(s) drove this leg — for provenance display. */
+  evidenceDocIds: string[];
 }
 
 export interface InferenceResult {
-  runId: string;
+  inputsHash: string;
   shipmentId: string;
   legs: InferredLeg[];
   overallConfidence: number;
   hasUnconfirmedChanges: boolean;
 }
 
+const AIR_HINT = /air|awb|mawb|flight/i;
+
+function detectMode(shipment: ShipmentInput, documents: DocumentInput[]): LegMode {
+  if (shipment.transportMode) {
+    const m = shipment.transportMode.toUpperCase();
+    if (m.includes("AIR")) return LegMode.AIR;
+    if (m.includes("RAIL")) return LegMode.RAIL;
+    if (m.includes("OCEAN") || m.includes("SEA")) return LegMode.OCEAN;
+  }
+  if (documents.some((d) => AIR_HINT.test(`${d.docType} ${d.fileName}`) || d.documentType === "AIR_WAYBILL")) {
+    return LegMode.AIR;
+  }
+  return LegMode.OCEAN;
+}
+
+function computeInputsHash(shipment: ShipmentInput, documents: DocumentInput[], identifiers: IdentifierInput[]): string {
+  const payload = JSON.stringify({
+    s: {
+      transportMode: shipment.transportMode ?? null,
+      countryOfExport: shipment.countryOfExport ?? null,
+      countryOfOrigin: shipment.countryOfOrigin ?? null,
+      destinationCountry: shipment.destinationCountry ?? null,
+      portOfEntry: shipment.portOfEntry ?? null,
+      incoterm: shipment.incoterm ?? null,
+    },
+    d: documents
+      .map((d) => `${d.documentType ?? d.docType}:${d.fileName}`)
+      .sort(),
+    i: identifiers.map((i) => `${i.type}:${i.value}`).sort(),
+  });
+  return createHash("sha256").update(payload).digest("hex").slice(0, 32);
+}
+
+/**
+ * Rule-based journey inference. Deterministic: given the same documents /
+ * identifiers / shipment fields it always produces the same legs (and the same
+ * `inputsHash`, so a re-run is a no-op). Values that cannot be derived from the
+ * inputs are left null rather than invented — the broker fills them in on
+ * confirmation.
+ */
 export function inferShipmentLegs(
   shipment: ShipmentInput,
   documents: DocumentInput[],
-  identifiers: { type: string; value: string }[] = []
+  identifiers: IdentifierInput[] = []
 ): InferenceResult {
   const legs: InferredLeg[] = [];
   let seq = 1;
 
-  const mblDoc = documents.find(
-    (d) =>
-      d.docType.toLowerCase().includes("master") ||
-      d.fileName.toLowerCase().includes("mbl") ||
-      (d.documentType === "BILL_OF_LADING" && !d.docType.toLowerCase().includes("house"))
-  );
-  const houseDoc = documents.find(
-    (d) => d.docType.toLowerCase().includes("house") || d.fileName.toLowerCase().includes("hbl") || d.docType.toLowerCase().includes("forwarder")
-  );
-  const arrivalNoticeDoc = documents.find(
-    (d) => d.docType.toLowerCase().includes("arrival") || d.fileName.toLowerCase().includes("arrival")
-  );
-  const deliveryOrderDoc = documents.find(
-    (d) => d.docType.toLowerCase().includes("delivery order") || d.fileName.toLowerCase().includes("delivery")
-  );
+  const findDoc = (re: RegExp) =>
+    documents.find((d) => re.test(`${d.docType} ${d.fileName}`));
 
-  const mblNumber = identifiers.find((i) => i.type === "MBL")?.value || null;
-  const bookingNumber = identifiers.find((i) => i.type === "BOOKING")?.value || null;
+  const houseDoc =
+    findDoc(/house|hbl|hawb|forwarder|cargo receipt/i) ??
+    documents.find((d) => /forwarding instruction|shipping instruction|booking/i.test(`${d.docType} ${d.fileName}`));
+  const mblDoc =
+    documents.find((d) => d.documentType === "BILL_OF_LADING" && !/house/i.test(`${d.docType} ${d.fileName}`)) ??
+    findDoc(/master b\/?l|mbl|master bill|master air ?waybill|mawb/i) ??
+    documents.find((d) => d.documentType === "AIR_WAYBILL");
+  const arrivalNoticeDoc = findDoc(/arrival notice/i);
+  const deliveryOrderDoc = findDoc(/delivery order/i);
+  const isfDoc = documents.find((d) => d.documentType === "ISF" || /isf|10\+2/i.test(`${d.docType} ${d.fileName}`));
 
-  // Rule 1: Export Haulage
-  if (houseDoc || shipment.countryOfExport) {
-    const origin = shipment.countryOfExport ? `${shipment.countryOfExport} Factory / Shipper Door` : "Shipper Factory Door";
-    const dest = shipment.portOfEntry ? `Origin Port (${shipment.countryOfExport || "POL"})` : "Origin Port";
+  const id = (t: string) => identifiers.find((i) => i.type === t)?.value ?? null;
+  const mblNumber = id("MBL") ?? id("MAWB");
+  const hblNumber = id("HBL") ?? id("HAWB");
+  const bookingNumber = id("BOOKING");
+
+  const mode = detectMode(shipment, documents);
+  const exportCountry = shipment.countryOfExport || shipment.countryOfOrigin || null;
+  const poe = shipment.portOfEntry || null;
+  const destCountry = shipment.destinationCountry || null;
+
+  const originPortName = exportCountry ? `Origin port (${exportCountry})` : "Origin port";
+  const poeName = poe ? `Port of entry ${poe}` : "Destination port";
+
+  // --- Rule 1: Export haulage (shipper door -> origin port) ---------------
+  if (houseDoc || exportCountry) {
     legs.push({
       sequence: seq++,
       legType: LegType.EXPORT_HAULAGE,
       mode: LegMode.TRUCK,
-      originName: origin,
+      originName: exportCountry ? `Shipper facility (${exportCountry})` : "Shipper facility",
       originUnlocode: null,
-      destinationName: dest,
+      originRole: "ORIGIN",
+      destinationName: originPortName,
       destinationUnlocode: null,
-      carrierName: "Origin Drayage Carrier",
+      destinationRole: mode === LegMode.AIR ? "AIRPORT" : "PORT_OF_LADING",
+      carrierName: null,
       carrierScac: null,
       vesselName: null,
       voyageNumber: null,
-      billOfLadingNumber: null,
+      billOfLadingNumber: hblNumber,
+      billOfLadingType: hblNumber ? "HOUSE" : null,
       bookingNumber,
-      confidence: 0.85,
-      needsConfirmation: false,
+      confidence: houseDoc ? 0.82 : 0.55,
+      needsConfirmation: !houseDoc,
+      evidenceDocIds: houseDoc ? [houseDoc.id] : [],
     });
   }
 
-  // Rule 2: Ocean / Air Main Carriage & Transshipment
-  const mode = shipment.transportMode?.toUpperCase().includes("AIR") ? LegMode.AIR : LegMode.OCEAN;
+  // --- Rule 2: Main carriage (+ transshipment if detected) ---------------
+  const transshipRe = /transshipment|trans-shipment|\bvia\b|t\/s port|feeder/i;
+  const hasTransship =
+    !!mblDoc?.extractedJson && transshipRe.test(mblDoc.extractedJson);
+  const mainOrigin = legs.length > 0 ? legs[legs.length - 1].destinationName : originPortName;
+  const mainOriginRole = mode === LegMode.AIR ? "AIRPORT" : "PORT_OF_LADING";
 
-  if (mblDoc) {
-    // Check if transshipment detected in document extractions
-    const hasTransshipment = mblDoc.extractedJson?.includes("transshipment") || mblDoc.extractedJson?.includes("via");
-
-    if (hasTransshipment) {
-      legs.push({
-        sequence: seq++,
-        legType: LegType.MAIN_CARRIAGE,
-        mode,
-        originName: "Origin Port",
-        originUnlocode: null,
-        destinationName: "Transshipment Hub",
-        destinationUnlocode: null,
-        carrierName: "Ocean Carrier",
-        carrierScac: null,
-        vesselName: "Main Vessel A",
-        voyageNumber: "V.01E",
-        billOfLadingNumber: mblNumber,
-        bookingNumber,
-        confidence: 0.9,
-        needsConfirmation: false,
-      });
-
-      legs.push({
-        sequence: seq++,
-        legType: LegType.TRANSSHIPMENT,
-        mode,
-        originName: "Transshipment Hub",
-        originUnlocode: null,
-        destinationName: shipment.portOfEntry ? `Port of Entry (${shipment.portOfEntry})` : "Destination Port",
-        destinationUnlocode: shipment.portOfEntry || null,
-        carrierName: "Ocean Carrier",
-        carrierScac: null,
-        vesselName: "Connecting Vessel B",
-        voyageNumber: "V.02E",
-        billOfLadingNumber: mblNumber,
-        bookingNumber,
-        confidence: 0.88,
-        needsConfirmation: false,
-      });
-    } else {
-      legs.push({
-        sequence: seq++,
-        legType: LegType.MAIN_CARRIAGE,
-        mode,
-        originName: "Origin Port",
-        originUnlocode: null,
-        destinationName: shipment.portOfEntry ? `Port of Entry (${shipment.portOfEntry})` : "Destination Port",
-        destinationUnlocode: shipment.portOfEntry || null,
-        carrierName: "Main Carrier",
-        carrierScac: null,
-        vesselName: "Main Conveyance",
-        voyageNumber: "V.100",
-        billOfLadingNumber: mblNumber,
-        bookingNumber,
-        confidence: 0.95,
-        needsConfirmation: false,
-      });
-    }
-  } else {
-    // Fallback main carriage
+  if (hasTransship) {
     legs.push({
       sequence: seq++,
       legType: LegType.MAIN_CARRIAGE,
       mode,
-      originName: "Origin Terminal",
+      originName: mainOrigin,
       originUnlocode: null,
-      destinationName: shipment.portOfEntry ? `Port of Entry (${shipment.portOfEntry})` : "Destination Terminal",
-      destinationUnlocode: shipment.portOfEntry || null,
+      originRole: mainOriginRole,
+      destinationName: "Transshipment hub",
+      destinationUnlocode: null,
+      destinationRole: "TRANSSHIPMENT",
       carrierName: null,
       carrierScac: null,
       vesselName: null,
       voyageNumber: null,
       billOfLadingNumber: mblNumber,
+      billOfLadingType: mblNumber ? "MASTER" : null,
       bookingNumber,
-      confidence: 0.5,
+      confidence: 0.75,
       needsConfirmation: true,
+      evidenceDocIds: mblDoc ? [mblDoc.id] : [],
+    });
+    legs.push({
+      sequence: seq++,
+      legType: LegType.TRANSSHIPMENT,
+      mode,
+      originName: "Transshipment hub",
+      originUnlocode: null,
+      originRole: "TRANSSHIPMENT",
+      destinationName: poeName,
+      destinationUnlocode: poe,
+      destinationRole: mode === LegMode.AIR ? "AIRPORT" : "PORT_OF_DISCHARGE",
+      carrierName: null,
+      carrierScac: null,
+      vesselName: null,
+      voyageNumber: null,
+      billOfLadingNumber: mblNumber,
+      billOfLadingType: mblNumber ? "MASTER" : null,
+      bookingNumber,
+      confidence: 0.72,
+      needsConfirmation: true,
+      evidenceDocIds: mblDoc ? [mblDoc.id] : [],
+    });
+  } else {
+    legs.push({
+      sequence: seq++,
+      legType: LegType.MAIN_CARRIAGE,
+      mode,
+      originName: mainOrigin,
+      originUnlocode: null,
+      originRole: mainOriginRole,
+      destinationName: poeName,
+      destinationUnlocode: poe,
+      destinationRole: mode === LegMode.AIR ? "AIRPORT" : "PORT_OF_DISCHARGE",
+      carrierName: null,
+      carrierScac: null,
+      vesselName: null,
+      voyageNumber: null,
+      billOfLadingNumber: mblNumber,
+      billOfLadingType: mblNumber ? "MASTER" : null,
+      bookingNumber,
+      confidence: mblDoc ? 0.9 : 0.5,
+      needsConfirmation: !mblDoc,
+      evidenceDocIds: [mblDoc?.id, isfDoc?.id].filter(Boolean) as string[],
     });
   }
 
-  // Rule 3: Import Haulage
-  if (arrivalNoticeDoc || deliveryOrderDoc || shipment.destinationCountry) {
-    const dest = shipment.destinationCountry ? `${shipment.destinationCountry} Consignee DC / Door` : "Importer DC";
+  // --- Rule 3: Import haulage (destination port -> consignee door) -------
+  if (arrivalNoticeDoc || deliveryOrderDoc || destCountry) {
+    const prev = legs[legs.length - 1];
     legs.push({
       sequence: seq++,
       legType: LegType.IMPORT_HAULAGE,
       mode: LegMode.TRUCK,
-      originName: legs[legs.length - 1].destinationName,
-      originUnlocode: legs[legs.length - 1].destinationUnlocode,
-      destinationName: dest,
+      originName: prev.destinationName,
+      originUnlocode: prev.destinationUnlocode,
+      originRole: prev.destinationRole,
+      destinationName: destCountry ? `Consignee facility (${destCountry})` : "Consignee facility",
       destinationUnlocode: null,
-      carrierName: "Import Drayage Carrier",
+      destinationRole: "DESTINATION",
+      carrierName: null,
       carrierScac: null,
       vesselName: null,
       voyageNumber: null,
       billOfLadingNumber: null,
+      billOfLadingType: null,
       bookingNumber: null,
-      confidence: arrivalNoticeDoc || deliveryOrderDoc ? 0.88 : 0.65,
+      confidence: arrivalNoticeDoc || deliveryOrderDoc ? 0.8 : 0.5,
       needsConfirmation: !arrivalNoticeDoc && !deliveryOrderDoc,
+      evidenceDocIds: [arrivalNoticeDoc?.id, deliveryOrderDoc?.id].filter(Boolean) as string[],
     });
   }
 
-  const avgConfidence = legs.reduce((acc, l) => acc + l.confidence, 0) / (legs.length || 1);
+  const overallConfidence =
+    legs.length > 0
+      ? Math.round((legs.reduce((a, l) => a + l.confidence, 0) / legs.length) * 100) / 100
+      : 0;
 
   return {
-    runId: `run-${Date.now()}`,
+    inputsHash: computeInputsHash(shipment, documents, identifiers),
     shipmentId: shipment.id,
     legs,
-    overallConfidence: Math.round(avgConfidence * 100) / 100,
+    overallConfidence,
     hasUnconfirmedChanges: legs.some((l) => l.needsConfirmation),
   };
 }

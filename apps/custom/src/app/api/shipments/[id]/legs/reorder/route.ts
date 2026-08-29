@@ -1,57 +1,43 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracking";
+import { resolveOwnedShipment, resequenceLegs } from "@/modules/legs/legService";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const shipment = await db.shipment.findFirst({ where: { id, deletedAt: null } });
+const paramsSchema = z.object({ id: z.string().min(1) });
+const bodySchema = z.object({ legIds: z.array(z.string().min(1)).min(1) });
 
-  if (!shipment) {
-    return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
-  }
+export const POST = withAuthenticatedRoute<{ id: string }>(
+  async ({ req, ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
 
-  try {
-    const { legIds } = await req.json();
-    if (!Array.isArray(legIds) || legIds.length === 0) {
-      return NextResponse.json({ error: "legIds array required" }, { status: 400 });
-    }
+    const body = await parseAndValidateBody(req, bodySchema, requestId);
+    if ("response" in body) return body.response;
 
-    const currentLegs = await db.shipmentLeg.findMany({ where: { shipmentId: id } });
-    if (currentLegs.length !== legIds.length) {
-      return NextResponse.json({ error: "legIds length must match total leg count for shipment" }, { status: 422 });
-    }
+    const shipment = await resolveOwnedShipment(ctx.accountId, p.data.id);
+    if (!shipment) return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
 
-    // Reassign sequence numbers and update shared stops
-    for (let i = 0; i < legIds.length; i++) {
-      const legId = legIds[i];
-      await db.shipmentLeg.update({
-        where: { id: legId },
-        data: { sequence: i + 1 },
-      });
-    }
-
-    const reorderedLegs = await db.shipmentLeg.findMany({
-      where: { shipmentId: id },
-      orderBy: { sequence: "asc" },
+    const current = await db.shipmentLeg.findMany({
+      where: { shipmentId: shipment.id },
+      select: { id: true },
     });
+    const currentIds = new Set(current.map((l) => l.id));
+    const requested = body.data.legIds;
 
-    for (let i = 1; i < reorderedLegs.length; i++) {
-      const prev = reorderedLegs[i - 1];
-      const cur = reorderedLegs[i];
-      if (cur.originStopId !== prev.destinationStopId) {
-        await db.shipmentLeg.update({
-          where: { id: cur.id },
-          data: { originStopId: prev.destinationStopId },
-        });
-      }
+    if (requested.length !== current.length || !requested.every((id) => currentIds.has(id))) {
+      return NextResponse.json(
+        { error: "legIds must be a permutation of this shipment's leg ids", code: "LEG_REORDER_MISMATCH" },
+        { status: 422 }
+      );
     }
 
-    const projection = await getShipmentTrackingProjection(shipment.accountId, id);
-    return NextResponse.json({ success: true, projection });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to reorder legs" }, { status: 422 });
-  }
-}
+    await db.$transaction((tx) => resequenceLegs(tx, shipment.id, requested));
+
+    const projection = await getShipmentTrackingProjection(ctx.accountId, shipment.id);
+    return NextResponse.json({ success: true, journey: projection?.journey ?? null });
+  },
+  { permission: "shipments.manage", write: true }
+);

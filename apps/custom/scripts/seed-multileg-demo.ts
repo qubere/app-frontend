@@ -1,343 +1,262 @@
-import { PrismaClient, LegMode, LegType, LegStatus, LegDocumentRequirement, DocumentType } from "@prisma/client";
+/**
+ * scripts/seed-multileg-demo.ts
+ *
+ * Seeds a full 4-leg ocean import journey onto the EXISTING demo shipment
+ * SHP-TGT-2026-001 (Target account) so the multi-leg experience can be demoed
+ * against real rendered UI (the Journey Ribbon on the customs shipment detail
+ * page). multirole@qubere.ai has an OWNER membership on the Target account.
+ *
+ * NON-DESTRUCTIVE: the shipment, its line items, its commercial-invoice
+ * documents and its client link are all left intact. Only the leg-related
+ * artifacts this script owns are cleared and rebuilt (legs, stops, the
+ * "MLG · " documents, tracking events/ETA/identifiers/deadlines).
+ *
+ * Idempotent — safe to re-run.
+ *
+ * Run from repo root:
+ *   npx tsx apps/custom/scripts/seed-multileg-demo.ts
+ */
+import * as dotenv from "dotenv";
+dotenv.config();
 
-const db = new PrismaClient({ log: ["warn", "error"] });
+import { db, withDataModeContext } from "@qubere/db";
+import { LegMode, LegStatus, LegType, DocumentType, LegDocumentRequirement } from "@prisma/client";
+import { inferLegDocuments } from "@qubere/shipment-legs";
 
-export async function seedMultiLegDemo() {
-  console.log("🌱 Seeding Multi-Leg Shipment Demo: SHP-TGT-2026-001...");
+const SHIPMENT_NUMBER = "SHP-TGT-2026-001";
+const DOC_PREFIX = "MLG · ";
 
-  // 1. Find or create Target Corporation account
-  let account = await db.account.findFirst({
-    where: { OR: [{ id: "cmt4zah2s000hfx0odci3e658" }, { slug: "target" }, { name: { contains: "Target" } }] },
+function assertNotProduction() {
+  if (/app\.qubere\.ai/i.test(process.env.DATABASE_URL ?? "")) {
+    throw new Error("SECURITY_VIOLATION: refusing to seed demo data against app.qubere.ai");
+  }
+}
+
+async function seed() {
+  assertNotProduction();
+
+  const shipment = await db.shipment.findFirst({
+    where: {
+      shipmentNumber: SHIPMENT_NUMBER,
+      deletedAt: null,
+      account: { OR: [{ slug: "target" }, { name: { contains: "Target" } }] },
+    },
+    select: { id: true, accountId: true, estimatedArrival: true, shipmentNumber: true, account: { select: { name: true } } },
   });
 
-  if (!account) {
-    account = await db.account.create({
-      data: {
-        id: "cmt4zah2s000hfx0odci3e658",
-        name: "Target Corporation",
-        slug: "target",
-        type: "ENTERPRISE",
-        status: "ACTIVE",
-      },
-    });
+  if (!shipment) {
+    throw new Error(
+      `Shipment ${SHIPMENT_NUMBER} not found on a Target account. Run the base demo seed first, or adjust SHIPMENT_NUMBER.`
+    );
   }
 
-  console.log(`  Target Account ID: ${account.id} (${account.name})`);
+  const { id: shipmentId, accountId } = shipment;
+  const eta = shipment.estimatedArrival ?? new Date("2026-08-31T06:00:00Z");
+  const at = (hours: number) => new Date(eta.getTime() + hours * 3_600_000);
+  console.log(`Seeding 4-leg journey onto ${shipment.shipmentNumber} (${shipmentId}) — account ${shipment.account.name}`);
 
-  // Clean up existing demo shipment for this account if present
-  const existingShipment = await db.shipment.findFirst({
-    where: { accountId: account.id, shipmentNumber: "SHP-TGT-2026-001" },
+  // --- clear this script's own artifacts -----------------------------------
+  await db.trackingEvent.deleteMany({ where: { shipmentId } });
+  await db.etaObservation.deleteMany({ where: { shipmentId } });
+  await db.shipmentLeg.deleteMany({ where: { shipmentId } }); // cascades ShipmentLegDocument
+  await db.legInferenceRun.deleteMany({ where: { shipmentId } });
+  await db.shipmentStop.deleteMany({ where: { shipmentId } });
+  await db.trackingSubscription.deleteMany({ where: { shipmentId } });
+  await db.shipmentTrackingIdentifier.deleteMany({ where: { shipmentId } });
+  await db.complianceDeadline.deleteMany({ where: { shipmentId } });
+  await db.shipmentDocument.deleteMany({ where: { shipmentId, fileName: { startsWith: DOC_PREFIX } } });
+  await db.exceptionItem.deleteMany({ where: { shipmentId, code: "MISSING_LEG_DOCUMENT" } });
+  console.log("  cleared prior leg artifacts");
+
+  // --- tracking identifiers ----------------------------------------------
+  await db.shipmentTrackingIdentifier.createMany({
+    data: [
+      { accountId, shipmentId, type: "BOOKING", value: "COSU6620149", issuer: "COSCO", isPrimary: true },
+      { accountId, shipmentId, type: "MBL", value: "COSU7223841650", issuer: "COSCO", isPrimary: false },
+      { accountId, shipmentId, type: "HBL", value: "SNKO2208841", issuer: "Seanko Logistics", isPrimary: false },
+      { accountId, shipmentId, type: "CONTAINER", value: "CBHU8842190", issuer: "COSCO", isPrimary: false },
+      { accountId, shipmentId, type: "CONTAINER", value: "TCLU7761334", issuer: "COSCO", isPrimary: false },
+    ],
   });
 
-  if (existingShipment) {
-    console.log(`  Cleaning up existing demo shipment SHP-TGT-2026-001 for account ${account.id}...`);
-    const sId = existingShipment.id;
-    await db.pipelineJob.deleteMany({ where: { shipmentId: sId } });
-    await db.agentDecision.deleteMany({ where: { shipmentId: sId } });
-    await db.exceptionItem.deleteMany({ where: { shipmentId: sId } });
-    await db.customsFiling.deleteMany({ where: { shipmentId: sId } });
-    await db.shipmentDocument.deleteMany({ where: { shipmentId: sId } });
-    await db.complianceDeadline.deleteMany({ where: { shipmentId: sId } });
-    await db.trackingEvent.deleteMany({ where: { shipmentId: sId } });
-    await db.etaObservation.deleteMany({ where: { shipmentId: sId } });
-    await db.shipmentLegDocument.deleteMany({ where: { leg: { shipmentId: sId } } });
-    await db.shipmentLeg.deleteMany({ where: { shipmentId: sId } });
-    await db.shipmentStop.deleteMany({ where: { shipmentId: sId } });
-    await db.shipmentTrackingIdentifier.deleteMany({ where: { shipmentId: sId } });
-    await db.shipment.delete({ where: { id: sId } });
+  // --- 5 shared stops ---------------------------------------------------
+  const mkStop = (sequence: number, type: string, role: string, name: string, unlocode: string | null, tz: string, extra: Record<string, unknown> = {}) =>
+    db.shipmentStop.create({
+      data: { accountId, shipmentId, sequence, type, role, name, unlocode, timezone: tz, ...extra },
+    });
+
+  const s1 = await mkStop(1, "ORIGIN", "ORIGIN", "Shenzhen Factory — Longgang", "CNSZX", "Asia/Shanghai", { actualDeparture: at(-30 * 24) });
+  const s2 = await mkStop(2, "PORT", "PORT_OF_LADING", "Yantian International Container Terminal", "CNYTN", "Asia/Shanghai", { actualArrival: at(-29 * 24 - 6), actualDeparture: at(-27 * 24) });
+  const s3 = await mkStop(3, "PORT", "TRANSSHIPMENT", "Busan New Port (PNC)", "KRPUS", "Asia/Seoul", { actualArrival: at(-20 * 24), actualDeparture: at(-18 * 24) });
+  const s4 = await mkStop(4, "PORT", "PORT_OF_DISCHARGE", "APM Terminals Pier 400 — Los Angeles / Long Beach", "USLAX", "America/Los_Angeles", { estimatedArrival: eta, firmsCode: "W185" });
+  const s5 = await mkStop(5, "DC", "DESTINATION", "Target Import Distribution Center — Rialto, CA", "USRIA", "America/Los_Angeles", { estimatedArrival: at(3 * 24) });
+
+  // --- 4 legs ---------------------------------------------------------
+  const leg1 = await db.shipmentLeg.create({
+    data: {
+      accountId, shipmentId, sequence: 1, legType: LegType.EXPORT_HAULAGE, mode: LegMode.TRUCK, status: LegStatus.COMPLETED,
+      originStopId: s1.id, destinationStopId: s2.id, carrierName: "Sinotrans Ltd (export drayage)", carrierScac: "SNTR",
+      bookingNumber: "COSU6620149", actualDeparture: at(-30 * 24), actualArrival: at(-29 * 24 - 6),
+      source: "MANUAL", confirmedAt: new Date(),
+    },
+  });
+  const leg2 = await db.shipmentLeg.create({
+    data: {
+      accountId, shipmentId, sequence: 2, legType: LegType.MAIN_CARRIAGE, mode: LegMode.OCEAN, status: LegStatus.COMPLETED,
+      originStopId: s2.id, destinationStopId: s3.id, carrierName: "COSCO Shipping Lines", carrierScac: "COSU",
+      vesselName: "COSCO SHIPPING ARIES", imoNumber: "9795612", voyageNumber: "072E",
+      billOfLadingNumber: "COSU7223841650", billOfLadingType: "MASTER", bookingNumber: "COSU6620149",
+      actualDeparture: at(-27 * 24), actualArrival: at(-20 * 24), source: "MANUAL", confirmedAt: new Date(),
+    },
+  });
+  const leg3 = await db.shipmentLeg.create({
+    data: {
+      accountId, shipmentId, sequence: 3, legType: LegType.TRANSSHIPMENT, mode: LegMode.OCEAN, status: LegStatus.IN_TRANSIT,
+      originStopId: s3.id, destinationStopId: s4.id, carrierName: "COSCO Shipping Lines", carrierScac: "COSU",
+      vesselName: "COSCO SHIPPING LIBRA", imoNumber: "9757155", voyageNumber: "118E",
+      billOfLadingNumber: "COSU7223841650", billOfLadingType: "MASTER", bookingNumber: "COSU6620149",
+      actualDeparture: at(-18 * 24), plannedArrival: at(-14), estimatedArrival: eta,
+      source: "MANUAL", confirmedAt: new Date(),
+    },
+  });
+  const leg4 = await db.shipmentLeg.create({
+    data: {
+      accountId, shipmentId, sequence: 4, legType: LegType.IMPORT_HAULAGE, mode: LegMode.TRUCK, status: LegStatus.PLANNED,
+      originStopId: s4.id, destinationStopId: s5.id, carrierName: "Hub Group (import drayage)", carrierScac: "HUBG",
+      plannedDeparture: at(2 * 24), plannedArrival: at(3 * 24), estimatedArrival: at(3 * 24),
+      source: "MANUAL", confirmedAt: new Date(),
+    },
+  });
+  console.log("  created 5 stops + 4 legs");
+
+  // --- per-leg document checklist (via the shared inference catalog) ------
+  const legs = [
+    { leg: leg1, type: LegType.EXPORT_HAULAGE, mode: LegMode.TRUCK, isFinal: false },
+    { leg: leg2, type: LegType.MAIN_CARRIAGE, mode: LegMode.OCEAN, isFinal: false },
+    { leg: leg3, type: LegType.TRANSSHIPMENT, mode: LegMode.OCEAN, isFinal: false },
+    { leg: leg4, type: LegType.IMPORT_HAULAGE, mode: LegMode.TRUCK, isFinal: true },
+  ];
+
+  // Which slots have a document on file in this demo (slotKey -> [docType, fileName, status]).
+  const filled: Record<string, [DocumentType, string, string]> = {
+    BOOKING_CONFIRMATION: [DocumentType.OTHER, "Leg 1 — Booking Confirmation COSU6620149.pdf", "Processed"],
+    SHIPPING_INSTRUCTIONS: [DocumentType.OTHER, "Leg 1 — Shipping Instructions.pdf", "Processed"],
+    PACKING_LIST: [DocumentType.PACKING_LIST, "Leg 1 — Packing List.pdf", "Processed"],
+    MBL: [DocumentType.BILL_OF_LADING, "Leg 2 — Master Bill of Lading COSU7223841650.pdf", "Processed"],
+    ISF_10_2: [DocumentType.ISF, "Leg 2 — ISF 10+2 Filing.pdf", "Received"],
+    CERT_OF_ORIGIN: [DocumentType.CERTIFICATE_OF_ORIGIN, "Leg 3 — Certificate of Origin (CN).pdf", "Processed"],
+    CBP_RELEASE: [DocumentType.ENTRY_SUMMARY, "Leg 4 — CBP 7501 Entry Summary.pdf", "Received"],
+    // ARRIVAL_NOTICE + DELIVERY_ORDER left MISSING on purpose.
+  };
+
+  let displayOrder = 200;
+  for (const { leg, type, mode, isFinal } of legs) {
+    const { slots } = inferLegDocuments(type, mode, { isUsImport: true, hasPreferenceClaim: false, isFinalLeg: isFinal });
+    for (const slot of slots) {
+      const hit = filled[slot.slotKey];
+      let documentId: string | null = null;
+      if (hit) {
+        const doc = await db.shipmentDocument.create({
+          data: {
+            accountId, shipmentId, docType: slot.slotLabel, documentType: hit[0],
+            fileName: `${DOC_PREFIX}${hit[1]}`, status: hit[2], required: true,
+            portalVisibility: "INTERNAL", source: "UPLOAD", displayOrder: displayOrder++,
+            confidence: 90,
+          },
+        });
+        documentId = doc.id;
+      }
+      await db.shipmentLegDocument.create({
+        data: {
+          accountId, legId: leg.id, documentId,
+          slotKey: slot.slotKey, slotLabel: slot.slotLabel, expectedDocType: slot.expectedDocType,
+          requirement: slot.requirement as LegDocumentRequirement, requirementReason: slot.requirementReason,
+          source: "INFERRED", confidence: 0.9,
+        },
+      });
+    }
   }
+  console.log("  created per-leg document checklists (2 required gaps: Arrival Notice, Delivery Order)");
 
-    // 3. Create Shipment
-    const shipment = await db.shipment.create({
-      data: {
-        accountId: account.id,
-        shipmentNumber: "SHP-TGT-2026-001",
-        importerName: "Target Corporation",
-        poReference: "PO-TGT-884129",
-        entryType: "01",
-        incoterm: "FOB",
-        portOfEntry: "2704", // Los Angeles/Long Beach
-        carrierName: "COSCO Shipping",
-        countryOfExport: "CN",
-        countryOfOrigin: "CN",
-        destinationCountry: "US",
-        transportMode: "Ocean",
-        status: "In Progress",
-        customsRequired: true,
-        currentStage: "COMPLIANCE",
-        healthStatus: "At Risk",
-        estimatedArrival: new Date("2026-08-31T06:00:00Z"),
-        ladingDate: new Date("2026-08-18T10:00:00Z"),
-        arrivalDate: new Date("2026-08-31T06:00:00Z"),
-      },
-    });
+  // --- tracking events --------------------------------------------------
+  const ev = (
+    n: number, legId: string, stopId: string, eventType: string,
+    classifier: "PLANNED" | "ESTIMATED" | "ACTUAL", sourceType: "CARRIER" | "TERMINAL" | "PROVIDER" | "SYSTEM",
+    provider: string, hours: number, locationName: string, unlocode: string, tz: string
+  ) => ({
+    accountId, shipmentId, legId, shipmentStopId: stopId, eventType, classifier, sourceType, provider,
+    occurredAt: at(hours), receivedAt: classifier === "ACTUAL" ? at(hours + 1) : new Date(),
+    locationName, unlocode, timezone: tz, providerEventId: `mlg-${n}`, idempotencyKey: `mlg-${shipmentId}-${n}`,
+    confidence: classifier === "ACTUAL" ? 1 : 0.7, isInferred: classifier !== "ACTUAL",
+  });
+  await db.trackingEvent.createMany({
+    data: [
+      ev(1, leg1.id, s1.id, "BOOKING_CONFIRMED", "ACTUAL", "CARRIER", "COSCO eCommerce", -30 * 24 - 12, "Shenzhen", "CNSZX", "Asia/Shanghai"),
+      ev(2, leg1.id, s2.id, "GATE_IN", "ACTUAL", "TERMINAL", "Yantian ICT", -29 * 24 - 6, "Yantian", "CNYTN", "Asia/Shanghai"),
+      ev(3, leg2.id, s2.id, "LOADED_ON_VESSEL", "ACTUAL", "TERMINAL", "Yantian ICT", -27 * 24 - 4, "Yantian", "CNYTN", "Asia/Shanghai"),
+      ev(4, leg2.id, s2.id, "VESSEL_DEPARTURE", "ACTUAL", "CARRIER", "COSCO AIS", -27 * 24, "Yantian", "CNYTN", "Asia/Shanghai"),
+      ev(5, leg2.id, s3.id, "VESSEL_ARRIVAL", "ACTUAL", "CARRIER", "COSCO AIS", -20 * 24, "Busan", "KRPUS", "Asia/Seoul"),
+      ev(6, leg2.id, s3.id, "DISCHARGED", "ACTUAL", "TERMINAL", "Busan PNC", -19 * 24 - 12, "Busan", "KRPUS", "Asia/Seoul"),
+      ev(7, leg3.id, s3.id, "LOADED_ON_VESSEL", "ACTUAL", "TERMINAL", "Busan PNC", -18 * 24 - 6, "Busan", "KRPUS", "Asia/Seoul"),
+      ev(8, leg3.id, s3.id, "VESSEL_DEPARTURE", "ACTUAL", "CARRIER", "COSCO AIS", -18 * 24, "Busan", "KRPUS", "Asia/Seoul"),
+      ev(9, leg3.id, s4.id, "VESSEL_ARRIVAL", "ESTIMATED", "PROVIDER", "Qubere ETA model", 0, "Los Angeles / Long Beach", "USLAX", "America/Los_Angeles"),
+      ev(10, leg4.id, s4.id, "DISCHARGE", "PLANNED", "SYSTEM", "Qubere plan", 1 * 24, "APM Pier 400", "USLAX", "America/Los_Angeles"),
+      ev(11, leg4.id, s4.id, "GATE_OUT", "PLANNED", "SYSTEM", "Qubere plan", 2 * 24, "APM Pier 400", "USLAX", "America/Los_Angeles"),
+      ev(12, leg4.id, s5.id, "DELIVERED", "PLANNED", "SYSTEM", "Qubere plan", 3 * 24, "Target DC Rialto", "USRIA", "America/Los_Angeles"),
+    ],
+  });
 
-    console.log(`  Created Shipment: ${shipment.id} (${shipment.shipmentNumber})`);
+  // --- ETA drift (+14h into Long Beach) --------------------------------
+  await db.etaObservation.createMany({
+    data: [
+      { accountId, shipmentId, legId: leg3.id, shipmentStopId: s4.id, estimatedAt: at(-18 * 24), eta: at(-14), previousEta: null, deltaMinutes: null, provider: "COSCO schedule", confidence: 0.6, reasonCode: "INITIAL_SCHEDULE" },
+      { accountId, shipmentId, legId: leg3.id, shipmentStopId: s4.id, estimatedAt: at(-3 * 24), eta, previousEta: at(-14), deltaMinutes: 14 * 60, provider: "Qubere ETA model", confidence: 0.82, reasonCode: "PORT_CONGESTION" },
+    ],
+  });
 
-    // 4. Create Tracking Identifiers
-    await db.shipmentTrackingIdentifier.createMany({
-      data: [
-        { accountId: account.id, shipmentId: shipment.id, type: "BOOKING", value: "COSU6620149", issuer: "COSCO", isPrimary: false },
-        { accountId: account.id, shipmentId: shipment.id, type: "MBL", value: "COSU7223841650", issuer: "COSCO", isPrimary: true },
-        { accountId: account.id, shipmentId: shipment.id, type: "HBL", value: "SNKO2208841", issuer: "SINOTRANS", isPrimary: false },
-        { accountId: account.id, shipmentId: shipment.id, type: "CONTAINER", value: "CBHU8842190", issuer: "COSCO", isPrimary: false },
-        { accountId: account.id, shipmentId: shipment.id, type: "CONTAINER", value: "TCLU7761334", issuer: "COSCO", isPrimary: false },
-      ],
-    });
+  await db.trackingSubscription.create({
+    data: {
+      accountId, shipmentId, provider: "COSCO AIS", providerTrackingId: "COSU7223841650",
+      status: "ACTIVE", startedAt: at(-31 * 24), lastEventAt: at(-18 * 24), lastSyncAt: new Date(Date.now() - 2 * 3_600_000),
+    },
+  });
 
-    // 5. Create Shared Stops
-    const stop1 = await db.shipmentStop.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 1, type: "FACILITY", role: "ORIGIN",
-        name: "Shenzhen Factory (Longgang)", unlocode: null, timezone: "Asia/Shanghai",
-      },
-    });
+  // --- compliance deadlines ------------------------------------------
+  await db.complianceDeadline.createMany({
+    data: [
+      { accountId, shipmentId, type: "ISF_10_2", deadlineClass: "REGULATORY", status: "SATISFIED", anchorEvent: "LADING", anchorAt: at(-27 * 24 - 24), estimated: false, dueAt: at(-27 * 24 - 24), ruleId: "ISF_10_2", ruleCitation: "19 CFR 149.2(b)", satisfiedAt: at(-28 * 24), satisfiedBy: "SYSTEM" },
+      { accountId, shipmentId, type: "ENTRY_FILING", deadlineClass: "REGULATORY", status: "OPEN", anchorEvent: "ARRIVAL", anchorAt: eta, estimated: true, dueAt: at(15 * 24), ruleId: "ENTRY_FILING", ruleCitation: "19 CFR 142.3", penaltyBasis: "up to $5,000 per violation" },
+      { accountId, shipmentId, type: "LAST_FREE_DAY", deadlineClass: "COMMERCIAL", status: "OPEN", anchorEvent: "CARRIER_TERMS", anchorAt: eta, estimated: true, dueAt: at(3 * 24), ruleId: "LAST_FREE_DAY", ruleCitation: "Carrier free-time tariff", penaltyBasis: "demurrage ~$285/container/day after LFD" },
+    ],
+  });
 
-    const stop2 = await db.shipmentStop.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 2, type: "PORT", role: "PORT_OF_LADING",
-        name: "Yantian Port", unlocode: "CNYTN", timezone: "Asia/Shanghai",
-      },
-    });
+  // --- one blocking exception for the missing import-leg delivery order --
+  await db.exceptionItem.create({
+    data: {
+      accountId, shipmentId, type: "missing_document", category: "DOCUMENT", code: "MISSING_LEG_DOCUMENT",
+      severity: "High", status: "Open", blocking: true,
+      description: "Leg 4 (import haulage): Delivery Order missing — required before terminal gate-out at LA/LB Pier 400.",
+    },
+  });
 
-    const stop3 = await db.shipmentStop.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 3, type: "PORT", role: "TRANSSHIPMENT",
-        name: "Busan Port", unlocode: "KRPUS", timezone: "Asia/Seoul",
-      },
-    });
-
-    const stop4 = await db.shipmentStop.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 4, type: "PORT", role: "PORT_OF_DISCHARGE",
-        name: "Los Angeles / Long Beach (Pier 400)", unlocode: "USLAX", firmsCode: "Y274", timezone: "America/Los_Angeles",
-      },
-    });
-
-    const stop5 = await db.shipmentStop.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 5, type: "DC", role: "DESTINATION",
-        name: "Target Import DC, Rialto CA", unlocode: null, timezone: "America/Los_Angeles",
-      },
-    });
-
-    console.log("  Created 5 shared stops (4 legs).");
-
-    // 6. Create Documents on file
-    const docBooking = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "Booking Confirmation",
-        documentType: DocumentType.OTHER, fileName: "Booking_COSU6620149.pdf", status: "Received", fileUrl: "/demo/Booking_COSU6620149.pdf",
-      },
-    });
-
-    const docShippingInst = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "Shipping Instructions",
-        documentType: DocumentType.OTHER, fileName: "Shipping_Instructions_TGT.pdf", status: "Received", fileUrl: "/demo/Shipping_Instructions_TGT.pdf",
-      },
-    });
-
-    const docPackingList = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "Packing List",
-        documentType: DocumentType.PACKING_LIST, fileName: "Packing_List_884129.pdf", status: "Received", fileUrl: "/demo/Packing_List_884129.pdf",
-      },
-    });
-
-    const docMBL = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "Bill of Lading",
-        documentType: DocumentType.BILL_OF_LADING, fileName: "MBL_COSU7223841650.pdf", status: "Received", fileUrl: "/demo/MBL_COSU7223841650.pdf",
-      },
-    });
-
-    const docISF = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "ISF Filing",
-        documentType: DocumentType.ISF, fileName: "ISF_10+2_COSU7223841650.pdf", status: "Received", fileUrl: "/demo/ISF_10+2_COSU7223841650.pdf",
-      },
-    });
-
-    const docCOO = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "Certificate of Origin",
-        documentType: DocumentType.CERTIFICATE_OF_ORIGIN, fileName: "COO_China_TGT.pdf", status: "Received", fileUrl: "/demo/COO_China_TGT.pdf",
-      },
-    });
-
-    const docCBP7501 = await db.shipmentDocument.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, docType: "Customs Entry Summary",
-        documentType: DocumentType.ENTRY_SUMMARY, fileName: "CBP_7501_Draft.pdf", status: "Received", fileUrl: "/demo/CBP_7501_Draft.pdf",
-      },
-    });
-
-    // 7. Create 4 ShipmentLegs
-    const leg1 = await db.shipmentLeg.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 1, legType: LegType.EXPORT_HAULAGE, mode: LegMode.TRUCK,
-        status: LegStatus.COMPLETED, originStopId: stop1.id, destinationStopId: stop2.id,
-        carrierName: "Sinotrans Drayage", bookingNumber: "COSU6620149",
-        actualDeparture: new Date("2026-08-16T08:00:00Z"), actualArrival: new Date("2026-08-16T14:30:00Z"),
-        source: "MANUAL", confirmedAt: new Date(),
-      },
-    });
-
-    const leg2 = await db.shipmentLeg.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 2, legType: LegType.MAIN_CARRIAGE, mode: LegMode.OCEAN,
-        status: LegStatus.COMPLETED, originStopId: stop2.id, destinationStopId: stop3.id,
-        carrierName: "COSCO Shipping", carrierScac: "COSU", vesselName: "COSCO SHIPPING ARIES", voyageNumber: "072E",
-        billOfLadingNumber: "COSU7223841650", billOfLadingType: "MASTER", bookingNumber: "COSU6620149",
-        actualDeparture: new Date("2026-08-18T10:00:00Z"), actualArrival: new Date("2026-08-22T04:15:00Z"),
-        source: "MANUAL", confirmedAt: new Date(),
-      },
-    });
-
-    const leg3 = await db.shipmentLeg.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 3, legType: LegType.TRANSSHIPMENT, mode: LegMode.OCEAN,
-        status: LegStatus.IN_TRANSIT, originStopId: stop3.id, destinationStopId: stop4.id,
-        carrierName: "COSCO Shipping", carrierScac: "COSU", vesselName: "COSCO SHIPPING LIBRA", voyageNumber: "118E",
-        billOfLadingNumber: "COSU7223841650", billOfLadingType: "MASTER", bookingNumber: "COSU6620149",
-        actualDeparture: new Date("2026-08-24T18:40:00Z"), estimatedArrival: new Date("2026-08-31T06:00:00Z"), plannedArrival: new Date("2026-08-30T16:00:00Z"),
-        source: "MANUAL", confirmedAt: new Date(),
-      },
-    });
-
-    const leg4 = await db.shipmentLeg.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, sequence: 4, legType: LegType.IMPORT_HAULAGE, mode: LegMode.TRUCK,
-        status: LegStatus.PLANNED, originStopId: stop4.id, destinationStopId: stop5.id,
-        carrierName: "Hub Group Drayage", carrierScac: "HUBG",
-        plannedDeparture: new Date("2026-09-01T08:00:00Z"), plannedArrival: new Date("2026-09-01T14:00:00Z"),
-        source: "MANUAL", confirmedAt: new Date(),
-      },
-    });
-
-    console.log("  Created 4 ShipmentLegs.");
-
-    // 8. Create Leg Document Checklists (ShipmentLegDocument)
-    await db.shipmentLegDocument.createMany({
-      data: [
-        // Leg 1 docs
-        { accountId: account.id, legId: leg1.id, documentId: docBooking.id, expectedDocType: DocumentType.OTHER, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Carrier booking confirmation" },
-        { accountId: account.id, legId: leg1.id, documentId: docShippingInst.id, expectedDocType: DocumentType.POWER_OF_ATTORNEY, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Export drayage dispatch instructions" },
-        { accountId: account.id, legId: leg1.id, documentId: docPackingList.id, expectedDocType: DocumentType.PACKING_LIST, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Container load manifest" },
-
-        // Leg 2 docs
-        { accountId: account.id, legId: leg2.id, documentId: docMBL.id, expectedDocType: DocumentType.BILL_OF_LADING, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Ocean master bill of lading" },
-        { accountId: account.id, legId: leg2.id, documentId: docISF.id, expectedDocType: DocumentType.ISF, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "US Customs 24h ISF filing" },
-
-        // Leg 3 docs
-        { accountId: account.id, legId: leg3.id, documentId: docMBL.id, expectedDocType: DocumentType.BILL_OF_LADING, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Shared MBL for ocean transshipment" },
-        { accountId: account.id, legId: leg3.id, documentId: docCOO.id, expectedDocType: DocumentType.CERTIFICATE_OF_ORIGIN, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Country of origin verification" },
-        { accountId: account.id, legId: leg3.id, documentId: null, expectedDocType: DocumentType.OTHER, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Arrival notice required prior to POD arrival" }, // MISSING!
-
-        // Leg 4 docs
-        { accountId: account.id, legId: leg4.id, documentId: null, expectedDocType: DocumentType.OTHER, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "Delivery order required for terminal gate out" }, // MISSING!
-        { accountId: account.id, legId: leg4.id, documentId: docCBP7501.id, expectedDocType: DocumentType.ENTRY_SUMMARY, requirement: LegDocumentRequirement.REQUIRED, requirementReason: "CBP release / 7501" },
-        { accountId: account.id, legId: leg4.id, documentId: null, expectedDocType: DocumentType.PROOF_OF_DELIVERY, requirement: LegDocumentRequirement.OPTIONAL, requirementReason: "Final delivery signoff" },
-      ],
-    });
-
-    console.log("  Created ShipmentLegDocument checklist rows (including 2 missing gaps).");
-
-    // 9. Create Tracking Events
-    await db.trackingEvent.createMany({
-      data: [
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg1.id, shipmentStopId: stop1.id, eventType: "GATE_IN",
-          classifier: "ACTUAL", occurredAt: new Date("2026-08-16T08:00:00Z"), provider: "CARRIER", sourceType: "CARRIER", idempotencyKey: "evt-001",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg2.id, shipmentStopId: stop2.id, eventType: "LOADED_ON_VESSEL",
-          classifier: "ACTUAL", occurredAt: new Date("2026-08-17T20:00:00Z"), provider: "CARRIER", sourceType: "CARRIER", idempotencyKey: "evt-002",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg2.id, shipmentStopId: stop2.id, eventType: "VESSEL_DEPARTURE",
-          classifier: "ACTUAL", occurredAt: new Date("2026-08-18T10:00:00Z"), provider: "CARRIER", sourceType: "CARRIER", idempotencyKey: "evt-003",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg2.id, shipmentStopId: stop3.id, eventType: "VESSEL_ARRIVAL",
-          classifier: "ACTUAL", occurredAt: new Date("2026-08-22T04:15:00Z"), provider: "CARRIER", sourceType: "CARRIER", idempotencyKey: "evt-004",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg3.id, shipmentStopId: stop3.id, eventType: "VESSEL_DEPARTURE",
-          classifier: "ACTUAL", occurredAt: new Date("2026-08-24T18:40:00Z"), provider: "CARRIER", sourceType: "CARRIER", idempotencyKey: "evt-005",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg3.id, shipmentStopId: stop4.id, eventType: "VESSEL_ARRIVAL",
-          classifier: "ESTIMATED", occurredAt: new Date("2026-08-31T06:00:00Z"), provider: "CARRIER", sourceType: "CARRIER", idempotencyKey: "evt-006",
-        },
-      ],
-    });
-
-    // 10. Create ETA Observations (+14h delay)
-    await db.etaObservation.createMany({
-      data: [
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg3.id, shipmentStopId: stop4.id,
-          estimatedAt: new Date("2026-08-24T12:00:00Z"), eta: new Date("2026-08-30T16:00:00Z"), provider: "CARRIER", confidence: 0.95,
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, legId: leg3.id, shipmentStopId: stop4.id,
-          estimatedAt: new Date("2026-08-27T09:00:00Z"), eta: new Date("2026-08-31T06:00:00Z"), previousEta: new Date("2026-08-30T16:00:00Z"),
-          deltaMinutes: 840, provider: "CARRIER", confidence: 0.92, reasonCode: "WEATHER_DELAY",
-        },
-      ],
-    });
-
-    // 11. Create Deadlines & Customs Filing
-    await db.complianceDeadline.createMany({
-      data: [
-        {
-          accountId: account.id, shipmentId: shipment.id, type: "ISF_10_2" as any, deadlineClass: "REGULATORY" as any, status: "SATISFIED" as any,
-          anchorEvent: "LADING" as any, dueAt: new Date("2026-08-17T10:00:00Z"), estimated: false,
-          ruleId: "RULE_ISF_10_2", ruleCitation: "19 CFR 149.2",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, type: "ENTRY_FILING" as any, deadlineClass: "REGULATORY" as any, status: "OPEN" as any,
-          anchorEvent: "ARRIVAL" as any, dueAt: new Date("2026-09-15T23:59:59Z"), estimated: false,
-          ruleId: "RULE_ENTRY_FILING", ruleCitation: "19 CFR 141.68",
-        },
-        {
-          accountId: account.id, shipmentId: shipment.id, type: "LAST_FREE_DAY" as any, deadlineClass: "COMMERCIAL" as any, status: "OPEN" as any,
-          anchorEvent: "CARRIER_TERMS" as any, dueAt: new Date("2026-09-03T23:59:59Z"), estimated: true,
-          ruleId: "RULE_LAST_FREE_DAY", ruleCitation: "Terminal Tariff",
-        },
-      ],
-    });
-
+  // --- ensure a customs filing exists so the customs rail shows FILED ---
+  const filing = await db.customsFiling.findFirst({ where: { shipmentId } });
+  if (!filing) {
     await db.customsFiling.create({
-      data: {
-        accountId: account.id, shipmentId: shipment.id, filingType: "ENTRY_SUMMARY", filingStatus: "Transmitted",
-        entryNumber: "2704-8841920-1",
-      },
+      data: { accountId, shipmentId, filingType: "ENTRY_SUMMARY", filingStatus: "Transmitted", entryNumber: "2704-8841920-1" },
     });
+  }
 
-    // 12. Create open ExceptionItem for missing required leg document so shipment surfaces on Actions page (/app/actions)
-    await db.exceptionItem.create({
-      data: {
-        accountId: account.id,
-        shipmentId: shipment.id,
-        type: "MISSING_LEG_DOCUMENT",
-        severity: "High",
-        status: "Open",
-        blocking: true,
-        description: "Leg 4 (IMPORT_HAULAGE): Missing required Delivery Order for terminal gate out at LA/LB Pier 400.",
-      },
-    });
-
-    console.log(`✨ Seed complete! Demo Multi-Leg Shipment SHP-TGT-2026-001 is ready under Target account (${account.id}).`);
+  console.log(`\n✓ Done. Open ${SHIPMENT_NUMBER} — the Journey Ribbon shows the 4-leg route.`);
 }
 
-if (require.main === module) {
-  seedMultiLegDemo()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error("❌ Seeding failed:", err);
-      process.exit(1);
-    });
+async function main() {
+  await withDataModeContext(null, seed);
 }
+
+main()
+  .catch((err) => {
+    console.error("Seed failed:", err);
+    process.exit(1);
+  })
+  .finally(() => db.$disconnect());

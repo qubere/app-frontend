@@ -1,129 +1,173 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { DocumentType, LegDocumentRequirement } from "@prisma/client";
+import { matchDocumentToSlot, inferLegDocuments } from "@qubere/shipment-legs";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracking";
-import { DocumentType, LegDocumentRequirement } from "@prisma/client";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string; legId: string }> }
-) {
-  const { id, legId } = await params;
-  const leg = await db.shipmentLeg.findFirst({ where: { id: legId, shipmentId: id } });
+const paramsSchema = z.object({ id: z.string().min(1), legId: z.string().min(1) });
 
-  if (!leg) {
-    return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
-  }
+const postSchema = z.object({
+  documentId: z.string().min(1).nullable().optional(),
+  slotKey: z.string().min(1).max(64).optional(),
+  slotLabel: z.string().min(1).max(120).optional(),
+  expectedDocType: z.nativeEnum(DocumentType).optional(),
+  requirement: z.nativeEnum(LegDocumentRequirement).optional(),
+  requirementReason: z.string().max(300).optional(),
+});
 
-  try {
-    const body = await req.json();
-    const { documentId, expectedDocType = DocumentType.OTHER, requirement = LegDocumentRequirement.REQUIRED, requirementReason } = body;
+const patchSchema = z.object({
+  legDocumentId: z.string().min(1),
+  requirement: z.nativeEnum(LegDocumentRequirement).optional(),
+  requirementReason: z.string().max(300).nullable().optional(),
+});
 
-    // Check if slot for expectedDocType already exists on this leg
-    const existingSlot = await db.shipmentLegDocument.findFirst({
-      where: { legId, expectedDocType: expectedDocType as DocumentType },
-    });
-
-    let legDoc;
-    if (existingSlot) {
-      legDoc = await db.shipmentLegDocument.update({
-        where: { id: existingSlot.id },
-        data: {
-          documentId: documentId || existingSlot.documentId,
-          requirement: requirement as LegDocumentRequirement,
-          requirementReason: requirementReason || existingSlot.requirementReason,
-        },
-      });
-    } else {
-      legDoc = await db.shipmentLegDocument.create({
-        data: {
-          accountId: leg.accountId,
-          legId,
-          documentId: documentId || null,
-          expectedDocType: expectedDocType as DocumentType,
-          requirement: requirement as LegDocumentRequirement,
-          requirementReason: requirementReason || "Broker added checklist item",
-          source: "MANUAL",
-        },
-      });
-    }
-
-    const projection = await getShipmentTrackingProjection(leg.accountId, id);
-    return NextResponse.json({ legDocument: legDoc, projection }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to attach document to leg" }, { status: 422 });
-  }
+async function loadLeg(accountId: string, shipmentIdOrNumber: string, legId: string) {
+  return db.shipmentLeg.findFirst({
+    where: {
+      id: legId,
+      accountId,
+      shipment: {
+        accountId,
+        deletedAt: null,
+        OR: [{ id: shipmentIdOrNumber }, { shipmentNumber: shipmentIdOrNumber }],
+      },
+    },
+    include: { legDocuments: true },
+  });
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string; legId: string }> }
-) {
-  const { id, legId } = await params;
-  const leg = await db.shipmentLeg.findFirst({ where: { id: legId, shipmentId: id } });
+export const POST = withAuthenticatedRoute<{ id: string; legId: string }>(
+  async ({ req, ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
 
-  if (!leg) {
-    return NextResponse.json({ error: "Leg not found" }, { status: 404 });
-  }
+    const body = await parseAndValidateBody(req, postSchema, requestId);
+    if ("response" in body) return body.response;
 
-  try {
-    const { legDocumentId, requirement, requirementReason } = await req.json();
-    if (!legDocumentId) {
-      return NextResponse.json({ error: "legDocumentId required" }, { status: 400 });
+    const leg = await loadLeg(ctx.accountId, p.data.id, p.data.legId);
+    if (!leg) return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
+
+    const b = body.data;
+
+    // Verify the document is on this shipment / account.
+    let doc: { id: string; docType: string; documentType: DocumentType | null; fileName: string } | null = null;
+    if (b.documentId) {
+      doc = await db.shipmentDocument.findFirst({
+        where: { id: b.documentId, accountId: ctx.accountId, shipmentId: leg.shipmentId },
+        select: { id: true, docType: true, documentType: true, fileName: true },
+      });
+      if (!doc) {
+        return NextResponse.json(
+          { error: "Document not found on this shipment", code: "LEG_DOC_NOT_ON_SHIPMENT" },
+          { status: 422 }
+        );
+      }
     }
 
+    // Resolve which slot to fill.
+    const catalog = inferLegDocuments(leg.legType, leg.mode).slots;
+    let slotKey = b.slotKey ?? null;
+    if (!slotKey && doc) {
+      slotKey = matchDocumentToSlot(doc, catalog) ?? matchDocumentToSlot(doc, leg.legDocuments.map((d) => ({
+        slotKey: d.slotKey, slotLabel: d.slotLabel, expectedDocType: d.expectedDocType,
+        requirement: d.requirement, requirementReason: d.requirementReason ?? "",
+      })));
+    }
+    if (!slotKey) {
+      // Ad-hoc slot keyed on the document type so it stays unique.
+      slotKey = `ADHOC_${b.expectedDocType ?? doc?.documentType ?? "OTHER"}`;
+    }
+
+    const catalogSlot = catalog.find((s) => s.slotKey === slotKey);
+    const existing = leg.legDocuments.find((d) => d.slotKey === slotKey);
+
+    const legDoc = existing
+      ? await db.shipmentLegDocument.update({
+          where: { id: existing.id },
+          data: {
+            documentId: b.documentId === undefined ? existing.documentId : b.documentId,
+            requirement: b.requirement ?? existing.requirement,
+            requirementReason: b.requirementReason ?? existing.requirementReason,
+          },
+        })
+      : await db.shipmentLegDocument.create({
+          data: {
+            accountId: ctx.accountId,
+            legId: leg.id,
+            documentId: b.documentId ?? null,
+            slotKey,
+            slotLabel: b.slotLabel ?? catalogSlot?.slotLabel ?? slotKey.replace(/_/g, " "),
+            expectedDocType: b.expectedDocType ?? catalogSlot?.expectedDocType ?? DocumentType.OTHER,
+            requirement: b.requirement ?? catalogSlot?.requirement ?? LegDocumentRequirement.OPTIONAL,
+            requirementReason: b.requirementReason ?? catalogSlot?.requirementReason ?? "Added by broker",
+            source: "MANUAL",
+          },
+        });
+
+    const projection = await getShipmentTrackingProjection(ctx.accountId, leg.shipmentId);
+    return NextResponse.json({ legDocument: legDoc, journey: projection?.journey ?? null }, { status: 201 });
+  },
+  { permission: "shipments.manage", write: true }
+);
+
+export const PATCH = withAuthenticatedRoute<{ id: string; legId: string }>(
+  async ({ req, ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
+
+    const body = await parseAndValidateBody(req, patchSchema, requestId);
+    if ("response" in body) return body.response;
+
+    const leg = await loadLeg(ctx.accountId, p.data.id, p.data.legId);
+    if (!leg) return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
+
+    const target = leg.legDocuments.find((d) => d.id === body.data.legDocumentId);
+    if (!target) return NextResponse.json({ error: "Checklist row not found" }, { status: 404 });
+
     const updated = await db.shipmentLegDocument.update({
-      where: { id: legDocumentId },
+      where: { id: target.id },
       data: {
-        requirement: requirement ? (requirement as LegDocumentRequirement) : undefined,
-        requirementReason: requirementReason !== undefined ? requirementReason : undefined,
+        requirement: body.data.requirement ?? target.requirement,
+        requirementReason:
+          body.data.requirementReason === undefined ? target.requirementReason : body.data.requirementReason,
       },
     });
 
-    const projection = await getShipmentTrackingProjection(leg.accountId, id);
-    return NextResponse.json({ legDocument: updated, projection });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to update checklist row" }, { status: 422 });
-  }
-}
+    const projection = await getShipmentTrackingProjection(ctx.accountId, leg.shipmentId);
+    return NextResponse.json({ legDocument: updated, journey: projection?.journey ?? null });
+  },
+  { permission: "shipments.manage", write: true }
+);
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string; legId: string }> }
-) {
-  const { id, legId } = await params;
-  const leg = await db.shipmentLeg.findFirst({ where: { id: legId, shipmentId: id } });
+export const DELETE = withAuthenticatedRoute<{ id: string; legId: string }>(
+  async ({ req, ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
 
-  if (!leg) {
-    return NextResponse.json({ error: "Leg not found" }, { status: 404 });
-  }
+    const q = z
+      .object({ legDocumentId: z.string().min(1) })
+      .safeParse(Object.fromEntries(new URL(req.url).searchParams));
+    if (!q.success) return NextResponse.json({ error: "legDocumentId query param required" }, { status: 400 });
 
-  try {
-    const { searchParams } = new URL(req.url);
-    const legDocumentId = searchParams.get("legDocumentId");
+    const leg = await loadLeg(ctx.accountId, p.data.id, p.data.legId);
+    if (!leg) return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
 
-    if (!legDocumentId) {
-      return NextResponse.json({ error: "legDocumentId query parameter required" }, { status: 400 });
-    }
+    const target = leg.legDocuments.find((d) => d.id === q.data.legDocumentId);
+    if (!target) return NextResponse.json({ error: "Checklist row not found" }, { status: 404 });
 
-    const target = await db.shipmentLegDocument.findFirst({ where: { id: legDocumentId, legId } });
-
-    if (!target) {
-      return NextResponse.json({ error: "Leg document slot not found" }, { status: 404 });
-    }
-
-    if (target.requirement === "OPTIONAL") {
-      await db.shipmentLegDocument.delete({ where: { id: legDocumentId } });
+    if (target.source === "MANUAL" && target.requirement === "OPTIONAL") {
+      // Broker-added ad-hoc slot — remove it entirely.
+      await db.shipmentLegDocument.delete({ where: { id: target.id } });
     } else {
-      // Detach doc keeping checklist gap intact
-      await db.shipmentLegDocument.update({
-        where: { id: legDocumentId },
-        data: { documentId: null },
-      });
+      // Required/inferred slot — keep the gap, just detach the document.
+      await db.shipmentLegDocument.update({ where: { id: target.id }, data: { documentId: null } });
     }
 
-    const projection = await getShipmentTrackingProjection(leg.accountId, id);
-    return NextResponse.json({ success: true, projection });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to remove leg document" }, { status: 422 });
-  }
-}
+    const projection = await getShipmentTrackingProjection(ctx.accountId, leg.shipmentId);
+    return NextResponse.json({ success: true, journey: projection?.journey ?? null });
+  },
+  { permission: "shipments.manage", write: true }
+);

@@ -1,115 +1,117 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { LegMode, LegStatus, LegType } from "@prisma/client";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracking";
-import { LegMode, LegType, LegStatus } from "@prisma/client";
+import { resolveOwnedShipment, nextStopSequence } from "@/modules/legs/legService";
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const shipment = await db.shipment.findFirst({
-    where: { OR: [{ id }, { shipmentNumber: id }], deletedAt: null },
-  });
-  if (!shipment) {
-    return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
-  }
+const paramsSchema = z.object({ id: z.string().min(1) });
 
-  const projection = await getShipmentTrackingProjection(shipment.accountId, shipment.id);
-  return NextResponse.json(projection);
-}
+const createSchema = z.object({
+  legType: z.nativeEnum(LegType).default(LegType.MAIN_CARRIAGE),
+  mode: z.nativeEnum(LegMode).default(LegMode.OCEAN),
+  originName: z.string().min(1).optional(),
+  originUnlocode: z.string().max(10).optional(),
+  destinationName: z.string().min(1),
+  destinationUnlocode: z.string().max(10).optional(),
+  carrierName: z.string().optional(),
+  carrierScac: z.string().max(10).optional(),
+  vesselName: z.string().optional(),
+  voyageNumber: z.string().optional(),
+  billOfLadingNumber: z.string().optional(),
+  billOfLadingType: z.string().optional(),
+  bookingNumber: z.string().optional(),
+});
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const shipment = await db.shipment.findFirst({
-    where: { OR: [{ id }, { shipmentNumber: id }], deletedAt: null },
-    include: { legs: { orderBy: { sequence: "asc" }, include: { destinationStop: true } } },
-  });
+export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestId, params }) => {
+  const p = validatePathParams(params, paramsSchema, requestId);
+  if ("response" in p) return p.response;
 
-  if (!shipment) {
-    return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
-  }
+  const shipment = await resolveOwnedShipment(ctx.accountId, p.data.id);
+  if (!shipment) return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
 
-  try {
-    const body = await req.json();
-    const {
-      legType = LegType.MAIN_CARRIAGE,
-      mode = LegMode.OCEAN,
-      originName,
-      originUnlocode,
-      destinationName,
-      destinationUnlocode,
-      carrierName,
-      carrierScac,
-      vesselName,
-      voyageNumber,
-      billOfLadingNumber,
-      bookingNumber,
-    } = body;
+  const projection = await getShipmentTrackingProjection(ctx.accountId, shipment.id);
+  return NextResponse.json({ journey: projection?.journey ?? null });
+});
 
-    const existingLegs = shipment.legs;
-    const nextSeq = existingLegs.length + 1;
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, requestId, params }) => {
+  const p = validatePathParams(params, paramsSchema, requestId);
+  if ("response" in p) return p.response;
+
+  const body = await parseAndValidateBody(req, createSchema, requestId);
+  if ("response" in body) return body.response;
+
+  const shipment = await resolveOwnedShipment(ctx.accountId, p.data.id);
+  if (!shipment) return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
+
+  const b = body.data;
+
+  const leg = await db.$transaction(async (tx) => {
+    const existing = await tx.shipmentLeg.findMany({
+      where: { shipmentId: shipment.id },
+      orderBy: { sequence: "asc" },
+      select: { id: true, sequence: true, destinationStopId: true },
+    });
+    const nextSeq = existing.length + 1;
 
     let originStopId: string;
-
-    // Invariant: shared stop rule (new leg's origin is previous leg's destination)
-    if (existingLegs.length > 0) {
-      originStopId = existingLegs[existingLegs.length - 1].destinationStopId;
+    if (existing.length > 0) {
+      // Shared-stop invariant: new leg starts where the last leg ends.
+      originStopId = existing[existing.length - 1].destinationStopId;
     } else {
-      const originStop = await db.shipmentStop.create({
+      const origin = await tx.shipmentStop.create({
         data: {
-          accountId: shipment.accountId,
+          accountId: ctx.accountId,
           shipmentId: shipment.id,
-          sequence: 1,
-          type: "FACILITY",
+          sequence: await nextStopSequence(tx, shipment.id),
+          type: "ORIGIN",
           role: "ORIGIN",
-          name: originName || "Origin Terminal",
-          unlocode: originUnlocode || null,
+          name: b.originName || "Origin",
+          unlocode: b.originUnlocode || null,
         },
       });
-      originStopId = originStop.id;
+      originStopId = origin.id;
     }
 
-    const destStop = await db.shipmentStop.create({
+    const destSeq = await nextStopSequence(tx, shipment.id);
+    const destStop = await tx.shipmentStop.create({
       data: {
-        accountId: shipment.accountId,
+        accountId: ctx.accountId,
         shipmentId: shipment.id,
-        sequence: (existingLegs.length + 1) * 2,
-        type: "PORT",
-        role: "DESTINATION",
-        name: destinationName || "Destination Terminal",
-        unlocode: destinationUnlocode || null,
+        sequence: destSeq,
+        type: "DESTINATION",
+        role: nextSeq === 1 ? "DESTINATION" : "TRANSSHIPMENT",
+        name: b.destinationName,
+        unlocode: b.destinationUnlocode || null,
       },
     });
 
-    const newLeg = await db.shipmentLeg.create({
+    return tx.shipmentLeg.create({
       data: {
-        accountId: shipment.accountId,
+        accountId: ctx.accountId,
         shipmentId: shipment.id,
         sequence: nextSeq,
-        legType: legType as LegType,
-        mode: mode as LegMode,
+        legType: b.legType,
+        mode: b.mode,
         status: LegStatus.PLANNED,
         originStopId,
         destinationStopId: destStop.id,
-        carrierName: carrierName || null,
-        carrierScac: carrierScac || null,
-        vesselName: vesselName || null,
-        voyageNumber: voyageNumber || null,
-        billOfLadingNumber: billOfLadingNumber || null,
-        bookingNumber: bookingNumber || null,
+        carrierName: b.carrierName || null,
+        carrierScac: b.carrierScac || null,
+        vesselName: b.vesselName || null,
+        voyageNumber: b.voyageNumber || null,
+        billOfLadingNumber: b.billOfLadingNumber || null,
+        billOfLadingType: b.billOfLadingType || null,
+        bookingNumber: b.bookingNumber || null,
         source: "MANUAL",
         confirmedAt: new Date(),
+        confirmedByUserId: ctx.userId,
       },
     });
+  });
 
-    const updatedProjection = await getShipmentTrackingProjection(shipment.accountId, shipment.id);
-    return NextResponse.json({ leg: newLeg, projection: updatedProjection }, { status: 201 });
-  } catch (error: any) {
-    console.error("Failed to create leg:", error);
-    return NextResponse.json({ error: error.message || "Failed to create leg" }, { status: 422 });
-  }
-}
+  const projection = await getShipmentTrackingProjection(ctx.accountId, shipment.id);
+  return NextResponse.json({ leg, journey: projection?.journey ?? null }, { status: 201 });
+}, { permission: "shipments.manage", write: true });

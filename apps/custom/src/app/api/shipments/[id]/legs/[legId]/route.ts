@@ -1,102 +1,131 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { LegMode, LegStatus } from "@prisma/client";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { getShipmentTrackingProjection } from "@/modules/tracking/shipmentTracking";
+import { resequenceLegs } from "@/modules/legs/legService";
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string; legId: string }> }
-) {
-  const { id, legId } = await params;
-  const leg = await db.shipmentLeg.findFirst({ where: { id: legId, shipmentId: id } });
+const paramsSchema = z.object({ id: z.string().min(1), legId: z.string().min(1) });
 
-  if (!leg) {
-    return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
-  }
+const patchSchema = z.object({
+  mode: z.nativeEnum(LegMode).optional(),
+  status: z.nativeEnum(LegStatus).optional(),
+  statusReason: z.string().nullable().optional(),
+  carrierName: z.string().nullable().optional(),
+  carrierScac: z.string().max(10).nullable().optional(),
+  vesselName: z.string().nullable().optional(),
+  voyageNumber: z.string().nullable().optional(),
+  flightNumber: z.string().nullable().optional(),
+  billOfLadingNumber: z.string().nullable().optional(),
+  billOfLadingType: z.string().nullable().optional(),
+  bookingNumber: z.string().nullable().optional(),
+  plannedDeparture: z.string().datetime().nullable().optional(),
+  estimatedDeparture: z.string().datetime().nullable().optional(),
+  actualDeparture: z.string().datetime().nullable().optional(),
+  plannedArrival: z.string().datetime().nullable().optional(),
+  estimatedArrival: z.string().datetime().nullable().optional(),
+  actualArrival: z.string().datetime().nullable().optional(),
+  confirmed: z.boolean().optional(),
+});
 
-  try {
-    const body = await req.json();
+async function loadLeg(accountId: string, shipmentIdOrNumber: string, legId: string) {
+  return db.shipmentLeg.findFirst({
+    where: {
+      id: legId,
+      accountId,
+      shipment: {
+        accountId,
+        deletedAt: null,
+        OR: [{ id: shipmentIdOrNumber }, { shipmentNumber: shipmentIdOrNumber }],
+      },
+    },
+  });
+}
 
-    // Invariant: mode cannot be mutated once status leaves PLANNED
-    if (body.mode && body.mode !== leg.mode && leg.status !== "PLANNED") {
+const dateOrKeep = (v: string | null | undefined, current: Date | null) =>
+  v === undefined ? current : v === null ? null : new Date(v);
+
+export const PATCH = withAuthenticatedRoute<{ id: string; legId: string }>(
+  async ({ req, ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
+
+    const body = await parseAndValidateBody(req, patchSchema, requestId);
+    if ("response" in body) return body.response;
+
+    const leg = await loadLeg(ctx.accountId, p.data.id, p.data.legId);
+    if (!leg) return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
+
+    const b = body.data;
+
+    if (b.mode && b.mode !== leg.mode && leg.status !== "PLANNED") {
       return NextResponse.json(
-        { error: "Leg mode is immutable after status leaves PLANNED. Delete and re-create the leg instead." },
+        { error: "Leg mode is immutable once the leg leaves PLANNED. Delete and re-create the leg instead.", code: "LEG_MODE_LOCKED" },
         { status: 422 }
       );
     }
 
-    const updatedLeg = await db.shipmentLeg.update({
-      where: { id: legId },
+    const updated = await db.shipmentLeg.update({
+      where: { id: leg.id },
       data: {
-        carrierName: body.carrierName !== undefined ? body.carrierName : leg.carrierName,
-        carrierScac: body.carrierScac !== undefined ? body.carrierScac : leg.carrierScac,
-        vesselName: body.vesselName !== undefined ? body.vesselName : leg.vesselName,
-        voyageNumber: body.voyageNumber !== undefined ? body.voyageNumber : leg.voyageNumber,
-        flightNumber: body.flightNumber !== undefined ? body.flightNumber : leg.flightNumber,
-        billOfLadingNumber: body.billOfLadingNumber !== undefined ? body.billOfLadingNumber : leg.billOfLadingNumber,
-        bookingNumber: body.bookingNumber !== undefined ? body.bookingNumber : leg.bookingNumber,
-        status: body.status !== undefined ? body.status : leg.status,
-        statusReason: body.statusReason !== undefined ? body.statusReason : leg.statusReason,
-        plannedDeparture: body.plannedDeparture ? new Date(body.plannedDeparture) : leg.plannedDeparture,
-        estimatedDeparture: body.estimatedDeparture ? new Date(body.estimatedDeparture) : leg.estimatedDeparture,
-        actualDeparture: body.actualDeparture ? new Date(body.actualDeparture) : leg.actualDeparture,
-        plannedArrival: body.plannedArrival ? new Date(body.plannedArrival) : leg.plannedArrival,
-        estimatedArrival: body.estimatedArrival ? new Date(body.estimatedArrival) : leg.estimatedArrival,
-        actualArrival: body.actualArrival ? new Date(body.actualArrival) : leg.actualArrival,
+        mode: b.mode ?? leg.mode,
+        status: b.status ?? leg.status,
+        statusReason: b.statusReason === undefined ? leg.statusReason : b.statusReason,
+        carrierName: b.carrierName === undefined ? leg.carrierName : b.carrierName,
+        carrierScac: b.carrierScac === undefined ? leg.carrierScac : b.carrierScac,
+        vesselName: b.vesselName === undefined ? leg.vesselName : b.vesselName,
+        voyageNumber: b.voyageNumber === undefined ? leg.voyageNumber : b.voyageNumber,
+        flightNumber: b.flightNumber === undefined ? leg.flightNumber : b.flightNumber,
+        billOfLadingNumber: b.billOfLadingNumber === undefined ? leg.billOfLadingNumber : b.billOfLadingNumber,
+        billOfLadingType: b.billOfLadingType === undefined ? leg.billOfLadingType : b.billOfLadingType,
+        bookingNumber: b.bookingNumber === undefined ? leg.bookingNumber : b.bookingNumber,
+        plannedDeparture: dateOrKeep(b.plannedDeparture, leg.plannedDeparture),
+        estimatedDeparture: dateOrKeep(b.estimatedDeparture, leg.estimatedDeparture),
+        actualDeparture: dateOrKeep(b.actualDeparture, leg.actualDeparture),
+        plannedArrival: dateOrKeep(b.plannedArrival, leg.plannedArrival),
+        estimatedArrival: dateOrKeep(b.estimatedArrival, leg.estimatedArrival),
+        actualArrival: dateOrKeep(b.actualArrival, leg.actualArrival),
+        ...(b.confirmed ? { confirmedAt: new Date(), confirmedByUserId: ctx.userId, confidence: null } : {}),
       },
     });
 
-    const projection = await getShipmentTrackingProjection(leg.accountId, id);
-    return NextResponse.json({ leg: updatedLeg, projection });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to update leg" }, { status: 422 });
-  }
-}
+    const projection = await getShipmentTrackingProjection(ctx.accountId, leg.shipmentId);
+    return NextResponse.json({ leg: updated, journey: projection?.journey ?? null });
+  },
+  { permission: "shipments.manage", write: true }
+);
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string; legId: string }> }
-) {
-  const { id, legId } = await params;
-  const leg = await db.shipmentLeg.findFirst({ where: { id: legId, shipmentId: id } });
+export const DELETE = withAuthenticatedRoute<{ id: string; legId: string }>(
+  async ({ ctx, requestId, params }) => {
+    const p = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in p) return p.response;
 
-  if (!leg) {
-    return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
-  }
+    const leg = await loadLeg(ctx.accountId, p.data.id, p.data.legId);
+    if (!leg) return NextResponse.json({ error: "Shipment leg not found" }, { status: 404 });
 
-  // Refuse deletion if leg has actual timestamps (real tracking landed)
-  if (leg.actualDeparture || leg.actualArrival) {
-    return NextResponse.json(
-      { error: "Cannot delete a leg with recorded actual departure or arrival timestamps." },
-      { status: 422 }
-    );
-  }
-
-  await db.shipmentLeg.delete({ where: { id: legId } });
-
-  // Re-sequence remaining legs 1..N and reconcile shared stops
-  const remainingLegs = await db.shipmentLeg.findMany({
-    where: { shipmentId: id },
-    orderBy: { sequence: "asc" },
-  });
-
-  for (let i = 0; i < remainingLegs.length; i++) {
-    const cur = remainingLegs[i];
-    await db.shipmentLeg.update({
-      where: { id: cur.id },
-      data: { sequence: i + 1 },
-    });
-    if (i > 0) {
-      const prev = remainingLegs[i - 1];
-      // Ensure shared stop invariant
-      if (cur.originStopId !== prev.destinationStopId) {
-        await db.shipmentLeg.update({
-          where: { id: cur.id },
-          data: { originStopId: prev.destinationStopId },
-        });
-      }
+    if (leg.actualDeparture || leg.actualArrival) {
+      return NextResponse.json(
+        { error: "Cannot delete a leg that has recorded actual departure or arrival.", code: "LEG_HAS_ACTUALS" },
+        { status: 422 }
+      );
     }
-  }
 
-  const projection = await getShipmentTrackingProjection(leg.accountId, id);
-  return NextResponse.json({ success: true, projection });
-}
+    await db.$transaction(async (tx) => {
+      await tx.shipmentLeg.delete({ where: { id: leg.id } });
+      const remaining = await tx.shipmentLeg.findMany({
+        where: { shipmentId: leg.shipmentId },
+        orderBy: { sequence: "asc" },
+        select: { id: true },
+      });
+      if (remaining.length > 0) {
+        await resequenceLegs(tx, leg.shipmentId, remaining.map((l) => l.id));
+      }
+    });
+
+    const projection = await getShipmentTrackingProjection(ctx.accountId, leg.shipmentId);
+    return NextResponse.json({ success: true, journey: projection?.journey ?? null });
+  },
+  { permission: "shipments.manage", write: true }
+);

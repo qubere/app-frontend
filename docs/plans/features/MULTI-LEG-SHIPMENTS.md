@@ -1,9 +1,37 @@
 # Multi-Leg Shipments — Design, API & UX Requirements
 
-Status: proposed
+Status: phase 1 implemented (PR #107)
 Written: 2026-08-29
 Owner: Shipment platform (apps/custom + apps/tms + packages/db)
 Related: `docs/plans/TMS-SHIPMENT-LIFECYCLE-RIBBON.md`, `apps/custom/src/modules/tracking/shipmentTracking.ts`, `apps/tms/src/modules/shipments/services/shipmentLifecycleStatus.ts`
+
+## Implementation status (PR #107, revised)
+
+Shipped: `ShipmentLeg` / `ShipmentLegDocument` / `ShipmentLegEquipment` / `LegInferenceRun`
+schema + migration `20260829200000_multi_leg_shipments`; `@qubere/shipment-legs`
+package (rule-based inference, per-leg document catalog, diff proposals,
+transactional apply); leg CRUD + reorder + infer/accept/reject API routes (all
+`withAuthenticatedRoute` + `shipments.manage` write permission + tenant-scoped +
+zod-validated + transactional re-sequencing); `journey` block on the tracking
+projection; shared `JourneyRibbon` component (dynamic rail, per-leg cards, doc
+checklist with a real document picker, inference-proposal card, confirm-route);
+non-destructive demo seed on `SHP-TGT-2026-001`.
+
+Key deltas from the original design below:
+- **`ShipmentLegDocument` is keyed on `slotKey` (+ `slotLabel`), not `expectedDocType`.**
+  Real transport docs (booking confirmation, shipping instructions, arrival
+  notice, delivery order) all map to `DocumentType.OTHER`; `slotKey` is the
+  stable per-leg slot identity and the unique constraint is `@@unique([legId, slotKey])`.
+- **`TransportLeg` / `Movement` are NOT yet removed.** Phase 1 adds `ShipmentLeg`
+  alongside them; the backfill (§5.5) and the drop are still pending — no
+  backfill script has been written yet (the interim `ShipmentTrackingPanel` still
+  reads `TransportLeg`; the new `JourneyRibbon` reads `ShipmentLeg`).
+- The shipment-detail 403-vs-404 rework that rode along in the first commit was
+  reverted — it widened cross-account read access and belongs in its own PR.
+- Inference is deterministic rule-based (`model: "rules-v1"`), persisted per run
+  in `LegInferenceRun` keyed on a SHA-256 `inputsHash` so re-runs are idempotent.
+  It never invents carrier/vessel values it can't derive — those stay null for
+  the broker to confirm.
 
 ---
 
