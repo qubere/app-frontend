@@ -96,6 +96,10 @@ export default async function DocumentsPage() {
             select: {
               id: true,
               confidenceScore: true,
+              matchedIdentifierType: true,
+              matchedValue: true,
+              matchMethod: true,
+              autoSelected: true,
               shipment: {
                 select: { id: true, shipmentNumber: true, portOfEntry: true },
               },

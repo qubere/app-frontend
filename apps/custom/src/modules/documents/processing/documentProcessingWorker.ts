@@ -31,7 +31,9 @@ import { pollDelayMs, readProcessingLimits } from "../parser/config";
 import { getDocumentParserProvider } from "../parser/registry";
 import { assessQuality, qualifiesAsActive } from "../parser/qualityGate";
 import { persistRunArtifacts, parseArtifactIndex, loadNormalizedResult } from "../parser/artifactStore";
-import { matchShipmentForDocument, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
+import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
+import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
+import { scanDocumentForMalware } from "@/lib/security/scanDocument";
 import {
   completeRun,
   createOrFindRun,
@@ -236,6 +238,22 @@ async function submitRun(
       fileUrl: run.document.fileUrl,
       expectedSha256: run.document.checksum,
     });
+
+    // Malware scan before the bytes ever reach the parser provider. A non-safe
+    // verdict quarantines the document (handled inside scanDocumentForMalware)
+    // and fails this run -- permanently for INFECTED, retryably for a scanner
+    // outage.
+    const scan = await scanDocumentForMalware(run.documentId, original.bytes, {
+      sha256: run.document.checksum ?? undefined,
+      fileName: run.document.fileName,
+    });
+    if (!scan.safe) {
+      throw new DocumentParserError(
+        "MALWARE_QUARANTINED",
+        "The document was quarantined by the malware scanner.",
+        { retryable: scan.result.status === "ERROR" }
+      );
+    }
 
     const mimeType = resolveMimeType(run.document.mimeType, run.document.fileName);
 
@@ -623,7 +641,7 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
 
   let shipmentId = document?.shipmentId ?? null;
 
-  if (shipmentId === null && document?.source === "EMAIL") {
+  if (shipmentId === null && (document?.source === "EMAIL" || document?.source === "API")) {
     shipmentId = await tryAutoMatchShipment(run);
   }
 
@@ -715,15 +733,36 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     select: { inboundEmail: { select: { subject: true } } },
   });
 
-  const { matchedShipmentId } = await matchShipmentForDocument({
+  const matchResult = await matchShipmentForDocument({
     accountId: run.document.accountId,
     documentId: run.documentId,
     emailSubject: inboundAttachment?.inboundEmail.subject ?? null,
     parsedText,
   });
+  const { matchedShipmentId } = matchResult;
 
   if (matchedShipmentId === null) {
-    log("auto_match.no_match", { runId: run.id, documentId: run.documentId });
+    if (isMatchConflict(matchResult)) {
+      log("auto_match.conflict", {
+        runId: run.id,
+        documentId: run.documentId,
+        candidates: matchResult.candidates.length,
+      });
+      // No confident single shipment but several are plausible -- surface it
+      // so a human disambiguates on the Documents page. Dedupe on the document
+      // so a reprocess doesn't re-notify.
+      await notifyAccountRoleHolders({
+        accountId: run.document.accountId,
+        type: "DOCUMENT_MATCH_CONFLICT",
+        message: `"${run.document.fileName}" matches ${matchResult.candidates.length} shipments — pick the right one.`,
+        entityType: "ShipmentDocument",
+        entityId: run.documentId,
+        permission: "document.update",
+        dedupe: true,
+      }).catch((err) => log("auto_match.conflict_notify_failed", { runId: run.id, error: String(err) }));
+    } else {
+      log("auto_match.no_match", { runId: run.id, documentId: run.documentId });
+    }
     return null;
   }
 
@@ -737,7 +776,7 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     entity: "ShipmentDocument",
     entityId: run.documentId,
     source: "SYSTEM",
-    metadata: { shipmentId: matchedShipmentId, algorithmVersion: "v1-exact-identifier" },
+    metadata: { shipmentId: matchedShipmentId, algorithmVersion: "v2-weighted-multi-identifier" },
     correlationId: run.correlationId,
   });
   log("auto_match.matched", { runId: run.id, documentId: run.documentId, shipmentId: matchedShipmentId });

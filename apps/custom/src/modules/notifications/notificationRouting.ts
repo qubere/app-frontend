@@ -34,6 +34,8 @@ interface NotificationTypeMeta {
  */
 export const NOTIFICATION_TYPE_META: Record<string, NotificationTypeMeta> = {
   INBOUND_EMAIL_DOCUMENTS: { category: "DOCUMENTS", label: "Documents" },
+  DOCUMENT_MATCH_CONFLICT: { category: "DOCUMENTS", label: "Needs a shipment" },
+  DOCUMENT_QUARANTINED: { category: "DOCUMENTS", label: "Quarantined" },
   WORK_ASSIGNED: { category: "OPERATIONS", label: "Assigned to you" },
   WORK_ESCALATED: { category: "OPERATIONS", label: "Escalated" },
   EXCEPTION_ASSIGNED: { category: "OPERATIONS", label: "Assigned to you" },

@@ -256,6 +256,16 @@ vi.mock("@/modules/documents/processing/documentSource", async () => {
   return { ...actual, readOriginalDocument: async () => documentSourceMock() };
 });
 
+// Malware scanning is covered in its own suite (clamav-scanner, scan-document);
+// here it just needs to report the document as safe so the run proceeds.
+vi.mock("@/lib/security/scanDocument", () => ({
+  scanDocumentForMalware: async () => ({
+    safe: true,
+    scanned: false,
+    result: { status: "SKIPPED", scanner: "none" },
+  }),
+}));
+
 // Extraction is its own versioned run, covered in its own suite; here it only
 // needs to be observable in the timeline.
 vi.mock("@/modules/documents/processing/classificationExtraction", () => ({

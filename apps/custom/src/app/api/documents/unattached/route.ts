@@ -31,6 +31,10 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
         select: {
           id: true,
           confidenceScore: true,
+          matchedIdentifierType: true,
+          matchedValue: true,
+          matchMethod: true,
+          autoSelected: true,
           shipment: { select: { id: true, shipmentNumber: true, portOfEntry: true } },
         },
         orderBy: { confidenceScore: "desc" },
