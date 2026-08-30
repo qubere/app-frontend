@@ -20,6 +20,7 @@ import {
   extractedValueFor,
   reconciliationFieldValues,
 } from "@/lib/documents/fieldDictionary";
+import { syncTrackingIdentifiersFromExtraction } from "@/modules/shipments/trackingIdentifierSync";
 
 export const DOCUMENT_INTELLIGENCE_SYSTEM_PROMPT = `
 ROLE
@@ -1106,6 +1107,23 @@ ${instructions}`;
                   source: "DOC_INTEL_STRUCTURED",
                 })),
               });
+            }
+
+            // Materialise transport identifiers (container / BOL / booking /
+            // AWB) from this extraction onto the shipment, so the shipment-
+            // matcher can auto-attach the NEXT inbound document that references
+            // any of them. Idempotent; exact values only.
+            if (input.shipmentId) {
+              try {
+                await syncTrackingIdentifiersFromExtraction({
+                  accountId: input.accountId,
+                  shipmentId: input.shipmentId,
+                  tradeMetadata: blobTradeMetadata,
+                  docTypeName: docToUpdate.docType,
+                });
+              } catch (err) {
+                logAgentError("Document Intelligence Agent", input.shipmentId, "syncTrackingIdentifiers", err);
+              }
             }
 
             // C-5: Open a MISSING_DATA exception for each required field that
