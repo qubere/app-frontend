@@ -18,6 +18,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Sparkles,
 } from "lucide-react";
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
@@ -52,6 +53,10 @@ interface ShipmentDocumentItem {
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
+    matchedIdentifierType?: string | null;
+    matchedValue?: string | null;
+    matchMethod?: string | null;
+    autoSelected?: boolean | null;
     matchReasons?: string[];
     shipment: { id: string; shipmentNumber: string; portOfEntry?: string | null };
   }>;
@@ -84,6 +89,10 @@ interface ApiDocument {
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
+    matchedIdentifierType?: string | null;
+    matchedValue?: string | null;
+    matchMethod?: string | null;
+    autoSelected?: boolean | null;
     matchReasons?: string[];
     shipment: { id: string; shipmentNumber: string; portOfEntry?: string | null };
   }>;
@@ -188,6 +197,136 @@ function buildDocumentItems(
   return docs;
 }
 
+const MATCH_METHOD_LABEL: Record<string, string> = {
+  EXACT_SHIPMENT_NUMBER: "shipment number",
+  EXACT_TRACKING_IDENTIFIER: "transport ID",
+  EXACT_PO: "PO reference",
+  MULTI_SIGNAL: "multiple identifiers",
+};
+
+const IDENTIFIER_TYPE_LABEL: Record<string, string> = {
+  SHIPMENT_NUMBER: "Shipment #",
+  PO_REFERENCE: "PO",
+  MBL: "Master BL",
+  HBL: "House BL",
+  CONTAINER: "Container",
+  BOOKING: "Booking",
+  MAWB: "Master AWB",
+  HAWB: "House AWB",
+};
+
+/**
+ * The attach control for an unattached document. Leads with the ranked
+ * shipment-match suggestions the matcher already computed (identifier + score,
+ * one click to attach), and falls back to a filterable list of every shipment.
+ */
+function AttachPopover({
+  doc,
+  shipments,
+  attaching,
+  onAttach,
+}: {
+  doc: ShipmentDocumentItem;
+  shipments: ApiShipment[];
+  attaching: boolean;
+  onAttach: (shipmentId: string) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const candidates = (doc.shipmentCandidates ?? [])
+    .filter((c) => c.confidenceScore >= 0.5)
+    .slice(0, 3);
+  const candidateShipmentIds = new Set(candidates.map((c) => c.shipment.id));
+  const filtered = shipments
+    .filter((s) => !candidateShipmentIds.has(s.id))
+    .filter((s) => (s.shipmentNumber || s.id).toLowerCase().includes(filter.trim().toLowerCase()));
+
+  return (
+    <div className="absolute left-0 top-full mt-1.5 w-80 bg-white rounded-2xl border border-border shadow-xl z-20 p-2 text-xs">
+      {candidates.length > 0 && (
+        <div className="mb-2">
+          <p className="flex items-center gap-1 font-bold text-ink mb-1 text-[11px] px-2 pt-1">
+            <Sparkles className="w-3 h-3 text-brand" />
+            Suggested {candidates.length === 1 ? "match" : "matches"}
+          </p>
+          <div className="space-y-1">
+            {candidates.map((c) => {
+              const pct = Math.round(c.confidenceScore * 100);
+              const strong = c.confidenceScore >= 0.85;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => attaching || onAttach(c.shipment.id)}
+                  disabled={attaching}
+                  className="w-full text-left px-2 py-1.5 rounded-xl border border-brand/20 bg-brand/5 hover:bg-brand/10 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-ink text-[11px]">
+                      {c.shipment.shipmentNumber || c.shipment.id}
+                    </span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                        strong ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {pct}%
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-ink-muted">
+                    {c.shipment.portOfEntry ? `${c.shipment.portOfEntry} · ` : ""}
+                    matched on{" "}
+                    {c.matchedIdentifierType
+                      ? `${IDENTIFIER_TYPE_LABEL[c.matchedIdentifierType] ?? c.matchedIdentifierType}${
+                          c.matchedValue ? ` ${c.matchedValue}` : ""
+                        }`
+                      : MATCH_METHOD_LABEL[c.matchMethod ?? ""] ?? "identifier"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-ink-muted px-2 pt-1.5">Or pick any shipment:</p>
+        </div>
+      )}
+      {candidates.length === 0 && (
+        <p className="font-bold text-ink mb-1 text-[11px] px-2 pt-1">Attach to shipment</p>
+      )}
+      {shipments.length === 0 ? (
+        <p className="text-ink-muted text-[11px] px-2 py-2">No active shipments found</p>
+      ) : (
+        <>
+          {shipments.length > 6 && (
+            <div className="relative px-1 pb-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-ink-muted" />
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter shipments…"
+                className="w-full pl-7 pr-2 py-1 rounded-lg border border-border text-[11px] focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+          )}
+          <div className="max-h-44 overflow-y-auto space-y-1">
+            {filtered.length === 0 ? (
+              <p className="text-ink-muted text-[11px] px-2 py-2">No shipments match “{filter}”.</p>
+            ) : (
+              filtered.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => attaching || onAttach(s.id)}
+                  disabled={attaching}
+                  className="w-full text-left px-2 py-1.5 hover:bg-surface-muted rounded-xl transition-colors text-ink text-[11px] font-medium disabled:opacity-50 cursor-pointer"
+                >
+                  {s.shipmentNumber || s.id}
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function DocumentsClient({
   context,
   teamMembers,
@@ -258,8 +397,10 @@ export function DocumentsClient({
   const [typeOverrides, setTypeOverrides] = useState<Record<string, string>>({});
   const [reprocessingDocId, setReprocessingDocId] = useState<string | null>(null);
   const [attachingDocId, setAttachingDocId] = useState<string | null>(null);
+  const [attachDocPending, setAttachDocPending] = useState(false);
 
   const attachDocumentToShipment = async (docId: string, shipmentId: string) => {
+    setAttachDocPending(true);
     try {
       const res = await fetch(`/api/documents/${docId}/attach`, {
         method: "POST",
@@ -274,6 +415,8 @@ export function DocumentsClient({
       }
     } catch (err) {
       console.error("Error attaching document", err);
+    } finally {
+      setAttachDocPending(false);
     }
   };
 
@@ -890,24 +1033,12 @@ export function DocumentsClient({
                             <Paperclip className="w-3.5 h-3.5" />
                           </button>
                           {attachingDocId === doc.id && (
-                            <div className="absolute left-0 top-full mt-1.5 w-72 bg-white rounded-2xl border border-border shadow-xl z-20 p-2 text-xs">
-                              <p className="font-bold text-ink mb-1 text-[11px] px-2 pt-1">Attach to shipment</p>
-                              {shipments.length === 0 ? (
-                                <p className="text-ink-muted text-[11px] px-2 py-2">No active shipments found</p>
-                              ) : (
-                                <div className="max-h-48 overflow-y-auto space-y-1">
-                                  {shipments.map((s) => (
-                                    <button
-                                      key={s.id}
-                                      onClick={() => attachDocumentToShipment(doc.id, s.id)}
-                                      className="w-full text-left px-2 py-1.5 hover:bg-surface-muted rounded-xl transition-colors text-ink text-[11px] font-medium cursor-pointer"
-                                    >
-                                      {s.shipmentNumber || s.id}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            <AttachPopover
+                              doc={doc}
+                              shipments={shipments}
+                              attaching={attachDocPending}
+                              onAttach={(shipmentId) => attachDocumentToShipment(doc.id, shipmentId)}
+                            />
                           )}
                         </div>
                       ) : (
