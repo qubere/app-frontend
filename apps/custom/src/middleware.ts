@@ -9,11 +9,19 @@ const isProtectedRoute = createRouteMatcher([
   "/api/assistant(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    await auth.protect();
-  }
-});
+export default clerkMiddleware(
+  async (auth, req) => {
+    if (isProtectedRoute(req)) {
+      await auth.protect();
+    }
+  },
+  {
+    // Redirect unauthenticated users to our own Qubere-branded sign-in page
+    // rather than the default Clerk Account Portal (accounts.qubere.ai).
+    signInUrl: "/sign-in",
+    signUpUrl: "/sign-up",
+  },
+);
 
 export const config = {
   matcher: [

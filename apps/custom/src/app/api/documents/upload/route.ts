@@ -135,13 +135,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         // parsed document; the classifier's result is what the document ends up with.
         DocumentTypeCatalog.matchDocumentType(file.name).name;
 
-  const existingDoc = targetShipmentId
-    ? await db.shipmentDocument.findFirst({
-        where: { accountId, shipmentId: targetShipmentId, fileName: file.name },
-      })
-    : await db.shipmentDocument.findFirst({
-        where: { accountId, shipmentId: null, fileName: file.name },
-      });
+  // Dedupe on content, not filename: re-uploading the identical file updates the
+  // existing row, but two different documents that happen to share a filename
+  // (e.g. "Commercial Invoice.pdf" from two shippers) each get their own row.
+  const existingDoc = await db.shipmentDocument.findFirst({
+    where: {
+      accountId,
+      shipmentId: targetShipmentId ?? null,
+      checksum: storageResult.checksum,
+    },
+  });
 
   // Superset of what upstream wrote: the original's size and media type are
   // recorded alongside its SHA-256 so the immutable original is fully described.
@@ -155,7 +158,10 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   };
 
   const docRecord = existingDoc
-    ? await db.shipmentDocument.update({ where: { id: existingDoc.id }, data: documentFields })
+    ? await db.shipmentDocument.update({
+        where: { id: existingDoc.id },
+        data: { fileName: file.name, ...documentFields },
+      })
     : await db.shipmentDocument.create({
         data: { accountId, shipmentId: targetShipmentId, fileName: file.name, ...documentFields },
       });
@@ -321,4 +327,4 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     { status: 202 }
   );
 
-}, { permission: "documents.create", write: true });
+}, { permission: { any: ["document.upload", "documents.create"] }, write: true });

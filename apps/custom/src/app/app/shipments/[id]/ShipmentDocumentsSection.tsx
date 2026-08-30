@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { CheckCircle2, AlertCircle, Plus, Unlink, Loader2, X, Files, GripVertical, FileText } from "lucide-react";
+import { CheckCircle2, AlertCircle, AlertTriangle, Plus, Unlink, Loader2, X, Files, GripVertical, FileText } from "lucide-react";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
@@ -17,10 +17,13 @@ interface DocumentItem {
   confidence: number | null;
   status: string;
   fileUrl?: string | null;
+  /** "passed" | "failed" | "pending" — whether parsing produced a usable result. */
+  parseState?: "passed" | "failed" | "pending";
 }
 
 interface ShipmentDocumentsSectionProps {
   shipmentId: string;
+  shipmentNumber?: string;
   documents: DocumentItem[];
   originStatus?: string;
   activeDocId: string | undefined;
@@ -43,6 +46,7 @@ function formatDocTypeName(docType: string): string {
 
 export function ShipmentDocumentsSection({
   shipmentId,
+  shipmentNumber,
   documents: initialDocs,
   originStatus = "Not Applicable",
   activeDocId,
@@ -52,7 +56,19 @@ export function ShipmentDocumentsSection({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detachingId, setDetachingId] = useState<string | null>(null);
   const [docPendingDetach, setDocPendingDetach] = useState<{ id: string; fileName: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDetachPending, setBulkDetachPending] = useState(false);
+  const [bulkDetaching, setBulkDetaching] = useState(false);
   const dragIndexRef = useRef<number | null>(null);
+
+  const toggleSelected = (docId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const handleOpen = () => setIsModalOpen(true);
@@ -70,8 +86,45 @@ export function ShipmentDocumentsSection({
   // Sync state when initialDocs props change (e.g. after dynamic file upload refresh)
   useEffect(() => {
     // Resyncs the list after an upload refreshes the server props.
-    setDocuments(Array.from(new Map(initialDocs.map((d) => [d.id, d])).values()));
+    const next = Array.from(new Map(initialDocs.map((d) => [d.id, d])).values());
+    setDocuments(next);
+    // Drop any selections for documents that are no longer in the list.
+    setSelectedIds((prev) => {
+      const live = new Set(next.map((d) => d.id));
+      const filtered = new Set([...prev].filter((id) => live.has(id)));
+      return filtered.size === prev.size ? prev : filtered;
+    });
   }, [initialDocs]);
+
+  const runBulkDetach = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkDetaching(true);
+    try {
+      const res = await fetch("/api/documents/detach/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentIds: ids }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || "Failed to detach documents");
+      const detached: string[] = data.detached ?? [];
+      setDocuments((prev) => prev.filter((d) => !detached.includes(d.id)));
+      setSelectedIds(new Set());
+      if (Array.isArray(data.skipped) && data.skipped.length > 0) {
+        alert(
+          `${detached.length} detached. ${data.skipped.length} skipped:\n` +
+            data.skipped.map((s: { reason: string }) => `• ${s.reason}`).join("\n")
+        );
+      }
+      router.refresh();
+    } catch (err) {
+      alert(caughtMessage(err, "Failed to detach documents"));
+    } finally {
+      setBulkDetaching(false);
+      setBulkDetachPending(false);
+    }
+  };
 
   const requestDetach = (docId: string, fileName: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -182,11 +235,57 @@ export function ShipmentDocumentsSection({
           </div>
         </div>
 
+        {/* Bulk selection bar */}
+        {documents.length > 1 && (
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <label className="flex items-center gap-1.5 text-ink-muted font-semibold cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="w-3.5 h-3.5 rounded border-border text-brand focus:ring-brand/30"
+                checked={selectedIds.size === documents.length && documents.length > 0}
+                ref={(el) => {
+                  if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < documents.length;
+                }}
+                onChange={(e) =>
+                  setSelectedIds(e.target.checked ? new Set(documents.map((d) => d.id)) : new Set())
+                }
+              />
+              <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all"}</span>
+            </label>
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-ink-muted hover:text-ink font-semibold cursor-pointer"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setBulkDetachPending(true)}
+                  disabled={bulkDetaching}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Unlink className="w-3 h-3" />
+                  Detach {selectedIds.size}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Document Cards List */}
         <div className="space-y-2">
           {documents.map((doc, idx) => {
             const received = isDocReceived(doc);
+            // Fall back to extraction confidence for documents that predate the
+            // parse-run history being surfaced here.
+            const parseState =
+              doc.parseState ??
+              (doc.confidence !== null && doc.confidence !== undefined ? "passed" : "pending");
+            const parseFailed = parseState === "failed";
+            const parsePending = parseState === "pending";
             const isSelected = activeDocId === doc.id;
+            const isChecked = selectedIds.has(doc.id);
 
             return (
               <div
@@ -205,12 +304,22 @@ export function ShipmentDocumentsSection({
                   }
                 }}
                 className={`p-3 rounded-xl border flex items-center justify-between text-xs transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-blue-50/60 border-brand shadow-2xs ring-1 ring-brand/20"
-                    : "bg-surface-muted/60 hover:bg-surface-muted border-border hover:border-border-strong"
+                  isChecked
+                    ? "bg-amber-50/50 border-amber-300"
+                    : isSelected
+                      ? "bg-blue-50/60 border-brand shadow-2xs ring-1 ring-brand/20"
+                      : "bg-surface-muted/60 hover:bg-surface-muted border-border hover:border-border-strong"
                 }`}
               >
                 <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelected(doc.id)}
+                    aria-label={`Select ${doc.fileName}`}
+                    className="w-3.5 h-3.5 rounded border-border text-brand focus:ring-brand/30 shrink-0"
+                  />
                   <GripVertical className="w-3.5 h-3.5 text-ink-muted/40 shrink-0 cursor-grab active:cursor-grabbing hover:text-ink-muted transition-colors" />
                   {received ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -227,19 +336,33 @@ export function ShipmentDocumentsSection({
                   </div>
                 </div>
                 <div className="flex items-center space-x-1.5 shrink-0">
-                  {received ? (
-                    doc.confidence !== null && doc.confidence !== undefined ? (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/80">
-                        {doc.confidence}% Parsed
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/80">
-                        Uploaded
-                      </span>
-                    )
-                  ) : (
+                  {!received ? (
                     <span className="text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200/80">
                       Missing
+                    </span>
+                  ) : parseFailed ? (
+                    <span
+                      title="Parsing failed"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/80"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Parse failed
+                    </span>
+                  ) : parsePending ? (
+                    <span
+                      title="Parsing in progress"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-ink-muted bg-surface-muted px-2 py-0.5 rounded-full border border-border"
+                    >
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Parsing
+                    </span>
+                  ) : (
+                    <span
+                      title="Parsed successfully"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/80"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Parsed
                     </span>
                   )}
                   <button
@@ -356,10 +479,63 @@ export function ShipmentDocumentsSection({
         </Modal>
       )}
 
+      {bulkDetachPending && (
+        <Modal
+          isOpen={bulkDetachPending}
+          onClose={() => setBulkDetachPending(false)}
+          titleId={DETACH_TITLE_ID}
+          closeDisabled={bulkDetaching}
+          className="max-w-md"
+        >
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+                <Unlink className="w-4 h-4" />
+              </div>
+              <h3 id={DETACH_TITLE_ID} className="text-base font-extrabold text-ink">
+                Detach {selectedIds.size} document{selectedIds.size === 1 ? "" : "s"}
+              </h3>
+            </div>
+            <button
+              onClick={() => setBulkDetachPending(false)}
+              className="p-1.5 rounded-full hover:bg-surface-muted text-ink-muted hover:text-ink transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-3 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-900 flex items-start space-x-2">
+            <Files className="w-4 h-4 text-brand shrink-0 mt-0.5" />
+            <span>
+              These documents will be removed from this shipment. They stay under{" "}
+              <strong>Trade Documents</strong> as unattached and can be reattached later — nothing is deleted.
+            </span>
+          </div>
+
+          <div className="flex items-center justify-end space-x-3 pt-1">
+            <Button variant="secondary" onClick={() => setBulkDetachPending(false)} disabled={bulkDetaching} className="shadow-none">
+              Cancel
+            </Button>
+            <button
+              onClick={runBulkDetach}
+              disabled={bulkDetaching}
+              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-xs flex items-center space-x-2 transition-all"
+            >
+              {bulkDetaching ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /><span>Detaching...</span></>
+              ) : (
+                <><Unlink className="w-4 h-4" /><span>Detach {selectedIds.size}</span></>
+              )}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       <DocumentUploadModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         shipmentId={shipmentId}
+        shipmentNumber={shipmentNumber}
         onUploadSuccess={() => {
           router.refresh();
         }}

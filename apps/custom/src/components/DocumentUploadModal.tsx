@@ -39,6 +39,8 @@ interface DocumentUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   shipmentId?: string;
+  /** Human-readable number for `shipmentId` (e.g. "SHP-TGT-2026-001"), shown instead of the raw cuid. */
+  shipmentNumber?: string;
   shipments?: ShipmentOption[];
   onUploadSuccess?: () => void;
 }
@@ -160,6 +162,7 @@ export function DocumentUploadModal({
   isOpen,
   onClose,
   shipmentId: initialShipmentId = "",
+  shipmentNumber: initialShipmentNumber,
   shipments = [],
   onUploadSuccess,
 }: DocumentUploadModalProps) {
@@ -167,7 +170,13 @@ export function DocumentUploadModal({
   const [files, setFiles] = useState<File[]>([]);
   const [docType, setDocType] = useState<string>("Commercial Invoice");
   const [selectedShipmentId, setSelectedShipmentId] = useState<string>(initialShipmentId);
-  const [availableShipments, setAvailableShipments] = useState<ShipmentOption[]>(shipments);
+  // Seed the list with the current shipment (and its real number) so the select
+  // shows "SHP-…" immediately, not the raw cuid, even before /api/shipments loads.
+  const seededShipments: ShipmentOption[] =
+    initialShipmentId && !shipments.some((s) => s.id === initialShipmentId)
+      ? [{ id: initialShipmentId, shipmentNumber: initialShipmentNumber ?? null }, ...shipments]
+      : shipments;
+  const [availableShipments, setAvailableShipments] = useState<ShipmentOption[]>(seededShipments);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -212,7 +221,10 @@ export function DocumentUploadModal({
           if (Array.isArray(data.shipments)) {
             let fetchedShipments: ShipmentOption[] = data.shipments;
             if (initialShipmentId && !fetchedShipments.some((s) => s.id === initialShipmentId)) {
-              fetchedShipments = [{ id: initialShipmentId, shipmentNumber: initialShipmentId }, ...fetchedShipments];
+              fetchedShipments = [
+                { id: initialShipmentId, shipmentNumber: initialShipmentNumber ?? null },
+                ...fetchedShipments,
+              ];
             }
             setAvailableShipments(fetchedShipments);
             setShipmentTotal(typeof data.total === "number" ? data.total : null);
@@ -234,7 +246,7 @@ export function DocumentUploadModal({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [isOpen, initialShipmentId, shipmentSearch]);
+  }, [isOpen, initialShipmentId, initialShipmentNumber, shipmentSearch]);
 
   // Detached documents keep their extraction, so they can be reattached instead of re-uploaded.
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock DB and audit calls to avoid hitting Supabase session connection limits in unit tests
+// Mock DB and audit calls to avoid hitting the database session connection limits in unit tests
 vi.mock("@/lib/db", () => ({
   db: {
     account: {

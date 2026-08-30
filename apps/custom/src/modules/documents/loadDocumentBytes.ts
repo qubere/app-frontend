@@ -103,7 +103,7 @@ export async function loadDocumentBytes(documentId: string): Promise<LoadedDocum
     return { buffer: onDisk, fileName, mimeType, source: "local-disk" };
   }
 
-  // 2. Durable object storage (GCS / Vercel Blob).
+  // 2. Durable object storage (GCS).
   if (document.fileUrl) {
     try {
       const stored = await readStoredObject(document.fileUrl);

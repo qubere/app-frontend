@@ -282,4 +282,4 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       { status: 202 }
     );
   
-}, { permission: "documents.create", write: true });
+}, { permission: { any: ["document.update", "documents.create"] }, write: true });

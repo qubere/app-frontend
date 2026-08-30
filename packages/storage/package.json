@@ -12,8 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@google-cloud/storage": "^7.17.3",
-    "@vercel/blob": "^2.6.1"
+    "@google-cloud/storage": "^7.17.3"
   },
   "devDependencies": {
     "@types/node": "^20",

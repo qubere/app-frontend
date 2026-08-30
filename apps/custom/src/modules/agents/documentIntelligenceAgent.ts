@@ -15,6 +15,11 @@ import {
   normaliseConfidence,
   CLASSIFICATION_CONFIDENCE_THRESHOLD,
 } from "@/lib/documents/classificationMapping";
+import {
+  expectedFieldsForDocType,
+  extractedValueFor,
+  reconciliationFieldValues,
+} from "@/lib/documents/fieldDictionary";
 
 export const DOCUMENT_INTELLIGENCE_SYSTEM_PROMPT = `
 ROLE
@@ -238,11 +243,15 @@ export interface DocumentIntelligenceInput {
 
 export interface TradeMetadata {
   countryOfOrigin?: string | null;
+  /** Country the goods are shipped FROM (usually the same as origin). */
   countryOfExport?: string | null;
+  /** Country the goods are shipped TO — the actual customs destination. */
+  countryOfDestination?: string | null;
   hsHtsCode?: string | null;
   shipper?: string | null;
   consignee?: string | null;
   importerOfRecord?: string | null;
+  notifyParty?: string | null;
   invoiceNumber?: string | null;
   poNumber?: string | null;
   documentDate?: string | null;
@@ -251,10 +260,16 @@ export interface TradeMetadata {
   incoterms?: string | null;
   portOfLoading?: string | null;
   portOfDischarge?: string | null;
+  vesselName?: string | null;
+  voyageNumber?: string | null;
+  containerNumber?: string | null;
   carrier?: string | null;
   transportDocumentNumber?: string | null;
   totalWeight?: string | null;
+  netWeight?: string | null;
   totalQuantity?: string | null;
+  cartonCount?: string | null;
+  onBoardDate?: string | null;
 }
 
 export interface FilingDetermination {
@@ -367,10 +382,12 @@ const intelligenceSchema: Schema = {
       properties: {
         countryOfOrigin: { type: Type.STRING, nullable: true },
         countryOfExport: { type: Type.STRING, nullable: true },
+        countryOfDestination: { type: Type.STRING, nullable: true },
         hsHtsCode: { type: Type.STRING, nullable: true },
         shipper: { type: Type.STRING, nullable: true },
         consignee: { type: Type.STRING, nullable: true },
         importerOfRecord: { type: Type.STRING, nullable: true },
+        notifyParty: { type: Type.STRING, nullable: true },
         invoiceNumber: { type: Type.STRING, nullable: true },
         poNumber: { type: Type.STRING, nullable: true },
         documentDate: { type: Type.STRING, nullable: true },
@@ -379,10 +396,16 @@ const intelligenceSchema: Schema = {
         incoterms: { type: Type.STRING, nullable: true },
         portOfLoading: { type: Type.STRING, nullable: true },
         portOfDischarge: { type: Type.STRING, nullable: true },
+        vesselName: { type: Type.STRING, nullable: true },
+        voyageNumber: { type: Type.STRING, nullable: true },
+        containerNumber: { type: Type.STRING, nullable: true },
         carrier: { type: Type.STRING, nullable: true },
         transportDocumentNumber: { type: Type.STRING, nullable: true },
         totalWeight: { type: Type.STRING, nullable: true },
+        netWeight: { type: Type.STRING, nullable: true },
         totalQuantity: { type: Type.STRING, nullable: true },
+        cartonCount: { type: Type.STRING, nullable: true },
+        onBoardDate: { type: Type.STRING, nullable: true },
       },
     },
     entities: {
@@ -567,6 +590,8 @@ export class DocumentIntelligenceAgent {
 INSTRUCTIONS:
 1. Discover ALL raw label-value pairs on the document (e.g. {"PO No": "290051", "Shipper": "ACME Corp", "Consignee": "Logistics LLC", "Origin": "China"}) and populate 'discoveredKeyValues'.
 2. Populate 'tradeMetadata' with explicit fields visible on the document. Map shipper to exporterName, consignee/importerOfRecord to importerName, countryOfOrigin to originCountry, totalValue to invoiceSubtotal, etc.
+   - Keep the three country fields distinct: 'countryOfOrigin' = where the goods were made; 'countryOfExport' = the country the shipment departs from; 'countryOfDestination' = the country the goods are shipped TO (the import/customs destination). Never copy one into another — leave a field null if the document does not state it.
+   - On a Bill of Lading / transport document also capture 'vesselName', 'voyageNumber', 'containerNumber', 'portOfLoading', 'portOfDischarge', 'onBoardDate', 'transportDocumentNumber' (the B/L number). On a Packing List also capture 'totalWeight' (gross), 'netWeight', 'cartonCount', 'totalQuantity'.
 3. Extract all itemized tabular line items into 'lineItems'.
 4. Determine primaryAgency and secondaryAgencies in 'filingDetermination' based on actual content (e.g. CBP default, FDA for food/medical, EPA for chemicals).
 5. Run consistency checks in 'validations' (line item math, missing fields, page continuity).
@@ -644,7 +669,11 @@ ${instructions}`;
         exporterName = parsed.tradeMetadata?.shipper || parsed.exporterName || null;
         importerName = parsed.tradeMetadata?.consignee || parsed.tradeMetadata?.importerOfRecord || parsed.importerName || null;
         originCountry = parsed.tradeMetadata?.countryOfOrigin || parsed.originCountry || null;
-        destinationCountry = parsed.tradeMetadata?.countryOfExport || parsed.destinationCountry || null;
+        // Destination = where the goods are shipped TO. Previously this read
+        // `countryOfExport` (where they ship FROM), so every document reported
+        // the origin country as the destination (finding #4).
+        destinationCountry =
+          parsed.tradeMetadata?.countryOfDestination || parsed.destinationCountry || null;
         transportDetails = parsed.transportDetails || null;
         invoiceNumber = parsed.tradeMetadata?.invoiceNumber || parsed.invoiceNumber || null;
         invoiceDate = parsed.tradeMetadata?.documentDate || parsed.invoiceDate || null;
@@ -848,12 +877,20 @@ ${instructions}`;
             // being correctly read off the document.
             hsHtsCode: tradeMetadata?.hsHtsCode || null,
             poNumber: tradeMetadata?.poNumber || null,
+            countryOfExport: tradeMetadata?.countryOfExport || null,
+            notifyParty: tradeMetadata?.notifyParty || null,
             portOfLoading: tradeMetadata?.portOfLoading || null,
             portOfDischarge: tradeMetadata?.portOfDischarge || null,
+            vesselName: tradeMetadata?.vesselName || null,
+            voyageNumber: tradeMetadata?.voyageNumber || null,
+            containerNumber: tradeMetadata?.containerNumber || null,
             carrier: tradeMetadata?.carrier || null,
             transportDocumentNumber: tradeMetadata?.transportDocumentNumber || null,
             totalWeight: tradeMetadata?.totalWeight || null,
+            netWeight: tradeMetadata?.netWeight || null,
             totalQuantity: tradeMetadata?.totalQuantity || null,
+            cartonCount: tradeMetadata?.cartonCount || null,
+            onBoardDate: tradeMetadata?.onBoardDate || null,
           },
           lineItems,
           validations: validations || [],
@@ -1014,16 +1051,11 @@ ${instructions}`;
               }
             }
 
-            // Keep this document's field exceptions in sync with what was
-            // actually extracted -- opens one per still-missing expected
-            // field, auto-resolves any that are now present.
-            await ExceptionService.syncDocumentFieldExceptions({
-              accountId: input.accountId,
-              shipmentId: input.shipmentId,
-              documentId: docToUpdate.id,
-              fileName: input.fileName || docToUpdate.fileName,
-              fields: { exporterName, importerName, originCountry },
-            });
+            // The structured tradeMetadata just persisted onto extractedJson --
+            // the shared field dictionary reads document values out of this
+            // shape (camelCase keys), and it is what the Field Review panel
+            // and the reconciliation bridge below both agree on.
+            const blobTradeMetadata = extractedBlob.tradeMetadata as Record<string, unknown>;
 
             // Write per-field ExtractionField rows from the entities array so
             // the document viewer can show page-level provenance ("p.3") next
@@ -1053,6 +1085,29 @@ ${instructions}`;
               });
             }
 
+            // Write canonically-named ExtractionField rows keyed by the exact
+            // fieldKey the cross-document reconciliation engine compares on
+            // (reconciliationRules.ts: totalQuantity, grossWeight, ...). Gemini's
+            // freeform entity vocabulary above never matches those keys, so
+            // without this every reconciliation rule silently skips -- which is
+            // why an invoice-vs-packing quantity mismatch never became a
+            // blocking ReconciliationIssue (finding #3).
+            const reconRows = reconciliationFieldValues(blobTradeMetadata, lineItems);
+            await db.extractionField.deleteMany({
+              where: { documentId: docToUpdate.id, source: "DOC_INTEL_STRUCTURED" },
+            });
+            if (reconRows.length > 0) {
+              await db.extractionField.createMany({
+                data: reconRows.map((r) => ({
+                  documentId: docToUpdate.id,
+                  fieldName: r.fieldName,
+                  value: r.value,
+                  confidence: typeof confidence === "number" ? Math.round(confidence) : null,
+                  source: "DOC_INTEL_STRUCTURED",
+                })),
+              });
+            }
+
             // C-5: Open a MISSING_DATA exception for each required field that
             // was not extracted, and resolve any that are now present.
             // Uses the type just classified this run (preferred) or the type
@@ -1061,24 +1116,24 @@ ${instructions}`;
               ? mapToDocumentType(documentClassification.documentType)
               : docToUpdate.documentType;
 
-            // The entities array uses Gemini's own freeform vocabulary
-            // ("Exporter", "Consignee") which never matches the snake_case
-            // schema keys below ("seller_name", "invoice_number", ...), so
-            // relying on it alone flags every commercial-invoice field as
-            // "not extracted" even when this run's structured fields (used
-            // by the AUTO_VERIFIED decision above) actually have the data.
-            if (effectiveDocType === "COMMERCIAL_INVOICE") {
-              if (exporterName) writtenFieldNames.add("seller_name");
-              if (importerName) writtenFieldNames.add("buyer_name");
-              if (invoiceNumber) writtenFieldNames.add("invoice_number");
-              if (invoiceDate) writtenFieldNames.add("invoice_date");
-              if (currency) writtenFieldNames.add("currency");
-              if (invoiceSubtotal !== null) writtenFieldNames.add("total_value");
-              if (incoterm) writtenFieldNames.add("incoterm");
-              if (lineItems.length > 0) writtenFieldNames.add("line_items");
-            }
-
+            // Bridge the structured extraction to the snake_case schema keys
+            // that syncExtractionFieldExceptions checks -- for EVERY document
+            // type, not just commercial invoices. Previously a Bill of Lading
+            // flagged "B/L Number was not extracted" even though the value was
+            // sitting in extractedJson, because the presence check only ran the
+            // camelCase->snake bridge for COMMERCIAL_INVOICE (finding #5).
             if (effectiveDocType) {
+              for (const field of expectedFieldsForDocType(effectiveDocType)) {
+                const present =
+                  extractedValueFor(field.canonicalKey, blobTradeMetadata, lineItems) !== null;
+                if (present) {
+                  for (const schemaKey of field.extractionSchemaKeys) {
+                    writtenFieldNames.add(schemaKey);
+                  }
+                }
+              }
+              if (lineItems.length > 0) writtenFieldNames.add("line_items");
+
               try {
                 await ExceptionService.syncExtractionFieldExceptions({
                   accountId: input.accountId,
@@ -1140,7 +1195,7 @@ ${instructions}`;
       filingDetermination,
       tradeMetadata: tradeMetadata || {
         countryOfOrigin: originCountry,
-        countryOfExport: destinationCountry,
+        countryOfDestination: destinationCountry,
         shipper: exporterName,
         consignee: importerName,
         invoiceNumber,

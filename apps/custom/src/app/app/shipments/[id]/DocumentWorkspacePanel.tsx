@@ -7,7 +7,7 @@ import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 import { LineItemsTable } from "./LineItemsTable";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { numberOrNull } from "./workspaceTypes";
-import type { ExtractedLineItem, ShipmentLineItemRow } from "./workspaceTypes";
+import type { DocumentParseState, ExtractedLineItem, ShipmentLineItemRow } from "./workspaceTypes";
 
 interface WorkspaceDocument {
   id: string;
@@ -19,6 +19,8 @@ interface WorkspaceDocument {
   fileUrl?: string | null;
   extractedJson?: string | null;
   createdAt: Date | string;
+  /** Whether the parse pipeline produced a usable result for this document. */
+  parseState?: DocumentParseState;
 }
 
 interface DocumentWorkspacePanelProps {
@@ -182,6 +184,7 @@ export function DocumentWorkspacePanel({
       <div className="lg:col-span-4">
         <ShipmentDocumentsSection
           shipmentId={shipmentId}
+          shipmentNumber={shipmentNumber}
           documents={documents}
           activeDocId={activeDocId}
           onSelectDoc={selectDoc}
@@ -203,6 +206,7 @@ export function DocumentWorkspacePanel({
                   fileUrl={primaryDoc.fileUrl}
                   proxyUrl={viewerData.proxyUrl}
                   shipmentNumber={shipmentNumber}
+                  uploadedAt={primaryDoc.createdAt}
                   htsScore={viewerData.docHtsScore ?? undefined}
                 />
               </div>
@@ -223,8 +227,16 @@ export function DocumentWorkspacePanel({
                     <p className="font-mono text-ink">{primaryDoc.pageCount ? `${primaryDoc.pageCount} Pages` : "1 Page"}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-ink-muted uppercase font-bold">Uploaded Date</p>
-                    <p className="text-ink">{new Date(primaryDoc.createdAt).toLocaleDateString()}</p>
+                    <p className="text-[10px] text-ink-muted uppercase font-bold">Uploaded</p>
+                    <p className="text-ink">
+                      {new Date(primaryDoc.createdAt).toLocaleString(undefined, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </p>
                   </div>
                 </div>
               </div>

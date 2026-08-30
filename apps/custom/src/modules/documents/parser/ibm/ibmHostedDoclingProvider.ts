@@ -614,12 +614,53 @@ export class IbmHostedDoclingProvider implements DocumentParserProvider {
     });
   }
 
+  /**
+   * Fetches the raw result payload, tolerating the brief window in which this
+   * deployment's status endpoint already reports "success" but its result
+   * endpoint still answers 404 "Task not found".
+   *
+   * The two endpoints are backed by different services and the result side lags
+   * the status side by a second or two while converted artifacts finish
+   * uploading to object storage. `getStatus` has already confirmed the task
+   * exists and succeeded, so a 404 here is a propagation delay, not a missing
+   * task — it is retried in-tick rather than failing the run.
+   */
+  private async requestResultPayload(ref: ParserJobReference): Promise<unknown> {
+    const url = this.url(this.config.resultPathTemplate, ref.externalTaskId);
+    const maxAttempts = 5;
+    const retryDelayMs = 1_500;
+
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.request("result", url, {
+          method: "GET",
+          correlationId: ref.correlationId,
+        });
+      } catch (error) {
+        if (!isDocumentParserError(error) || error.providerStatus !== "404") throw error;
+        if (attempt >= maxAttempts) {
+          // Still 404 after the conversion reported success. Almost always the
+          // artifacts are just slow to land; re-queue the run rather than hard-
+          // failing it, so a transient lag never sends a real document to the
+          // dev-only backup provider.
+          throw new DocumentParserError(
+            "PARSER_PROVIDER_ERROR",
+            `The document parser reported success but its result was still not available after ${maxAttempts} attempts.`,
+            { retryable: true, providerStatus: "404" }
+          );
+        }
+        console.warn("[IbmHostedDoclingProvider] result not ready after success, retrying", {
+          runId: ref.runId,
+          attempt,
+          maxAttempts,
+        });
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+
   async getResult(ref: ParserJobReference, profile: ProcessingProfile): Promise<ParserResult> {
-    const payload = await this.request(
-      "result",
-      this.url(this.config.resultPathTemplate, ref.externalTaskId),
-      { method: "GET", correlationId: ref.correlationId }
-    );
+    const payload = await this.requestResultPayload(ref);
 
     try {
       // This deployment answers with a batch envelope whose content sits behind

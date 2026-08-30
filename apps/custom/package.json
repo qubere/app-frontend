@@ -31,8 +31,6 @@
     "@qubere/shipment-legs": "*",
     "@qubere/storage": "*",
     "@types/nodemailer": "^8.0.1",
-    "@vercel/blob": "^2.6.1",
-    "@vercel/speed-insights": "^2.0.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "cheerio": "^1.2.0",

@@ -57,6 +57,56 @@ export interface ExtractedLineItem {
   htsCode?: string | null;
 }
 
+/**
+ * Whether a document's parse pipeline produced a usable result.
+ *
+ * - `passed`  — a parse run completed (or the document already carries an
+ *               extraction confidence), so the content is available.
+ * - `failed`  — the most recent parse run ended in FAILED and nothing newer
+ *               succeeded.
+ * - `pending` — a run is queued/in-flight, or nothing has run yet.
+ */
+export type DocumentParseState = "passed" | "failed" | "pending";
+
+interface ParseVersionLike {
+  status?: string | null;
+  version?: number | null;
+  createdAt?: Date | string | null;
+}
+
+/**
+ * Derives a single parse state from a document's parse-run history.
+ *
+ * `activeParseVersionId` is authoritative: it is set only after a run validates,
+ * persists its artifacts and passes the quality gate, so its presence always
+ * means `passed` regardless of a later retry's transient state. Otherwise the
+ * newest run's status decides, and a document with no runs falls back to whether
+ * an extraction confidence was ever recorded.
+ */
+export function deriveDocumentParseState(doc: {
+  confidence?: number | null;
+  activeParseVersionId?: string | null;
+  parseVersions?: ParseVersionLike[] | null;
+}): DocumentParseState {
+  if (doc.activeParseVersionId) return "passed";
+
+  const runs = doc.parseVersions ?? [];
+  if (runs.length === 0) {
+    return doc.confidence !== null && doc.confidence !== undefined ? "passed" : "pending";
+  }
+
+  const latest = [...runs].sort((a, b) => {
+    const byVersion = (b.version ?? 0) - (a.version ?? 0);
+    if (byVersion !== 0) return byVersion;
+    return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+  })[0];
+
+  const status = (latest.status ?? "").toUpperCase();
+  if (status === "FAILED") return "failed";
+  if (status === "SUCCEEDED" || status === "NEEDS_REVIEW") return "passed";
+  return "pending";
+}
+
 /** Reads a numeric field that may be absent, keeping "missing" distinct from 0. */
 export function numberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -109,6 +159,14 @@ export interface DbExceptionItem {
   sourceAgent?: string | null;
   category?: string | null;
   severity?: string | null;
+  /**
+   * Set on per-document field exceptions (`MISSING_EXTRACTION:*`) — the document
+   * the field was missing from, the snake_case field key, and the stable code.
+   * When present, the exception resolves by correcting the value, not by waiving.
+   */
+  documentId?: string | null;
+  fieldKey?: string | null;
+  code?: string | null;
 }
 
 /**
@@ -124,6 +182,16 @@ export interface ResolvableException {
   desc: string;
   actionText: string;
   actionType: string;
+  /** Present on per-document field exceptions — routes the modal to a "correct the value" input. */
+  documentId?: string | null;
+  fieldKey?: string | null;
+  code?: string | null;
+  /** Real ExceptionItem.category column, for filtering the waive reason picklist. */
+  dbCategory?: string | null;
+  /** Prefill for the correction input, when the value is already extracted but unconfirmed. */
+  currentValue?: string | null;
+  /** Cross-document conflict values, from the linked ReconciliationIssue. */
+  conflict?: { field: string; expectedValue: string; actualValue: string; sources: string[] } | null;
 }
 
 /**
@@ -147,6 +215,14 @@ export interface ExceptionCard {
   actionHref?: string;
   dbId?: string;
   version?: number;
+  documentId?: string | null;
+  fieldKey?: string | null;
+  code?: string | null;
+  dbCategory?: string | null;
+  currentValue?: string | null;
+  conflict?: { field: string; expectedValue: string; actualValue: string; sources: string[] } | null;
+  /** Source document label, for grouping the flat list (finding #8). */
+  groupLabel?: string;
 }
 
 /** True when a card carries the ids the resolution modal writes back with. */

@@ -111,10 +111,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       data: {
         ...(targetShipmentId ? { shipmentId: targetShipmentId } : {}),
         status: "NeedsReview",
-        fileUrl:
-          storedUrl ||
-          fallbackUrl ||
-          `https://blob.vercel-storage.com/documents/${storageShipmentFolder}/${doc.fileName}`,
+        fileUrl: storedUrl || fallbackUrl || doc.fileUrl || "",
         ...(storedChecksum ? { checksum: storedChecksum } : {}),
         ...(storedMime ? { mimeType: storedMime } : {}),
         ...(loaded ? { byteSize: loaded.buffer.byteLength } : {}),

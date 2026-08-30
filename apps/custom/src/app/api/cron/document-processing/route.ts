@@ -17,30 +17,27 @@ import { parserConfigurationReport } from "@/modules/documents/parser/config";
  * due, finishes what is ready, and returns. A document mid-conversion is picked
  * up by the next tick, so no HTTP request is ever held open on the provider.
  *
- * GET is the entry point because that is what Vercel Cron issues, matching
+ * GET is the entry point because that is what Cloud Scheduler issues, matching
  * `/api/cron/hts-refresh`. It is gated on `CRON_SECRET` and it processes only
  * work that already exists: it advances durable runs and never creates
  * documents, demo data, exceptions, or shipments.
  *
- * On Vercel this is a **daily backstop, not the pipeline**. Hobby schedules cron
- * at most once a day, and one tick cannot finish a document anyway: submission
- * sets `nextPollAt` a few seconds out, so the poll that retrieves the result
- * belongs to a later tick. The pipeline is driven from the request path instead
- * — see `advanceDocumentProcessing()` in
+ * This is a **backstop, not the pipeline**. One tick cannot finish a document
+ * anyway: submission sets `nextPollAt` a few seconds out, so the poll that
+ * retrieves the result belongs to a later tick. The pipeline is driven from the
+ * request path instead — see `advanceDocumentProcessing()` in
  * `src/modules/documents/processing/advanceProcessing.ts`. What this endpoint is
  * for is the work no request will ever touch: runs abandoned by a crashed
  * worker, and documents whose conversion outlived the invocation that uploaded
  * them.
  *
  * Also runs `runInboundEmailWorkerTick()` as the durable backstop for inbound
- * email ingestion. Vercel Hobby plans cap projects at 2 cron jobs, all daily,
- * so inbound email processing does not get its own vercel.json entry (see
- * /api/cron/inbound-email-processing, still callable directly for manual or
- * Pro-plan-scheduled use) -- it piggybacks on this existing daily slot
- * instead. The webhook's own `after()` dispatch is what makes ingestion feel
- * immediate; this is only the once-a-day safety net for whatever that missed.
- * Same arrangement as documents, arrived at independently: a request does the
- * work, and this endpoint catches what no request will.
+ * email ingestion — it piggybacks on this slot rather than getting its own
+ * scheduler job (see /api/cron/inbound-email-processing, still callable
+ * directly). The webhook's own `after()` dispatch is what makes ingestion feel
+ * immediate; this is only the safety net for whatever that missed. Same
+ * arrangement as documents: a request does the work, and this endpoint catches
+ * what no request will.
  */
 
 // 60 seconds is the Hobby ceiling for a function; asking for more fails the

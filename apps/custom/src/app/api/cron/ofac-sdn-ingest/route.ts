@@ -5,7 +5,7 @@ import { inngest } from "@/lib/inngest/client";
 import { OFAC_SDN_DATASET_ID } from "@/lib/inngest/functions/ofacSdnIngest";
 
 // OFAC's SDN.XML runs ~29MB / ~19,700 entries -- too large to parse
-// synchronously inside a Vercel function. This route only enqueues the
+// synchronously inside a request handler. This route only enqueues the
 // durable Inngest job (ofac-sdn-ingest) and returns immediately; that job
 // owns the DatasetRefreshLog RUNNING/SUCCESS/FAILED lifecycle itself.
 export const POST = withCronRoute(async ({ requestId }) => {

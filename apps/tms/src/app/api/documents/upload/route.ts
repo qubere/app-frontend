@@ -65,7 +65,7 @@ export const POST = withAuthenticatedRoute(
     });
 
     let document = existing;
-    let storageProvider: "GCS" | "VERCEL_BLOB" | "LOCAL_DEV" | "EXISTING" = "EXISTING";
+    let storageProvider: "GCS" | "LOCAL_DEV" | "EXISTING" = "EXISTING";
     if (!document) {
       const stored = await storeTmsDocument({
         accountId: ctx.accountId,
