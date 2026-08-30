@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { notify } from "@/modules/notifications/notify";
 
 export interface SlaSweepResult {
   breachedDecisions: number;
@@ -126,15 +127,13 @@ export async function runSlaSweep(accountId?: string): Promise<SlaSweepResult> {
 
         // Send notification
         if (targetUserId) {
-          await db.notification.create({
-            data: {
-              accountId: rule.accountId,
-              userId: targetUserId,
-              type: "WORK_ESCALATED",
-              message: `${dec.agentName} on ${dec.shipment?.shipmentNumber || "Shipment"}: ${reason}`,
-              entityType: "AgentDecision",
-              entityId: dec.id,
-            },
+          await notify({
+            accountId: rule.accountId,
+            userId: targetUserId,
+            type: "WORK_ESCALATED",
+            message: `${dec.agentName} on ${dec.shipment?.shipmentNumber || "Shipment"}: ${reason}`,
+            entityType: "AgentDecision",
+            entityId: dec.id,
           });
         }
 
@@ -188,15 +187,13 @@ export async function runSlaSweep(accountId?: string): Promise<SlaSweepResult> {
         });
 
         if (targetUserId) {
-          await db.notification.create({
-            data: {
-              accountId: rule.accountId,
-              userId: targetUserId,
-              type: "WORK_ESCALATED",
-              message: reason,
-              entityType: "ExceptionItem",
-              entityId: exc.id,
-            },
+          await notify({
+            accountId: rule.accountId,
+            userId: targetUserId,
+            type: "WORK_ESCALATED",
+            message: reason,
+            entityType: "ExceptionItem",
+            entityId: exc.id,
           });
         }
 

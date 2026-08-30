@@ -12,6 +12,7 @@ import { db, withDataModeContext } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
 import { enqueueDocumentParse } from "@/modules/documents/processing/documentProcessingWorker";
+import { notify } from "@/modules/notifications/notify";
 import {
   blockInboundSenderRoute,
   createInboundSenderRoute,
@@ -222,28 +223,18 @@ async function releaseQuarantinedInboundEmailImpl(params: {
   }
 
   if (storedCount > 0 && defaultAssignedToUserId) {
-    // Guards against a duplicate notification if a prior call got far enough
-    // to store attachments but crashed/raced before the routingStatus update
-    // below -- see the identical guard in inboundEmailWorker.ts. A retried or
-    // double-submitted release would otherwise recompute storedCount
-    // (correctly, from already-stored rows) and create a second notification
-    // for the same email.
-    const alreadyNotified = await db.notification.findFirst({
-      where: { entityType: "InboundEmail", entityId: email.id },
-      select: { id: true },
+    // dedupe guards against a duplicate if a prior call stored attachments but
+    // crashed/raced before the routingStatus update below -- see the identical
+    // guard in inboundEmailWorker.ts.
+    await notify({
+      accountId,
+      userId: defaultAssignedToUserId,
+      type: "INBOUND_EMAIL_DOCUMENTS",
+      message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}`,
+      entityType: "InboundEmail",
+      entityId: email.id,
+      dedupe: true,
     });
-    if (!alreadyNotified) {
-      await db.notification.create({
-        data: {
-          accountId,
-          userId: defaultAssignedToUserId,
-          type: "INBOUND_EMAIL_DOCUMENTS",
-          message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}`,
-          entityType: "InboundEmail",
-          entityId: email.id,
-        },
-      });
-    }
   }
 
   const updated = await db.inboundEmail.update({

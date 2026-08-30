@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
+import { notify } from "@/modules/notifications/notify";
 
 /** Hard ceiling for manual escalation bumps (1 = manager, 2 = owner). */
 const MAX_MANUAL_LEVEL = 2;
@@ -55,15 +56,13 @@ export const POST = withAuthenticatedRoute<{ kind: string; id: string }>(async (
     });
 
     if (targetUserId) {
-      await db.notification.create({
-        data: {
-          accountId: ctx.accountId,
-          userId: targetUserId,
-          type: "WORK_ESCALATED",
-          message: `${decision.agentName}: ${note}`,
-          entityType: "AgentDecision",
-          entityId: id,
-        },
+      await notify({
+        accountId: ctx.accountId,
+        userId: targetUserId,
+        type: "WORK_ESCALATED",
+        message: `${decision.agentName}: ${note}`,
+        entityType: "AgentDecision",
+        entityId: id,
       });
     }
 
@@ -106,15 +105,13 @@ export const POST = withAuthenticatedRoute<{ kind: string; id: string }>(async (
     });
 
     if (targetUserId) {
-      await db.notification.create({
-        data: {
-          accountId: ctx.accountId,
-          userId: targetUserId,
-          type: "WORK_ESCALATED",
-          message: exception.description,
-          entityType: "ExceptionItem",
-          entityId: id,
-        },
+      await notify({
+        accountId: ctx.accountId,
+        userId: targetUserId,
+        type: "WORK_ESCALATED",
+        message: exception.description,
+        entityType: "ExceptionItem",
+        entityId: id,
       });
     }
 

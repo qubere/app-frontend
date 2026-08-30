@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review · Phase 2a shipped (compliance + billing lanes, read + deep-link) · Phase 2b (inline disposition) + Phase 3 scoped
+**Status:** Phase 1 in review · Phase 2a shipped (compliance + billing lanes) · Phase 3a shipped (notification hub) · Phase 2b (inline disposition) + Phase 3b (new notification producers) scoped
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -200,17 +200,54 @@ Today already unifies **Operations** work: `/app/actions` merges `AgentDecision`
 
 ---
 
-## 6. Route consolidation (Phase 3)
+## 6. Notification hub (Phase 3)
 
-- Merge `/app/regulatory` content into the `/app/tariffs` hub, or make `/app/tariffs`
-  a thin redirect to a single "Trade Reference" page. Two routes, one concept today.
-- Fold `/app/compliance-reports` in as a tab on `/app/compliance` (it already has
-  Audit / History tabs).
-- Widen the notification bell: wire compliance license-alerts, SLA sweeps, billing
-  leakage, and regulatory ingests into `/api/notifications` so the bell is the one
-  place "something changed while you were away" shows up.
+The bell was the right shape but half-wired: every notification linked to
+`/app/documents` regardless of what raised it, and there was no categorization.
+
+### Phase 3a — SHIPPED
+
+- `src/modules/notifications/notificationRouting.ts` — **pure** (no DB, shared by
+  the client bell and the server): `NotificationCategory`, `NOTIFICATION_TYPE_META`
+  (every `type` string → category + label), `resolveNotificationHref` (routes by
+  entity then category — `AgentDecision` → `/app/actions?decisionId=`,
+  `ExceptionItem` → `?exceptionId=`, `CustomsFiling` → `/app/filing/:id`, licence
+  → `/app/license-management`, billing → `/app/billing/exceptions`, …).
+- `src/modules/notifications/notify.ts` — the one way to raise a bell
+  notification. Typed `type`, optional `dedupe` (replaces the ad-hoc
+  "findFirst then maybe create" guard in inbound-email + quarantine-review),
+  best-effort (logs + swallows — a notification is never load-bearing).
+- All six existing producers migrated to `notify()` (`slaSweepJob` ×2,
+  `exception.service`, `inboundEmailWorker`, `quarantineReview`, `work/assign`,
+  `work/[kind]/[id]/escalate`) — they now carry a category and link to the item.
+- `/api/notifications` enriches each row with `category` / `categoryLabel` /
+  `href`; `NotificationBell` renders a category icon + label and links via the
+  server-computed `href` (client fallback to the same pure function).
+- `tests/notification-routing.test.ts` — routing table, category mapping,
+  `notify()` dedupe + error-swallow.
+
+### Phase 3b — NOT built
+
+New producers, now one `notify({ category, ... })` call each:
+- **License expiring / utilization** — hook `deliverLicenseAlerts`
+  (`modules/licenses/alertsService`, already runs from the `license-alerts` cron
+  and emails via the `ComplianceNotification` pipeline) to also drop a bell row.
+- **Billing revenue leakage** — `detectRevenueLeakage` / on `BillingException`
+  create (note: `BillingException` rows are seed-only today — needs a real
+  producer first).
+- **Regulatory update affecting the account** — the `regulatory-ingest` cron.
+- **SLA at risk** (before escalation) — `slaSweepJob` already has the timing.
+
+## 7. Route consolidation (Phase 3c — deferred)
+
+Lower priority: not a time-pressure pain point, and route moves are the expensive
+category (guards, tests, deep links, Copilot tool hrefs).
+
+- Merge `/app/regulatory` into a single `/app/tariffs` "Trade Reference" page with
+  tabs; redirect the standalone routes; drop the extra sidebar rows Phase 1 added.
+- Fold `/app/compliance-reports` in as a tab on `/app/compliance`.
 - Per-tenant **Filing Settings** page (distinct from the platform-global
-  `/app/filing-config`) if customers need to configure their own filing defaults.
+  `/app/filing-config`) — a net-new feature, not IA work.
 
 ---
 

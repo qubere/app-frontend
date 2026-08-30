@@ -27,6 +27,7 @@ import { isDocumentParserError } from "../parser/contracts";
 import { enqueueDocumentParse } from "./documentProcessingWorker";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
 import { resolveBlockedInboundRoute, resolveInboundRoute } from "@/modules/inbound/senderRouting";
+import { notify } from "@/modules/notifications/notify";
 import {
   getReceivedEmail,
   getAttachmentDownloadInfo,
@@ -183,29 +184,20 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
   }
 
   if (storedCount > 0 && defaultAssigneeId) {
-    // Guards against a duplicate notification if a prior tick got far enough
-    // to store attachments but crashed before reaching routingStatus:
-    // "ACCEPTED" below -- the retry would otherwise recompute storedCount
-    // (correctly, from already-STORED rows) and create a second notification
-    // for the same email.
-    const alreadyNotified = await db.notification.findFirst({
-      where: { entityType: "InboundEmail", entityId: email.id },
-      select: { id: true },
+    const duplicateSuffix =
+      duplicateCount > 0 ? ` (${duplicateCount} possible duplicate${duplicateCount === 1 ? "" : "s"} of existing documents)` : "";
+    // dedupe guards against a duplicate if a prior tick stored attachments but
+    // crashed before reaching routingStatus: "ACCEPTED" below -- the retry
+    // recomputes storedCount (correctly, from already-STORED rows).
+    await notify({
+      accountId,
+      userId: defaultAssigneeId,
+      type: "INBOUND_EMAIL_DOCUMENTS",
+      message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}${duplicateSuffix}`,
+      entityType: "InboundEmail",
+      entityId: email.id,
+      dedupe: true,
     });
-    if (!alreadyNotified) {
-      const duplicateSuffix =
-        duplicateCount > 0 ? ` (${duplicateCount} possible duplicate${duplicateCount === 1 ? "" : "s"} of existing documents)` : "";
-      await db.notification.create({
-        data: {
-          accountId,
-          userId: defaultAssigneeId,
-          type: "INBOUND_EMAIL_DOCUMENTS",
-          message: `${storedCount} new document${storedCount === 1 ? "" : "s"} from ${email.originalFromAddress}${duplicateSuffix}`,
-          entityType: "InboundEmail",
-          entityId: email.id,
-        },
-      });
-    }
   }
 
   await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: "ACCEPTED" } });
