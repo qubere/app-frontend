@@ -85,9 +85,18 @@ export default async function ActionsPage(props: {
   // work). Each lane is gated by the same permission that guards its native
   // surface; a lane the caller may not see is passed as null and its chip
   // never renders.
-  const [mayViewComplianceLane, mayViewBillingLane] = await Promise.all([
+  const [
+    mayViewComplianceLane,
+    mayViewBillingLane,
+    canResolveCompliance,
+    canResolveBilling,
+    canWaiveBilling,
+  ] = await Promise.all([
     hasPermission("compliance.read"),
     hasPermission("billing.exception.view"),
+    hasPermission("exceptions.resolve"),
+    hasPermission("billing.exception.resolve"),
+    hasPermission("billing.exception.waive"),
   ]);
 
   const [decisions, allDocuments, exceptions, writable, mayWaive, memberships, complianceLane, billingLane] = await Promise.all([
@@ -295,6 +304,9 @@ export default async function ActionsPage(props: {
       complianceLane={complianceLane}
       billingLane={billingLane}
       initialLane={initialLane}
+      canResolveCompliance={canResolveCompliance}
+      canResolveBilling={canResolveBilling}
+      canWaiveBilling={canWaiveBilling}
     />
   );
   });

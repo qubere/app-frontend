@@ -36,11 +36,13 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
 
 const BILLING_APP_DIR = join(process.cwd(), "src/app/app/billing");
 const BILLING_API_DIR = join(process.cwd(), "src/app/api/billing");
+const BILLING_LIB_DIR = join(process.cwd(), "src/lib/billing");
 const BILLING_ENGINE_DIR = join(process.cwd(), "../../packages/billing/src");
 
 const billingSourceFiles = [
   ...sourceFiles(BILLING_APP_DIR),
   ...sourceFiles(BILLING_API_DIR),
+  ...sourceFiles(BILLING_LIB_DIR),
   ...sourceFiles(BILLING_ENGINE_DIR),
 ];
 
