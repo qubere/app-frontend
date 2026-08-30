@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Product &amp; Party Master</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Product &amp; Party Master Data</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">There is no "the HS code."<br><span class="accent">Origin is a fact, never an inference.</span></h1>
+      <p class="hero-lede">One product record and one party record per tenant &mdash; with per-jurisdiction customs classifications hanging off the product, country of manufacture and country of origin kept as different facts, party identity / roles / registrations as separate axes, and change detection that flags when a supplier or spec moves in a way that should trigger re-review.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">1</div><div class="stat-label">product record · N jurisdiction classifications</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">0</div><div class="stat-label">origins inferred from a manufacturer country</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">3</div><div class="stat-label">party axes: identity · roles · registrations</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">Your master data assumes one answer to questions that have several.</h2>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"We import the same part into the US, the EU, and Mexico. Our 'HS code' field is one value &mdash; those are different classifications with different review status."</p><p class="pain-tag">One code, many jurisdictions</p></div>
+        <div class="pain-card"><p class="pain-quote">"Origin gets set to whatever the manufacturer's country is. That's not how origin works, and it's a Reasonable Care problem."</p><p class="pain-tag">Origin ≠ manufacture</p></div>
+        <div class="pain-card"><p class="pain-quote">"A supplier changed. Nobody re-checked the parts we source from them. Is this party a 'verified supplier'? Depends who you ask."</p><p class="pain-tag">Stale, ambiguous parties</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">Model the facts as they actually are &mdash; separate, and each with its own status.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">One product holds what's true everywhere; a US classification, an EU classification are <strong style="color:#fff">separate records</strong>, each with its own status, reviewer, effective window. Only APPROVED counts.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Country of manufacture and country of origin are different facts. Origin is <strong style="color:#fff">never</strong> inferred from a manufacturer, supplier, seller, export, or shipping country.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A party has roles (supplier, importer, carrier&hellip;) and per-country registration claims, each with its own lifecycle &mdash; not one "verified" flag.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A name match produces candidates for a human to confirm &mdash; never an auto-merge.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Change detection closes the loop with screening: a supplier moves &rarr; the parties sourced from them get re-screened.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Per-jurisdiction classification -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">One product, many classifications</p>
+        <h2 class="feature-headline">A US classification can be approved while the EU one is mid-review &mdash; on the same product.</h2>
+        <p class="feature-pain">The most important design point for a multi-region import program. A classification is a reviewable <strong>case</strong> with the GRI analysis, the rulings referenced, and the reviewer's identity &mdash; not a code in a field.</p>
+        <ul class="feature-bullets">
+          <li>Each classification: own status, reviewer, effective window</li>
+          <li>Sourcing evidence attached and inspectable</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/products/[id]</strong> &rarr; the classifications section: US = APPROVED, EU = IN_REVIEW. Then open the classification case &mdash; the reasoning, the rulings, who approved it.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Products</span><span style="color:var(--slate-300)">/</span><span>BMS Control Board Rev C</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">BMS Control Board Rev C</div><div class="page-sub">PRD-2291 · manufactured: Vietnam · CoO: no approved determination</div></div></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Jurisdiction</th><th>Classification</th><th>Status</th><th>Reviewer</th><th>Effective</th></tr></thead>
+                  <tbody>
+                    <tr><td>🇺🇸 US HTS</td><td class="mono">8537.10.9170</td><td><span class="chip chip-accepted">APPROVED</span></td><td>D. Osei (broker)</td><td>2026-04-01 →</td></tr>
+                    <tr><td>🇪🇺 EU CN</td><td class="mono">8537 10 91</td><td><span class="chip chip-high">IN_REVIEW</span></td><td>pending</td><td>&mdash;</td></tr>
+                    <tr><td>🇲🇽 MX</td><td class="mono">—</td><td><span class="chip chip-normal">not started</span></td><td>&mdash;</td><td>&mdash;</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">US case CASE-8841</span><span class="field-v">GRI 1 · CROSS N301245 cited · evidence: datasheet p.2</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — Origin as a fact -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Origin as a fact</p>
+        <h2 class="feature-headline">Qubere will not fill an origin field to look complete.</h2>
+        <p class="feature-pain">Country of manufacture and country of origin are stored as <strong>different facts</strong>. If there's no approved origin determination, the system says so &mdash; and the AI assistant refuses to substitute a manufacturer or supplier country, even when its own fields mention one.</p>
+        <ul class="feature-bullets">
+          <li>A deliberate Reasonable Care stance, enforced end to end</li>
+          <li>Origin determination is a reviewed case with its own evidence</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">On a product, show manufacture country populated but origin marked "no approved determination." Ask the assistant for the origin &mdash; it declines to guess.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Products</span><span style="color:var(--slate-300)">/</span><span>Origin</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">BMS Control Board Rev C — Origin</div></div></div>
+              <div class="panel">
+                <div class="panel-title">Physical facts (not origin)</div>
+                <div class="field-row"><span class="field-k">Country of manufacture</span><span class="field-v">Vietnam</span></div>
+                <div class="field-row"><span class="field-k">Supplier</span><span class="field-v">Hanoi Precision Assembly</span></div>
+                <div class="field-row"><span class="field-k">Ship-from (last shipment)</span><span class="field-v">Vietnam</span></div>
+              </div>
+              <div class="panel" style="border-color:#FDE68A;background:#FFFBEB;">
+                <div class="panel-title" style="color:#92400E;">Legal country of origin</div>
+                <div class="field-row" style="border-color:#FDE68A;"><span class="field-k" style="color:#92400E;">Determination status</span><span class="field-v" style="color:#92400E;">NONE &mdash; not inferred from any of the above</span></div>
+                <div class="field-row" style="border-color:#FDE68A;"><span class="field-k" style="color:#92400E;">Action</span><span class="field-v"><span class="link">Open origin determination case</span></span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Party master axes -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Party master · identity / roles / registrations</p>
+        <h2 class="feature-headline">A party can be a VERIFIED-registered supplier in one country and an unreviewed identity overall.</h2>
+        <p class="feature-pain">Those aren't the same question and Qubere doesn't pretend they are. <span class="mono">PartyRole</span> records what a party <em>does</em>; <span class="mono">PartyRegistration</span> tracks per-country claims through their own <span class="mono">CLAIMED &rarr; UNDER_REVIEW &rarr; VERIFIED</span> lifecycle &mdash; independent of the party's <span class="mono">UNREVIEWED &rarr; IN_REVIEW &rarr; APPROVED</span> status.</p>
+        <ul class="feature-bullets">
+          <li>Each party carries a screening summary (status, last result, staleness)</li>
+          <li>Match &rarr; candidates for a human; never auto-merge, never auto-split</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/parties/[id]</strong> &mdash; a party with two roles and a country registration mid-review while the party itself is APPROVED.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Parties</span><span style="color:var(--slate-300)">/</span><span>Hanoi Precision Assembly</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Hanoi Precision Assembly Co., Ltd</div><div class="page-sub">PTY-3310 · review status: <span style="color:var(--green);font-weight:600;">APPROVED</span></div></div></div>
+              <div class="panel">
+                <div class="panel-title">Roles</div>
+                <div class="field-row"><span class="field-k">Supplier</span><span class="field-v">since 2024 · 41 shipments</span></div>
+                <div class="field-row"><span class="field-k">Manufacturer</span><span class="field-v">2 products</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Registrations</div>
+                <div class="field-row"><span class="field-k">🇻🇳 VN business registration</span><span class="chip chip-verified">VERIFIED</span></div>
+                <div class="field-row"><span class="field-k">🇺🇸 US MID</span><span class="chip chip-high">UNDER_REVIEW</span></div>
+              </div>
+              <div class="field-row"><span class="field-k">Screening summary</span><span class="field-v">CLEAR · last 2026-08-25 · stale (identity change)</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · FEATURE — Change detection + import -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Change detection &amp; CSV import</p>
+        <h2 class="feature-headline">A supplier moves &rarr; the parts you source from them get re-screened &rarr; you find out.</h2>
+        <p class="feature-pain">Signals that a product's spec, sourcing, or supplier moved in a way that should re-open review &mdash; surfaced, not silent. CSV import <strong>matches</strong> against existing records rather than blindly duplicating, and flags ambiguous matches for a human.</p>
+        <ul class="feature-bullets">
+          <li>Won't silently create 500 duplicates; won't silently merge two real entities</li>
+          <li>Change history drives RDPS re-screening (see Compliance deck)</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/products/import</strong> &rarr; the import wizard &rarr; the match/review step. Then a product's change history with a flagged change awaiting review.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Products</span><span style="color:var(--slate-300)">/</span><span>Import · match review</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">CSV import — 1,204 rows</div><div class="page-sub">1,088 matched · 94 new · 22 ambiguous → review</div></div><button class="btn-primary">Commit non-ambiguous</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>CSV row</th><th>Best match</th><th>Score</th><th>Decision</th></tr></thead>
+                  <tbody>
+                    <tr><td>"BMS Ctrl Bd RevC"</td><td>PRD-2291 BMS Control Board Rev C</td><td>0.96</td><td><span class="chip chip-verified">auto-match</span></td></tr>
+                    <tr><td>"Enclosure ALU 240"</td><td>PRD-2288 / PRD-2312</td><td>0.71 / 0.69</td><td><span class="chip chip-high">review</span></td></tr>
+                    <tr><td>"Cell 21700 5Ah"</td><td>&mdash;</td><td>&mdash;</td><td><span class="chip chip-normal">create new</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">Change flagged · PRD-2291</span><span class="field-v" style="color:#92400E;">supplier region changed &rarr; re-open classification + origin review</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · RELATED RECORDS -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The master, extended</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:18px;">Everything that hangs off identity is its own managed record.</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 40px;font-family:var(--font-body);font-size:14px;color:rgba(255,255,255,0.8);">
+        <div>◇ <strong style="color:#fff">Importers of Record</strong> &mdash; CBP number validation, linked to filings</div>
+        <div>◇ <strong style="color:#fff">Power of Attorney</strong> &mdash; POA records per client</div>
+        <div>◇ <strong style="color:#fff">Bonds</strong> &mdash; amount, expiry, sufficiency checks feed filing validation</div>
+        <div>◇ <strong style="color:#fff">Clients</strong> &mdash; the account relationship, auto-routing, portal scope</div>
+      </div>
+      <p class="hero-lede" style="margin-top:24px;font-size:15px;">Assistant reads all of it &mdash; <span class="mono">get_product</span>, <span class="mono">get_party</span>, <span class="mono">get_party_history</span>, <span class="mono">get_product_origin_position</span> &mdash; RBAC-gated, through the same services the screens use.</p>
+    </div>
+  </section>
+
+  <!-- 9 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"We already have an ERP item master / MDM."</td><td class="obj-a">Qubere isn't replacing the commercial item master &mdash; it's the <em>customs</em> master: per-jurisdiction classification, origin determination, sourcing evidence, screening summary. Import from the ERP; be the system of record for the trade attributes the ERP models badly.</td></tr>
+        <tr><td class="obj-q">"Auto-classification?"</td><td class="obj-a">AI assists (GRI analysis, ruling references) and can auto-approve above a confidence threshold <em>you</em> set. Assisted, auditable, reversible &mdash; never a black box that silently sets the field.</td></tr>
+        <tr><td class="obj-q">"PEP / beneficial ownership on parties?"</td><td class="obj-a">Not yet &mdash; same known gap as the screening module. Identity, roles, registrations, and screening-summary are what's real.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"One product, N jurisdictions, each approved-or-not. Origin never inferred. That's the foundation everything else trusts."</h2>
+      <div class="dark-card"><p>Next step: send us a slice of your product catalog. We run the CSV import live &mdash; you see the match-don't-duplicate behavior and the per-jurisdiction model on your own data.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/sales/product-and-party-master.md</span> · <span class="mono">docs/product-master.md</span> · <span class="mono">docs/party-master.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

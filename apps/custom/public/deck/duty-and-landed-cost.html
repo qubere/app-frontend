@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Duty &amp; Landed-Cost</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Duty &amp; Landed-Cost Intelligence</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">The consulting deliverable<br><span class="accent">is now a screen.</span></h1>
+      <p class="hero-lede">Model landed cost and sourcing alternatives without a trade attorney. Keep a live readiness inventory of every entry that might be owed a refund. Assess each incoming CBP policy change against your actual product and HTS portfolio &mdash; instantly.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">$2&ndash;5k</div><div class="stat-label">per sourcing question, outside counsel today</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">2 wk</div><div class="stat-label">turnaround, replaced by a screen</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">$0</div><div class="stat-label">heuristic refund estimates &mdash; null until confirmed</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">Tariff volatility is a P&amp;L problem, and the analysis lives at a law firm.</h2>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"We're deciding China vs. Vietnam for a part and the duty math is a guess until the first entry actually clears."</p><p class="pain-tag">Sourcing decisions</p></div>
+        <div class="pain-card"><p class="pain-quote">"We've almost certainly overpaid duty somewhere. We have no systematic way to find it. Drawback is 'someone should look into that.'"</p><p class="pain-tag">Unclaimed refunds</p></div>
+        <div class="pain-card"><p class="pain-quote">"A tariff change hits the Federal Register and we find out when our broker mentions it &mdash; if they do."</p><p class="pain-tag">Regulatory blind spots</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">Model it before the PO. Recover it after the entry. Assess the change against your catalog.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">Build landed-cost scenarios by origin, HTS, and cost components &mdash; duty stack off the real HTS engine.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">One scan checks every filed entry for six recovery categories &mdash; with <strong style="color:#fff">no heuristic estimates</strong>.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Drawback lots matched FIFO within HTS code, with over-allocation prevention and statutory 99% math.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A Section 301 readiness inventory: how much duty is recoverable by list, so you move fast when an exclusion drops.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Every Federal Register CBP notice, assessed against your product and HTS portfolio.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Sourcing simulator -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Tariff &amp; sourcing simulator</p>
+        <h2 class="feature-headline">China vs. Vietnam breakeven, auto-calculated.</h2>
+        <p class="feature-pain">Build a scenario by origin country, HTS code, and cost components (unit cost, quantity, freight, insurance). The breakeven and duty differential &mdash; the number that used to be a consulting deliverable &mdash; computed on the spot.</p>
+        <ul class="feature-bullets">
+          <li>Multiple scenarios compared side by side</li>
+          <li>Section 301 exposure surfaced as part of the landed-cost picture</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/simulator</strong> &rarr; the pre-filled China scenario (HTS 8541.43.0010, 5,000 units) &rarr; scroll to <strong>China vs Vietnam Breakeven</strong>. "What would a trade attorney charge for this analysis?"</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Tariff Simulator</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Sourcing scenario — Solar diodes</div><div class="page-sub">HTS 8541.43.0010 · 5,000 units · $8.40 unit</div></div><button class="btn-primary">✦ Model</button></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="kpi-card"><div class="kpi-label">🇨🇳 China landed / unit</div><div class="kpi-value default" style="font-size:16px;">$11.86</div><div class="kpi-sub">duty 2.6% + 301 List 3 25%</div></div>
+                <div class="kpi-card"><div class="kpi-label">🇻🇳 Vietnam landed / unit</div><div class="kpi-value green" style="font-size:16px;">$9.71</div><div class="kpi-sub">duty 2.6% · no 301</div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">China vs Vietnam breakeven</div>
+                <div class="field-row"><span class="field-k">Duty differential (annualized, 60k units)</span><span class="field-v" style="color:var(--green);">$129,000 / yr</span></div>
+                <div class="field-row"><span class="field-k">Breakeven unit-cost premium Vietnam can absorb</span><span class="field-v">+ $2.15 / unit</span></div>
+                <div class="field-row"><span class="field-k">Section 301 exposure eliminated</span><span class="field-v">$105,000 / yr</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — Recovery scan -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Duty recovery · opportunity scan</p>
+        <h2 class="feature-headline">Every entry you've filed is being checked for money you can recover.</h2>
+        <p class="feature-pain">One scan checks each line for: classification review, Section 301 exclusion, trade-agreement claim, first sale, drawback, AD/CVD scope exclusion. <strong><span class="mono">estimatedRecovery</span> stays null until an opportunity is actually confirmed</strong> &mdash; a blank is honest; a made-up number is a liability.</p>
+        <ul class="feature-bullets">
+          <li>Ranked by confirmed recovery amount &rarr; confidence &rarr; deadline proximity</li>
+          <li>"Most of your competitors aren't doing this."</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/post-entry</strong> &rarr; Recovery &rarr; <strong>Scan for Refund Opportunities</strong>. Walk the ranked list; separate confirmed from analyzing.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Post-Entry</span><span style="color:var(--slate-300)">/</span><span>Recovery</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Recovery &amp; Drawback Control Center</div><div class="page-sub">scanned 412 filed entries · 6 confirmed · 11 analyzing</div></div><button class="btn-primary">✦ Re-scan</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Opportunity</th><th>Entry</th><th>Type</th><th>Recovery</th><th>Deadline</th></tr></thead>
+                  <tbody>
+                    <tr><td>First sale on 3 lines</td><td><span class="link">QBR-…3182</span></td><td>FIRST_SALE</td><td>$18,240 <span class="chip chip-verified">confirmed</span></td><td>141 d</td></tr>
+                    <tr><td>USMCA not claimed</td><td><span class="link">QBR-…3204</span></td><td>TRADE_AGREEMENT</td><td>$9,100 <span class="chip chip-verified">confirmed</span></td><td>—</td></tr>
+                    <tr><td>Lower-duty HTS alt (GRI)</td><td><span class="link">QBR-…3251</span></td><td>CLASSIFICATION_REVIEW</td><td><span class="chip chip-progress">analyzing</span></td><td>—</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">No heuristic multipliers · recovery amount null until confirmed</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Drawback + Section 301 inventory -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Drawback matching &amp; Section 301 readiness</p>
+        <h2 class="feature-headline">When an exclusion drops, you already know which entries and how much.</h2>
+        <p class="feature-pain">Imported lots (created when a filing is accepted, from lines with non-zero duty paid) matched FIFO within HTS code to exports, with over-allocation prevention. Manufacturing = 99% of base + Section 301 duty. The Section 301 inventory shows total duty paid per list, entry counts &mdash; and grants auto-create refund opportunities.</p>
+        <ul class="feature-bullets">
+          <li>CBP claim numbers <span class="mono">{filer}-{year}-{sequence}</span>, not random</li>
+          <li>Claim states DRAFT &rarr; PREPARED &rarr; SUBMITTED &rarr; ACCEPTED</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Recovery &rarr; <strong>Section 301 Readiness</strong> tab &rarr; duty paid per list, entry counts. Then <strong>Drawback Matching</strong> &rarr; eligible lots, matched pairs, claim status.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Recovery</span><span style="color:var(--slate-300)">/</span><span>Section 301 Readiness</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Section 301 readiness inventory</div><div class="page-sub">recoverable-if-excluded, by list · 288 affected entries</div></div></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>List</th><th>Entries</th><th>Duty paid</th><th>Top HTS</th></tr></thead>
+                  <tbody>
+                    <tr><td>List 3</td><td>194</td><td>$412,900</td><td class="mono">8541.43, 8537.10</td></tr>
+                    <tr><td>List 4A</td><td>71</td><td>$88,410</td><td class="mono">7616.99</td></tr>
+                    <tr><td>List 1</td><td>23</td><td>$21,140</td><td class="mono">8504.40</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Drawback lots — FIFO within HTS</div>
+                <div class="field-row"><span class="field-k">HTS 8541.43 · available 12,400 units</span><span class="field-v">matched 8,000 → EXP-2026-0912 · claim DRAFT</span></div>
+                <div class="field-row"><span class="field-k">Manufacturing drawback</span><span class="field-v">99% of (base + §301) per 19 CFR 190</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · FEATURE — PSC + protests -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">PSC &amp; protests</p>
+        <h2 class="feature-headline">The protest window is 180 days, and you're missing it.</h2>
+        <p class="feature-pain">Post-Summary Correction eligibility (entry accepted, before liquidation, material duty impact, no active drawback claim) + an original-vs-corrected duty-delta calc. Full CBP 19 protest workflow &mdash; grounds, filing-window tracking, attached entries. Entry-level reconciliation with a "Convert to PSC" action.</p>
+        <ul class="feature-bullets">
+          <li>PSC produces a preparation package (not an ACE submission)</li>
+          <li>Reconciliation grouped by exposure and deadline proximity</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">A filing &rarr; <strong>Post-Summary Correction</strong> tab &rarr; eligibility + impact calc. Then <strong>/app/post-entry/protests</strong> &rarr; a protest with grounds, window, attached entries.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Post-Entry</span><span style="color:var(--slate-300)">/</span><span>Protests</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Protest PRT-2026-0044</div><div class="page-sub">grounds: Classification · 3 entries attached</div></div><span class="chip chip-high">Filing window: 122 d</span></div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">Contested</span><span class="field-v">HTS 8537.10.9170 → 8471.80.4000 (lower rate)</span></div>
+                <div class="field-row"><span class="field-k">Estimated refund</span><span class="field-v">$14,880 across 3 entries</span></div>
+                <div class="field-row"><span class="field-k">Status</span><span class="field-v">Ready for Filing</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">PSC candidate — QBR-…3251</div>
+                <div class="field-row"><span class="field-k">Original vs corrected duty</span><span class="field-v">$8,120 → $6,540 · &Delta; $1,580 refundable</span></div>
+                <div class="field-row"><span class="field-k">Eligibility</span><span class="field-v" style="color:var(--green);">accepted · pre-liquidation · no drawback claim</span></div>
+                <div class="field-row"><span class="field-k"></span><span class="field-v"><span class="link">Convert to PSC</span></span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · FEATURE — Regulatory impact -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Regulatory-change impact</p>
+        <h2 class="feature-headline">CBP policy changes, assessed before they hit your shipments.</h2>
+        <p class="feature-pain">A live feed pulled from the Federal Register API (real fetcher + AI extraction), auto-creating refund-opportunity records where relevant. <strong>Assess Impact</strong> runs an update against your product and HTS portfolio &mdash; the analysis that used to take a trade attorney a week.</p>
+        <ul class="feature-bullets">
+          <li>Action Required flags for items needing a team response</li>
+          <li>Assistant tool: <span class="mono">run_impact_analysis</span></li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/regulatory</strong> &rarr; click <strong>Assess Impact</strong> on a feed item &rarr; the right panel computes product/shipment exposure.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Regulatory Intelligence</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">CBP &amp; Trade Regulatory Updates</div><div class="page-sub">source: federalregister.gov/api · AI-extracted</div></div></div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k"><span class="chip chip-high">Action Required</span> Customs user fees adjusted FY2027</span><span class="field-v">Doc 2026-15530 · eff 9/30</span></div>
+                <div class="field-row"><span class="field-k">Import restrictions — archaeological material of Nepal</span><span class="field-v">Doc 2026-14821 · eff 8/1</span></div>
+              </div>
+              <div class="panel" style="border-color:#DBEAFE;background:#EFF6FF;">
+                <div class="panel-title" style="color:#1E40AF;">Impact — user fee adjustment vs your portfolio</div>
+                <div class="field-row" style="border-color:#DBEAFE;"><span class="field-k">Entries affected / yr</span><span class="field-v">~1,240</span></div>
+                <div class="field-row" style="border-color:#DBEAFE;"><span class="field-k">Incremental MPF/HMF exposure</span><span class="field-v">+ $9,700 / yr</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · WHAT'S REAL / DATA GAPS -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">What's real, and where the data stops</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:34px;margin-bottom:18px;">Say it plainly.</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 40px;font-family:var(--font-body);font-size:14px;">
+        <div style="color:rgba(255,255,255,0.8);">✓ Simulator: standard duty/MPF + Section 301 &mdash; strongest for origin-shift and 301 questions</div>
+        <div style="color:rgba(255,255,255,0.8);">✓ Recovery models built, real Decimal math, over-allocation guards</div>
+        <div style="color:rgba(255,255,255,0.8);">✓ Regulatory feed: Federal Register (CBP notices), live</div>
+        <div style="color:rgba(255,255,255,0.55);">○ Section 301 exclusion-text matching needs the exclusion dataset</div>
+        <div style="color:rgba(255,255,255,0.55);">○ Precise PSC deadlines need CBP liquidation dates (ACE connection)</div>
+        <div style="color:rgba(255,255,255,0.55);">○ Automated AD/CVD rate/scope &mdash; not yet</div>
+      </div>
+      <p class="hero-lede" style="margin-top:22px;font-size:15px;">Unknowns show as "unknown," never a computed guess. That honesty is the trust argument.</p>
+    </div>
+  </section>
+
+  <!-- 10 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Do you file the refund with CBP?"</td><td class="obj-a">Qubere identifies opportunities, matches drawback lots, and produces the preparation package (claim / PSC / protest). The ACE/CBP submission goes through the filing path (live with ABI credentials) or the broker's system. It's the analysis and the package, done systematically &mdash; not an automatic wire.</td></tr>
+        <tr><td class="obj-q">"How real is the recovery detection?"</td><td class="obj-a">Models and workflows are built with real Decimal math and over-allocation guards. Two honest data gaps: Section 301 exclusion-text matching and precise PSC deadlines &mdash; both show "unknown" rather than a guess.</td></tr>
+        <tr><td class="obj-q">"Is the regulatory feed comprehensive?"</td><td class="obj-a">Federal Register CBP notices, live. USITC trade-remedy orders, §232/§301 rate annexes, PGA requirements are on the data roadmap &mdash; and the platform is explicit about which datasets are LIVE vs not.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 11 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"Model the sourcing decision before the PO. Keep the refund inventory live. Assess every policy change against your catalog."</h2>
+      <div class="dark-card"><p>Next step: give us one sourcing question you're currently sitting on. We build the scenario live &mdash; and run the recovery scan against a sample of your filed entries.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/sales/duty-and-landed-cost.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

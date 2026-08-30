@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Document Management</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Document Management &amp; Recordkeeping</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">A customs recordkeeping system<br><span class="accent">that happens to read your documents.</span></h1>
+      <p class="hero-lede">Every uploaded original is stored immutably, hashed, and re-verified on every read. Every extracted fact traces back to a page and a box. One click assembles the audit package CBP would ask for &mdash; so 19 U.S.C. &sect; 1509 recordkeeping stops being a shared drive and a prayer.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">SHA-256</div><div class="stat-label">re-verified on every single read</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">±7d</div><div class="stat-label">audit package window, assembled in one click</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">5yr</div><div class="stat-label">CBP recordkeeping, designed for from day one</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">"Our process for five-year recordkeeping is 'don't delete the folder.'"</h2>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"Trade documents are in email, a shared drive, and the broker's system. No single index. Someone sent a revised invoice &mdash; is it the one we filed on?"</p><p class="pain-tag">No system of record</p></div>
+        <div class="pain-card"><p class="pain-quote">"A CF-28 or audit request lands and we spend two weeks assembling the file."</p><p class="pain-tag">Audit fire drill</p></div>
+        <div class="pain-card"><p class="pain-quote">"We can't prove a document wasn't altered after the fact."</p><p class="pain-tag">No tamper-evidence</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">Immutable originals. Hash-verified reads. A one-click audit bundle.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">The uploaded bytes are stored once, never mutated, and the hash is re-verified on <strong style="color:#fff">every read</strong>.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">One searchable index per tenant, linked to shipments and &mdash; for multi-leg &mdash; specific legs.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Reprocessing creates a new version; the "active" version is a protected pointer.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">One click assembles a Reasonable Care package + Focused Assessment file for a ±7-day window around a filing.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Every action &mdash; upload, reprocess, view, quarantine, export &mdash; writes an immutable audit entry.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Immutable vault + provenance -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Immutable vault &amp; provenance</p>
+        <h2 class="feature-headline">If a stored document were ever altered, the next read fails the check.</h2>
+        <p class="feature-pain">Original bytes stored once, SHA-256 re-verified on every read. Every extracted field: page &rarr; bounding box &rarr; canonical artifact &rarr; original. <strong>Absence is preserved</strong> &mdash; a null page means the parser didn't report one, never a default.</p>
+        <ul class="feature-bullets">
+          <li>Versioned processing; a slow late parse is kept for audit but never claims the pointer</li>
+          <li>Uploads malware-scanned; quarantined files visible, never silently dropped</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/documents</strong> &rarr; open a document &rarr; show the checksum and "verified on read." That sentence lands with an enterprise IT or compliance buyer.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Trade Documents</span><span style="color:var(--slate-300)">/</span><span>commercial_invoice_88.pdf</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">commercial_invoice_88.pdf</div><div class="page-sub">attached to SHP-2026-000144 · uploaded by portal (priya@acme.com)</div></div><span class="chip chip-verified">integrity OK</span></div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">SHA-256</span><span class="field-v mono" style="font-size:9.5px;">a3f1c9e2…8b04 · re-verified on this read</span></div>
+                <div class="field-row"><span class="field-k">Byte size / media type</span><span class="field-v">248 KB · application/pdf</span></div>
+                <div class="field-row"><span class="field-k">Active parse version</span><span class="field-v">v2 (v1 retained for audit)</span></div>
+                <div class="field-row"><span class="field-k">Malware scan</span><span class="field-v" style="color:var(--green);">clean</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Provenance chain — Invoice Total</div>
+                <div class="chain">
+                  <div class="chain-node"><span class="dot-b"></span>ExtractionField "USD 142,400.00"</div>
+                  <div class="chain-node"><span class="dot-b"></span>page 1 · bbox [412, 690, 566, 712] · element #/texts/47</div>
+                  <div class="chain-node"><span class="dot-b"></span>canonical Docling JSON &rarr; original PDF (hash verified)</div>
+                </div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — Index + inbound email + reconciliation -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">One index · inbound email · reconciliation</p>
+        <h2 class="feature-headline">Every trade document in one place &mdash; however it arrives.</h2>
+        <p class="feature-pain">Invoice, packing list, BoL, AWB, certificates &mdash; searchable, linked to their shipment(s). Forward or CC documents to a per-tenant mailbox and they're ingested, classified, and attached through the same pipeline. Cross-document conflicts become tracked issues that <strong>block filing</strong> until resolved.</p>
+        <ul class="feature-bullets">
+          <li>Allow-list-controlled inbound address</li>
+          <li>Reconciliation issues carry structured reasons</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>Admin &rarr; Settings &rarr; Document Email</strong> &mdash; the tenant address + allowed senders. Then a shipment with an invoice/packing-list value mismatch &rarr; the blocking reconciliation issue.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Trade Documents</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Document index</div><div class="page-sub">142 documents · inbound: <span class="mono">acme-docs@in.qubere.ai</span></div></div><button class="btn-secondary">↓ Bulk export</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Document</th><th>Type</th><th>Shipment</th><th>Source</th><th>State</th></tr></thead>
+                  <tbody>
+                    <tr><td>bol_scanned_0912.pdf</td><td>Bill of Lading</td><td><span class="link">SHP-000144</span></td><td>email</td><td><span class="chip chip-progress">OCR retry</span></td></tr>
+                    <tr><td>commercial_invoice_88.pdf</td><td>Commercial Invoice</td><td><span class="link">SHP-000144</span></td><td>portal</td><td><span class="chip chip-verified">active v2</span></td></tr>
+                    <tr><td>packing_list_88.pdf</td><td>Packing List</td><td><span class="link">SHP-000144</span></td><td>upload</td><td><span class="chip chip-critical">conflict: total ≠ invoice</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel" style="border-color:#FCA5A5;background:#FEF2F2;">
+                <div class="field-row" style="border-color:#FECACA;"><span class="field-k" style="color:#991B1B;">ReconciliationIssue · blocksFiling</span><span class="field-v" style="color:#991B1B;">Packing list $141,900 vs invoice $142,400 · &Delta; $500</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Audit room -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Audit room · Reasonable Care package</p>
+        <h2 class="feature-headline">The audit response is a button.</h2>
+        <p class="feature-pain">One click assembles a Reasonable Care package and a Focused Assessment file for a ±7-day window around a filing &mdash; the declaration, the classification decisions with evidence, the documents, the timeline. Every compliance audit run is timestamped and exportable as importer due-diligence evidence.</p>
+        <ul class="feature-bullets">
+          <li>The &sect; 1484 Reasonable Care record, on demand</li>
+          <li>Bulk export of shipments and documents by client, period, or audit scope</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">On a filing &rarr; <strong>Generate Audit Package</strong> &rarr; walk the contents. "Before: two weeks of a person. After: one click and a ±7-day evidence bundle."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span class="mono" style="font-size:10px;">QBR-2026-3231761</span><span style="color:var(--slate-300)">·</span><span>Audit Room</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Reasonable Care package</div><div class="page-sub">window 2026-08-04 ± 7 days · generated 14:02</div></div><button class="btn-primary">↓ Export bundle</button></div>
+              <div class="panel">
+                <div class="panel-title">Contents</div>
+                <div class="field-row"><span class="field-k">Canonical declaration</span><span class="field-v">v3 · frozen snapshot</span></div>
+                <div class="field-row"><span class="field-k">Classification decisions</span><span class="field-v">3 lines · GRI analysis · rulings cited · reviewer identity</span></div>
+                <div class="field-row"><span class="field-k">Source documents</span><span class="field-v">Commercial Invoice, Packing List, MBL · hashes</span></div>
+                <div class="field-row"><span class="field-k">Compliance audit runs</span><span class="field-v">2 · timestamped · findings by severity</span></div>
+                <div class="field-row"><span class="field-k">Timeline</span><span class="field-v">upload &rarr; extract &rarr; classify &rarr; validate &rarr; transmit &rarr; release</span></div>
+              </div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Focused Assessment file included · satisfies 19 U.S.C. § 1484 Reasonable Care</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Do you replace our DMS / SharePoint?"</td><td class="obj-a">For trade documents, yes &mdash; with provenance and audit-packaging those systems don't have. It's not a general enterprise content platform.</td></tr>
+        <tr><td class="obj-q">"Retention policy / legal hold?"</td><td class="obj-a">Originals are immutable and audit-logged. Formal retention-schedule automation and legal-hold workflow aren't first-class yet &mdash; the guarantee today is "nothing is mutated or silently deleted."</td></tr>
+        <tr><td class="obj-q">"Can we bulk-import our back catalog?"</td><td class="obj-a">Documents can be uploaded in bulk and extraction runs on each. There's no dedicated historical-archive migration tool &mdash; scope a large back-file as a services engagement.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 8 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"Hash-verified on every read. The audit response is a button."</h2>
+      <p class="hero-lede">Immutable originals, versioned processing, and a one-click ±7-day evidence bundle. That's the &sect; 1509 answer.</p>
+      <div class="dark-card"><p>Next step: bring a recent entry file. We'll upload the documents, show the provenance and reconciliation, then generate the audit package you'd hand CBP.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/sales/document-management.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

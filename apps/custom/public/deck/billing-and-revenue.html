@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Billing &amp; Revenue</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Billing &amp; Revenue Intelligence</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">"Why is this charge $28?"<br><span class="accent">One click. Full trace.</span></h1>
+      <p class="hero-lede">Every operational event &mdash; a classification, a filing, a document parse, a human review, a compliance screen &mdash; automatically emits a rated usage record against a versioned, immutable-once-activated rate card. Trace any invoice line to the exact work behind it, see real per-client margin, and get told you're losing money before the quarterly review.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">0</div><div class="stat-label">manual entry steps in the usage &rarr; charge flow</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">3</div><div class="stat-label">explicit ledger sections: customs · broker · AR</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">1</div><div class="stat-label">simulation you run every renewal, not once</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">Billing is retrospective, and revenue leaks silently.</h2>
+      <p class="problem-sub">What a brokerage owner says:</p>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"The rate card lives in a spreadsheet. Maybe three. Nobody's sure which version was in effect for an entry that closed six weeks ago."</p><p class="pain-tag">Ungoverned rates</p></div>
+        <div class="pain-card"><p class="pain-quote">"A classification override, a supervisor's second review, an exception someone resolved by phone &mdash; none of it shows up as billable time or internal cost."</p><p class="pain-tag">Invisible work</p></div>
+        <div class="pain-card"><p class="pain-quote">"Restricted-party screening is real labor and real risk transfer. It's a checkbox in our workflow, never a line on the invoice."</p><p class="pain-tag">Free compliance</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">Billing that doesn't wait for someone to remember to do it.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">Every operational event emits a usage record <strong style="color:#fff">automatically</strong> &mdash; there is no manual keying step in this flow.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Rate cards are versioned, immutable once activated, with a draft &rarr; active &rarr; retired lifecycle.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Duty, MPF, HMF, taxes are pulled from <strong style="color:#fff">actual filing totals</strong> &mdash; not estimated, not zeroed &mdash; and separated from broker revenue.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Human review carries a real measured duration. Every compliance screen emits its own rated event.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Exception detection flags unmapped rates, negative margins, and unbilled work &mdash; and it's actionable.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Why is this charge $X -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Charge trace</p>
+        <h2 class="feature-headline">Click one charge. Walk usage event &rarr; rate rule &rarr; card version &rarr; calc &rarr; charge.</h2>
+        <p class="feature-pain">The single most differentiated moment in the demo. No spreadsheet or legacy system gives an instant, auditable answer to "why is this $X." Every adjustment requires a reason, tied to a user and timestamp, in the charge's history forever.</p>
+        <ul class="feature-bullets">
+          <li>Full derivation visible, not a black-box total</li>
+          <li>Pre-seeded discount with its reason and approver</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Open Acme's <strong>Shipment Economics</strong> &rarr; click a single charge &rarr; walk the full trace. "How long would it take your team to answer that with confidence today?"</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Billing</span><span style="color:var(--slate-300)">/</span><span class="mono" style="font-size:10px;">CHG-2026-08-11042</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">FR</div><span class="app-username">Frank</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Charge · Human Classification Review</div><div class="page-sub">SHP-2026-000144 · Acme Manufacturing · $28.00</div></div></div>
+              <div class="panel">
+                <div class="panel-title">Derivation</div>
+                <div class="chain">
+                  <div class="chain-node"><span class="dot-b"></span>Usage event <span class="mono">HUMAN_CLASSIFICATION_REVIEW_COMPLETED</span> · measured 11m 12s</div>
+                  <div class="chain-node"><span class="dot-b"></span>Rate rule <span class="mono">review.classification.per_min</span> = $2.50/min</div>
+                  <div class="chain-node"><span class="dot-b"></span>Rate card <span class="mono">acme-mfg v3</span> · active 2026-06-01</div>
+                  <div class="chain-node"><span class="dot-b"></span>Calc: ceil(11.2) × $2.50 = $30.00</div>
+                  <div class="chain-node" style="border-color:#BBF7D0;background:#F0FDF4;"><span class="dot-b" style="background:var(--green)"></span>Adjustment &minus;$2.00 · "goodwill, bad week" · A. Nadler · charge = $28.00</div>
+                </div>
+              </div>
+              <div class="field-row"><span class="field-k">Tied to</span><span class="field-v">resolved exception EXC-4471 (real)</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — Versioned rate cards + import -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Versioned rate cards &amp; live import</p>
+        <h2 class="feature-headline">Your rate card, live, in five minutes.</h2>
+        <p class="feature-pain">A formal draft &rarr; active &rarr; retired lifecycle, immutable once activated, full version history. Import from CSV through the real import flow, map line items, activate. Answers "how painful is onboarding" before they ask.</p>
+        <ul class="feature-bullets">
+          <li>No more "which spreadsheet was in effect"</li>
+          <li>Sample CSV ships in <span class="mono">public/demo/billing/</span></li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/billing/rate-cards/import</strong> &rarr; upload the sample CSV &rarr; map 2&ndash;3 items live &rarr; activate. Then show version history on Acme's card.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Billing</span><span style="color:var(--slate-300)">/</span><span>Rate Cards / acme-mfg</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">FR</div><span class="app-username">Frank</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Acme Manufacturing — Rate Card</div><div class="page-sub">v3 active · v4 draft · immutable once activated</div></div><button class="btn-secondary">↑ Import CSV</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Version</th><th>Status</th><th>Activated</th><th>Line items</th></tr></thead>
+                  <tbody>
+                    <tr><td>v4</td><td><span class="chip chip-draft">Draft</span></td><td>&mdash;</td><td>28 · <span class="link">simulate</span></td></tr>
+                    <tr><td>v3</td><td><span class="chip chip-accepted">Active</span></td><td>2026-06-01</td><td>26</td></tr>
+                    <tr><td>v2</td><td><span class="chip chip-normal">Retired</span></td><td>2026-01-15</td><td>24</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel">
+                <div class="panel-title">v3 sample rules</div>
+                <div class="field-row"><span class="field-k">filing.entry.type_01</span><span class="field-v">$145.00 flat</span></div>
+                <div class="field-row"><span class="field-k">screening.restricted_party.per_screen</span><span class="field-v">$4.00</span></div>
+                <div class="field-row"><span class="field-k">classification.ai.per_line</span><span class="field-v">$0.85</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Usage ledger + screening metered -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Usage ledger</p>
+        <h2 class="feature-headline">Every screen you run is a line item.</h2>
+        <p class="feature-pain">Charges appear in the ledger with nobody keying anything in. Every restricted-party, embargo, community, and continuous re-screen emits its own rated event, <strong>cross-referenced to the screening record that proves it happened</strong>. This labor used to be invisible to billing entirely.</p>
+        <ul class="feature-bullets">
+          <li>Filter to screening events &rarr; click through to the screening execution</li>
+          <li>Pass-through (duty/MPF/HMF/taxes) separated from broker revenue</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/billing/usage</strong> &rarr; filter to screening events &rarr; click one through to its execution &rarr; show the matching invoice line. "This is revenue you're currently giving away."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Billing</span><span style="color:var(--slate-300)">/</span><span>Usage Ledger</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">FR</div><span class="app-username">Frank</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Usage Ledger — Acme</div><div class="page-sub">filter: screening events · Aug 2026</div></div></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Time</th><th>Event</th><th>Ref</th><th>Rate</th><th>Charge</th></tr></thead>
+                  <tbody>
+                    <tr><td>Aug 27</td><td class="mono">RPS_RESCREEN</td><td><span class="link">RES-11902</span></td><td>$4.00</td><td>$4.00</td></tr>
+                    <tr><td>Aug 25</td><td class="mono">COMMUNITY_SCREEN_ROW</td><td><span class="link">RUN-0814 ×4,012</span></td><td>$0.60</td><td>$2,407.20</td></tr>
+                    <tr><td>Aug 22</td><td class="mono">EMBARGO_SCREEN</td><td><span class="link">SHP-000188</span></td><td>$3.00</td><td>$3.00</td></tr>
+                    <tr><td>Aug 19</td><td class="mono">RDPS_RESCREEN</td><td><span class="link">RES-11740</span></td><td>$2.00</td><td>$2.00</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Each row links to the operational record that generated it</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · FEATURE — Leakage detection + margin + simulation -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Leakage detection, margin &amp; simulation</p>
+        <h2 class="feature-headline">We'll tell you when you're losing money &mdash; not your quarterly review.</h2>
+        <p class="feature-pain">Automated exception detection flags unmapped rates, negative-margin clients, and unbilled work &mdash; and it's actionable, not read-only. Rate simulation runs a proposed card against real historical usage without touching production data.</p>
+        <ul class="feature-bullets">
+          <li>The negative-margin client is surfaced, not buried</li>
+          <li>Invoice approval: drafting and sending need <strong>different</strong> permissions (tested)</li>
+          <li>Simulation: current vs. proposed revenue and margin</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/billing/exceptions</strong> &rarr; resolve a negative-margin exception live with a reason. Then <strong>rate-cards/[id]/simulate</strong> &rarr; run Acme's draft v4 against real usage &rarr; the revenue delta. Pivot to renewals.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Billing</span><span style="color:var(--slate-300)">/</span><span>Rate Simulation</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">FR</div><span class="app-username">Frank</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Simulate: acme-mfg v4 vs actuals</div><div class="page-sub">against 12 months real usage · production untouched</div></div><button class="btn-primary">Run</button></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="kpi-card"><div class="kpi-label">Current revenue (v3)</div><div class="kpi-value default" style="font-size:17px;">$284,120</div><div class="kpi-sub">margin 21%</div></div>
+                <div class="kpi-card"><div class="kpi-label">Proposed (v4)</div><div class="kpi-value green" style="font-size:17px;">$331,540</div><div class="kpi-sub">margin 32% · +$47,420</div></div>
+              </div>
+              <div class="panel" style="border-color:#FCA5A5;background:#FEF2F2;">
+                <div class="panel-title" style="color:#991B1B;">⚠ Open billing exceptions</div>
+                <div class="field-row" style="border-color:#FECACA;"><span class="field-k">Delta Freight Co.</span><span class="field-v" style="color:#991B1B;">margin &minus;8% · 3 mo · <span class="link">resolve</span></span></div>
+                <div class="field-row" style="border-color:#FECACA;"><span class="field-k">Unmapped rate</span><span class="field-v" style="color:#991B1B;">"drayage exam fee" · 6 charges unbilled</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · TALK TRACK -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The talk track</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:34px;margin-bottom:18px;">Open on the pain, not the product.</h2>
+      <div class="dark-card" style="margin-bottom:18px;"><p>"If I asked your billing team right now why a specific invoice line is $28 &mdash; how long to answer with confidence? And can you tell me, off the top of your head, which clients you're actually losing money on?"</p></div>
+      <p class="hero-lede" style="font-size:15px;">Most brokers can't answer either question cleanly. That's the entire pitch in two questions. Then: charge trace &rarr; live CSV import &rarr; usage ledger &rarr; negative-margin client resolved live &rarr; "every screen is a line item" &rarr; rate simulation.</p>
+    </div>
+  </section>
+
+  <!-- 9 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Does it replace QuickBooks / Xero?"</td><td class="obj-a">No &mdash; it's the operational billing layer that feeds a clean, itemized, defensible invoice into whatever you use for AR and books. The value is the invoice is right and traceable before it leaves Qubere.</td></tr>
+        <tr><td class="obj-q">"Credit notes / charge disputes?"</td><td class="obj-a">A formal credit-note / dispute workflow is <strong>not built yet</strong> &mdash; the DISPUTED / CREDITED states exist but aren't wired end to end. Adjustments-with-reason on a charge are the current mechanism. This is the one real gap.</td></tr>
+        <tr><td class="obj-q">"How do we know the usage numbers are right?"</td><td class="obj-a">Cross-tenant billing isolation has automated test coverage, and every rated event links to the operational record that generated it &mdash; you can always click through to the proof.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:38px;">"Every number you just saw traces back to real work, in real time, with a real audit trail."</h2>
+      <p class="hero-lede">Nothing was a mockup &mdash; it's the same engine that would be running your books from day one.</p>
+      <div class="dark-card"><p>Next step: send us a month of your completed-entry data and your current rate card. We'll load it and show you the margin picture and the leakage you can't see today.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full playbook: <span class="mono">docs/sales/billing-and-revenue.md</span> · <span class="mono">Billing.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>
