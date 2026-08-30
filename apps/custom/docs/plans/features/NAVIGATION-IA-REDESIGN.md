@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review (this PR) · Phases 2–3 scoped, not built
+**Status:** Phase 1 in review · Phase 2a shipped (compliance + billing lanes, read + deep-link) · Phase 2b (inline disposition) + Phase 3 scoped
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -162,29 +162,41 @@ Today already unifies **Operations** work: `/app/actions` merges `AgentDecision`
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Work
+### Phase 2a — SHIPPED
 
-1. Extract a `TodayLane` union type + a per-lane loader that returns a common
-   `TodayItem` shape (`{ id, lane, priority, dueAt, groupKey, groupLabel, title,
-   summary, actions[] }`).
-2. Operations lane = adapter over the existing `ShipmentActionGroup`.
-3. Compliance lane = new query over `ScreeningFinding` where status ∈ open/review,
-   grouped by party/shipment. Actions: Review, Waive (needs `compliance.override`),
-   Clear.
-4. Billing lane = new query over `BillingException` where `status = OPEN`, grouped
-   by invoice/client. Actions: Resolve, Snooze.
-5. Lane chips filter client-side; counts come from the loaders.
-6. Rail badge = Σ open items across lanes, scoped to "Mine" — reuse the existing
-   `usePolling` pattern already in `Sidebar.tsx`.
-7. Keep action vocabularies **distinct** per type (approve/reject vs waive/resolve
-   vs snooze) — do not flatten to a generic "Action" (see
-   `memory/project_actions_page_merge.md`).
+- `src/modules/today/todayLanes.ts` — pure layer: `TodayLane` union,
+  `TodayLaneItem` shape (`{ id, lane, kind, severity, title, summary, groupKey,
+  groupLabel, clientName, shipmentNumber, href, createdAt }`), severity
+  normalizers, row→item mappers, `groupLaneItems`, `summarizeLane`. Fully unit
+  tested (`tests/today-lanes.test.ts`).
+- `src/modules/today/loadTodayLanes.ts` — `loadComplianceLane` (open
+  `ComplianceFinding` **+** `ComplianceScreeningFinding` — the schema has no
+  `ScreeningFinding`; the review queue is `ComplianceFinding`, screening hits are
+  `ComplianceScreeningFinding`), `loadBillingLane` (open `BillingException`),
+  `loadTodayLaneCounts` (cheap `count()` for the badge).
+- `/app/actions` (`page.tsx`) loads both lanes in its existing `Promise.all`,
+  gated by `compliance.read` / `billing.exception.view` — an ungranted lane is
+  `null` and its chip never renders. Lanes are **account-wide** (the
+  My/Team/Unassigned scope only applies to assignable Operations work).
+- `ActionsClient` renders a lane strip (`Operations · Compliance · Billing` with
+  counts, `?lane=` linkable); `TodayLanePanel` renders the compliance/billing
+  lane as grouped cards.
+- `/api/today/summary` + a second `usePolling` in `Sidebar.tsx` drive the "Today"
+  rail badge (Σ open across visible lanes).
 
-### Phasing inside Phase 2
+### Phase 2b — NOT built
 
-- 2a: Compliance lane (query-shaped already).
-- 2b: Billing lane once `BillingException` has a matching read model.
-- Until 2b, the Billing chip deep-links to `/app/billing/exceptions`.
+- **Inline disposition** from inside Today. Today the compliance/billing rows
+  deep-link (`href`) to `/app/compliance?tab=review|screening` and
+  `/app/billing/exceptions`, where the audited resolve/waive flows already live
+  (`billing/exceptions/actions.ts`, `api/findings/[id]/resolve`,
+  `api/screening-findings/[id]/resolve`). Wiring those as row actions needs the
+  server actions threaded into the client component + optimistic removal.
+- **Cross-lane "breaching soon"** band — needs deadline/exposure data on the
+  compliance + billing rows (only Operations carries `urgencyByShipment` today).
+- Keep action vocabularies **distinct** per type when 2b lands (approve/reject vs
+  waive/resolve vs snooze) — do not flatten to a generic "Action" (see
+  `memory/project_actions_page_merge.md`).
 
 ---
 

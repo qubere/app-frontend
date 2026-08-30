@@ -117,6 +117,7 @@ export function Sidebar({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [pendingClassificationCount, setPendingClassificationCount] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
 
   const fetchPendingClassification = useCallback(async () => {
     try {
@@ -129,7 +130,19 @@ export function Sidebar({
     }
   }, []);
 
+  const fetchTodayCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/today/summary", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setTodayCount(typeof data.total === "number" ? data.total : 0);
+    } catch {
+      // Silent — a failed poll just tries again next interval.
+    }
+  }, []);
+
   usePolling(fetchPendingClassification, 60_000);
+  usePolling(fetchTodayCount, 60_000);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -301,7 +314,11 @@ export function Sidebar({
                   const Icon = ICONS[item.icon];
                   const label = labels[item.labelKey] ?? item.labelKey;
                   const badgeCount =
-                    item.id === "documents" ? pendingClassificationCount : (item.badge ?? 0);
+                    item.id === "documents"
+                      ? pendingClassificationCount
+                      : item.id === "actions"
+                        ? todayCount
+                        : (item.badge ?? 0);
                   return (
                     <Link
                       key={item.id}
