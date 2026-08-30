@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review · Phases 2a+2b shipped (Today lanes + inline disposition) · Phases 3a+3b shipped (notification hub + producers) · Phase 3c (route consolidation) scoped
+**Status:** Phase 1 in review · Phases 2a+2b shipped (Today lanes + inline disposition) · Phases 3a+3b shipped (notification hub + producers) · Phase 4a shipped (on-demand shipment checks) · Phases 3c + 4b–4d scoped
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -277,6 +277,42 @@ category (guards, tests, deep links, Copilot tool hrefs).
 - Fold `/app/compliance-reports` in as a tab on `/app/compliance`.
 - Per-tenant **Filing Settings** page (distinct from the platform-global
   `/app/filing-config`) — a net-new feature, not IA work.
+
+---
+
+## 6b. Front doors for headless capabilities (Phase 4)
+
+From the API→UI gap audit (issue #112): customs capabilities that are fully
+built server-side but have no way to trigger them from the UI.
+
+### Phase 4a — SHIPPED (on-demand shipment checks)
+
+- `ComplianceChecksPanel` on the shipment workspace (under the readiness ribbon):
+  **Run / Re-run** buttons for **Embargo screening** (`POST /api/screening/embargo`),
+  **PGA screening** (`POST /api/pga/screen`), **Reconciliation** (`POST /api/reconcile`).
+  Each shows a compact status (Clear / Action needed / Blocked / Not screened) and
+  `router.refresh()`es so persisted `PgaRequirement` / `ReconciliationIssue` rows
+  flow back into the readiness ribbon + exceptions drawer.
+- Gated on `canManageJourney` (shipment write access) -- the same proxy the
+  journey controls use. `/api/screening/embargo` + `/api/pga/screen` gate on the
+  uncatalogued `ai.use`, `/api/reconcile` on the uncatalogued `shipments.manage`
+  -- pre-existing route bugs, not fixed here.
+- Result mappers extracted to `complianceCheckResults.ts` (pure, tested).
+
+### Phase 4b–4d — NOT built
+
+- **4b Classification Inbox** — `GET /api/v1/classification/cases` list view
+  (only the per-product case *detail* exists today), + re-run
+  (`/cases/:id/runs`) and proposal compare (`/cases/:id/proposals`).
+- **4c HTS Workspace** — a standalone HTS page: search + **chapter notes**
+  (`/api/v1/hts/codes/:code/notes`) + hierarchy tree (`/hierarchy`). No HTS page
+  exists; search is only inline in line-item editing.
+- **4d Intelligence panels** — trade benchmarks (`/api/trade-intel/benchmarks`),
+  broker + supplier risk scorecards (`/api/risk/brokers`, `/api/risk/suppliers`).
+- **Escalate button** — `POST /api/work/:kind/:id/escalate` has no UI trigger in
+  Today or the exceptions drawer.
+- Product `normalize` / `enrich/approve` / `bind-classification`; refund
+  `opportunities/scan` trigger.
 
 ---
 
