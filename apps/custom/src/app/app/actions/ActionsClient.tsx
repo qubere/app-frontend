@@ -68,6 +68,12 @@ interface ActionsClientProps {
   /** Cross-domain billing lane, or null when the caller lacks billing.exception.view. */
   billingLane?: TodayLaneSummary | null;
   initialLane?: TodayLane;
+  /** exceptions.resolve -- resolve/accept-risk compliance findings from Today. */
+  canResolveCompliance?: boolean;
+  /** billing.exception.resolve. */
+  canResolveBilling?: boolean;
+  /** billing.exception.waive. */
+  canWaiveBilling?: boolean;
 }
 
 const PRIORITY_LABEL: Record<WorkPriority, string> = {
@@ -103,10 +109,20 @@ export function ActionsClient({
   complianceLane = null,
   billingLane = null,
   initialLane = "operations",
+  canResolveCompliance = false,
+  canResolveBilling = false,
+  canWaiveBilling = false,
 }: ActionsClientProps) {
   const router = useRouter();
   const [localGroups, setLocalGroups] = useState(initialGroups);
   const [activeLane, setActiveLane] = useState<TodayLane>(initialLane);
+  // Items disposed from a lane this session -- subtracted from the strip counts.
+  const [laneDisposed, setLaneDisposed] = useState<{ compliance: number; billing: number }>({
+    compliance: 0,
+    billing: 0,
+  });
+  const onLaneDisposed = (lane: "compliance" | "billing") =>
+    setLaneDisposed((prev) => ({ ...prev, [lane]: prev[lane] + 1 }));
 
   const goToLane = (next: TodayLane) => {
     setActiveLane(next);
@@ -489,8 +505,8 @@ export function ActionsClient({
         <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-border shadow-2xs overflow-x-auto">
           {([
             { lane: "operations" as const, label: "Operations", count: operationsCount ?? localGroups.reduce((n, g) => n + g.items.length, 0), critical: 0, show: true },
-            { lane: "compliance" as const, label: "Compliance", count: complianceLane?.openCount ?? 0, critical: complianceLane?.criticalCount ?? 0, show: !!complianceLane },
-            { lane: "billing" as const, label: "Billing", count: billingLane?.openCount ?? 0, critical: billingLane?.criticalCount ?? 0, show: !!billingLane },
+            { lane: "compliance" as const, label: "Compliance", count: Math.max(0, (complianceLane?.openCount ?? 0) - laneDisposed.compliance), critical: complianceLane?.criticalCount ?? 0, show: !!complianceLane },
+            { lane: "billing" as const, label: "Billing", count: Math.max(0, (billingLane?.openCount ?? 0) - laneDisposed.billing), critical: billingLane?.criticalCount ?? 0, show: !!billingLane },
           ]).filter((l) => l.show).map((l) => {
             const isActive = activeLane === l.lane;
             return (
@@ -518,6 +534,10 @@ export function ActionsClient({
         <TodayLanePanel
           summary={activeLane === "compliance" ? complianceLane ?? null : billingLane ?? null}
           lane={activeLane}
+          canResolveCompliance={canResolveCompliance}
+          canResolveBilling={canResolveBilling}
+          canWaiveBilling={canWaiveBilling}
+          onDisposed={onLaneDisposed}
         />
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">

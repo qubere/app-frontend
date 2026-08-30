@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review · Phase 2a shipped (compliance + billing lanes) · Phase 3a+3b shipped (notification hub + producers) · Phase 2b (inline disposition) + Phase 3c (route consolidation) scoped
+**Status:** Phase 1 in review · Phases 2a+2b shipped (Today lanes + inline disposition) · Phases 3a+3b shipped (notification hub + producers) · Phase 3c (route consolidation) scoped
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -184,19 +184,34 @@ Today already unifies **Operations** work: `/app/actions` merges `AgentDecision`
 - `/api/today/summary` + a second `usePolling` in `Sidebar.tsx` drive the "Today"
   rail badge (Σ open across visible lanes).
 
-### Phase 2b — NOT built
+### Phase 2b — SHIPPED (inline disposition)
 
-- **Inline disposition** from inside Today. Today the compliance/billing rows
-  deep-link (`href`) to `/app/compliance?tab=review|screening` and
-  `/app/billing/exceptions`, where the audited resolve/waive flows already live
-  (`billing/exceptions/actions.ts`, `api/findings/[id]/resolve`,
-  `api/screening-findings/[id]/resolve`). Wiring those as row actions needs the
-  server actions threaded into the client component + optimistic removal.
-- **Cross-lane "breaching soon"** band — needs deadline/exposure data on the
-  compliance + billing rows (only Operations carries `urgencyByShipment` today).
-- Keep action vocabularies **distinct** per type when 2b lands (approve/reject vs
-  waive/resolve vs snooze) — do not flatten to a generic "Action" (see
+- `TodayLanePanel` is interactive. Each row gets action buttons by kind, gated
+  by permission (page passes `canResolveCompliance` = `exceptions.resolve`,
+  `canResolveBilling` = `billing.exception.resolve`, `canWaiveBilling` =
+  `billing.exception.waive`):
+  - `review-finding` -> **Resolve** / **Accept risk** (`POST
+    /api/findings/:id/resolve`, status `Resolved` / `AcceptedRisk`; accept-risk
+    requires a note).
+  - `screening-finding` -> **Mark resolved** (`POST
+    /api/screening-findings/:id/resolve`).
+  - `billing-exception` -> **Resolve** / **Waive** (`POST
+    /api/billing/exceptions/:id/disposition`, reason required).
+- Action verbs stay **distinct per kind** -- no generic "Action" (see
   `memory/project_actions_page_merge.md`).
+- Billing core extracted to `src/lib/billing/disposeBillingException.ts` (shared
+  by the workspace server action and the new Today route -- same optimistic-lock
+  + audit behavior). `billing-tenant-isolation.test.ts` scan now covers
+  `src/lib/billing/`.
+- Optimistic: disposed rows drop from the panel and the lane-strip count
+  decrements. `tests/today-lane-disposition.test.ts`.
+
+### Phase 2b follow-up — NOT built
+
+- **Cross-lane "breaching soon"** band -- needs deadline/exposure data on the
+  compliance + billing rows (only Operations carries `urgencyByShipment` today).
+- **Undo** on a just-disposed row (the APIs support re-opening `ComplianceFinding`
+  but not the others).
 
 ---
 
