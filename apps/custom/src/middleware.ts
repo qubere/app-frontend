@@ -9,19 +9,20 @@ const isProtectedRoute = createRouteMatcher([
   "/api/assistant(.*)",
 ]);
 
-export default clerkMiddleware(
-  async (auth, req) => {
-    if (isProtectedRoute(req)) {
-      await auth.protect();
-    }
-  },
-  {
-    // Redirect unauthenticated users to our own Qubere-branded sign-in page
-    // rather than the default Clerk Account Portal (accounts.qubere.ai).
-    signInUrl: "/sign-in",
-    signUpUrl: "/sign-up",
-  },
-);
+// Keep unauthenticated users on our own Qubere-branded /sign-in page rather than
+// the unstyled Clerk Account Portal. This is passed to auth.protect() as an
+// absolute URL built from the request origin — NOT as a clerkMiddleware
+// `signInUrl` option, which is validated as absolute and throws
+// "The signInUrl needs to have a absolute url format." for a relative path,
+// 500-ing every protected route (including /api/documents/upload).
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    await auth.protect({
+      unauthenticatedUrl: new URL("/sign-in", req.url).toString(),
+      unauthorizedUrl: new URL("/sign-in", req.url).toString(),
+    });
+  }
+});
 
 export const config = {
   matcher: [
