@@ -135,15 +135,15 @@ interface DbChatSession {
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { label: "Dashboard", href: "/app/dashboard", Icon: LayoutDashboard },
-  { label: "Actions", href: "/app/actions", Icon: ListChecks },
+  { label: "Today", href: "/app/actions", Icon: ListChecks },
+  { label: "Command Center", href: "/app/dashboard", Icon: LayoutDashboard },
   { label: "Shipments", href: "/app/shipments", Icon: FileText },
   { label: "Customs Filing", href: "/app/filing", Icon: FileCheck2 },
   { label: "Regulatory", href: "/app/regulatory", Icon: Globe },
 ];
 
 const TOOLING_ITEMS = [
-  { label: "Trade Docs", href: "/app/documents", Icon: Files },
+  { label: "Documents", href: "/app/documents", Icon: Files },
   { label: "Clients", href: "/app/clients", Icon: Contact2 },
   { label: "Billing", href: "/app/billing", Icon: DollarSign },
   { label: "Duty Drawbacks", href: "/app/vault", Icon: Coins },

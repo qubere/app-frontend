@@ -15,13 +15,20 @@ describe("Bonds, Importers of Record, and POA Navigation Surface", () => {
     expect(navItemByHref("/app/poa")).toBeDefined();
   });
 
-  it("includes /app/clients in visible sidebar navigation", () => {
-    // importers-of-record, bonds, and poa were intentionally moved to
-    // UNLISTED_NAV_ITEMS (reachable by direct link/lookup, not shown in the
-    // sidebar) -- see 0efcb56 "updaed navigation - cleaned it up."
+  it("shows all four in the Management workspace of the sidebar", () => {
+    // The IA redesign (docs/plans/features/NAVIGATION-IA-REDESIGN.md) promoted
+    // bonds / POA / importers of record out of UNLISTED_NAV_ITEMS: they are
+    // broker-critical legal records and were previously reachable only by deep
+    // link.
     const sections = visibleNavigation(access);
-    const allHrefs = sections.flatMap((s) => s.items.map((i) => i.href));
-
-    expect(allHrefs).toContain("/app/clients");
+    const management = sections.find((s) => s.id === "management");
+    expect(management).toBeDefined();
+    const hrefs = management!.items.map((i) => i.href);
+    expect(hrefs).toEqual([
+      "/app/clients",
+      "/app/importers-of-record",
+      "/app/bonds",
+      "/app/poa",
+    ]);
   });
 });
