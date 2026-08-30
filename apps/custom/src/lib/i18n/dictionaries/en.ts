@@ -2,7 +2,15 @@ export const en = {
   // Navigation
   nav: {
     askQubere: "Ask Qubere",
+    today: "Today",
     commandCenter: "Command Center",
+    documents: "Documents",
+    regulatoryUpdates: "Regulatory Updates",
+    dataAndIntelligence: "Data & Intelligence",
+    billingWorkspace: "Billing",
+    billingExceptions: "Exceptions & Leakage",
+    management: "Management",
+    clientsAndEntities: "Clients & Legal Entities",
     shipments: "Shipments",
     products: "Products",
     parties: "Parties",

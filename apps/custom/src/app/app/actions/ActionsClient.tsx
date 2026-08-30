@@ -336,7 +336,7 @@ export function ActionsClient({
             <TriangleAlert className="w-4 h-4 text-amber-500" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-ink tracking-tight">Actions</h1>
+            <h1 className="text-xl font-extrabold text-ink tracking-tight">Today</h1>
             <p className="text-xs text-ink-muted">{localGroups.reduce((n, g) => n + g.items.length, 0)} open items across {localGroups.length} shipments</p>
           </div>
         </div>

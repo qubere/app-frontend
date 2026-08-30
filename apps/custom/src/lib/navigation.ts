@@ -55,20 +55,35 @@ export interface NavSection {
   items: NavItem[];
   /** Rendered by the header account menu instead, but still authorizes its routes. */
   hiddenFromSidebar?: boolean;
-  /** Render items as horizontal pills instead of full-width links. */
-  renderAs?: "pills";
+  /** Suppress the section header -- used for the pinned Today / Command Center rows. */
+  hideLabel?: boolean;
+  /**
+   * When true, the section renders as an accordion in the sidebar: its header is a
+   * toggle and its items are shown only while it is the open section. Sections
+   * without this flag are always fully expanded (the pinned rows).
+   */
+  collapsible?: boolean;
 }
 
 export const ACCOUNT_ADMIN_ROLES = ["OWNER", "ADMIN"];
 
 export const NAV_SECTIONS: NavSection[] = [
   {
+    id: "primary",
+    labelKey: "primary",
+    hideLabel: true,
+    items: [
+      { id: "actions", labelKey: "today", href: "/app/actions", icon: "actions" },
+      { id: "dashboard", labelKey: "commandCenter", href: "/app/dashboard", icon: "dashboard" },
+    ],
+  },
+  {
     id: "operations",
     labelKey: "mainOperations",
+    collapsible: true,
     items: [
-      { id: "actions", labelKey: "actions", href: "/app/actions", icon: "actions" },
-      { id: "dashboard", labelKey: "commandCenter", href: "/app/dashboard", icon: "dashboard" },
       { id: "shipments", labelKey: "shipments", href: "/app/shipments", icon: "shipments" },
+      { id: "documents", labelKey: "documents", href: "/app/documents", icon: "documents" },
       { id: "filing", labelKey: "customsFiling", href: "/app/filing", icon: "filing" },
       { id: "post-entry", labelKey: "postEntry", href: "/app/post-entry", icon: "postEntry" },
     ],
@@ -76,23 +91,42 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "compliance-licensing",
     labelKey: "complianceAndLicensing",
+    collapsible: true,
     items: [
       { id: "compliance", labelKey: "complianceMonitoring", href: "/app/compliance", icon: "compliance" },
-      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
       { id: "license-management", labelKey: "licenseManagement", href: "/app/license-management", icon: "licenses", permission: "licenses.view" },
+      { id: "regulatory", labelKey: "regulatoryUpdates", href: "/app/regulatory", icon: "regulatory" },
+      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
     ],
   },
   {
-    id: "tooling",
-    labelKey: "toolingAndDocs",
-    renderAs: "pills",
+    id: "data-intelligence",
+    labelKey: "dataAndIntelligence",
+    collapsible: true,
     items: [
-      { id: "documents", labelKey: "tradeDocs", href: "/app/documents", icon: "documents" },
-      { id: "clients", labelKey: "clients", href: "/app/clients", icon: "clients" },
-      { id: "billing", labelKey: "billing", href: "/app/billing", icon: "billing", permission: "billing.view" },
       { id: "trade-data", labelKey: "tradeData", href: "/app/trade-data", icon: "tradeData" },
       { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
-      { id: "filingConfig", labelKey: "filingConfiguration", href: "/app/filing-config", icon: "settings", platformAdminOnly: true },
+      { id: "simulator", labelKey: "tariffSimulator", href: "/app/simulator", icon: "simulator" },
+    ],
+  },
+  {
+    id: "billing",
+    labelKey: "billingWorkspace",
+    collapsible: true,
+    items: [
+      { id: "billing", labelKey: "billing", href: "/app/billing", icon: "billing", permission: "billing.view" },
+      { id: "billing-exceptions", labelKey: "billingExceptions", href: "/app/billing/exceptions", icon: "exceptions", permission: "billing.exception.view" },
+    ],
+  },
+  {
+    id: "management",
+    labelKey: "management",
+    collapsible: true,
+    items: [
+      { id: "clients", labelKey: "clientsAndEntities", href: "/app/clients", icon: "clients" },
+      { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord" },
+      { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds" },
+      { id: "poa", labelKey: "poa", href: "/app/poa", icon: "poa" },
     ],
   },
   {
@@ -153,6 +187,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "platform",
     labelKey: "platformAdmin",
+    // The header account menu renders these for platform admins; the tenant
+    // sidebar must not carry cross-tenant tools. canAccessHref still authorizes
+    // the routes.
+    hiddenFromSidebar: true,
     items: [
       {
         id: "console",
@@ -161,16 +199,30 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: "platform",
         platformAdminOnly: true,
       },
+      {
+        id: "filingConfig",
+        labelKey: "filingConfiguration",
+        href: "/app/filing-config",
+        icon: "settings",
+        platformAdminOnly: true,
+      },
     ],
   },
 ];
 
+/**
+ * Routes that are authorized and reachable by direct link but not shown as their
+ * own sidebar row -- they have a prominent in-app entry point elsewhere:
+ *   - products / parties: reached from the Trade Data hub (/app/trade-data)
+ *   - reconciliation / vault: reached from the Post-Entry hub (/app/post-entry)
+ * navItemByHref() falls back to this list so canAccessHref() (and the Copilot's
+ * tool gate) still resolve them.
+ */
 export const UNLISTED_NAV_ITEMS: NavItem[] = [
   { id: "products", labelKey: "products", href: "/app/products", icon: "products" },
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
-  { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord" },
-  { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds" },
-  { id: "poa", labelKey: "poa", href: "/app/poa", icon: "poa" },
+  { id: "reconciliation", labelKey: "reconciliation", href: "/app/reconciliation", icon: "postEntry" },
+  { id: "vault", labelKey: "dutyDrawbacks", href: "/app/vault", icon: "vault" },
 ];
 
 /** Mirrors hasPermission() in src/lib/auth.ts: platform admins and OWNER bypass checks. */
@@ -193,6 +245,13 @@ export function canAccessNavItem(access: NavAccess, item: NavItem): boolean {
 /** The administration section's items, filtered by access -- regardless of hiddenFromSidebar, since this backs the header's Manage Account menu rather than the sidebar. */
 export function accountAdminItems(access: NavAccess, sections: NavSection[] = NAV_SECTIONS): NavItem[] {
   const section = sections.find((s) => s.id === "administration");
+  if (!section) return [];
+  return section.items.filter((item) => canAccessNavItem(access, item));
+}
+
+/** The platform section's items, filtered by access -- backs the header account menu, not the sidebar. */
+export function platformConsoleItems(access: NavAccess, sections: NavSection[] = NAV_SECTIONS): NavItem[] {
+  const section = sections.find((s) => s.id === "platform");
   if (!section) return [];
   return section.items.filter((item) => canAccessNavItem(access, item));
 }
