@@ -67,16 +67,24 @@ export function mapInvoiceToQbo(
   invoice: QubereInvoiceInput,
   opts: MapInvoiceOptions,
 ): MappedInvoice {
-  const lines: Array<Record<string, unknown>> = invoice.lines.map((line) => ({
-    DetailType: "SalesItemLineDetail",
-    Amount: round2(line.amount),
-    Description: line.description,
-    SalesItemLineDetail: {
-      ItemRef: { value: opts.itemId },
-      Qty: line.quantity,
-      UnitPrice: round2(line.unitPrice),
-    },
-  }));
+  const lines: Array<Record<string, unknown>> = invoice.lines.map((line) => {
+    const amount = round2(line.amount);
+    // QuickBooks rejects a line where Qty * UnitPrice != Amount (error 6070).
+    // Qubere line amounts can come from tiered/capped/adjusted rate rules that
+    // don't satisfy that identity, so only pass the real qty/unit price when it
+    // reconciles; otherwise present the line as a single unit priced at Amount.
+    const reconciles = round2(line.quantity * line.unitPrice) === amount;
+    return {
+      DetailType: "SalesItemLineDetail",
+      Amount: amount,
+      Description: line.description,
+      SalesItemLineDetail: {
+        ItemRef: { value: opts.itemId },
+        Qty: reconciles ? line.quantity : 1,
+        UnitPrice: reconciles ? round2(line.unitPrice) : amount,
+      },
+    };
+  });
 
   if (invoice.totalDiscounts && invoice.totalDiscounts > 0) {
     lines.push({

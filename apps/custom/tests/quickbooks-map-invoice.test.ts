@@ -65,6 +65,38 @@ describe("mapInvoiceToQbo", () => {
     expect(res.totalsReconcile).toBe(false);
   });
 
+  it("collapses a line where qty * unitPrice != amount (QBO error 6070)", () => {
+    const { payload } = mapInvoiceToQbo(
+      {
+        ...base,
+        subtotal: 7,
+        totalAmount: 7,
+        lines: [{ description: "Additional Lines", quantity: 14, unitPrice: 1.75, amount: 7 }],
+      },
+      opts,
+    );
+    expect(payload.Line[0]).toMatchObject({
+      Amount: 7,
+      SalesItemLineDetail: { Qty: 1, UnitPrice: 7 },
+    });
+  });
+
+  it("keeps real qty/unitPrice when the line reconciles", () => {
+    const { payload } = mapInvoiceToQbo(
+      {
+        ...base,
+        subtotal: 120,
+        totalAmount: 120,
+        lines: [{ description: "Entry Processing", quantity: 2, unitPrice: 60, amount: 120 }],
+      },
+      opts,
+    );
+    expect(payload.Line[0]).toMatchObject({
+      Amount: 120,
+      SalesItemLineDetail: { Qty: 2, UnitPrice: 60 },
+    });
+  });
+
   it("truncates DocNumber to 21 characters", () => {
     const res = mapInvoiceToQbo(
       { ...base, invoiceNumber: "INV-202608-THIS-IS-WAY-TOO-LONG-1234567" },
