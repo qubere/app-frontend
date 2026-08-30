@@ -22,6 +22,7 @@ import {
   Menu,
   TriangleAlert,
   ListChecks,
+  ChevronRight,
   X,
   PanelLeftClose,
   PanelLeftOpen,
@@ -148,6 +149,47 @@ export function Sidebar({
 
   const labels = t.nav as Record<string, string>;
 
+  // --- Accordion: exactly one collapsible workspace open at a time ---------
+  const collapsibleIds = sections.filter((s) => s.collapsible).map((s) => s.id);
+  const collapsibleKey = collapsibleIds.join(",");
+  const activeSectionId =
+    sections.find((s) => s.collapsible && s.items.some((i) => i.href === activeHref))?.id ?? null;
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // The workspace holding the current route always wins. Otherwise keep the
+    // user's last choice, then fall back to the first workspace.
+    if (activeSectionId) {
+      setExpandedId(activeSectionId);
+      return;
+    }
+    setExpandedId((prev) => {
+      if (prev && collapsibleIds.includes(prev)) return prev;
+      try {
+        const stored = window.localStorage.getItem("qubere.nav.expanded");
+        if (stored && collapsibleIds.includes(stored)) return stored;
+      } catch {
+        // localStorage unavailable (private mode, SSR) -- use the default.
+      }
+      return collapsibleIds[0] ?? null;
+    });
+    // collapsibleKey stands in for the (stable) list of collapsible section ids.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSectionId, collapsibleKey]);
+
+  const toggleSection = useCallback((id: string) => {
+    setExpandedId((prev) => {
+      const next = prev === id ? null : id;
+      try {
+        if (next) window.localStorage.setItem("qubere.nav.expanded", next);
+      } catch {
+        // Non-fatal -- the choice just will not persist across reloads.
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <>
       <button
@@ -243,116 +285,92 @@ export function Sidebar({
           </div>
         )}
 
-        <div className="flex-1 px-3 space-y-6 overflow-y-auto py-2">
-          {sections.map((section) => (
-            <div key={section.id}>
-              {!collapsed && (
-                <p
-                  className={cn(
-                    "px-3 text-[11px] font-bold uppercase tracking-wider mb-2",
-                    section.id === "platform" ? "text-amber-600" : "text-ink-muted"
-                  )}
-                >
-                  {labels[section.labelKey] ?? section.labelKey}
-                </p>
-              )}
+        <div className="flex-1 px-3 space-y-3 overflow-y-auto py-2">
+          {sections.map((section) => {
+            const sectionLabel = labels[section.labelKey] ?? section.labelKey;
+            // Accordion only applies in the full-width rail. In the icon rail
+            // every item shows as a flat, tooltipped list with no headers.
+            const isAccordion = Boolean(section.collapsible) && !collapsed;
+            const isOpen = !isAccordion || expandedId === section.id;
+            const showHeader = !section.hideLabel && !collapsed;
 
-              {section.renderAs === "pills" && !collapsed ? (
-                <div className="space-y-1.5">
-                  {Array.from({ length: Math.ceil(section.items.length / 2) }).map((_, rowIndex) => {
-                    const rowItems = section.items.slice(rowIndex * 2, rowIndex * 2 + 2);
-                    return (
-                      <div key={rowIndex} className="flex gap-1.5">
-                        {rowItems.map((item) => {
-                          const isActive = activeHref === item.href;
-                          const Icon = ICONS[item.icon];
-                          const label = labels[item.labelKey] ?? item.labelKey;
-                          const badgeCount = item.id === "documents" ? pendingClassificationCount : (item.badge ?? 0);
-                          return (
-                            <Link
-                              key={item.id}
-                              href={item.href}
-                              onClick={() => setMobileOpen(false)}
-                              aria-current={isActive ? "page" : undefined}
-                              className={cn(
-                                "flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-all border min-w-0",
-                                isActive
-                                  ? "bg-white text-brand border-border shadow-sm font-semibold"
-                                  : "bg-white/40 text-ink border-border/40 hover:bg-white hover:text-brand hover:border-border"
-                              )}
-                            >
-                              <span className="relative shrink-0">
-                                <Icon className={cn("w-3 h-3", isActive ? "text-brand" : "text-ink-muted")} />
-                                {badgeCount > 0 && (
-                                  <span className="absolute -top-1 -right-1.5 min-w-[12px] h-3 px-0.5 rounded-full bg-amber-500 text-white text-[8px] font-bold flex items-center justify-center leading-none">
-                                    {badgeCount > 9 ? "9+" : badgeCount}
-                                  </span>
-                                )}
-                              </span>
-                              <span className="truncate">{label}</span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <nav className={cn("space-y-1", section.renderAs === "pills" && collapsed && "space-y-1")}>
-                  {section.items.map((item) => {
-                    const isActive = activeHref === item.href;
-                    const Icon = ICONS[item.icon];
-                    const label = labels[item.labelKey] ?? item.labelKey;
-                    const isPlatform = section.id === "platform";
-                    const badgeCount = item.id === "documents" ? pendingClassificationCount : (item.badge ?? 0);
-                    return (
-                      <Link
-                        key={item.id}
-                        href={item.href}
-                        onClick={() => setMobileOpen(false)}
-                        aria-current={isActive ? "page" : undefined}
-                        title={collapsed ? label : undefined}
-                        className={cn(
-                          "flex items-center px-3 py-2 rounded-xl text-sm font-medium transition-all",
-                          collapsed ? "justify-center" : "space-x-3",
-                          isActive && isPlatform &&
-                            "bg-amber-500/10 text-amber-700 shadow-sm border border-amber-500/20 font-semibold",
-                          isActive && !isPlatform &&
-                            "bg-white text-brand shadow-sm border border-border font-semibold",
-                          !isActive && isPlatform && "text-amber-800 hover:text-amber-900 hover:bg-amber-50/50",
-                          !isActive && !isPlatform && "text-ink hover:text-brand hover:bg-white/60"
+            const itemList = (
+              <nav className={cn("space-y-1", showHeader && isAccordion && "mt-1")}>
+                {section.items.map((item) => {
+                  const isActive = activeHref === item.href;
+                  const Icon = ICONS[item.icon];
+                  const label = labels[item.labelKey] ?? item.labelKey;
+                  const badgeCount =
+                    item.id === "documents" ? pendingClassificationCount : (item.badge ?? 0);
+                  return (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      aria-current={isActive ? "page" : undefined}
+                      title={collapsed ? label : undefined}
+                      className={cn(
+                        "flex items-center px-3 py-2 rounded-xl text-sm font-medium transition-all",
+                        collapsed ? "justify-center" : "space-x-3",
+                        isActive
+                          ? "bg-white text-brand shadow-sm border border-border font-semibold"
+                          : "text-ink hover:text-brand hover:bg-white/60"
+                      )}
+                    >
+                      <span className="relative shrink-0">
+                        <Icon
+                          className={cn("w-4 h-4", isActive ? "text-brand" : "text-ink-muted")}
+                        />
+                        {badgeCount > 0 && (
+                          <span className="absolute -top-1 -right-1.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                            {badgeCount > 99 ? "99+" : badgeCount}
+                          </span>
                         )}
-                      >
-                        <span className="relative shrink-0">
-                          <Icon
-                            className={cn(
-                              "w-4 h-4",
-                              isPlatform ? "text-amber-600" : isActive ? "text-brand" : "text-ink-muted"
-                            )}
-                          />
+                      </span>
+                      {!collapsed && (
+                        <span className="flex-1 flex items-center justify-between min-w-0">
+                          <span className="truncate">{label}</span>
                           {badgeCount > 0 && (
-                            <span className="absolute -top-1 -right-1.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                            <span className="ml-1.5 shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500/15 text-amber-700 text-[10px] font-bold flex items-center justify-center">
                               {badgeCount > 99 ? "99+" : badgeCount}
                             </span>
                           )}
                         </span>
-                        {!collapsed && (
-                          <span className="flex-1 flex items-center justify-between min-w-0">
-                            <span className="truncate">{label}</span>
-                            {badgeCount > 0 && collapsed === false && (
-                              <span className="ml-1.5 shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500/15 text-amber-700 text-[10px] font-bold flex items-center justify-center">
-                                {badgeCount > 99 ? "99+" : badgeCount}
-                              </span>
-                            )}
-                          </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+            );
+
+            return (
+              <div key={section.id}>
+                {showHeader &&
+                  (isAccordion ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(section.id)}
+                      aria-expanded={isOpen}
+                      className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-ink-muted hover:text-brand hover:bg-white/60 transition-colors"
+                    >
+                      <span className="truncate">{sectionLabel}</span>
+                      <ChevronRight
+                        className={cn(
+                          "w-3.5 h-3.5 shrink-0 transition-transform",
+                          isOpen && "rotate-90"
                         )}
-                      </Link>
-                    );
-                  })}
-                </nav>
-              )}
-            </div>
-          ))}
+                      />
+                    </button>
+                  ) : (
+                    <p className="px-3 text-[11px] font-bold uppercase tracking-wider mb-2 text-ink-muted">
+                      {sectionLabel}
+                    </p>
+                  ))}
+
+                {isOpen && itemList}
+              </div>
+            );
+          })}
         </div>
 
         <div className="p-3 border-t border-border bg-white/40">

@@ -4,7 +4,15 @@ export const es: TranslationKeys = {
   // Navigation
   nav: {
     askQubere: "Preguntar a Qubere",
+    today: "Hoy",
     commandCenter: "Centro de Control",
+    documents: "Documentos",
+    regulatoryUpdates: "Actualizaciones Regulatorias",
+    dataAndIntelligence: "Datos e Inteligencia",
+    billingWorkspace: "Facturación",
+    billingExceptions: "Excepciones y Fugas",
+    management: "Gestión",
+    clientsAndEntities: "Clientes y Entidades Legales",
     shipments: "Embarques",
     products: "Productos",
     parties: "Partes",
