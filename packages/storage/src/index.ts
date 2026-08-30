@@ -3,14 +3,13 @@
  *
  * One implementation of "where a document's bytes live" for the customs app, the
  * customer portal, and the shared upload service in @qubere/db. Google Cloud
- * Storage in production (Cloud Run), Vercel Blob where that is configured, and
- * local disk ONLY for localhost development.
+ * Storage in every deployed environment (Cloud Run), and local disk ONLY for
+ * localhost development.
  *
  * Never store document bytes in Postgres. A ShipmentDocument row carries a
  * `fileUrl` pointer (and, separately, extracted/parsed text) — not the file.
  */
 import { Storage } from "@google-cloud/storage";
-import { put } from "@vercel/blob";
 import { createHash } from "crypto";
 import fs from "fs";
 import os from "os";
@@ -20,17 +19,8 @@ import path from "path";
 export const MAX_UPLOAD_BYTES =
   parseInt(process.env.MAX_UPLOAD_BYTES ?? "", 10) || 50 * 1024 * 1024;
 
-/**
- * Hostnames whose objects may be fetched server-side with storage credentials.
- * Matched on the parsed hostname, never on raw substrings of the URL.
- */
-const ALLOWED_STORAGE_HOSTS = [
-  "blob.vercel-storage.com",
-  "public.blob.vercel-storage.com",
-  "storage.qubere.ai",
-];
-
-export type RemoteStorageOrigin = "vercel-blob" | "gcs";
+/** The only remote object store Qubere uses. */
+export type RemoteStorageOrigin = "gcs";
 export type StorageProvider = RemoteStorageOrigin | "local-fs";
 
 export class StorageValidationError extends Error {
@@ -72,6 +62,11 @@ export interface StoredObject {
 
 let gcsClient: Storage | null = null;
 
+/**
+ * Returns `"gcs"` when Cloud Storage is configured, or `null` for localhost
+ * development (local disk). `STORAGE_PROVIDER=local-fs` forces `null` even when a
+ * bucket is set; `STORAGE_PROVIDER=gcs` requires `GCS_BUCKET`.
+ */
 export function selectedRemoteProvider(): RemoteStorageOrigin | null {
   const explicit = (process.env.STORAGE_PROVIDER ?? "").trim().toLowerCase();
   if (explicit === "gcs") {
@@ -80,22 +75,13 @@ export function selectedRemoteProvider(): RemoteStorageOrigin | null {
     }
     return "gcs";
   }
-  if (explicit === "vercel-blob") {
-    if (!(process.env.BLOB_READ_WRITE_TOKEN ?? "").trim()) {
-      throw new Error(
-        "[Storage] BLOB_READ_WRITE_TOKEN must be set when STORAGE_PROVIDER=vercel-blob."
-      );
-    }
-    return "vercel-blob";
-  }
-  if (explicit && explicit !== "local-fs") {
-    throw new Error(`[Storage] Unsupported STORAGE_PROVIDER "${explicit}".`);
-  }
   if (explicit === "local-fs") return null;
+  if (explicit && explicit !== "local-fs") {
+    throw new Error(`[Storage] Unsupported STORAGE_PROVIDER "${explicit}" (use "gcs" or "local-fs").`);
+  }
 
-  // Default to GCS when running on GCP Cloud Run or GCS_BUCKET is configured.
+  // Default: Cloud Storage whenever a bucket is configured, otherwise local disk.
   if ((process.env.GCS_BUCKET ?? "").trim()) return "gcs";
-  if (process.env.BLOB_READ_WRITE_TOKEN) return "vercel-blob";
   return null;
 }
 
@@ -188,10 +174,10 @@ export function resolveLocalFilePath(fileUrl: string): string | null {
 /**
  * Resolves a stored file URL to a trusted remote storage origin.
  *
- * Returns `null` for values that are not remote allowlisted objects (local
+ * Returns `null` for values that are not remote Cloud Storage objects (local
  * `/uploads/...` or `file://...` paths), and throws for anything that looks
- * remote but is not allowlisted. Credentials must only ever be attached when
- * this returns a non-null origin.
+ * remote but is not the configured Qubere bucket. Credentials must only ever be
+ * attached when this returns a non-null origin.
  */
 export function resolveStorageOrigin(fileUrl: string): RemoteStorageOrigin | null {
   if (fileUrl.startsWith("/")) return null;
@@ -212,18 +198,11 @@ export function resolveStorageOrigin(fileUrl: string): RemoteStorageOrigin | nul
     parseGcsObjectUrl(fileUrl);
     return "gcs";
   }
-  const isAllowed = ALLOWED_STORAGE_HOSTS.some(
-    (allowed) => host === allowed || host.endsWith(`.${allowed}`)
+
+  throw new StorageValidationError(
+    "UNTRUSTED_STORAGE_ORIGIN",
+    `Storage host "${host}" is not an allowlisted storage origin.`
   );
-
-  if (!isAllowed) {
-    throw new StorageValidationError(
-      "UNTRUSTED_STORAGE_ORIGIN",
-      `Storage host "${host}" is not an allowlisted storage origin.`
-    );
-  }
-
-  return "vercel-blob";
 }
 
 async function writeGcsObject(
@@ -266,7 +245,6 @@ export async function writeRemoteObject(params: {
   objectPath: string;
   body: Buffer;
   contentType: string;
-  allowOverwrite?: boolean;
 }): Promise<{ url: string; provider: RemoteStorageOrigin }> {
   const provider = selectedRemoteProvider();
   if (provider === "gcs") {
@@ -275,20 +253,10 @@ export async function writeRemoteObject(params: {
       provider,
     };
   }
-  if (provider === "vercel-blob") {
-    const blob = await put(params.objectPath, params.body, {
-      access: "private",
-      contentType: params.contentType,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      addRandomSuffix: false,
-      allowOverwrite: params.allowOverwrite ?? false,
-    });
-    return { url: blob.url, provider };
-  }
-  throw new Error("[Storage] No durable remote storage provider is configured.");
+  throw new Error("[Storage] Cloud Storage is not configured (set GCS_BUCKET).");
 }
 
-/** Reads a trusted remote object with provider-appropriate credentials. */
+/** Reads a stored object with provider-appropriate credentials. */
 export async function readStoredObject(fileUrl: string): Promise<StoredObject> {
   const origin = resolveStorageOrigin(fileUrl);
   if (origin === null) {
@@ -298,26 +266,7 @@ export async function readStoredObject(fileUrl: string): Promise<StoredObject> {
     }
     return { body: fs.readFileSync(/* turbopackIgnore: true */ localPath), contentType: null };
   }
-  if (origin === "gcs") return readGcsObject(fileUrl);
-
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  // No Next fetch-cache: this is a credentialed, per-document read in a route
-  // handler. `next: { revalidate: 0 }` is typed on the global fetch in every
-  // consumer; the bare RequestInit in this package's lib does not carry it.
-  const response = await fetch(fileUrl, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    ...({ cache: "no-store" } as object),
-  });
-  if (!response.ok) {
-    throw new StorageObjectReadError(
-      `[Storage] Failed to read object (HTTP ${response.status}).`,
-      response.status === 408 || response.status === 429 || response.status >= 500
-    );
-  }
-  return {
-    body: Buffer.from(await response.arrayBuffer()),
-    contentType: response.headers.get("content-type"),
-  };
+  return readGcsObject(fileUrl);
 }
 
 /**
@@ -333,14 +282,8 @@ export async function deleteStoredObject(fileUrl: string): Promise<boolean> {
       if (localPath) fs.rmSync(/* turbopackIgnore: true */ localPath, { force: true });
       return true;
     }
-    if (origin === "gcs") {
-      const { objectPath } = parseGcsObjectUrl(fileUrl);
-      await storageClient().bucket(gcsBucketName()).file(objectPath).delete({ ignoreNotFound: true });
-      return true;
-    }
-    // vercel-blob
-    const { del } = await import("@vercel/blob");
-    await del(fileUrl, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    const { objectPath } = parseGcsObjectUrl(fileUrl);
+    await storageClient().bucket(gcsBucketName()).file(objectPath).delete({ ignoreNotFound: true });
     return true;
   } catch (err) {
     console.error("[Storage] deleteStoredObject failed (ignored):", fileUrl, err);
@@ -360,7 +303,6 @@ export async function createSignedReadUrl(fileUrl: string, expiresAt: Date): Pro
     });
     return signedUrl;
   }
-  if (origin === "vercel-blob") return fileUrl;
   throw new StorageValidationError(
     "UNTRUSTED_STORAGE_ORIGIN",
     "Local files cannot be shared with a remote parser."
@@ -387,11 +329,11 @@ const safeSegment = (value: string) => value.replace(/[^a-zA-Z0-9._-]/g, "_").sl
 /**
  * Persists the immutable original bytes of an uploaded document.
  *
- * Durable remote storage (GCS / Vercel Blob) when configured; otherwise local
- * disk under `.qubere/storage/uploads` for localhost development only — which
- * throws on a serverless host, because ephemeral per-instance disk would lose
- * the file. Returns a `fileUrl` to persist on the document row. The bytes are
- * never written to Postgres.
+ * Cloud Storage when `GCS_BUCKET` is configured; otherwise local disk under
+ * `.qubere/storage/uploads` for localhost development only — which throws on a
+ * serverless host, because ephemeral per-instance disk would lose the file.
+ * Returns a `fileUrl` to persist on the document row. The bytes are never
+ * written to Postgres.
  */
 export async function storeDocumentBytes(params: {
   buffer: Buffer;
@@ -413,6 +355,9 @@ export async function storeDocumentBytes(params: {
 
   const checksum = createHash("sha256").update(buffer).digest("hex");
   const folder = (params.folder ? params.folder.split("/").map(safeSegment).filter(Boolean).join("/") : "documents") || "documents";
+  // The object path embeds the content hash, so an existing object at this path
+  // holds these exact bytes -- re-writing it is idempotent. Two documents with
+  // the same filename but different content get different hashes / paths.
   const safeName = `${checksum.slice(0, 12)}-${safeSegment(path.basename(fileName) || "document")}`;
   const objectPath = `${folder}/${safeName}`;
 
@@ -430,7 +375,7 @@ export async function storeDocumentBytes(params: {
 
   if (isServerlessHost()) {
     throw new Error(
-      "[Storage] No durable object-storage provider is configured (set GCS_BUCKET or BLOB_READ_WRITE_TOKEN)."
+      "[Storage] No durable object-storage provider is configured (set GCS_BUCKET)."
     );
   }
 
@@ -497,7 +442,6 @@ export async function storeProcessingArtifact(params: {
       objectPath,
       body: params.body,
       contentType: params.contentType,
-      allowOverwrite: true,
     });
     return {
       url: stored.url,

@@ -83,7 +83,7 @@ export const DATASET_DEFINITIONS: DatasetDefinition[] = [
     sourceUrl: "https://www.treasury.gov/ofac/downloads/sdn.xml",
     cost: "Free",
     refreshMethod:
-      "Streaming SAX (saxes) XML parser (OfacSdnIngestionService) reads Treasury's sdn.xml and consolidated.xml directly, extracting name, AKAs, addresses, and program codes per entry. Circuit breaker: parsed count must match the feed's own Record_Count header or nothing is written. Delisted entities are marked SUPERSEDED rather than deleted, preserving point-in-time screening history. Runs as a durable Inngest background function (own native cron trigger) to avoid Vercel function timeout on the ~29MB SDN file.",
+      "Streaming SAX (saxes) XML parser (OfacSdnIngestionService) reads Treasury's sdn.xml and consolidated.xml directly, extracting name, AKAs, addresses, and program codes per entry. Circuit breaker: parsed count must match the feed's own Record_Count header or nothing is written. Delisted entities are marked SUPERSEDED rather than deleted, preserving point-in-time screening history. Runs as a durable Inngest background function (own native cron trigger) to avoid request-handler timeout on the ~29MB SDN file.",
     frequency: "Daily (05:00 UTC)",
     scheduledFrequencyHours: 24,
     staleThresholdHours: 36,

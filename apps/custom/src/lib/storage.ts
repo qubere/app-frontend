@@ -1,7 +1,7 @@
 /**
  * Customs-app storage surface.
  *
- * The object-storage core (GCS / Vercel Blob / local-fs, origin allowlisting,
+ * The object-storage core (GCS / local-fs, origin allowlisting,
  * signed URLs, artifact store) lives in `@qubere/storage` and is shared with the
  * portal and the `@qubere/db` upload service. This module keeps only the
  * customs-app upload wrapper: the customer-facing MIME allowlist plus the
@@ -103,7 +103,7 @@ export async function storeDocumentFile(
     });
     if (stored.provider !== "local-fs") {
       void logThirdPartyCall({
-        provider: stored.provider === "gcs" ? "GOOGLE_CLOUD_STORAGE" : "VERCEL_BLOB_STORAGE",
+        provider: "GOOGLE_CLOUD_STORAGE",
         url: stored.url,
         method: "PUT",
         status: 200,

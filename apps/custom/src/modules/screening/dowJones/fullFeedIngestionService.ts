@@ -15,14 +15,14 @@ import { recordReferenceDataChanges } from "../referenceDataChangeTracking";
 const DOW_JONES_DATASET_ID = "dow-jones-djrc-full";
 
 // Same batch size as ofacSdnIngestionService.ts -- tuned against the
-// Supabase pgbouncer pooler's connection_limit=10; a larger batch blows
-// past the pool and hangs.
+// pgbouncer pooler's connection_limit=10; a larger batch blows past the
+// pool and hangs.
 export const UPSERT_BATCH_SIZE = 8;
 export const PROVIDER = "DOW_JONES" as const;
 export const FULL_FEED_DATASET_ID = DOW_JONES_DATASET_ID;
 
-// Transient network/pool errors seen against the Supabase pgbouncer pooler
-// over a long-running (multi-hour, ~62k-entity) batch -- e.g. a momentary
+// Transient network/pool errors seen against the pgbouncer pooler over a
+// long-running (multi-hour, ~62k-entity) batch -- e.g. a momentary
 // P1001 "can't reach database server" blip. Retrying the whole entity's
 // write chain from scratch is safe: the entity upsert is keyed on
 // (provider, providerRecordId) and child rows are delete-then-recreate, both

@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import { resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
 
 describe("Storage origin allowlist (file proxy hardening)", () => {
-  it("accepts genuine Vercel Blob hosts", () => {
-    expect(
+  it("rejects non-Cloud-Storage remote hosts", () => {
+    expect(() =>
       resolveStorageOrigin("https://abc123.public.blob.vercel-storage.com/documents/inv.pdf")
-    ).toBe("vercel-blob");
-    expect(resolveStorageOrigin("https://blob.vercel-storage.com/documents/inv.pdf")).toBe(
-      "vercel-blob"
+    ).toThrow(StorageValidationError);
+    expect(() => resolveStorageOrigin("https://some-object-store.example.com/inv.pdf")).toThrow(
+      StorageValidationError
     );
   });
 
@@ -36,13 +36,11 @@ describe("Storage origin allowlist (file proxy hardening)", () => {
   });
 
   it("rejects hosts that merely contain the allowlisted domain as a substring", () => {
-    // These all passed the previous `url.includes("vercel-storage.com")` check
-    // and would have leaked BLOB_READ_WRITE_TOKEN to the attacker.
     const bypasses = [
-      "https://attacker.com/vercel-storage.com",
-      "https://attacker.com/?x=vercel-storage.com",
-      "https://vercel-storage.com.attacker.com/steal",
-      "https://attacker.com#vercel-storage.com",
+      "https://attacker.com/storage.googleapis.com",
+      "https://attacker.com/?x=storage.googleapis.com",
+      "https://storage.googleapis.com.attacker.com/steal",
+      "https://attacker.com#storage.googleapis.com",
     ];
 
     for (const url of bypasses) {
@@ -51,7 +49,7 @@ describe("Storage origin allowlist (file proxy hardening)", () => {
   });
 
   it("rejects non-https schemes and internal metadata endpoints", () => {
-    expect(() => resolveStorageOrigin("http://blob.vercel-storage.com/x")).toThrow(
+    expect(() => resolveStorageOrigin("http://storage.googleapis.com/x")).toThrow(
       StorageValidationError
     );
     expect(() => resolveStorageOrigin("http://169.254.169.254/latest/meta-data/")).toThrow(

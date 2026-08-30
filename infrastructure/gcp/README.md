@@ -1,14 +1,14 @@
-# GCP demo deployment (Customs + TMS)
+# GCP deployment (Customs + TMS)
 
-This deploys the Customs and TMS Next.js applications to Cloud Run while leaving the
-current Vercel deployment unchanged. The GCP deployment uses:
+This deploys the Customs and TMS Next.js applications to Cloud Run. The
+deployment uses:
 
 - separate Cloud Run services for Customs and TMS;
 - an on-demand Cloud Run job that drains both applications' document queues;
 - a Cloud Run job for Prisma migrations;
 - a private Google Cloud Storage bucket for documents and generated artifacts;
 - Secret Manager for runtime credentials; and
-- Cloud Scheduler for the routes currently scheduled by `apps/custom/vercel.json`.
+- Cloud Scheduler for the cron routes (see `configure-scheduler.sh`).
 
 The scripts do not create external resources or DNS records. Complete the setup
 below, then run the deployment script.
@@ -21,10 +21,8 @@ database** cloned or seeded to approximately the same size as the existing
 environment.
 
 Do not point the first deployment at production. The deployment script runs
-`prisma migrate deploy`, and a shared database would also mix GCS-backed document
-rows with Vercel-Blob-backed rows. Keeping the databases separate lets both
-deployments run simultaneously without cross-cloud file credentials or competing
-workers.
+`prisma migrate deploy`. Keeping databases separate lets multiple environments
+run simultaneously without competing workers.
 
 Pick the GCP region nearest the database and intended testers. The examples use
 `us-west1`.
@@ -159,8 +157,8 @@ fallback. This branch removes it, but removal does not erase Git history. Revoke
 and rotate that Clerk secret in the Clerk dashboard, then configure both apps
 through Secret Manager or their hosting environment.
 
-If enabling inbound email or Inngest, use separate demo endpoints/environments.
-Do not move the existing Vercel webhook during a side-by-side test.
+If enabling inbound email or Inngest, use separate demo endpoints/environments
+so a side-by-side test does not disturb another environment's webhook.
 
 You also need the base URL of the IBM Docling-compatible parser service. The
 Cloud Run service and worker must be able to reach it.
@@ -253,8 +251,8 @@ measures different CDN settings.
 
 ## 8. Configure scheduled routes
 
-After the service is healthy, reproduce the schedules from
-`apps/custom/vercel.json`:
+After the service is healthy, create the Cloud Scheduler jobs for the cron
+routes:
 
 ```bash
 export GCP_PROJECT_ID="your-project-id"

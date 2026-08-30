@@ -1,17 +1,17 @@
 /**
  * Driving the document pipeline from the request path.
  *
- * Vercel's Hobby plan schedules cron at most once a day, and a single tick
- * cannot finish a document in any case: submission sets `nextPollAt` a few
- * seconds into the future, so the poll that retrieves the result belongs to a
- * later tick. Under a daily cron that arithmetic produces a document parsed two
- * days after it was uploaded. That is not a slow pipeline, it is a broken one.
+ * Cron is only a daily backstop, and a single tick cannot finish a document in
+ * any case: submission sets `nextPollAt` a few seconds into the future, so the
+ * poll that retrieves the result belongs to a later tick. Under a daily cron
+ * that arithmetic produces a document parsed two days after it was uploaded.
+ * That is not a slow pipeline, it is a broken one.
  *
  * So requests drive it. `after()` runs this once the response has already been
- * sent — on Vercel it is implemented with `waitUntil`, which extends the
- * invocation rather than blocking the client — so the user waits for nothing and
- * the document still reaches the parser within seconds of upload. Where the
- * conversion is quick, the same invocation polls it to completion.
+ * sent — the host keeps the invocation alive rather than blocking the client —
+ * so the user waits for nothing and the document still reaches the parser within
+ * seconds of upload. Where the conversion is quick, the same invocation polls it
+ * to completion.
  *
  * This calls the same `runWorkerTick()` as the cron endpoint and the
  * long-running worker, with the same guarantee: every transition is a

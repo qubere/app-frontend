@@ -81,4 +81,4 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     failed,
     requestId,
   });
-}, { permission: "documents.create", write: true });
+}, { permission: { any: ["document.update", "documents.create"] }, write: true });

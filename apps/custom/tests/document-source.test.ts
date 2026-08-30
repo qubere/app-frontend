@@ -6,6 +6,15 @@ import {
   resolveMimeType,
 } from "@/modules/documents/processing/documentSource";
 import { DocumentParserError } from "@/modules/documents/parser/contracts";
+import { readStoredObject, StorageObjectReadError, StorageValidationError } from "@/lib/storage";
+
+// The storage transport is exercised by @qubere/storage's own tests; here we
+// stub the read so the integrity + format-gate logic in readOriginalDocument is
+// what's under test, independent of GCS / local-fs.
+vi.mock("@/lib/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage")>();
+  return { ...actual, readStoredObject: vi.fn() };
+});
 
 /**
  * The original document is the ultimate source evidence, so reading it is the
@@ -15,11 +24,8 @@ import { DocumentParserError } from "@/modules/documents/parser/contracts";
  * hash recorded at upload.
  */
 
-const ORIGINAL_FETCH = globalThis.fetch;
-
 afterEach(() => {
-  globalThis.fetch = ORIGINAL_FETCH;
-  vi.restoreAllMocks();
+  vi.mocked(readStoredObject).mockReset();
 });
 
 /** A minimal born-digital PDF: header, a text object, and an EOF marker. */
@@ -102,11 +108,19 @@ describe("MIME resolution", () => {
 describe("reading the original", () => {
   const bytes = bornDigitalPdf();
   const sha = createHash("sha256").update(bytes).digest("hex");
-  const url = "https://store.public.blob.vercel-storage.com/documents/inv.pdf";
+  const url = "https://storage.googleapis.com/qubere-test-documents/documents/inv.pdf";
 
   function stubStorage(body: Buffer, status = 200) {
-    globalThis.fetch = (async () =>
-      new Response(new Uint8Array(body), { status })) as typeof globalThis.fetch;
+    if (status >= 400) {
+      vi.mocked(readStoredObject).mockRejectedValue(
+        new StorageObjectReadError(
+          `[Storage] Failed to read object (HTTP ${status}).`,
+          status === 408 || status === 429 || status >= 500
+        )
+      );
+      return;
+    }
+    vi.mocked(readStoredObject).mockResolvedValue({ body, contentType: null });
   }
 
   it("returns the bytes and their hash when the checksum matches", async () => {
@@ -126,6 +140,9 @@ describe("reading the original", () => {
   });
 
   it("refuses a storage location that is not an allowlisted Qubere host", async () => {
+    vi.mocked(readStoredObject).mockRejectedValue(
+      new StorageValidationError("UNTRUSTED_STORAGE_ORIGIN", "not an allowlisted storage origin")
+    );
     const error = await readOriginalDocument({
       fileUrl: "https://attacker.example.com/internal/secret",
       expectedSha256: null,

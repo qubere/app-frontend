@@ -57,6 +57,56 @@ export interface ExtractedLineItem {
   htsCode?: string | null;
 }
 
+/**
+ * Whether a document's parse pipeline produced a usable result.
+ *
+ * - `passed`  — a parse run completed (or the document already carries an
+ *               extraction confidence), so the content is available.
+ * - `failed`  — the most recent parse run ended in FAILED and nothing newer
+ *               succeeded.
+ * - `pending` — a run is queued/in-flight, or nothing has run yet.
+ */
+export type DocumentParseState = "passed" | "failed" | "pending";
+
+interface ParseVersionLike {
+  status?: string | null;
+  version?: number | null;
+  createdAt?: Date | string | null;
+}
+
+/**
+ * Derives a single parse state from a document's parse-run history.
+ *
+ * `activeParseVersionId` is authoritative: it is set only after a run validates,
+ * persists its artifacts and passes the quality gate, so its presence always
+ * means `passed` regardless of a later retry's transient state. Otherwise the
+ * newest run's status decides, and a document with no runs falls back to whether
+ * an extraction confidence was ever recorded.
+ */
+export function deriveDocumentParseState(doc: {
+  confidence?: number | null;
+  activeParseVersionId?: string | null;
+  parseVersions?: ParseVersionLike[] | null;
+}): DocumentParseState {
+  if (doc.activeParseVersionId) return "passed";
+
+  const runs = doc.parseVersions ?? [];
+  if (runs.length === 0) {
+    return doc.confidence !== null && doc.confidence !== undefined ? "passed" : "pending";
+  }
+
+  const latest = [...runs].sort((a, b) => {
+    const byVersion = (b.version ?? 0) - (a.version ?? 0);
+    if (byVersion !== 0) return byVersion;
+    return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+  })[0];
+
+  const status = (latest.status ?? "").toUpperCase();
+  if (status === "FAILED") return "failed";
+  if (status === "SUCCEEDED" || status === "NEEDS_REVIEW") return "passed";
+  return "pending";
+}
+
 /** Reads a numeric field that may be absent, keeping "missing" distinct from 0. */
 export function numberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;

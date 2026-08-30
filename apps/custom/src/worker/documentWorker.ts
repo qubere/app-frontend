@@ -13,11 +13,10 @@ import { parserConfigurationReport, readProcessingLimits } from "../modules/docu
  * went stale.
  *
  * This is also the practical way to get sub-daily processing without a
- * Vercel Cron slot: point it at the same DATABASE_URL as a deployed
- * environment (e.g. run it locally, or on any always-on host) and it drains
- * the same durable queues that environment's webhook/cron routes write to.
- * No separate scheduler needed — it's just a loop around the same idempotent
- * ticks.
+ * scheduler slot: point it at the same DATABASE_URL as a deployed environment
+ * (e.g. run it locally, or on any always-on host) and it drains the same durable
+ * queues that environment's webhook/cron routes write to. No separate scheduler
+ * needed — it's just a loop around the same idempotent ticks.
  *
  * Run with: npx tsx src/worker/documentWorker.ts
  */

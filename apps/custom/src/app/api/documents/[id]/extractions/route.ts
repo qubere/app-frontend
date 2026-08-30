@@ -366,4 +366,4 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
     );
   }
 
-}, { permission: "documents.create", write: true });
+}, { permission: { any: ["document.update", "documents.create"] }, write: true });

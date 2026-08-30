@@ -40,14 +40,14 @@ async function notifyPlatformAdmins(message: string, type: string) {
 }
 
 /**
- * Single daily dispatcher cron — fits the Vercel Hobby plan's 2-cron ceiling.
- * Runs at 02:00 UTC and fans out to whichever LIVE datasets are due based on
- * scheduledFrequencyHours vs lastSuccessAt from DatasetRefreshLog.
+ * Single daily dispatcher cron. Runs at 02:00 UTC and fans out to whichever LIVE
+ * datasets are due based on scheduledFrequencyHours vs lastSuccessAt from
+ * DatasetRefreshLog.
  *
  * Also fires staleness alerts for any dataset that has exceeded its
  * staleThresholdHours without a successful refresh.
  *
- * Schedule: 0 2 * * * (daily, 02:00 UTC) — see vercel.json.
+ * Schedule: 0 2 * * * (daily, 02:00 UTC) — see infrastructure/gcp/configure-scheduler.sh.
  */
 async function handleDispatch(requestId: string) {
   // withCronRoute already required CRON_SECRET to be set and valid before

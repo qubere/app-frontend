@@ -178,7 +178,7 @@ describe("tenant scoping", () => {
 
   it("reprocessing is gated on a capability viewers do not hold", async () => {
     const text = await source(REPROCESS);
-    expect(text).toMatch(/permission: "(documents\.create|decisions\.reevaluate)"/);
+    expect(text).toMatch(/permission:.*(document\.update|documents\.create|decisions\.reevaluate)/);
     expect(text).toMatch(/write: true/);
   });
 

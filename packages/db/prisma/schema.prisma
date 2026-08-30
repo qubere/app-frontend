@@ -2,8 +2,8 @@ datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")
-  // Supabase ships pgvector; declaring it here lets `prisma migrate` track
-  // that the extension is expected without Prisma trying to manage the
+  // The Postgres host provides pgvector; declaring it here lets `prisma migrate`
+  // track that the extension is expected without Prisma trying to manage the
   // vector column itself (that stays Unsupported -- see AccountMemory).
   extensions = [vector]
 }

@@ -46,4 +46,4 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, request
 
   return NextResponse.json({ document: updated, requestId });
 
-}, { permission: "documents.create", write: true });
+}, { permission: { any: ["document.update", "documents.create"] }, write: true });

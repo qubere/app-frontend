@@ -26,6 +26,7 @@ import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
 import { buildAgentInvocations } from "./agentInvocations";
 import { displayCurrency } from "@/lib/honest";
 import { extractedCurrency } from "@/modules/documents/extractedCurrency";
+import { deriveDocumentParseState } from "./workspaceTypes";
 import { DocumentWorkspacePanel } from "./DocumentWorkspacePanel";
 import { ShipmentTabsPanel } from "./ShipmentTabsPanel";
 import { ClientActionsPanel } from "./ClientActionsPanel";
@@ -1290,7 +1291,10 @@ export default async function ShipmentWorkspacePage(props: {
     <DocumentWorkspacePanel
       shipmentId={shipment.id}
       shipmentNumber={shipment.shipmentNumber}
-      documents={documents}
+      documents={documents.map((d) => ({
+        ...d,
+        parseState: deriveDocumentParseState(d),
+      }))}
       originStatus={originStatus}
       displayLineItems={displayLineItems}
       rawHtsConfidenceByLine={Array.from(rawHtsConfidenceByLine.entries())}

@@ -10,7 +10,7 @@ import {
   selectedRemoteProvider,
 } from "./index";
 
-const ENV_KEYS = ["STORAGE_PROVIDER", "GCS_BUCKET", "BLOB_READ_WRITE_TOKEN", "K_SERVICE", "GCP_PROJECT"];
+const ENV_KEYS = ["STORAGE_PROVIDER", "GCS_BUCKET", "K_SERVICE", "GCP_PROJECT"];
 let saved: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -25,14 +25,11 @@ afterEach(() => {
 });
 
 describe("resolveStorageOrigin", () => {
-  it("accepts GCS and Vercel Blob hosts", () => {
+  it("accepts a Cloud Storage object in the configured bucket", () => {
     process.env.GCS_BUCKET = "qubere-demo-uploaded-documents";
     expect(
       resolveStorageOrigin("https://storage.googleapis.com/qubere-demo-uploaded-documents/documents/x.pdf")
     ).toBe("gcs");
-    expect(resolveStorageOrigin("https://abc.public.blob.vercel-storage.com/documents/x.pdf")).toBe(
-      "vercel-blob"
-    );
   });
 
   it("treats local upload paths as non-remote", () => {
@@ -46,11 +43,12 @@ describe("resolveStorageOrigin", () => {
     ).toThrow(StorageValidationError);
   });
 
-  it("rejects lookalike hosts and non-https", () => {
-    expect(() => resolveStorageOrigin("https://vercel-storage.com.evil.com/x")).toThrow(
+  it("rejects any non-Cloud-Storage host and non-https", () => {
+    process.env.GCS_BUCKET = "qubere-demo-uploaded-documents";
+    expect(() => resolveStorageOrigin("https://some-other-object-store.example.com/x.pdf")).toThrow(
       StorageValidationError
     );
-    expect(() => resolveStorageOrigin("http://blob.vercel-storage.com/x")).toThrow(
+    expect(() => resolveStorageOrigin("http://storage.googleapis.com/x")).toThrow(
       StorageValidationError
     );
   });

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff } from "lucide-react";
+import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock } from "lucide-react";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor, reviewCategory } from "@/modules/decisions/editableFields";
 import { triageDecision } from "@/modules/decisions/decisionState";
 import { type ReviewField, nextReviewIndex } from "@/modules/documents/extractionReview";
@@ -373,6 +373,9 @@ export interface DocumentReviewPanelProps {
   shipmentNumber?: string | null;
   fileUrl?: string | null;
   proxyUrl?: string;
+  // When the document was uploaded. Shown in the PDF viewer's action bar so the
+  // reviewer can see the document's age without leaving the preview.
+  uploadedAt?: string | Date | null;
   // Present only when this document's extraction produced HTS-bearing line
   // items -- a Bill of Lading or Packing List has none, so the badge next to
   // the tab bar is omitted rather than showing a score for codes that were
@@ -413,6 +416,7 @@ export function DocumentReviewPanel({
   docType = null,
   shipmentNumber = null,
   proxyUrl,
+  uploadedAt = null,
   htsScore,
   decisions = [],
   notesByDecision = {},
@@ -823,6 +827,19 @@ export function DocumentReviewPanel({
   }, [activeTab, data?.reviewFields, activeFieldIndex, jumpToReviewField]);
 
   const isPending = parsedExtractedJson?.extractionStatus === "PENDING_VISION_PROCESSING";
+
+  const uploadedLabel = useMemo(() => {
+    if (!uploadedAt) return null;
+    const date = new Date(uploadedAt);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }, [uploadedAt]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 gap-4">
@@ -1243,6 +1260,15 @@ export function DocumentReviewPanel({
                           {reviewFields.length > 0 && (
                             <span className="text-[10px] text-slate-400 hidden sm:inline">
                               n/p to navigate fields
+                            </span>
+                          )}
+                          {uploadedLabel && (
+                            <span
+                              title={`Uploaded ${uploadedLabel}`}
+                              className="hidden md:inline-flex items-center gap-1 text-[10px] text-slate-400 shrink-0 border-l border-white/10 pl-2.5"
+                            >
+                              <Clock className="w-3 h-3" />
+                              Uploaded {uploadedLabel}
                             </span>
                           )}
                         </div>

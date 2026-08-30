@@ -218,6 +218,7 @@ describe("submission mapping", () => {
 
   it("accepts an allowlisted Qubere storage URL in signed-url mode", async () => {
     process.env.DOCLING_SOURCE_DELIVERY = "signed-url";
+    process.env.GCS_BUCKET = "qubere-test-documents";
     stubFetch(() => ({ body: { task_id: "t", task_status: "pending" } }));
     await new IbmHostedDoclingProvider().submit(
       submission({
@@ -225,7 +226,7 @@ describe("submission mapping", () => {
           kind: "signed-url",
           filename: "x.pdf",
           mimeType: "application/pdf",
-          url: "https://store.public.blob.vercel-storage.com/documents/x.pdf",
+          url: "https://storage.googleapis.com/qubere-test-documents/documents/x.pdf",
           expiresAt: new Date(),
         },
       })
@@ -435,6 +436,39 @@ describe("result retrieval", () => {
     expect(second.normalized.sections.map((s) => s.id)).toEqual(
       first.normalized.sections.map((s) => s.id)
     );
+  });
+
+  it("retries a 404 (result lags the success status) and returns once it lands", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    stubFetch(() => {
+      calls += 1;
+      if (calls < 3) return { status: 404, body: { detail: "Task not found." } };
+      return { body: { status: "success", document: { md_content: "# x", json_content: DOC_JSON } } };
+    });
+
+    const pending = new IbmHostedDoclingProvider().getResult(REFERENCE, "STANDARD");
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(calls).toBe(3);
+    expect(result.normalized.sections[0].content).toContain("INV-1");
+    vi.useRealTimers();
+  });
+
+  it("re-queues (retryable) rather than hard-failing when the result never lands", async () => {
+    vi.useFakeTimers();
+    stubFetch(() => ({ status: 404, body: { detail: "Task not found." } }));
+
+    const pending = new IbmHostedDoclingProvider()
+      .getResult(REFERENCE, "STANDARD")
+      .catch((e) => e);
+    await vi.runAllTimersAsync();
+    const error = await pending;
+
+    expect(error).toBeInstanceOf(DocumentParserError);
+    expect((error as DocumentParserError).retryable).toBe(true);
+    vi.useRealTimers();
   });
 });
 
