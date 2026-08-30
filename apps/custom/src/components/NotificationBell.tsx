@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bell } from "lucide-react";
+import { Bell, FileText, Scale, ShieldCheck, DollarSign, Globe, Files, Inbox } from "lucide-react";
 import Link from "next/link";
 import { formatDate } from "@/lib/utils";
 import { usePolling } from "@/lib/hooks/usePolling";
+import {
+  resolveNotificationHref,
+  type NotificationCategory,
+} from "@/modules/notifications/notificationRouting";
 
 interface NotificationItem {
   id: string;
@@ -15,14 +19,26 @@ interface NotificationItem {
   entityId: string | null;
   read: boolean;
   createdAt: string;
+  /** Enriched server-side; recomputed client-side if an older payload lacks it. */
+  category?: NotificationCategory;
+  categoryLabel?: string;
+  href?: string;
 }
 
 const POLL_INTERVAL_MS = 30_000;
 
-/** Where a notification's row should link, given what created it. */
-function notificationHref(n: NotificationItem): string {
-  if (n.entityType === "InboundEmail" || n.entityType === "ShipmentDocument") return "/app/documents";
-  return "/app/documents";
+const CATEGORY_ICON: Record<NotificationCategory, typeof Bell> = {
+  OPERATIONS: FileText,
+  COMPLIANCE: Scale,
+  LICENSING: ShieldCheck,
+  BILLING: DollarSign,
+  REGULATORY: Globe,
+  DOCUMENTS: Files,
+  SYSTEM: Inbox,
+};
+
+function hrefOf(n: NotificationItem): string {
+  return n.href ?? resolveNotificationHref(n);
 }
 
 export function NotificationBell() {
@@ -124,27 +140,36 @@ export function NotificationBell() {
               {notifications.length === 0 ? (
                 <div className="p-6 text-center text-xs text-ink-muted">No notifications yet.</div>
               ) : (
-                notifications.map((n) => (
-                  <Link
-                    key={n.id}
-                    href={notificationHref(n)}
-                    onClick={() => {
-                      if (!n.read) markRead(n.id);
-                      setIsOpen(false);
-                    }}
-                    className={`block p-3 border-b border-border last:border-b-0 hover:bg-surface-muted transition-colors ${
-                      n.read ? "" : "bg-blue-50/50"
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-brand mt-1.5 shrink-0" />}
-                      <div className="min-w-0">
-                        <p className="text-xs text-ink font-medium">{n.message}</p>
-                        <p className="text-[10px] text-ink-muted mt-0.5">{formatDate(n.createdAt)}</p>
+                notifications.map((n) => {
+                  const Icon = CATEGORY_ICON[n.category ?? "SYSTEM"] ?? Inbox;
+                  return (
+                    <Link
+                      key={n.id}
+                      href={hrefOf(n)}
+                      onClick={() => {
+                        if (!n.read) markRead(n.id);
+                        setIsOpen(false);
+                      }}
+                      className={`block p-3 border-b border-border last:border-b-0 hover:bg-surface-muted transition-colors ${
+                        n.read ? "" : "bg-blue-50/50"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span className="mt-0.5 w-6 h-6 rounded-lg bg-surface-muted border border-border flex items-center justify-center shrink-0">
+                          <Icon className="w-3.5 h-3.5 text-ink-muted" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-ink font-medium">{n.message}</p>
+                          <p className="text-[10px] text-ink-muted mt-0.5">
+                            {n.categoryLabel ? `${n.categoryLabel} · ` : ""}
+                            {formatDate(n.createdAt)}
+                          </p>
+                        </div>
+                        {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-brand mt-1.5 shrink-0" />}
                       </div>
-                    </div>
-                  </Link>
-                ))
+                    </Link>
+                  );
+                })
               )}
             </div>
           </div>,

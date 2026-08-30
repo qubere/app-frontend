@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
+import { notify } from "@/modules/notifications/notify";
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
@@ -55,15 +56,13 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
         });
 
         if (targetUserId) {
-          await db.notification.create({
-            data: {
-              accountId: ctx.accountId,
-              userId: targetUserId,
-              type: "WORK_ASSIGNED",
-              message: note || `Decision ${decision.decisionSummary} has been assigned to you.`,
-              entityType: "AgentDecision",
-              entityId: id,
-            },
+          await notify({
+            accountId: ctx.accountId,
+            userId: targetUserId,
+            type: "WORK_ASSIGNED",
+            message: note || `Decision ${decision.decisionSummary} has been assigned to you.`,
+            entityType: "AgentDecision",
+            entityId: id,
           });
         }
 
@@ -87,15 +86,13 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
         });
 
         if (targetUserId) {
-          await db.notification.create({
-            data: {
-              accountId: ctx.accountId,
-              userId: targetUserId,
-              type: "WORK_ASSIGNED",
-              message: note || `Exception [${exception.category}] ${exception.description} has been assigned to you.`,
-              entityType: "ExceptionItem",
-              entityId: id,
-            },
+          await notify({
+            accountId: ctx.accountId,
+            userId: targetUserId,
+            type: "WORK_ASSIGNED",
+            message: note || `Exception [${exception.category}] ${exception.description} has been assigned to you.`,
+            entityType: "ExceptionItem",
+            entityId: id,
           });
         }
 
