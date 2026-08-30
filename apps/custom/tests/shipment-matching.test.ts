@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   extractIdentifierCandidates,
   matchShipmentForDocument,
+  AUTO_ATTACH_THRESHOLD,
+  SUGGEST_THRESHOLD,
   type ShipmentIdentifierLookup,
   type CandidateRecord,
 } from "@/modules/shipments/shipmentMatching";
@@ -28,17 +30,33 @@ describe("extractIdentifierCandidates", () => {
     expect(poReferences).toContain("PO445566");
   });
 
-  it("finds no identifiers in unrelated text", () => {
+  it("finds an ISO 6346 container number with or without spacing", () => {
+    const a = extractIdentifierCandidates("Container CSQU 305438 3 on board");
+    expect(a.containers).toContain("CSQU3054383");
+    const b = extractIdentifierCandidates("cntr CSQU3054383");
+    expect(b.containers).toContain("CSQU3054383");
+  });
+
+  it("finds a master air waybill with and without the hyphen", () => {
+    const { airWaybills } = extractIdentifierCandidates("MAWB 020-12345678 / booking");
+    expect(airWaybills).toContain("02012345678");
+  });
+
+  it("finds no structured identifiers in unrelated text", () => {
     const result = extractIdentifierCandidates("Hey, here's the forwarding instructions doc.");
-    expect(result).toEqual({ shipmentNumbers: [], poReferences: [] });
+    expect(result.shipmentNumbers).toEqual([]);
+    expect(result.poReferences).toEqual([]);
+    expect(result.containers).toEqual([]);
   });
 });
 
 function makeLookup(overrides?: Partial<ShipmentIdentifierLookup>): {
   lookup: ShipmentIdentifierLookup;
   recorded: CandidateRecord[];
+  deleted: string[];
 } {
   const recorded: CandidateRecord[] = [];
+  const deleted: string[] = [];
   const lookup: ShipmentIdentifierLookup = {
     async findByShipmentNumber() {
       return null;
@@ -46,48 +64,67 @@ function makeLookup(overrides?: Partial<ShipmentIdentifierLookup>): {
     async findByPoReference() {
       return [];
     },
+    async findByTrackingIdentifiers() {
+      return [];
+    },
+    async deleteCandidatesForDocument(documentId) {
+      deleted.push(documentId);
+    },
     async recordCandidate(record) {
       recorded.push(record);
     },
     ...overrides,
   };
-  return { lookup, recorded };
+  return { lookup, recorded, deleted };
 }
+
+const input = (over: Partial<Parameters<typeof matchShipmentForDocument>[0]>) => ({
+  accountId: "acct_a",
+  documentId: "doc_1",
+  emailSubject: null,
+  parsedText: null,
+  ...over,
+});
 
 describe("matchShipmentForDocument", () => {
   it("auto-selects a single unambiguous shipment-number match", async () => {
-    const { lookup, recorded } = makeLookup({
-      async findByShipmentNumber(accountId, shipmentNumber) {
+    const { lookup, recorded, deleted } = makeLookup({
+      async findByShipmentNumber(_accountId, shipmentNumber) {
         return shipmentNumber === "SHP-2026-000042" ? { id: "shp_1" } : null;
       },
     });
 
     const result = await matchShipmentForDocument(
-      { accountId: "acct_a", documentId: "doc_1", emailSubject: "Docs for SHP-2026-000042", parsedText: null },
+      input({ emailSubject: "Docs for SHP-2026-000042" }),
       lookup
     );
 
     expect(result.matchedShipmentId).toBe("shp_1");
+    expect(deleted).toEqual(["doc_1"]);
     expect(recorded).toHaveLength(1);
     expect(recorded[0]).toMatchObject({
       shipmentId: "shp_1",
       matchedIdentifierType: "SHIPMENT_NUMBER",
       matchedSource: "EMAIL_SUBJECT",
       autoSelected: true,
+      algorithmVersion: "v2-weighted-multi-identifier",
+      matchMethod: "EXACT_SHIPMENT_NUMBER",
     });
+    expect(recorded[0].confidenceScore).toBeGreaterThanOrEqual(AUTO_ATTACH_THRESHOLD);
   });
 
   it("returns null and records nothing when no identifiers are found", async () => {
-    const { lookup, recorded } = makeLookup();
+    const { lookup, recorded, deleted } = makeLookup();
     const result = await matchShipmentForDocument(
-      { accountId: "acct_a", documentId: "doc_1", emailSubject: "no identifiers here", parsedText: "still none" },
+      input({ emailSubject: "no identifiers here", parsedText: "still none" }),
       lookup
     );
     expect(result.matchedShipmentId).toBeNull();
     expect(recorded).toHaveLength(0);
+    expect(deleted).toEqual([]);
   });
 
-  it("persists conflicting candidates but auto-selects neither -- never a silent guess", async () => {
+  it("persists conflicting shipment-number candidates but auto-selects neither", async () => {
     const { lookup, recorded } = makeLookup({
       async findByShipmentNumber(_accountId, shipmentNumber) {
         if (shipmentNumber === "SHP-2026-000042") return { id: "shp_1" };
@@ -97,12 +134,7 @@ describe("matchShipmentForDocument", () => {
     });
 
     const result = await matchShipmentForDocument(
-      {
-        accountId: "acct_a",
-        documentId: "doc_1",
-        emailSubject: "SHP-2026-000042",
-        parsedText: "Reference: SHP-2026-000099",
-      },
+      input({ emailSubject: "SHP-2026-000042", parsedText: "Reference: SHP-2026-000099" }),
       lookup
     );
 
@@ -112,27 +144,7 @@ describe("matchShipmentForDocument", () => {
     expect(new Set(recorded.map((r) => r.shipmentId))).toEqual(new Set(["shp_1", "shp_2"]));
   });
 
-  it("only tries PO-reference matching when no shipment-number candidate resolved", async () => {
-    let poLookupCalled = false;
-    const { lookup } = makeLookup({
-      async findByShipmentNumber(_accountId, shipmentNumber) {
-        return shipmentNumber === "SHP-2026-000042" ? { id: "shp_1" } : null;
-      },
-      async findByPoReference() {
-        poLookupCalled = true;
-        return [];
-      },
-    });
-
-    await matchShipmentForDocument(
-      { accountId: "acct_a", documentId: "doc_1", emailSubject: "SHP-2026-000042 re PO-778899", parsedText: null },
-      lookup
-    );
-
-    expect(poLookupCalled).toBe(false);
-  });
-
-  it("falls back to PO-reference matching and auto-selects a single match", async () => {
+  it("a lone PO reference is a suggestion, not an auto-attach", async () => {
     const { lookup, recorded } = makeLookup({
       async findByPoReference(_accountId, normalized) {
         return normalized === "PO778899" ? [{ id: "shp_9" }] : [];
@@ -140,28 +152,74 @@ describe("matchShipmentForDocument", () => {
     });
 
     const result = await matchShipmentForDocument(
-      { accountId: "acct_a", documentId: "doc_1", emailSubject: null, parsedText: "Please see PO-778899 attached." },
-      lookup
-    );
-
-    expect(result.matchedShipmentId).toBe("shp_9");
-    expect(recorded[0]).toMatchObject({ matchedIdentifierType: "PO_REFERENCE", matchedSource: "PARSED_DOCUMENT_TEXT" });
-  });
-
-  it("a PO reference matching two shipments is a conflict, not a guess", async () => {
-    const { lookup, recorded } = makeLookup({
-      async findByPoReference() {
-        return [{ id: "shp_a" }, { id: "shp_b" }];
-      },
-    });
-
-    const result = await matchShipmentForDocument(
-      { accountId: "acct_a", documentId: "doc_1", emailSubject: null, parsedText: "PO-778899" },
+      input({ parsedText: "Please see PO-778899 attached." }),
       lookup
     );
 
     expect(result.matchedShipmentId).toBeNull();
-    expect(recorded).toHaveLength(2);
-    expect(recorded.every((r) => r.autoSelected === false)).toBe(true);
+    expect(recorded[0]).toMatchObject({ matchedIdentifierType: "PO_REFERENCE", autoSelected: false });
+    expect(recorded[0].confidenceScore).toBeLessThan(AUTO_ATTACH_THRESHOLD);
+    expect(recorded[0].confidenceScore).toBeGreaterThanOrEqual(SUGGEST_THRESHOLD);
+  });
+
+  it("a container match alone auto-attaches when unrivalled", async () => {
+    const { lookup, recorded } = makeLookup({
+      async findByTrackingIdentifiers(_accountId, tokens) {
+        return tokens.includes("CSQU3054383")
+          ? [{ shipmentId: "shp_c", type: "CONTAINER", normalizedValue: "CSQU3054383" }]
+          : [];
+      },
+    });
+
+    const result = await matchShipmentForDocument(
+      input({ parsedText: "Arrival notice for container CSQU 305438 3" }),
+      lookup
+    );
+
+    // CONTAINER weight is 0.80 -- below auto-attach on its own.
+    expect(result.matchedShipmentId).toBeNull();
+    expect(recorded[0]).toMatchObject({ matchedIdentifierType: "CONTAINER", matchMethod: "EXACT_TRACKING_IDENTIFIER" });
+  });
+
+  it("PO + agreeing container on the same shipment clears the auto-attach bar", async () => {
+    const { lookup, recorded } = makeLookup({
+      async findByPoReference(_accountId, normalized) {
+        return normalized === "PO778899" ? [{ id: "shp_x" }] : [];
+      },
+      async findByTrackingIdentifiers(_accountId, tokens) {
+        return tokens.includes("CSQU3054383")
+          ? [{ shipmentId: "shp_x", type: "CONTAINER", normalizedValue: "CSQU3054383" }]
+          : [];
+      },
+    });
+
+    const result = await matchShipmentForDocument(
+      input({ parsedText: "PO-778899 — container CSQU3054383" }),
+      lookup
+    );
+
+    expect(result.matchedShipmentId).toBe("shp_x");
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({ matchMethod: "MULTI_SIGNAL", autoSelected: true });
+    expect(recorded[0].scoreBreakdown.signals).toHaveLength(2);
+    expect(recorded[0].scoreBreakdown.agreementBonus).toBeGreaterThan(0);
+  });
+
+  it("does not auto-attach a strong match when a rival is also plausible", async () => {
+    const { lookup } = makeLookup({
+      async findByShipmentNumber(_accountId, shipmentNumber) {
+        return shipmentNumber === "SHP-2026-000042" ? { id: "shp_strong" } : null;
+      },
+      async findByPoReference() {
+        return [{ id: "shp_rival" }];
+      },
+    });
+
+    const result = await matchShipmentForDocument(
+      input({ parsedText: "SHP-2026-000042 relates to PO-778899" }),
+      lookup
+    );
+
+    expect(result.matchedShipmentId).toBeNull();
   });
 });

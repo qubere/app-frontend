@@ -737,7 +737,7 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     entity: "ShipmentDocument",
     entityId: run.documentId,
     source: "SYSTEM",
-    metadata: { shipmentId: matchedShipmentId, algorithmVersion: "v1-exact-identifier" },
+    metadata: { shipmentId: matchedShipmentId, algorithmVersion: "v2-weighted-multi-identifier" },
     correlationId: run.correlationId,
   });
   log("auto_match.matched", { runId: run.id, documentId: run.documentId, shipmentId: matchedShipmentId });

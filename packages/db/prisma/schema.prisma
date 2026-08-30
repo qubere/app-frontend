@@ -1250,6 +1250,17 @@ model ShipmentDocument {
   byteSize Int?
   mimeType String?
 
+  /// Malware scan state for the immutable original, run before any parsing.
+  /// PENDING (not yet scanned) | CLEAN | INFECTED | SKIPPED (scanning disabled
+  /// for this env) | ERROR (scanner unreachable — fail-closed, treated like a
+  /// block). A non-CLEAN, non-SKIPPED status quarantines the document: no parse,
+  /// no extraction, surfaced as a Today-lane alert.
+  malwareScanStatus String    @default("PENDING")
+  /// Scanner verdict detail — e.g. the ClamAV signature name on INFECTED, or the
+  /// connection error on ERROR. Never contains document content.
+  malwareScanDetail String?
+  malwareScanAt     DateTime?
+
   /// The one successful processing run whose artifacts are authoritative for
   /// this document. Set only after a run completes, validates, persists its
   /// artifacts, and passes the quality policy -- so it never points at a
@@ -1305,6 +1316,7 @@ model ShipmentDocument {
   @@index([documentType])
   @@index([accountId, createdAt])
   @@index([accountId, status, createdAt])
+  @@index([accountId, malwareScanStatus])
 }
 
 /// Authorizes one normalized sender email to route inbound documents into
@@ -1392,7 +1404,9 @@ model InboundAttachment {
 /// One row per shipment considered as a match for an emailed document, kept
 /// even when not selected -- so "why didn't this match?" is always answerable
 /// and a match is never a silent guess. Deterministic, exact-identifier
-/// matching only (v1); no fuzzy/AI-assisted scoring.
+/// matching only; no fuzzy/AI-assisted scoring. v2 broadened the identifier set
+/// (container/BOL/booking/AWB via ShipmentTrackingIdentifier) and replaced the
+/// hardcoded 1.0 score with a weighted, multi-signal score.
 model DocumentShipmentCandidate {
   id                    String           @id @default(cuid())
   accountId             String
@@ -1401,13 +1415,20 @@ model DocumentShipmentCandidate {
   document              ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   shipmentId            String
   shipment              Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  matchedIdentifierType String // SHIPMENT_NUMBER, PO_REFERENCE
+  matchedIdentifierType String // SHIPMENT_NUMBER, PO_REFERENCE, MBL, HBL, CONTAINER, BOOKING, MAWB, HAWB
   matchedValue          String // the literal token found in text, normalized
   matchedSource         String // EMAIL_SUBJECT, PARSED_DOCUMENT_TEXT
   autoSelected          Boolean          @default(false)
-  // E-1: 0.0–1.0 signal for UI ranking; exact-identifier matches write 1.0
+  // E-1: 0.0–1.0 signal for UI ranking. v1 wrote a hardcoded 1.0 for every
+  // exact-identifier hit; v2 writes a real weighted score (see scoreBreakdown).
   confidenceScore       Float            @default(1.0)
   algorithmVersion      String           @default("v1-exact-identifier")
+  // v2+: how the score was reached. `matchMethod` is a coarse label
+  // (EXACT_SHIPMENT_NUMBER, EXACT_TRACKING_IDENTIFIER, EXACT_PO, MULTI_SIGNAL);
+  // `scoreBreakdown` is the per-identifier contribution + bonuses/penalties the
+  // "why did this match?" UI renders.
+  matchMethod           String?
+  scoreBreakdown        Json?
   createdAt             DateTime         @default(now())
 
   @@index([documentId])
