@@ -18,7 +18,10 @@ import {
   Sparkles,
   Check,
   X,
+  ShieldCheck,
 } from "lucide-react";
+import { PreFilingReadiness, type CategoryDetail } from "@/app/app/shipments/[id]/PreFilingReadiness";
+import type { ReadinessBreakdown } from "@/lib/shipmentReadiness";
 
 export interface JourneyStop {
   id: string;
@@ -94,10 +97,21 @@ export interface JourneyDocOption {
   docType: string | null;
 }
 
+export interface JourneyReadinessProps {
+  categories: CategoryDetail[];
+  overallStatus: {
+    text: string;
+    subtext: string;
+    type: "BLOCKED" | "REVIEW_REQUIRED" | "INFO_REQUIRED" | "WARNINGS" | "READY";
+  };
+  readinessBreakdown?: ReadinessBreakdown;
+}
+
 interface JourneyRibbonProps {
-  data: JourneyData;
+  data?: JourneyData;
   canManage?: boolean;
   documents?: JourneyDocOption[];
+  readiness?: JourneyReadinessProps;
 }
 
 const LEG_TYPE_OPTIONS = ["EXPORT_HAULAGE", "MAIN_CARRIAGE", "TRANSSHIPMENT", "IMPORT_HAULAGE", "ON_CARRIAGE"];
@@ -134,19 +148,25 @@ function statusClasses(status: string): { seg: string; pill: string; dot: string
   }
 }
 
-export function JourneyRibbon({ data, canManage = false, documents = [] }: JourneyRibbonProps) {
+export function JourneyRibbon({ data, canManage = false, documents = [], readiness }: JourneyRibbonProps) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
+  const [showReadinessAudit, setShowReadinessAudit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showAddLeg, setShowAddLeg] = useState(false);
   const [attachTarget, setAttachTarget] = useState<{ legId: string; row: LegDocRow } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { journeyStatus, stops, legs, customs, inferenceProposal } = data;
+  const journeyStatus = data?.journeyStatus;
+  const stops = data?.stops ?? [];
+  const legs = data?.legs ?? [];
+  const customs = data?.customs;
+  const inferenceProposal = data?.inferenceProposal;
+  const shipmentId = data?.shipmentId;
 
-  if (!legs || legs.length === 0) return null;
+  if (legs.length === 0 && !readiness) return null;
 
-  const customsCleared = customs.status === "RELEASED" || customs.status === "ACCEPTED";
+  const customsCleared = customs ? (customs.status === "RELEASED" || customs.status === "ACCEPTED") : false;
 
   async function call(url: string, init: RequestInit): Promise<boolean> {
     setBusy(true);
@@ -170,8 +190,9 @@ export function JourneyRibbon({ data, canManage = false, documents = [] }: Journ
 
   const addLeg = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!shipmentId) return;
     const fd = new FormData(e.currentTarget);
-    const ok = await call(`/api/shipments/${data.shipmentId}/legs`, {
+    const ok = await call(`/api/shipments/${shipmentId}/legs`, {
       method: "POST",
       body: JSON.stringify({
         legType: fd.get("legType"),
@@ -187,17 +208,17 @@ export function JourneyRibbon({ data, canManage = false, documents = [] }: Journ
   };
 
   const deleteLeg = (legId: string) =>
-    call(`/api/shipments/${data.shipmentId}/legs/${legId}`, { method: "DELETE" });
+    shipmentId ? call(`/api/shipments/${shipmentId}/legs/${legId}`, { method: "DELETE" }) : Promise.resolve(false);
 
   const confirmLeg = (legId: string) =>
-    call(`/api/shipments/${data.shipmentId}/legs/${legId}`, {
+    shipmentId ? call(`/api/shipments/${shipmentId}/legs/${legId}`, {
       method: "PATCH",
       body: JSON.stringify({ confirmed: true }),
-    });
+    }) : Promise.resolve(false);
 
   const attachDoc = async (documentId: string) => {
-    if (!attachTarget) return;
-    const ok = await call(`/api/shipments/${data.shipmentId}/legs/${attachTarget.legId}/documents`, {
+    if (!attachTarget || !shipmentId) return;
+    const ok = await call(`/api/shipments/${shipmentId}/legs/${attachTarget.legId}/documents`, {
       method: "POST",
       body: JSON.stringify({ documentId, slotKey: attachTarget.row.slotKey, slotLabel: attachTarget.row.slotLabel }),
     });
@@ -205,64 +226,89 @@ export function JourneyRibbon({ data, canManage = false, documents = [] }: Journ
   };
 
   const detachDoc = (legId: string, legDocumentId: string) =>
-    call(`/api/shipments/${data.shipmentId}/legs/${legId}/documents?legDocumentId=${encodeURIComponent(legDocumentId)}`, {
+    shipmentId ? call(`/api/shipments/${shipmentId}/legs/${legId}/documents?legDocumentId=${encodeURIComponent(legDocumentId)}`, {
       method: "DELETE",
-    });
+    }) : Promise.resolve(false);
 
   const acceptProposal = () =>
-    inferenceProposal &&
-    call(`/api/shipments/${data.shipmentId}/legs/infer/accept`, {
+    inferenceProposal && shipmentId &&
+    call(`/api/shipments/${shipmentId}/legs/infer/accept`, {
       method: "POST",
       body: JSON.stringify({ inputsHash: inferenceProposal.inputsHash }),
     });
 
   const rejectProposal = () =>
-    inferenceProposal &&
-    call(`/api/shipments/${data.shipmentId}/legs/infer/reject`, {
+    inferenceProposal && shipmentId &&
+    call(`/api/shipments/${shipmentId}/legs/infer/reject`, {
       method: "POST",
       body: JSON.stringify({ inputsHash: inferenceProposal.inputsHash }),
     });
 
-  const gridCols = { gridTemplateColumns: `repeat(${legs.length}, minmax(150px, 1fr))` };
+  const gridCols = legs?.length ? { gridTemplateColumns: `repeat(${legs.length}, minmax(0, 1fr))` } : {};
+  const railWidth = legs?.length ? `${Math.min(legs.length * 280, 1400)}px` : "100%";
 
   return (
     <div className="rounded-3xl border border-slate-200/80 bg-white p-5 md:p-6 shadow-2xs space-y-5">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-        <div className="min-w-0">
-          <h2 className="text-sm font-extrabold text-slate-900 tracking-tight truncate">{journeyStatus.headline}</h2>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {legs.length} leg{legs.length === 1 ? "" : "s"} · {journeyStatus.percentComplete}% complete
-            {journeyStatus.blocked && journeyStatus.blockingReasons.length > 0 && (
-              <span className="text-rose-600 font-semibold"> · {journeyStatus.blockingReasons[0]}</span>
-            )}
-          </p>
-        </div>
+      {/* Header — only shown when transport legs exist */}
+      {legs.length > 0 && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-extrabold text-slate-900 tracking-tight truncate">
+              {journeyStatus?.headline || "Shipment Journey & Compliance Command"}
+            </h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {`${legs.length} leg${legs.length === 1 ? "" : "s"} · ${journeyStatus?.percentComplete ?? 0}% complete`}
+              {journeyStatus?.blocked && journeyStatus?.blockingReasons?.length > 0 && (
+                <span className="text-rose-600 font-semibold"> · {journeyStatus.blockingReasons[0]}</span>
+              )}
+            </p>
+          </div>
 
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
-          <span className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200/80 text-xs font-bold">
-            <span className="text-slate-400 font-medium">Customs</span>
-            <span className={customsCleared ? "text-emerald-700 font-extrabold" : "text-amber-700 font-extrabold"}>
-              {customs.status.replace(/_/g, " ")}
-            </span>
-          </span>
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            {expanded ? "Collapse" : "Expand"}
-          </button>
-          {canManage && (
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {readiness && (
+              <span
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold ${
+                  readiness.overallStatus.type === "BLOCKED"
+                    ? "bg-rose-50 text-rose-800 border-rose-200"
+                    : readiness.overallStatus.type === "REVIEW_REQUIRED"
+                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                    : readiness.overallStatus.type === "INFO_REQUIRED"
+                    ? "bg-blue-50 text-blue-800 border-blue-200"
+                    : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                }`}
+              >
+                <span>Readiness: {readiness.overallStatus.text}</span>
+              </span>
+            )}
+
+            {canManage && (
+              <button
+                onClick={() => setShowAddLeg(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add leg
+              </button>
+            )}
+
+            {customs && (
+              <span className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200/80 text-xs font-bold">
+                <span className="text-slate-400 font-medium">Customs</span>
+                <span className={customsCleared ? "text-emerald-700 font-extrabold" : "text-amber-700 font-extrabold"}>
+                  {customs.status.replace(/_/g, " ")}
+                </span>
+              </span>
+            )}
+
             <button
-              onClick={() => setShowAddLeg(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> Add leg
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {expanded ? "Collapse" : "Expand"}
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {error && (
         <div className="text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
@@ -307,8 +353,9 @@ export function JourneyRibbon({ data, canManage = false, documents = [] }: Journ
       )}
 
       {/* Rail */}
-      <div className="overflow-x-auto pb-1">
-        <div style={{ minWidth: `${Math.max(legs.length * 170, 320)}px` }} className="space-y-3">
+      {legs.length > 0 && (
+        <div className="overflow-x-auto pb-1 flex justify-center">
+          <div style={{ width: railWidth, minWidth: `${Math.max(legs.length * 200, 280)}px` }} className="space-y-3 max-w-full">
           {/* stop labels */}
           <div className="grid gap-2" style={gridCols}>
             {legs.map((leg, i) => {
@@ -398,6 +445,7 @@ export function JourneyRibbon({ data, canManage = false, documents = [] }: Journ
           </div>
         </div>
       </div>
+      )}
 
       {/* Expanded per-leg detail */}
       {expanded && (
@@ -664,6 +712,23 @@ export function JourneyRibbon({ data, canManage = false, documents = [] }: Journ
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Integrated 10-Point Compliance & Readiness Banner */}
+      {readiness && (
+        <div className={`space-y-3 ${legs.length > 0 ? "pt-4 border-t border-slate-200/80" : ""}`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-extrabold uppercase tracking-widest text-slate-500 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-slate-700" />
+              <span>10-Point Regulatory Compliance &amp; Filing Readiness Audit</span>
+            </h3>
+          </div>
+          <PreFilingReadiness
+            categories={readiness.categories}
+            overallStatus={readiness.overallStatus}
+            readinessBreakdown={readiness.readinessBreakdown}
+          />
         </div>
       )}
     </div>
