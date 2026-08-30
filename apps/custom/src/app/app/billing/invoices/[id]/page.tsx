@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { InvoiceDetailClient } from "./InvoiceDetailClient";
+import { PushToQuickBooksButton } from "./PushToQuickBooksButton";
+import { loadQboConnection, isConnectionActive } from "@/lib/integrations/quickbooks/client";
 
 export const revalidate = 0;
 
@@ -33,13 +35,14 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   if (!(await hasPermission("billing.invoice.view"))) redirect("/app/billing");
 
   const { id } = await params;
-  const [canRecordPayment, canSubmit, canApprove, canSend, canVoid, canExport] = await Promise.all([
+  const [canRecordPayment, canSubmit, canApprove, canSend, canVoid, canExport, canPushQbo] = await Promise.all([
     hasPermission("billing.payment.record"),
     hasPermission("billing.invoice.create"),
     hasPermission("billing.invoice.approve"),
     hasPermission("billing.invoice.send"),
     hasPermission("billing.invoice.void"),
     hasPermission("billing.report.export"),
+    hasPermission("integration.configure"),
   ]);
 
   // Invoice carries an Account relation (dataMode-scoped) -- without this
@@ -69,6 +72,13 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
 
   const derivedStatus = deriveStatus(invoice);
 
+  const qboConnected = canPushQbo
+    ? await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () =>
+        isConnectionActive(await loadQboConnection(ctx.accountId)),
+      )
+    : false;
+  const qboPushable = ["APPROVED", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE"].includes(invoice.status);
+
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Header */}
@@ -94,6 +104,9 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">CSV</a>
           <a href={`/api/billing/invoices/${id}/export?format=xlsx`}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">XLSX</a></>}
+          {canPushQbo && qboConnected && (
+            <PushToQuickBooksButton invoiceId={id} pushable={qboPushable} />
+          )}
           <Link href="/app/billing/invoices" className="text-xs font-semibold text-ink-muted hover:text-ink transition-colors">← Back</Link>
         </div>
       </div>

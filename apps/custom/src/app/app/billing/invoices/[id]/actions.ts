@@ -5,6 +5,16 @@ import { getAccountContext, hasPermission } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { recordInvoicePayment } from "@/lib/billing/invoicing";
 import { revalidatePath } from "next/cache";
+import { loadQboConnection, isConnectionActive } from "@/lib/integrations/quickbooks/client";
+import { pushInvoiceToQbo } from "@/lib/integrations/quickbooks/sync";
+
+const QBO_PUSHABLE_STATUSES = new Set([
+  "APPROVED",
+  "SENT",
+  "PARTIALLY_PAID",
+  "PAID",
+  "OVERDUE",
+]);
 
 async function requirePermission(...permissions: string[]) {
   const context = await getAccountContext();
@@ -186,4 +196,76 @@ export async function voidInvoiceAction(invoiceId: string, reason: string) {
     revalidatePath("/app/billing");
     return { success: true };
   }));
+}
+
+export async function pushInvoiceToQuickBooksAction(invoiceId: string) {
+  const context = await requirePermission("integration.configure");
+
+  return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () =>
+    withAccountIdContext(context.accountId, async () => {
+      const invoice = await db.invoice.findFirst({
+        where: { id: invoiceId, accountId: context.accountId },
+        include: {
+          client: { select: { id: true, name: true, contactEmail: true, billingContactEmail: true } },
+          lines: { select: { description: true, quantity: true, unitPrice: true, amount: true } },
+        },
+      });
+      if (!invoice) throw new Error("Invoice not found");
+      if (!invoice.client) throw new Error("Invoice has no client to map to a QuickBooks customer");
+      if (!QBO_PUSHABLE_STATUSES.has(invoice.status)) {
+        throw new Error(
+          `Only approved or sent invoices can be pushed to QuickBooks (this invoice is ${invoice.status})`,
+        );
+      }
+
+      const cfg = await loadQboConnection(context.accountId);
+      if (!isConnectionActive(cfg)) {
+        throw new Error("QuickBooks is not connected. Connect it in Billing → Settings first.");
+      }
+
+      const result = await pushInvoiceToQbo({
+        cfg,
+        invoice: {
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          issueDate: invoice.issueDate,
+          dueDate: invoice.dueDate,
+          currency: invoice.currency,
+          subtotal: Number(invoice.subtotal),
+          totalDiscounts: Number(invoice.totalDiscounts),
+          totalTax: Number(invoice.totalTax),
+          totalAmount: Number(invoice.totalAmount),
+          notes: invoice.notes,
+          lines: invoice.lines.map((l) => ({
+            description: l.description,
+            quantity: Number(l.quantity),
+            unitPrice: Number(l.unitPrice),
+            amount: Number(l.amount),
+          })),
+          client: {
+            id: invoice.client.id,
+            name: invoice.client.name,
+            contactEmail: invoice.client.billingContactEmail ?? invoice.client.contactEmail,
+          },
+        },
+      });
+
+      await createAuditLog({
+        accountId: context.accountId,
+        userId: context.userId,
+        action: "billing.invoice.push_to_quickbooks",
+        entity: "Invoice",
+        entityId: invoiceId,
+        metadata: {
+          invoiceNumber: invoice.invoiceNumber,
+          quickbooksInvoiceId: result.providerId,
+          reused: result.reused,
+          totalsReconcile: result.totalsReconcile,
+        },
+      });
+
+      revalidatePath(`/app/billing/invoices/${invoiceId}`);
+      return { success: true, ...result };
+    }),
+  );
 }

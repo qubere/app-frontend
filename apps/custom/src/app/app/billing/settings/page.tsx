@@ -4,6 +4,7 @@ import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { saveCostProfileAction } from "./actions";
 import { BillingActionForm } from "../BillingActionForm";
+import { QuickBooksConnectionCard } from "./QuickBooksConnectionCard";
 
 export const revalidate = 0;
 
@@ -32,6 +33,11 @@ export default async function BillingSettingsPage() {
       <div>
         <h2 className="text-xl font-bold text-ink">Costing Profiles & Internal Rates</h2>
         <p className="text-sm text-ink-muted">Effective-dated labor and technology assumptions for this brokerage account.</p>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-bold text-ink uppercase tracking-wider">Accounting Integration</h3>
+        <QuickBooksConnectionCard />
       </div>
 
       {!canManageCosts && (

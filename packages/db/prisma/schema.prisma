@@ -298,8 +298,10 @@ model Account {
   webhooks AccountWebhook[]
   apiKeys  AccountApiKey[]
 
-  integrationConfigs  IntegrationConfig[]
-  integrationPayloads IntegrationPayload[]
+  integrationConfigs    IntegrationConfig[]
+  integrationPayloads   IntegrationPayload[]
+  integrationSyncLogs   IntegrationSyncLog[]
+  integrationEntityMaps IntegrationEntityMap[]
 
   accountMemories AccountMemory[]
   memoryEvidence  MemoryEvidence[]
@@ -8818,12 +8820,28 @@ model IntegrationConfig {
   lastSyncAt       DateTime?
   lastErrorAt      DateTime?
   lastErrorMessage String?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  payloads         IntegrationPayload[]
+
+  // OAuth 2.0 connection state (QuickBooks Online and future OAuth providers).
+  // Tokens are stored encrypted (AES-256-GCM) -- never plaintext.
+  realmId               String? // QBO company id / tenant id
+  providerAccountName   String? // e.g. "Sandbox Company_US_1"
+  accessTokenEnc        String?
+  refreshTokenEnc       String?
+  tokenExpiresAt        DateTime?
+  refreshTokenExpiresAt DateTime?
+  scopes                String?
+  connectedByUserId     String?
+  connectedAt           DateTime?
+
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  payloads    IntegrationPayload[]
+  syncLogs    IntegrationSyncLog[]
+  entityMaps  IntegrationEntityMap[]
 
   @@index([accountId, category])
   @@index([accountId, clientId])
+  @@index([accountId, provider])
 }
 
 model IntegrationPayload {
@@ -8843,6 +8861,54 @@ model IntegrationPayload {
   @@index([accountId, provider])
   @@index([accountId, clientId])
   @@index([integrationConfigId, fetchedAt])
+}
+
+/// One row per outbound/inbound sync attempt against an external integration.
+/// Powers the sync-history panel and support/debugging.
+model IntegrationSyncLog {
+  id                  String            @id @default(cuid())
+  accountId           String
+  account             Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  integrationConfigId String
+  integrationConfig   IntegrationConfig @relation(fields: [integrationConfigId], references: [id], onDelete: Cascade)
+  provider            String
+  direction           String // OUTBOUND | INBOUND
+  entityType          String // INVOICE | CUSTOMER | PAYMENT
+  qubereId            String?
+  providerId          String?
+  status              String // SUCCESS | ERROR
+  message             String?
+  requestJson         Json?
+  responseJson        Json?
+  durationMs          Int?
+  createdAt           DateTime          @default(now())
+
+  @@index([accountId, provider, createdAt])
+  @@index([integrationConfigId, createdAt])
+  @@index([accountId, entityType, qubereId])
+}
+
+/// Idempotent mapping between a Qubere record and its counterpart in an
+/// external system, so re-syncs update rather than duplicate.
+model IntegrationEntityMap {
+  id                  String            @id @default(cuid())
+  accountId           String
+  account             Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  integrationConfigId String
+  integrationConfig   IntegrationConfig @relation(fields: [integrationConfigId], references: [id], onDelete: Cascade)
+  provider            String
+  realmId             String
+  qubereType          String // INVOICE | CUSTOMER
+  qubereId            String
+  providerType        String // Invoice | Customer
+  providerId          String
+  syncToken           String? // QBO optimistic-concurrency token
+  lastSyncedAt        DateTime          @default(now())
+  createdAt           DateTime          @default(now())
+
+  @@unique([provider, realmId, qubereType, qubereId])
+  @@index([accountId, provider])
+  @@index([integrationConfigId])
 }
 
 // =============================================================================
