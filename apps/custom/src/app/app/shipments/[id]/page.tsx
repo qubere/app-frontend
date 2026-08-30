@@ -99,10 +99,12 @@ export default async function ShipmentWorkspacePage(props: {
     isEnterpriseAdmin ||
     context.permissions.includes("shipment.update");
 
-  // On-demand compliance checks (embargo / PGA / reconcile) are shipment
-  // mutations -- gate them on the same write access as journey management so
-  // the panel never offers an action a viewer can't complete.
-  const canRunChecks = canManageJourney;
+  // On-demand compliance checks -- mirror each route's own permission so the
+  // panel never offers an action the API will 403: embargo + PGA screen gate on
+  // `ai.use`, reconciliation on `shipments.manage`.
+  const isAccountAdmin = context.isPlatformAdmin || isEnterpriseAdmin;
+  const canRunAiChecks = isAccountAdmin || context.permissions.includes("ai.use");
+  const canRunReconciliation = isAccountAdmin || context.permissions.includes("shipments.manage");
 
 
   // None of these nine depend on each other; run them in parallel.
@@ -1622,7 +1624,8 @@ export default async function ShipmentWorkspacePage(props: {
             openReconciliationIssues: reconciliationIssues.length,
             criticalReconciliationIssues: reconciliationIssues.filter((i) => i.severity === "Critical").length,
           }}
-          canRunChecks={canRunChecks}
+          canRunAiChecks={canRunAiChecks}
+          canRunReconciliation={canRunReconciliation}
         />
 
         {/* Compliance Deadline Rail — every statutory and commercial clock for this

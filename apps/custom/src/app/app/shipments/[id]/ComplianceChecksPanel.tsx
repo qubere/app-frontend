@@ -25,8 +25,10 @@ interface ComplianceChecksPanelProps {
     openReconciliationIssues: number;
     criticalReconciliationIssues: number;
   };
-  /** Write access on this shipment (mirrors the journey-management gate). */
-  canRunChecks: boolean;
+  /** `ai.use` -- embargo + PGA screening. */
+  canRunAiChecks: boolean;
+  /** `shipments.manage` -- reconciliation. */
+  canRunReconciliation: boolean;
 }
 
 const STATUS_STYLE: Record<CheckStatus, string> = {
@@ -49,7 +51,8 @@ export function ComplianceChecksPanel({
   shipmentId,
   embargoInputs,
   initial,
-  canRunChecks,
+  canRunAiChecks,
+  canRunReconciliation,
 }: ComplianceChecksPanelProps) {
   const router = useRouter();
   const [running, setRunning] = useState<string | null>(null);
@@ -107,8 +110,8 @@ export function ComplianceChecksPanel({
       icon: ShieldCheck,
       title: "Embargo screening",
       result: embargo,
-      enabled: canRunChecks,
-      disabledReason: canRunChecks ? undefined : "Requires write access on this shipment.",
+      enabled: canRunAiChecks,
+      disabledReason: canRunAiChecks ? undefined : "Requires the ai.use permission.",
       onRun: () =>
         run(
           "embargo",
@@ -127,8 +130,8 @@ export function ComplianceChecksPanel({
       icon: Landmark,
       title: "PGA screening",
       result: pga,
-      enabled: canRunChecks,
-      disabledReason: canRunChecks ? undefined : "Requires write access on this shipment.",
+      enabled: canRunAiChecks,
+      disabledReason: canRunAiChecks ? undefined : "Requires the ai.use permission.",
       onRun: () =>
         run(
           "pga",
@@ -147,8 +150,8 @@ export function ComplianceChecksPanel({
       icon: ScrollText,
       title: "Reconciliation",
       result: recon,
-      enabled: canRunChecks,
-      disabledReason: canRunChecks ? undefined : "Requires write access on this shipment.",
+      enabled: canRunReconciliation,
+      disabledReason: canRunReconciliation ? undefined : "Requires the shipments.manage permission.",
       onRun: () =>
         run(
           "recon",

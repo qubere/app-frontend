@@ -91,12 +91,14 @@ export default async function ActionsPage(props: {
     canResolveCompliance,
     canResolveBilling,
     canWaiveBilling,
+    canEscalate,
   ] = await Promise.all([
     hasPermission("compliance.read"),
     hasPermission("billing.exception.view"),
     hasPermission("exceptions.resolve"),
     hasPermission("billing.exception.resolve"),
     hasPermission("billing.exception.waive"),
+    hasPermission("specialist.write"),
   ]);
 
   const [decisions, allDocuments, exceptions, writable, mayWaive, memberships, complianceLane, billingLane] = await Promise.all([
@@ -307,6 +309,7 @@ export default async function ActionsPage(props: {
       canResolveCompliance={canResolveCompliance}
       canResolveBilling={canResolveBilling}
       canWaiveBilling={canWaiveBilling}
+      canEscalate={canEscalate}
     />
   );
   });

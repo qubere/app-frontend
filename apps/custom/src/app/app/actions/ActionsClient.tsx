@@ -74,6 +74,8 @@ interface ActionsClientProps {
   canResolveBilling?: boolean;
   /** billing.exception.waive. */
   canWaiveBilling?: boolean;
+  /** specialist.write -- show Escalate on exception rows. */
+  canEscalate?: boolean;
 }
 
 const PRIORITY_LABEL: Record<WorkPriority, string> = {
@@ -112,6 +114,7 @@ export function ActionsClient({
   canResolveCompliance = false,
   canResolveBilling = false,
   canWaiveBilling = false,
+  canEscalate = false,
 }: ActionsClientProps) {
   const router = useRouter();
   const [localGroups, setLocalGroups] = useState(initialGroups);
@@ -825,6 +828,7 @@ export function ActionsClient({
                             shipmentId={selectedGroup.shipmentId}
                             canWrite={canWrite}
                             canWaive={canWaive}
+                            canEscalate={canEscalate}
                             onResolved={() => handleExceptionResolved(item.id)}
                             verified={cat === "verified"}
                             onDocClick={(docId, fileName) => {
@@ -1460,6 +1464,7 @@ function ExceptionCard({
   shipmentId,
   canWrite,
   canWaive,
+  canEscalate = false,
   onResolved,
   verified = false,
   onDocClick,
@@ -1470,6 +1475,7 @@ function ExceptionCard({
   shipmentId?: string;
   canWrite: boolean;
   canWaive: boolean;
+  canEscalate?: boolean;
   onResolved: () => void;
   verified?: boolean;
   onDocClick?: (docId: string, fileName: string) => void;
@@ -1620,6 +1626,7 @@ function ExceptionCard({
           exceptionId={item.id}
           version={item.version}
           canWaive={canWaive}
+          canEscalate={canEscalate}
           documentId={targetDoc?.id || item.documentId || item.raw.documentId}
           onResolved={() => { setResolved(true); onResolved(); }}
         />

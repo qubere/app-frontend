@@ -73,6 +73,18 @@ describe("the catalogue covers what the code actually checks", () => {
     expect(new Set(PERMISSION_NAMES).size).toBe(PERMISSION_NAMES.length);
   });
 
+  it("catalogues the route-option permissions the on-demand actions gate on", () => {
+    // These gate live routes via `withAuthenticatedRoute(handler, { permission })`,
+    // which the source scan above does not see. Before being catalogued they
+    // were unsatisfiable for every non-OWNER role:
+    //   ai.use          -> /api/screening/embargo, /api/pga/screen, assistant chat
+    //   shipments.manage -> /api/reconcile, shipment legs / stage
+    //   specialist.write -> /api/work/:kind/:id/escalate, work/assign
+    for (const name of ["ai.use", "shipments.manage", "specialist.write"]) {
+      expect(PERMISSION_NAMES).toContain(name);
+    }
+  });
+
   it("does not give a viewer anything that changes a record", () => {
     const viewerHolds = defaultPermissionsForRole("VIEWER");
     for (const name of viewerHolds) {

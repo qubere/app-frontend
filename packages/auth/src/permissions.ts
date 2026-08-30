@@ -73,6 +73,7 @@ export type PermissionCategory =
   | "Invoice"
   | "Integration"
   | "Freight"
+  | "AI"
   | "System";
 
 export interface PermissionDefinition {
@@ -123,6 +124,8 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "shipment.assign", description: "Assign shipment to broker/user.", category: "Shipment", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "OWNER", "ADMIN"] },
   { name: "shipment.cancel", description: "Cancel active shipment.", category: "Shipment", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "TMS_ADMIN", "TMS_MANAGER", "TMS_DISPATCHER", "OWNER", "ADMIN"] },
   { name: "shipment.reopen", description: "Reopen cancelled shipment.", category: "Shipment", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "TMS_ADMIN", "TMS_MANAGER", "OWNER", "ADMIN"] },
+  { name: "shipments.manage", description: "Run shipment-level operations: transport legs, stage transitions, on-demand reconciliation, exception resolution.", category: "Shipment", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER"] },
+  { name: "specialist.write", description: "Perform broker-specialist write actions: advance pipeline stages, assign or escalate work items, set document visibility.", category: "Shipment", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER"] },
 
   // Documents
   { name: "document.read", description: "View attached trade documents.", category: "Document", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
@@ -389,6 +392,9 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   // TMS Integration Testing & Extra
   { name: "integration.test", description: "Execute test payload against EDI/API integration.", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
   { name: "integration.disable", description: "Disable API integration stream.", category: "Integration", defaultRoles: ["TMS_ADMIN", "BROKER_ADMIN", "OWNER"] },
+
+  // AI
+  { name: "ai.use", description: "Use AI-assisted features: the Copilot chat and on-demand embargo / PGA screening from a shipment.", category: "AI", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
 
   // TMS Access & General
   { name: "tms.access", description: "Access Qubere TMS Freight Execution System.", category: "System", defaultRoles: ["TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "SUPER_ADMIN_WRITE", "INTERNAL_ADMIN", "OWNER", "ADMIN", "MEMBER", "BROKER_ADMIN", "BROKER_MANAGER"] },

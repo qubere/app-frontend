@@ -130,9 +130,7 @@ export function ClassificationInboxClient({ cases, canRun }: { cases: InboxCase[
       ) : (
         <ul className="space-y-2">
           {visible.map((c) => {
-            const detailHref = c.canonicalProductId
-              ? `/app/products/${c.canonicalProductId}/classification/${c.id}`
-              : null;
+            const detailHref = `/app/classification/${c.id}`;
             const busy = !!running[c.id];
             return (
               <li key={c.id} className="bg-white rounded-2xl border border-border shadow-2xs p-4">
@@ -190,22 +188,13 @@ export function ClassificationInboxClient({ cases, canRun }: { cases: InboxCase[
                         {c.latestRun ? "Re-run" : "Run"}
                       </button>
                     )}
-                    {detailHref ? (
-                      <Link
-                        href={detailHref}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-brand hover:bg-brand/10 transition-colors"
-                      >
-                        Open
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </Link>
-                    ) : (
-                      <span
-                        className="px-2.5 py-1.5 text-xs font-bold text-ink-muted/50"
-                        title="This case is not linked to a product master record yet."
-                      >
-                        Open
-                      </span>
-                    )}
+                    <Link
+                      href={detailHref}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-brand hover:bg-brand/10 transition-colors"
+                    >
+                      Open
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Link>
                   </div>
                 </div>
               </li>

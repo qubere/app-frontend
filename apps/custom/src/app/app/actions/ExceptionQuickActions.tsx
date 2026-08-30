@@ -7,6 +7,8 @@ interface ExceptionQuickActionsProps {
   exceptionId: string;
   version: number;
   canWaive: boolean;
+  /** `specialist.write` -- show the Escalate action. */
+  canEscalate?: boolean;
   onResolved: () => void;
   documentId?: string | null;
 }
@@ -15,12 +17,13 @@ export function ExceptionQuickActions({
   exceptionId,
   version,
   canWaive,
+  canEscalate = false,
   onResolved,
   documentId,
 }: ExceptionQuickActionsProps) {
   const router = useRouter();
   const [currentVersion, setCurrentVersion] = useState(version);
-  const [mode, setMode] = useState<null | "resolve" | "waive">(null);
+  const [mode, setMode] = useState<null | "resolve" | "waive" | "escalate">(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
@@ -32,6 +35,37 @@ export function ExceptionQuickActions({
       setError("A stated reason is required.");
       return;
     }
+
+    if (mode === "escalate") {
+      setSubmitting(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/work/exception/${encodeURIComponent(exceptionId)}/escalate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ note: reason.trim() }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(
+            res.status === 409
+              ? data?.message || "This item is already at the maximum escalation level."
+              : data?.error || "Escalation failed."
+          );
+        }
+        setMode(null);
+        setReason("");
+        // Escalation reassigns the item to a manager, so it leaves "My queue".
+        onResolved();
+        router.refresh();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
@@ -120,7 +154,13 @@ export function ExceptionQuickActions({
           rows={2}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          placeholder={mode === "waive" ? "Why is this risk being accepted?" : "What was done to resolve this?"}
+          placeholder={
+            mode === "waive"
+              ? "Why is this risk being accepted?"
+              : mode === "escalate"
+                ? "Why does this need a supervisor?"
+                : "What was done to resolve this?"
+          }
           className="w-full px-3 py-2 rounded-xl border border-border text-xs text-ink resize-none focus:outline-none focus:border-brand"
         />
         {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
@@ -131,7 +171,13 @@ export function ExceptionQuickActions({
             disabled={submitting}
             className="px-3 py-1.5 rounded-xl bg-ink text-white text-xs font-semibold disabled:opacity-50"
           >
-            {submitting ? "Saving…" : mode === "waive" ? "Confirm waive" : "Confirm resolve"}
+            {submitting
+              ? "Saving…"
+              : mode === "waive"
+                ? "Confirm waive"
+                : mode === "escalate"
+                  ? "Confirm escalate"
+                  : "Confirm resolve"}
           </button>
           <button
             type="button"
@@ -183,6 +229,15 @@ export function ExceptionQuickActions({
             className="px-3 py-1.5 rounded-xl border border-border text-xs font-semibold text-ink hover:border-amber-400 hover:text-amber-700 transition-colors"
           >
             Waive
+          </button>
+        )}
+        {canEscalate && (
+          <button
+            type="button"
+            onClick={() => setMode("escalate")}
+            className="px-3 py-1.5 rounded-xl border border-border text-xs font-semibold text-ink hover:border-violet-400 hover:text-violet-700 transition-colors"
+          >
+            Escalate
           </button>
         )}
       </div>

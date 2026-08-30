@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phases 1 / 2a / 2b / 3a / 3b / 3c / 4a / 4b / 4c / 4d shipped (in review). Remaining: small follow-ups (Escalate button, standalone classification detail route, permission-catalogue fix, per-tenant Filing Settings).
+**Status:** Phases 1–4d + follow-ups (Escalate, standalone classification detail, permission catalogue) shipped, in review. Not built: per-tenant Filing Settings (needs product design), cross-run proposal compare, misc `/api/v1` dead-route cleanup.
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -347,15 +347,34 @@ built server-side but have no way to trigger them from the UI.
 - `intelligenceFormat.ts` (pure: `riskTone`, `accuracyTone`, `overrideTone`,
   `compactUsd`, `pct`) + `tests/intelligence-format.test.ts`.
 
-### Follow-ups — NOT built
-- **4b follow-up** — standalone `/app/classification/:caseId` detail route (today
-  the detail page is `/app/products/:id/classification/:caseId` and needs a
-  product); cross-run proposal compare via `/cases/:id/proposals`.
-- **Escalate button** — `POST /api/work/:kind/:id/escalate` has no UI trigger in
-  Today or the exceptions drawer.
-- `ai.use` / `shipments.manage` not in the permission catalogue.
+### Follow-ups — SHIPPED
+
+- **Standalone classification detail** — `ClassificationCaseDetail` extracted from
+  `products/[id]/classification/[caseId]/page.tsx` into
+  `classification/ClassificationCaseDetail.tsx` (`{ caseId, backHref, backLabel }`).
+  New route `/app/classification/[caseId]` (Back to inbox); the product-scoped
+  route is now a thin wrapper (Back to product). The inbox links to the standalone
+  route.
+- **Escalate on exception rows** — `ExceptionQuickActions` gets an "Escalate"
+  action (gated on `specialist.write`) → `POST /api/work/exception/:id/escalate`
+  with a required note; the row leaves "My queue" (escalation reassigns to a
+  manager) and the page refreshes.
+- **Permission catalogue** — `ai.use` (new `AI` category), `shipments.manage`,
+  `specialist.write` added to `@qubere/auth` with operational default roles. These
+  gate ~25 live routes via `withAuthenticatedRoute({ permission })` and were
+  unsatisfiable for every non-OWNER role. `permission-catalogue.test.ts` guards
+  the three explicitly. The shipment Compliance-checks panel now gates each button
+  on the route's real permission (`ai.use` / `shipments.manage`) instead of the
+  `canManageJourney` proxy.
+
+### Still NOT built
+- Cross-run proposal compare via `/cases/:id/proposals` (single-run compare
+  already in the detail page).
+- Per-tenant **Filing Settings** — needs product scoping first (which of the
+  platform-global filing-config tables should be tenant-overridable, and how does
+  resolution layer tenant over global). Not a gap to fill; a feature to design.
 - Product `normalize` / `enrich/approve` / `bind-classification`; refund
-  `opportunities/scan` trigger.
+  `opportunities/scan` trigger. `/api/v1` vs non-`v1` dead-route cleanup.
 
 ---
 
