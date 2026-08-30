@@ -3,6 +3,7 @@ export const en = {
   nav: {
     askQubere: "Ask Qubere",
     today: "Today",
+    classificationInbox: "Classification",
     commandCenter: "Command Center",
     documents: "Documents",
     regulatoryUpdates: "Regulatory Updates",

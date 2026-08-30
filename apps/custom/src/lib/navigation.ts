@@ -28,6 +28,7 @@ export type NavIcon =
   | "vault"
   | "compliance"
   | "simulator"
+  | "classification"
   | "postEntry"
   | "tradeData"
   | "tariffs"
@@ -85,6 +86,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "shipments", labelKey: "shipments", href: "/app/shipments", icon: "shipments" },
       { id: "documents", labelKey: "documents", href: "/app/documents", icon: "documents" },
       { id: "filing", labelKey: "customsFiling", href: "/app/filing", icon: "filing" },
+      { id: "classification", labelKey: "classificationInbox", href: "/app/classification", icon: "classification", permission: "classification.read" },
       { id: "post-entry", labelKey: "postEntry", href: "/app/post-entry", icon: "postEntry" },
     ],
   },

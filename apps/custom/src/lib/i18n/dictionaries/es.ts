@@ -5,6 +5,7 @@ export const es: TranslationKeys = {
   nav: {
     askQubere: "Preguntar a Qubere",
     today: "Hoy",
+    classificationInbox: "Clasificación",
     commandCenter: "Centro de Control",
     documents: "Documentos",
     regulatoryUpdates: "Actualizaciones Regulatorias",

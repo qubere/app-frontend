@@ -190,6 +190,7 @@ describe("navigation coverage -- nothing broker-critical is orphaned", () => {
     "/app/shipments",
     "/app/documents",
     "/app/filing",
+    "/app/classification",
     "/app/post-entry",
     "/app/compliance",
     "/app/license-management",
