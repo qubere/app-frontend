@@ -628,19 +628,164 @@ export function RevalidationActions({
   );
 }
 
+interface AttributeSuggestion {
+  attributeCode: string;
+  attributeName: string;
+  rawValue: string;
+  rawUnit?: string;
+  rationale: string;
+  confidence: number;
+}
+
+/**
+ * Two-step AI enrichment: fetch suggestions, let a person pick which to keep,
+ * then apply the selected ones. Nothing is written until "Apply selected" —
+ * `/api/products/:id/enrich` only proposes, `/api/products/:id/enrich/approve`
+ * persists. Enrichment needs a configured model key; where it is not set the
+ * first call returns 503 and we say so plainly.
+ */
 export function EnrichProductAction({ productId }: { productId: string }) {
-  const { busy, error, run } = useAction();
-  const base = `/api/products/${productId}/enrich`;
+  const router = useRouter();
+  const [phase, setPhase] = useState<"idle" | "loading" | "review" | "applying">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<AttributeSuggestion[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  async function fetchSuggestions() {
+    setPhase("loading");
+    setError(null);
+    setNotes(null);
+    try {
+      const response = await fetch(`/api/products/${productId}/enrich`, { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(payload?.error?.message ?? "AI enrichment is not available right now.");
+        setPhase("idle");
+        return;
+      }
+      const next: AttributeSuggestion[] = Array.isArray(payload?.suggestedAttributes)
+        ? payload.suggestedAttributes
+        : [];
+      setSuggestions(next);
+      setSelected(new Set(next.map((_, i) => i)));
+      setNotes(payload?.enrichmentNotes ?? null);
+      setPhase("review");
+    } catch {
+      setError("The request did not reach the server. Nothing changed.");
+      setPhase("idle");
+    }
+  }
+
+  async function applySelected() {
+    const approvedSuggestions = suggestions.filter((_, i) => selected.has(i));
+    if (approvedSuggestions.length === 0) return;
+    setPhase("applying");
+    setError(null);
+    try {
+      const response = await fetch(`/api/products/${productId}/enrich/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvedSuggestions }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(payload?.error?.message ?? "That did not work.");
+        setPhase("review");
+        return;
+      }
+      setPhase("idle");
+      setSuggestions([]);
+      setSelected(new Set());
+      router.refresh();
+    } catch {
+      setError("The request did not reach the server. Nothing changed.");
+      setPhase("review");
+    }
+  }
+
+  function toggle(index: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  if (phase === "review" || phase === "applying") {
+    return (
+      <div className="rounded-2xl border border-border p-4 space-y-3 w-full max-w-2xl">
+        <div>
+          <h3 className="text-sm font-bold text-ink">AI enrichment suggestions</h3>
+          <p className="text-xs text-[#6E6E73] mt-1">
+            Pick the attributes to keep. Applying records an evidence row and sets each as an
+            AGENT-sourced attribute — it changes no classification or origin.
+          </p>
+        </div>
+        {notes && <p className="text-xs text-[#6E6E73] italic">{notes}</p>}
+        {suggestions.length === 0 ? (
+          <p className="text-xs text-[#6E6E73]">The model returned no new attributes to suggest.</p>
+        ) : (
+          <ul className="space-y-2">
+            {suggestions.map((s, i) => (
+              <li key={`${s.attributeCode}-${i}`} className="rounded-xl border border-border p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(i)}
+                    onChange={() => toggle(i)}
+                    disabled={phase === "applying"}
+                    className="mt-0.5"
+                  />
+                  <span className="min-w-0">
+                    <span className="text-sm font-semibold text-ink">
+                      {s.attributeName}{" "}
+                      <span className="font-mono text-xs text-[#6E6E73]">({s.attributeCode})</span>
+                    </span>
+                    <span className="block text-sm text-ink">
+                      {s.rawValue}
+                      {s.rawUnit ? ` ${s.rawUnit}` : ""}{" "}
+                      <span className="text-xs text-[#6E6E73]">· {s.confidence}% confidence</span>
+                    </span>
+                    <span className="block text-xs text-[#6E6E73] mt-0.5">{s.rationale}</span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={phase === "applying" || selected.size === 0}
+            onClick={applySelected}
+            className={primaryClass}
+          >
+            {phase === "applying" ? "Applying…" : `Apply selected (${selected.size})`}
+          </button>
+          <button
+            type="button"
+            disabled={phase === "applying"}
+            onClick={() => {
+              setPhase("idle");
+              setSuggestions([]);
+              setError(null);
+            }}
+            className={buttonClass}
+          >
+            Cancel
+          </button>
+        </div>
+        <ErrorNote message={error} />
+      </div>
+    );
+  }
 
   return (
     <div>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => run(base, "POST", {})}
-        className={primaryClass}
-      >
-        {busy ? "Enriching..." : "Enrich with AI"}
+      <button type="button" disabled={phase === "loading"} onClick={fetchSuggestions} className={primaryClass}>
+        {phase === "loading" ? "Enriching..." : "Enrich with AI"}
       </button>
       <ErrorNote message={error} />
     </div>

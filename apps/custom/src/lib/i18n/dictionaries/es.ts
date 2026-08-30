@@ -42,6 +42,7 @@ export const es: TranslationKeys = {
     toolingAndDocs: "Herramientas y Admin",
     tradeDocs: "Docs Comerciales",
     dutyDrawbacks: "Duty Drawbacks",
+    dutyRecovery: "Recuperación de Aranceles",
     reconciliation: "Recon ACE",
     postEntry: "Post-Entrada",
     tradeData: "Datos Comerciales",

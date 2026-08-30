@@ -88,6 +88,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "filing", labelKey: "customsFiling", href: "/app/filing", icon: "filing" },
       { id: "classification", labelKey: "classificationInbox", href: "/app/classification", icon: "classification", permission: "classification.read" },
       { id: "post-entry", labelKey: "postEntry", href: "/app/post-entry", icon: "postEntry" },
+      { id: "vault", labelKey: "dutyRecovery", href: "/app/vault", icon: "vault" },
     ],
   },
   {
@@ -216,7 +217,7 @@ export const NAV_SECTIONS: NavSection[] = [
  * Routes that are authorized and reachable by direct link but not shown as their
  * own sidebar row -- they have a prominent in-app entry point elsewhere:
  *   - products / parties: reached from the Trade Data hub (/app/trade-data)
- *   - reconciliation / vault: reached from the Post-Entry hub (/app/post-entry)
+ *   - reconciliation: reached from the Post-Entry hub (/app/post-entry)
  *   - tariffs: the old hub, now redirects to /app/regulatory
  *   - compliance-reports: now the "Reports" tab of /app/compliance
  * navItemByHref() falls back to this list so canAccessHref() (and the Copilot's
@@ -226,7 +227,6 @@ export const UNLISTED_NAV_ITEMS: NavItem[] = [
   { id: "products", labelKey: "products", href: "/app/products", icon: "products" },
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
   { id: "reconciliation", labelKey: "reconciliation", href: "/app/reconciliation", icon: "postEntry" },
-  { id: "vault", labelKey: "dutyDrawbacks", href: "/app/vault", icon: "vault" },
   { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
   { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
 ];

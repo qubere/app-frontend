@@ -48,6 +48,9 @@ export default async function CompliancePage(props: {
   const mayReadRdps = holdsPermission(context, "compliance.rdps.read");
   const mayManageRdps = holdsPermission(context, "compliance.rdps.manage");
   const mayReadBulkCompliance = holdsPermission(context, "compliance.bulk_screening.view");
+  // Mirrors the on-demand embargo check gate on the shipment workspace
+  // (ComplianceChecksPanel) -- the sweep endpoint enforces the same `ai.use`.
+  const mayRunEmbargoSweep = holdsPermission(context, "ai.use");
   const mayCreateBulkCompliance = holdsPermission(context, "compliance.bulk_screening.create");
   const mayImportPreApprovals = holdsPermission(context, "compliance.restricted_party.approve");
   const mayReadReports = holdsPermission(context, "compliance.reports.view");
@@ -346,6 +349,7 @@ export default async function CompliancePage(props: {
         mayManageRdps={mayManageRdps}
         mayReadBulkCompliance={mayReadBulkCompliance}
         mayCreateBulkCompliance={mayCreateBulkCompliance}
+        mayRunEmbargoSweep={mayRunEmbargoSweep}
         mayImportPreApprovals={mayImportPreApprovals}
         mayReadReports={mayReadReports}
         mayGenerateReports={mayGenerateReports}

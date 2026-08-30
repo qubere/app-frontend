@@ -85,6 +85,8 @@ interface ComplianceWorkspaceClientProps {
   mayReadBulkCompliance: boolean;
   /** Gates the upload action within the Bulk Compliance Screening tab -- true when the session holds `compliance.bulk_screening.create`. */
   mayCreateBulkCompliance: boolean;
+  /** Gates the account-wide "Run screening" button on the Embargo sub-tab -- true when the session holds `ai.use`. */
+  mayRunEmbargoSweep: boolean;
   mayImportPreApprovals: boolean;
   /** Gates the "Reports" tab -- true when the session holds `compliance.reports.view`. */
   mayReadReports: boolean;
@@ -123,6 +125,7 @@ export function ComplianceWorkspaceClient({
   mayManageRdps,
   mayReadBulkCompliance,
   mayCreateBulkCompliance,
+  mayRunEmbargoSweep,
   mayImportPreApprovals,
   mayReadReports,
   mayGenerateReports,
@@ -232,6 +235,7 @@ export function ComplianceWorkspaceClient({
           <ScreeningPanel
             screeningBuckets={screeningBuckets}
             mayReadPartyScreening={mayReadPartyScreening}
+            mayRunEmbargoSweep={mayRunEmbargoSweep}
             partyScreeningResults={partyScreeningResults}
           />
         )}

@@ -42,6 +42,7 @@ export const en = {
     toolingAndDocs: "Tooling & Admin",
     tradeDocs: "Docs",
     dutyDrawbacks: "Duty Drawbacks",
+    dutyRecovery: "Duty Recovery",
     reconciliation: "ACE Recon",
     postEntry: "Post-Entry",
     tradeData: "Trade Data",

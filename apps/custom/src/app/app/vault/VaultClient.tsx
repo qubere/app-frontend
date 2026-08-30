@@ -157,8 +157,10 @@ export function VaultClient({
     try {
       const res = await fetch("/api/refunds/opportunities/scan", { method: "POST" });
       const data = await res.json();
-      setOpportunities(data.opportunities || []);
       setScanMessage(data.message);
+      // The scan response only carries the rows it just created; refetch the
+      // full list so a second scan doesn't blank out everything already found.
+      loadOpportunities();
     } catch {
       setScanMessage("Scan failed.");
     } finally {

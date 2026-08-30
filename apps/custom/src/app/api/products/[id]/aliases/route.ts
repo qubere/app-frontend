@@ -34,6 +34,7 @@ export const GET = withAuthenticatedRoute<Params>(async ({ ctx, params, requestI
       id: true,
       canonicalName: true,
       sku: true,
+      htsCode: true,
       aliases: {
         select: { id: true, aliasName: true, source: true, matchConfidence: true, createdAt: true },
         orderBy: { createdAt: "desc" },
@@ -42,7 +43,58 @@ export const GET = withAuthenticatedRoute<Params>(async ({ ctx, params, requestI
     orderBy: { createdAt: "asc" },
   });
 
-  return NextResponse.json({ canonicalProducts, requestId });
+  // Approved classification decisions that could be promoted onto one of these
+  // canonical records (and cascaded to this product) via
+  // POST /api/v1/products/canonical/:id/bind-classification.
+  const cpIds = canonicalProducts.map((c) => c.id);
+  const decisions =
+    cpIds.length === 0
+      ? []
+      : await db.classificationDecision.findMany({
+          where: {
+            decisionStatus: "APPROVED",
+            case: {
+              accountId: ctx.accountId,
+              subjects: { some: { canonicalProductId: { in: cpIds } } },
+            },
+          },
+          select: {
+            id: true,
+            attestedAt: true,
+            approvedNode: { select: { htsNumberDisplay: true } },
+            case: {
+              select: {
+                jurisdiction: true,
+                subjects: { select: { canonicalProductId: true } },
+              },
+            },
+          },
+          orderBy: { attestedAt: "desc" },
+        });
+
+  const bindableByCp = new Map<string, { id: string; htsCode: string; jurisdiction: string; attestedAt: string }[]>();
+  for (const decision of decisions) {
+    const entry = {
+      id: decision.id,
+      htsCode: decision.approvedNode.htsNumberDisplay,
+      jurisdiction: decision.case.jurisdiction ?? "US",
+      attestedAt: decision.attestedAt.toISOString(),
+    };
+    for (const subject of decision.case.subjects) {
+      if (subject.canonicalProductId === null || !cpIds.includes(subject.canonicalProductId)) continue;
+      const list = bindableByCp.get(subject.canonicalProductId) ?? [];
+      if (!list.some((d) => d.id === entry.id)) list.push(entry);
+      bindableByCp.set(subject.canonicalProductId, list);
+    }
+  }
+
+  return NextResponse.json({
+    canonicalProducts: canonicalProducts.map((cp) => ({
+      ...cp,
+      bindableDecisions: bindableByCp.get(cp.id) ?? [],
+    })),
+    requestId,
+  });
 });
 
 export const POST = withAuthenticatedRoute<Params>(

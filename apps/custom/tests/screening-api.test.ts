@@ -9,6 +9,8 @@ const dbMock = {
   deniedPartyWatchlist: { findMany: vi.fn(), count: vi.fn() },
   embargoRule: { findMany: vi.fn(), count: vi.fn() },
   screeningLog: { create: vi.fn() },
+  shipment: { findMany: vi.fn() },
+  complianceScreeningFinding: { findMany: vi.fn(), createMany: vi.fn() },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -27,6 +29,7 @@ vi.mock("@/lib/auth", () => ({
 const { ScreeningAgent } = await import("@/../../../packages/ai/screening/screeningAgent");
 const { POST: screenParty } = await import("@/app/api/demo/screening/dps/route");
 const { POST: screenEmbargo } = await import("@/app/api/screening/embargo/route");
+const { POST: sweepEmbargo } = await import("@/app/api/screening/embargo/sweep/route");
 
 function post(body: unknown) {
   return new Request("http://localhost/api", {
@@ -153,5 +156,67 @@ describe("POST /api/screening/embargo", () => {
     expect(res.status).toBe(503);
     expect(json.embargoResult.status).toBe("NOT_SCREENED");
     expect(json.embargoResult.isEmbargoed).toBeNull();
+  });
+});
+
+describe("POST /api/screening/embargo/sweep", () => {
+  it("returns not-screened with a 503 when no rules are loaded", async () => {
+    dbMock.embargoRule.findMany.mockResolvedValue([]);
+
+    const res = await sweepEmbargo(post({}));
+    const json = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(json.status).toBe("NOT_SCREENED");
+    expect(dbMock.shipment.findMany).not.toHaveBeenCalled();
+  });
+
+  it("creates one finding per embargoed shipment and reuses findings that are already open", async () => {
+    dbMock.embargoRule.findMany.mockResolvedValue(EMBARGO_RULES);
+    dbMock.shipment.findMany.mockResolvedValue([
+      { id: "shp_cu", shipmentNumber: "SHP-1", countryOfOrigin: "CU", countryOfExport: "MX" },
+      { id: "shp_clean", shipmentNumber: "SHP-2", countryOfOrigin: "VN", countryOfExport: "VN" },
+      { id: "shp_ir", shipmentNumber: "SHP-3", countryOfOrigin: "DE", countryOfExport: "Iran" },
+    ]);
+    // shp_ir already has an OPEN country-embargo finding for the Iran rule.
+    dbMock.complianceScreeningFinding.findMany.mockResolvedValue([
+      { shipmentId: "shp_ir", ruleId: "RULE-COUNTRY-EMBARGO-IR" },
+    ]);
+    dbMock.complianceScreeningFinding.createMany.mockResolvedValue({ count: 1 });
+
+    const res = await sweepEmbargo(post({}));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.shipmentsScreened).toBe(3);
+    expect(json.shipmentsWithHits).toBe(2);
+    expect(json.findingsCreated).toBe(1);
+    expect(json.findingsReused).toBe(1);
+
+    const created = dbMock.complianceScreeningFinding.createMany.mock.calls[0][0].data;
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      shipmentId: "shp_cu",
+      category: "COUNTRY_EMBARGO",
+      ruleId: "RULE-COUNTRY-EMBARGO-CU",
+      severity: "CRITICAL",
+    });
+  });
+
+  it("does not write when every embargoed shipment already has an open finding", async () => {
+    dbMock.embargoRule.findMany.mockResolvedValue(EMBARGO_RULES);
+    dbMock.shipment.findMany.mockResolvedValue([
+      { id: "shp_cu", shipmentNumber: "SHP-1", countryOfOrigin: "Cuba", countryOfExport: null },
+    ]);
+    dbMock.complianceScreeningFinding.findMany.mockResolvedValue([
+      { shipmentId: "shp_cu", ruleId: "RULE-COUNTRY-EMBARGO-CU" },
+    ]);
+
+    const res = await sweepEmbargo(post({}));
+    const json = await res.json();
+
+    expect(json.findingsCreated).toBe(0);
+    expect(json.findingsReused).toBe(1);
+    expect(dbMock.complianceScreeningFinding.createMany).not.toHaveBeenCalled();
   });
 });
