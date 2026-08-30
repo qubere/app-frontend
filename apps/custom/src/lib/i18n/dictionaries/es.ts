@@ -6,6 +6,7 @@ export const es: TranslationKeys = {
     askQubere: "Preguntar a Qubere",
     today: "Hoy",
     classificationInbox: "Clasificación",
+    htsWorkspace: "Consulta HTS",
     commandCenter: "Centro de Control",
     documents: "Documentos",
     regulatoryUpdates: "Actualizaciones Regulatorias",

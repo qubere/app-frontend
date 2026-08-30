@@ -4,6 +4,7 @@ export const en = {
     askQubere: "Ask Qubere",
     today: "Today",
     classificationInbox: "Classification",
+    htsWorkspace: "HTS Lookup",
     commandCenter: "Command Center",
     documents: "Documents",
     regulatoryUpdates: "Regulatory Updates",
