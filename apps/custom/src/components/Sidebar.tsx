@@ -69,6 +69,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   vault: Coins,
   compliance: Scale,
   simulator: Scale,
+  classification: Scale,
   postEntry: ReceiptText,
   tradeData: Database,
   tariffs: BookOpen,

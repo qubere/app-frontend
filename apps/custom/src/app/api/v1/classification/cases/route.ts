@@ -51,7 +51,19 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       include: {
         subjects: true,
         documents: true,
-        runs: { take: 1, orderBy: { startedAt: "desc" } },
+        // Latest run + its top-ranked proposal, so the inbox can show the
+        // current recommendation without a per-row round trip.
+        runs: {
+          take: 1,
+          orderBy: { startedAt: "desc" },
+          include: {
+            proposals: {
+              take: 1,
+              orderBy: { rank: "asc" },
+              include: { proposedNode: { select: { htsNumberDisplay: true, description: true } } },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 100,

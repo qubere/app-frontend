@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review · Phases 2a+2b shipped (Today lanes + inline disposition) · Phases 3a+3b shipped (notification hub + producers) · Phase 4a shipped (on-demand shipment checks) · Phases 3c + 4b–4d scoped
+**Status:** Phases 1 / 2a / 2b / 3a / 3b / 4a / 4b shipped (in review). Remaining: 3c (route consolidation), 4c (HTS workspace), 4d (intelligence panels).
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -299,11 +299,27 @@ built server-side but have no way to trigger them from the UI.
   -- pre-existing route bugs, not fixed here.
 - Result mappers extracted to `complianceCheckResults.ts` (pure, tested).
 
-### Phase 4b–4d — NOT built
+### Phase 4b — SHIPPED (Classification Inbox)
 
-- **4b Classification Inbox** — `GET /api/v1/classification/cases` list view
-  (only the per-product case *detail* exists today), + re-run
-  (`/cases/:id/runs`) and proposal compare (`/cases/:id/proposals`).
+- `/app/classification` — a queue of every `ClassificationCase` for the account
+  (only the per-product case *detail* existed before). Server-rendered list +
+  `ClassificationInboxClient`: triage filter chips (Needs review / In progress /
+  Decided / Failed / All) with counts, description search, per-row status +
+  top-proposal HTS + confidence band.
+- **Re-run** inline per row → `POST /api/v1/classification/cases/:id/runs`, then
+  `router.refresh()`. Works for any case (needs only the case id).
+- "Open" links to the existing detail page via the subject's
+  `canonicalProductId`; product-less cases show the row but the link is inert
+  (a standalone `/app/classification/:caseId` detail route is a follow-up).
+- `GET /api/v1/classification/cases` enhanced to include the latest run's
+  top-ranked proposal (+ HTS node) so the inbox renders without per-row calls.
+- Nav: `classification` item under Operations, gated on `classification.read`.
+- Filter logic extracted to `classificationInboxFilters.ts` (pure, tested).
+
+### Phase 4c–4d — NOT built
+- **4b follow-up** — standalone `/app/classification/:caseId` detail route (today
+  the detail page is `/app/products/:id/classification/:caseId` and needs a
+  product); cross-run proposal compare via `/cases/:id/proposals`.
 - **4c HTS Workspace** — a standalone HTS page: search + **chapter notes**
   (`/api/v1/hts/codes/:code/notes`) + hierarchy tree (`/hierarchy`). No HTS page
   exists; search is only inline in line-item editing.
