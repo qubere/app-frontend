@@ -332,9 +332,79 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy
   .slide-light > div > div[style*="gap:16px"] > div { padding: 14px 14px !important; }
 }
 
+/* === SALES DECK LIBRARY === */
+#deck-hub {
+  position: fixed; inset: 0; z-index: 1000; overflow-y: auto;
+  background:
+    radial-gradient(circle at 82% 4%, rgba(0,113,227,.18), transparent 34%),
+    linear-gradient(rgba(71,163,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71,163,255,.035) 1px, transparent 1px),
+    #050A12;
+  background-size: auto, 48px 48px, 48px 48px, auto;
+  color: white; cursor: default;
+}
+#deck-hub.hidden { display: none; }
+.hub-shell { width: min(1380px, 100%); margin: 0 auto; padding: 44px 52px 64px; }
+.hub-top { display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:58px; }
+.hub-brand { display:flex;align-items:center;gap:11px;font-family:var(--font-body);font-size:17px;font-weight:750; }
+.hub-mark { width:38px;height:38px;border-radius:11px;background:var(--blue);display:grid;place-items:center;font-weight:800;box-shadow:0 14px 35px rgba(0,113,227,.34); }
+.hub-confidential { font-family:var(--font-body);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.38); }
+.hub-kicker { font-family:var(--font-body);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#47A3FF;font-weight:700;margin-bottom:14px; }
+.hub-title { font-family:var(--font-display);font-size:clamp(45px,5.3vw,72px);line-height:1;letter-spacing:-.055em;max-width:850px;margin:0 0 20px; }
+.hub-copy { font-family:var(--font-body);font-size:17px;line-height:1.65;color:rgba(255,255,255,.62);max-width:760px;margin-bottom:42px; }
+.hub-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px; }
+.hub-card {
+  min-height:190px;padding:20px;border-radius:17px;text-decoration:none;color:white;
+  border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.055);
+  display:flex;flex-direction:column;position:relative;overflow:hidden;
+  transition:transform .22s,border-color .22s,background .22s,box-shadow .22s;
+}
+.hub-card::after { content:'';position:absolute;inset:auto -30% -70% 20%;height:120%;background:radial-gradient(circle,rgba(0,113,227,.24),transparent 64%);pointer-events:none; }
+.hub-card:hover { transform:translateY(-4px);border-color:rgba(71,163,255,.48);background:rgba(255,255,255,.08);box-shadow:0 24px 50px rgba(0,0,0,.24); }
+.hub-card.overview { grid-column:span 2;background:linear-gradient(135deg,rgba(0,113,227,.22),rgba(255,255,255,.05)); }
+.hub-icon { width:42px;height:42px;border-radius:12px;background:rgba(0,113,227,.18);border:1px solid rgba(71,163,255,.28);display:grid;place-items:center;color:#79BBFF;font-size:20px;margin-bottom:25px; }
+.hub-card h2 { font-family:var(--font-display);font-size:20px;letter-spacing:-.025em;margin:0 0 7px; }
+.hub-card p { font-family:var(--font-body);font-size:12px;line-height:1.5;color:rgba(255,255,255,.52);margin:0 0 20px; }
+.hub-card span { margin-top:auto;font-family:var(--font-body);font-size:10px;color:#67B1FF;text-transform:uppercase;letter-spacing:.1em;font-weight:700; }
+.hub-card-button { text-align:left;border:0;cursor:pointer; }
+.hub-note { margin-top:24px;font-family:var(--font-body);font-size:11px;color:rgba(255,255,255,.34); }
+.library-return { display:none;position:fixed;z-index:400;top:18px;right:20px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(5,10,18,.76);backdrop-filter:blur(10px);color:white;padding:8px 12px;font-family:var(--font-body);font-size:11px;cursor:pointer; }
+.library-return.visible { display:block; }
+@media(max-width:1050px){.hub-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.hub-card.overview{grid-column:span 1;}}
+@media(max-width:760px){.hub-shell{padding:28px 22px 48px}.hub-top{margin-bottom:40px}.hub-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.hub-card{min-height:170px;padding:17px;}}
+@media(max-width:480px){.hub-grid{grid-template-columns:1fr}.hub-card{min-height:145px}.hub-icon{margin-bottom:18px}}
+
 </style>
 </head>
 <body>
+<main id="deck-hub" aria-label="Qubere sales deck library">
+  <div class="hub-shell">
+    <header class="hub-top">
+      <div class="hub-brand"><span class="hub-mark">Q</span><span>Qubere</span></div>
+      <div class="hub-confidential">Sales enablement · Confidential</div>
+    </header>
+    <div class="hub-kicker">Choose the story for the room</div>
+    <h1 class="hub-title">Product decks built for live selling.</h1>
+    <p class="hub-copy">Each deck starts with a customer pain, shows how Qubere resolves it in the product, and ends with the exact path to demonstrate it live.</p>
+    <section class="hub-grid">
+      <button class="hub-card hub-card-button overview" id="open-overview" type="button"><div class="hub-icon">Q</div><h2>Platform Overview</h2><p>The complete first-appointment story across customs, compliance, intelligence, post-entry, AI, and billing.</p><span>Open 39-slide overview →</span></button>
+      <a class="hub-card" href="/deck/customs.html"><div class="hub-icon">▣</div><h2>Customs</h2><p>Shipment workbench, filing readiness, entry workspace, ABI messaging, and post-entry.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/compliance.html"><div class="hub-icon">✓</div><h2>Compliance</h2><p>Screening, continuous monitoring, bulk programs, trade-risk controls, and audit.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/security.html"><div class="hub-icon">◆</div><h2>Security</h2><p>RBAC, tenant isolation, audit trails, secure intake, and integration controls.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/partner.html"><div class="hub-icon">↗</div><h2>Partner Portal</h2><p>Secure requests, partner questions, external status, and workspace invitations.</p><span>6 slides →</span></a>
+      <a class="hub-card" href="/deck/ai.html"><div class="hub-icon">✦</div><h2>AI &amp; Agents</h2><p>Grounded copilot, document intelligence, field hydration, orchestration, and classification.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/documents.html"><div class="hub-icon">▤</div><h2>Document Management</h2><p>Intake, extraction, matching, review, quarantine, duplicates, and vault.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/billing.html"><div class="hub-icon">$</div><h2>Billing</h2><p>Rate cards, usage billing, shipment economics, leakage, invoices, and simulation.</p><span>8 slides →</span></a>
+      <a class="hub-card" href="/deck/work.html"><div class="hub-icon">☰</div><h2>Work Management</h2><p>Action inbox, ownership, SLAs, exception resolution, and manager command center.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/multileg.html"><div class="hub-icon">⇢</div><h2>Multi-Leg Shipments</h2><p>Master/house relationships, ordered legs, tracking, and shared evidence.</p><span>6 slides →</span></a>
+      <a class="hub-card" href="/deck/users.html"><div class="hub-icon">♙</div><h2>User Management</h2><p>Invitations, roles, permission administration, lifecycle, and multi-account access.</p><span>6 slides →</span></a>
+      <a class="hub-card" href="/deck/platform.html"><div class="hub-icon">⬡</div><h2>Platform</h2><p>Tenant administration, filing configuration, integrations, reference data, and operations.</p><span>7 slides →</span></a>
+      <a class="hub-card" href="/deck/trade.html"><div class="hub-icon">◎</div><h2>Trade Data &amp; Intelligence</h2><p>Product and party masters, tariff simulation, regulatory intelligence, and analytics.</p><span>7 slides →</span></a>
+    </section>
+    <p class="hub-note">Use arrow keys, space, or click the slide canvas to advance. Product paths match the current Qubere navigation.</p>
+  </div>
+</main>
+<button class="library-return" id="back-to-library" type="button">All decks</button>
 <div class="deck" id="deck">
   <div class="slides-wrapper" id="sw">
     <!-- SLIDE 1: TITLE -->
@@ -2590,6 +2660,21 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy
 </div>
 <script>
 (function(){
+  const hub = document.getElementById('deck-hub');
+  const openOverview = document.getElementById('open-overview');
+  const backToLibrary = document.getElementById('back-to-library');
+  function showOverview() {
+    hub.classList.add('hidden');
+    backToLibrary.classList.add('visible');
+  }
+  function showLibrary() {
+    hub.classList.remove('hidden');
+    backToLibrary.classList.remove('visible');
+  }
+  openOverview.addEventListener('click', showOverview);
+  backToLibrary.addEventListener('click', showLibrary);
+  if (new URLSearchParams(window.location.search).get('overview') === '1') showOverview();
+
   const sw = document.getElementById('sw');
   const dots = document.querySelectorAll('.dot');
   const counter = document.getElementById('counter');

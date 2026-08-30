@@ -32,7 +32,6 @@ import {
   FileSignature,
   BookOpen,
   DollarSign,
-  FileBarChart2,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -72,8 +71,6 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   tradeData: Database,
   tariffs: BookOpen,
   billing: DollarSign,
-  reports: FileBarChart2,
-  licenses: ShieldCheck,
 };
 
 interface SidebarProps {
