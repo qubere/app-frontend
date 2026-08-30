@@ -33,6 +33,7 @@ import { assessQuality, qualifiesAsActive } from "../parser/qualityGate";
 import { persistRunArtifacts, parseArtifactIndex, loadNormalizedResult } from "../parser/artifactStore";
 import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
 import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
+import { scanDocumentForMalware } from "@/lib/security/scanDocument";
 import {
   completeRun,
   createOrFindRun,
@@ -237,6 +238,22 @@ async function submitRun(
       fileUrl: run.document.fileUrl,
       expectedSha256: run.document.checksum,
     });
+
+    // Malware scan before the bytes ever reach the parser provider. A non-safe
+    // verdict quarantines the document (handled inside scanDocumentForMalware)
+    // and fails this run -- permanently for INFECTED, retryably for a scanner
+    // outage.
+    const scan = await scanDocumentForMalware(run.documentId, original.bytes, {
+      sha256: run.document.checksum ?? undefined,
+      fileName: run.document.fileName,
+    });
+    if (!scan.safe) {
+      throw new DocumentParserError(
+        "MALWARE_QUARANTINED",
+        "The document was quarantined by the malware scanner.",
+        { retryable: scan.result.status === "ERROR" }
+      );
+    }
 
     const mimeType = resolveMimeType(run.document.mimeType, run.document.fileName);
 

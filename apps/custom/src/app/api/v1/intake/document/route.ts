@@ -133,8 +133,15 @@ async function ingestOne(accountId: string, item: Item, index: number): Promise<
   // Fire-and-forget: enqueue classification + extraction.
   void (async () => {
     try {
-      const { DocumentIntelligenceAgent } = await import("@/modules/agents/documentIntelligenceAgent");
       const stored = await readStoredObject(item.url);
+
+      // Malware scan before extraction touches the bytes. A non-safe verdict
+      // quarantines the document and stops here.
+      const { scanDocumentForMalware } = await import("@/lib/security/scanDocument");
+      const scan = await scanDocumentForMalware(doc.id, stored.body, { fileName });
+      if (!scan.safe) return;
+
+      const { DocumentIntelligenceAgent } = await import("@/modules/agents/documentIntelligenceAgent");
       await DocumentIntelligenceAgent.execute({
         accountId,
         userId: null,

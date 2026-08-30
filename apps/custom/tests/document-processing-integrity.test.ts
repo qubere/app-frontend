@@ -99,9 +99,13 @@ describe("upload does no parsing", () => {
     const upload = await source(UPLOAD);
     expect(upload).toMatch(/screenUploadForMalware/);
     const policy = await source("src/modules/documents/processing/malwarePolicy.ts");
-    // The only CLEAN verdict must come from a scanner that actually ran.
-    expect(policy).toMatch(/PRODUCTION REQUIREMENT/);
-    expect(policy).not.toMatch(/verdict: "CLEAN"/);
+    // A CLEAN verdict must be gated on an actual scanner result. The guarantee
+    // comment stays, and the only `verdict: "CLEAN"` is inside a
+    // `result.status === "CLEAN"` branch of runConfiguredScanner.
+    expect(policy).toMatch(/never return CLEAN without/);
+    expect(policy).toMatch(/if \(result\.status === "CLEAN"\)/);
+    const cleanReturns = policy.match(/verdict: "CLEAN"/g) ?? [];
+    expect(cleanReturns).toHaveLength(1);
   });
 
   it("refuses an unparseable file before creating a run for it", async () => {

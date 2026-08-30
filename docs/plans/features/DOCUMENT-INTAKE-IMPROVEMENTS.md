@@ -110,8 +110,8 @@ coverage and are comfortable sending documents to a third party.
 - [x] B. Candidate picker UI — `AttachPopover` in `DocumentsClient.tsx`
 - [x] C. Conflict lane — `DOCUMENT_MATCH_CONFLICT` notification + Documents-page badge; cleared on attach
 - [x] D. Evidence viewer — `EvidenceExpander` on decision cards + `initialFieldName` deep-link into `DocumentReviewPanel`
-- [ ] E. Intake API hardening
-- [ ] F. Malware scanning
+- [x] E. Intake API hardening — batch + 422 + inline candidates in `/v1/intake/document`; `source="API"` docs auto-match after parse
+- [x] F. Malware scanning — `clamav.ts` (INSTREAM + VT hash pre-check) + `scanDocument.ts` orchestration; wired into parse worker, intake API, upload policy; `docs/ops/MALWARE-SCANNING.md`
 
 Migration `20260830030000` applied directly to the shared Supabase DB via
 `prisma db execute` (idempotent `IF NOT EXISTS`); the `_prisma_migrations`
