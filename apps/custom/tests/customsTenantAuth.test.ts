@@ -319,7 +319,7 @@ describe("Authentication, Tenant Isolation & Legacy Migration Requirements (Test
       await db.shipment.deleteMany({
         where: { accountId: { in: [tenantAId, tenantBId] } },
       });
-      await db.accountEntitlement.deleteMany({
+      await db.accountProductEntitlement.deleteMany({
         where: { accountId: { in: [tenantAId, tenantBId] } },
       });
       await db.user.deleteMany({
