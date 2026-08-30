@@ -61,7 +61,16 @@ export default async function LandingPage() {
 
       {/* Minimal Footer */}
       <footer className="border-t border-border py-6 px-6 text-center text-ink-muted text-xs">
-        <p>© {new Date().getFullYear()} Qubere Inc. All rights reserved. Trade Compliance AI Platform.</p>
+        <p className="space-x-3">
+          <Link href="/privacy" className="hover:text-ink">
+            Privacy Policy
+          </Link>
+          <span aria-hidden>·</span>
+          <Link href="/terms" className="hover:text-ink">
+            Terms of Service
+          </Link>
+        </p>
+        <p className="mt-2">© {new Date().getFullYear()} Qubere Inc. All rights reserved. Trade Compliance AI Platform.</p>
       </footer>
     </div>
   );
