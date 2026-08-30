@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withCronRoute } from "@/lib/api/auth-guards";
 import { Prisma } from "@prisma/client";
 import { db, runWithAccountId } from "@/lib/db";
+import { notify } from "@/modules/notifications/notify";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { aiModel } from "@/lib/ai/aiModel";
 import { meterGeminiCall } from "@/lib/ai/aiMeter";
@@ -203,15 +204,14 @@ Extract matching type, affected HTS codes, effective date, short summary, and if
 
         for (const m of memberships) {
           await runWithAccountId(m.accountId, async () => {
-            await db.notification.create({
-              data: {
-                accountId: m.accountId,
-                userId: m.userId,
-                message: `Regulatory Action Required: ${update.title}. New CBP regulatory notice published affecting HTS codes: ${extracted.affectedHtsCodes.join(", ")}. Review required.`,
-                type: "regulatory_alert",
-              },
-            }).catch((err) => {
-              console.error(`[Regulatory Ingest Cron] Failed to create notification for account ${m.accountId}, user ${m.userId}:`, err);
+            await notify({
+              accountId: m.accountId,
+              userId: m.userId,
+              type: "REGULATORY_UPDATE",
+              message: `Regulatory action required: ${update.title}. Affects HTS ${extracted.affectedHtsCodes.join(", ")}.`,
+              entityType: "RegulatoryUpdate",
+              entityId: update.id,
+              dedupe: true,
             });
           });
         }

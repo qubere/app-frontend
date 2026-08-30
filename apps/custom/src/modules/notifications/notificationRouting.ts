@@ -45,6 +45,8 @@ export const NOTIFICATION_TYPE_META: Record<string, NotificationTypeMeta> = {
   REGULATORY_UPDATE: { category: "REGULATORY", label: "Regulatory" },
   COMPLIANCE_FINDING: { category: "COMPLIANCE", label: "Compliance" },
   SLA_AT_RISK: { category: "OPERATIONS", label: "SLA at risk" },
+  // Legacy type string, kept so pre-hub rows still categorize + route.
+  regulatory_alert: { category: "REGULATORY", label: "Regulatory" },
 };
 
 const FALLBACK_META: NotificationTypeMeta = { category: "SYSTEM", label: "Update" };

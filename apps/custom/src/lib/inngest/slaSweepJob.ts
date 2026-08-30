@@ -5,7 +5,15 @@ export interface SlaSweepResult {
   breachedDecisions: number;
   breachedExceptions: number;
   escalationsCreated: number;
+  atRiskWarnings: number;
 }
+
+/**
+ * How far ahead of an SLA deadline an assigned, untouched item earns a
+ * one-time "heads up" notification to its assignee. Deliberately short -- a
+ * broker wants the nudge when there is still time to act, not days out.
+ */
+const AT_RISK_LEAD_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Runs periodic SLA sweep across open decisions and exceptions.
@@ -52,6 +60,79 @@ export async function runSlaSweep(accountId?: string): Promise<SlaSweepResult> {
       where: { id: e.id },
       data: { slaBreachedAt: now },
     });
+  }
+
+  // 2b. Warn the assignee of an item that is assigned, untouched, and within
+  // AT_RISK_LEAD_MS of its SLA deadline -- once (notify() dedupes on the
+  // (account, user, type, entity) tuple, so repeated sweeps do not re-nag).
+  const atRiskCutoff = new Date(now.getTime() + AT_RISK_LEAD_MS);
+  let atRiskWarnings = 0;
+
+  const [atRiskDecisions, atRiskExceptions] = await Promise.all([
+    db.agentDecision.findMany({
+      where: {
+        ...accountFilter,
+        triageState: "NEEDS_REVIEW",
+        slaBreachedAt: null,
+        firstTouchedAt: null,
+        assignedToUserId: { not: null },
+        reviewSlaDueAt: { gt: now, lte: atRiskCutoff },
+      },
+      select: {
+        id: true,
+        accountId: true,
+        assignedToUserId: true,
+        reviewSlaDueAt: true,
+        agentName: true,
+        shipment: { select: { shipmentNumber: true } },
+      },
+    }),
+    db.exceptionItem.findMany({
+      where: {
+        ...accountFilter,
+        status: "Open",
+        slaBreachedAt: null,
+        firstTouchedAt: null,
+        assignedToUserId: { not: null },
+        slaDueAt: { gt: now, lte: atRiskCutoff },
+      },
+      select: {
+        id: true,
+        accountId: true,
+        assignedToUserId: true,
+        slaDueAt: true,
+        description: true,
+        shipment: { select: { shipmentNumber: true } },
+      },
+    }),
+  ]);
+
+  const hoursUntil = (due: Date) => Math.max(1, Math.round((due.getTime() - now.getTime()) / 3_600_000));
+
+  for (const d of atRiskDecisions) {
+    const res = await notify({
+      accountId: d.accountId,
+      userId: d.assignedToUserId!,
+      type: "SLA_AT_RISK",
+      message: `${d.agentName} on ${d.shipment?.shipmentNumber ?? "a shipment"} — review SLA due in ~${hoursUntil(d.reviewSlaDueAt!)}h`,
+      entityType: "AgentDecision",
+      entityId: d.id,
+      dedupe: true,
+    });
+    if (res.created) atRiskWarnings += 1;
+  }
+
+  for (const e of atRiskExceptions) {
+    const res = await notify({
+      accountId: e.accountId,
+      userId: e.assignedToUserId!,
+      type: "SLA_AT_RISK",
+      message: `Exception on ${e.shipment?.shipmentNumber ?? "a shipment"} — SLA due in ~${hoursUntil(e.slaDueAt!)}h: ${e.description}`,
+      entityType: "ExceptionItem",
+      entityId: e.id,
+      dedupe: true,
+    });
+    if (res.created) atRiskWarnings += 1;
   }
 
   let escalationsCreated = 0;
@@ -206,6 +287,7 @@ export async function runSlaSweep(accountId?: string): Promise<SlaSweepResult> {
     breachedDecisions: unbreachedDecisions.length,
     breachedExceptions: unbreachedExceptions.length,
     escalationsCreated,
+    atRiskWarnings,
   };
 }
 

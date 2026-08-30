@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review · Phase 2a shipped (compliance + billing lanes) · Phase 3a shipped (notification hub) · Phase 2b (inline disposition) + Phase 3b (new notification producers) scoped
+**Status:** Phase 1 in review · Phase 2a shipped (compliance + billing lanes) · Phase 3a+3b shipped (notification hub + producers) · Phase 2b (inline disposition) + Phase 3c (route consolidation) scoped
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -226,17 +226,31 @@ The bell was the right shape but half-wired: every notification linked to
 - `tests/notification-routing.test.ts` — routing table, category mapping,
   `notify()` dedupe + error-swallow.
 
-### Phase 3b — NOT built
+### Phase 3b — SHIPPED
 
-New producers, now one `notify({ category, ... })` call each:
-- **License expiring / utilization** — hook `deliverLicenseAlerts`
-  (`modules/licenses/alertsService`, already runs from the `license-alerts` cron
-  and emails via the `ComplianceNotification` pipeline) to also drop a bell row.
-- **Billing revenue leakage** — `detectRevenueLeakage` / on `BillingException`
-  create (note: `BillingException` rows are seed-only today — needs a real
-  producer first).
-- **Regulatory update affecting the account** — the `regulatory-ingest` cron.
-- **SLA at risk** (before escalation) — `slaSweepJob` already has the timing.
+- `src/modules/notifications/notifyAccount.ts` — `notifyAccountRoleHolders`:
+  fan-out for events with no single assignee. Active OWNER/ADMIN members +
+  holders of a named permission, deduped, one notification each.
+- **License expiring / utilization** — `src/modules/licenses/licenseAlertNotifications.ts`:
+  `notifyLicenseAlerts` reuses `computeLicenseAlerts`, collapses to one row per
+  (license, kind), notifies `licenses.view` holders (`LICENSE_EXPIRING` /
+  `LICENSE_UTILIZATION`, entity `License`). Called from the `license-alerts` cron
+  alongside the email digest, in its own try/catch.
+- **Regulatory update** — the existing `regulatory-ingest` producer migrated to
+  `notify()`: `regulatory_alert` -> `REGULATORY_UPDATE` + `entityType:
+  "RegulatoryUpdate"`, so it links to `/app/regulatory` not `/app/documents`.
+  `regulatory_alert` kept as a legacy routing alias.
+- **SLA at risk** — new pass in `slaSweepJob` (step 2b): an assigned, untouched
+  decision/exception within `AT_RISK_LEAD_MS` (4h) of its SLA deadline warns its
+  assignee once (`SLA_AT_RISK`, `dedupe`). `SlaSweepResult.atRiskWarnings` added.
+- Tests: `tests/notification-producers.test.ts`.
+
+### Phase 3b follow-up — NOT built
+
+- **Billing revenue leakage** — `detectRevenueLeakage` has the signal, but
+  `BillingException` rows are seed-only today; needs a real producer job first.
+- **Compliance findings** — bridge `persistComplianceScreeningFindings` into a
+  `COMPLIANCE_FINDING` bell row.
 
 ## 7. Route consolidation (Phase 3c — deferred)
 
