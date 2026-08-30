@@ -16,6 +16,7 @@ export async function executeSlaSweep() {
   let breachedDecisions = 0;
   let breachedExceptions = 0;
   let escalationsCreated = 0;
+  let atRiskWarnings = 0;
 
   for (const account of accounts) {
     await runWithAccountId(account.id, async () => {
@@ -23,10 +24,11 @@ export async function executeSlaSweep() {
       breachedDecisions += r.breachedDecisions;
       breachedExceptions += r.breachedExceptions;
       escalationsCreated += r.escalationsCreated;
+      atRiskWarnings += r.atRiskWarnings;
     });
   }
 
-  return { accounts: accounts.length, breachedDecisions, breachedExceptions, escalationsCreated };
+  return { accounts: accounts.length, breachedDecisions, breachedExceptions, escalationsCreated, atRiskWarnings };
 }
 
 export const slaSweepJob = (inngest.createFunction as any)(

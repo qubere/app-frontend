@@ -15,6 +15,7 @@ const { dbMock } = vi.hoisted(() => {
       },
       notification: {
         create: vi.fn(),
+        findFirst: vi.fn(),
       },
       customsFiling: {
         findMany: vi.fn(),
@@ -210,6 +211,7 @@ describe("Phase 4 Regulatory Intelligence & Ingestion Test Suite", () => {
       ] as any);
 
       dbMock.notification.create.mockResolvedValue({} as any);
+      dbMock.notification.findFirst.mockResolvedValue(null);
 
       const request = new Request("http://localhost/api/cron/regulatory-ingest?accountId=acc-abc", {
         method: "POST",
@@ -249,8 +251,10 @@ describe("Phase 4 Regulatory Intelligence & Ingestion Test Suite", () => {
         data: {
           accountId: "acc-abc",
           userId: "user-123",
-          message: expect.stringContaining("Regulatory Action Required: Extension of Section 301 Exclusion"),
-          type: "regulatory_alert",
+          message: expect.stringContaining("Regulatory action required: Extension of Section 301 Exclusion"),
+          type: "REGULATORY_UPDATE",
+          entityType: "RegulatoryUpdate",
+          entityId: "update-123",
         },
       });
     });
