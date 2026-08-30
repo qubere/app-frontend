@@ -149,7 +149,7 @@ export function StageStepper({ shipmentId }: { shipmentId: string }) {
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span>Lifecycle Stage: {activeStep?.label || data.currentStage}</span>
+              <span>{activeStep?.label || data.currentStage}</span>
               {data.stageStatus === "GATE_PENDING" && (
                 <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
