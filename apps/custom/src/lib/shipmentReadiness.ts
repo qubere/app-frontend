@@ -37,6 +37,13 @@ export interface ReadinessShipmentInput {
   avgExtractionConfidence?: number | null;
   /** Count of unresolved ReconciliationIssue rows with severity "Critical". */
   blockingReconciliationIssues?: number;
+  /**
+   * A live invoice-vs-packing-list quantity mismatch computed straight from the
+   * documents' line items. Passed so the "Reconciliation Pass" factor and the
+   * "Quantity, Packaging & Reconciliation" category can never disagree, even in
+   * the window before the reconciliation engine has re-run (finding #3).
+   */
+  liveQuantityMismatch?: boolean;
 }
 
 // ── Factor 1: Document completeness (0–25 pts) ───────────────────────────────
@@ -157,7 +164,11 @@ function classificationCoverageScore(
 
 // ── Factor 5: Reconciliation pass (0–10 pts) ─────────────────────────────────
 
-function reconciliationPassScore(blockingIssues: number, documentCount: number): ReadinessFactorScore {
+function reconciliationPassScore(
+  blockingIssues: number,
+  documentCount: number,
+  liveQuantityMismatch: boolean
+): ReadinessFactorScore {
   // Reconciliation requires at least two documents to compare. Awarding full
   // marks on a single-document shipment misrepresents "nothing to reconcile"
   // as "reconciliation passed".
@@ -169,15 +180,20 @@ function reconciliationPassScore(blockingIssues: number, documentCount: number):
       contributingItems: ["Need ≥ 2 documents to run cross-document reconciliation"],
     };
   }
-  const pts = blockingIssues === 0 ? 10 : 0;
+  // A live quantity mismatch counts as a blocking conflict even if the
+  // reconciliation engine has not yet written a ReconciliationIssue row for it.
+  const effectiveBlocking = blockingIssues + (liveQuantityMismatch ? 1 : 0);
+  const pts = effectiveBlocking === 0 ? 10 : 0;
+  const items: string[] = [];
+  if (liveQuantityMismatch) items.push("Invoice vs packing list quantity mismatch");
+  if (blockingIssues > 0)
+    items.push(`${blockingIssues} unresolved blocking reconciliation issue${blockingIssues > 1 ? "s" : ""}`);
+  if (items.length === 0) items.push("No unresolved blocking conflicts");
   return {
     factor: "Reconciliation Pass",
     points: pts,
     maxPoints: 10,
-    contributingItems:
-      blockingIssues > 0
-        ? [`${blockingIssues} unresolved blocking reconciliation issue${blockingIssues > 1 ? "s" : ""} holding 10pts`]
-        : ["No unresolved blocking conflicts"],
+    contributingItems: items,
   };
 }
 
@@ -189,7 +205,11 @@ export function computeReadinessBreakdown(shipment: ReadinessShipmentInput): Rea
   const f2 = extractionQualityScore(shipment.avgExtractionConfidence);
   const f3 = exceptionStatusScore(shipment.exceptionItems, hasDocuments);
   const f4 = classificationCoverageScore(shipment.lineItems);
-  const f5 = reconciliationPassScore(shipment.blockingReconciliationIssues ?? 0, shipment.documents.length);
+  const f5 = reconciliationPassScore(
+    shipment.blockingReconciliationIssues ?? 0,
+    shipment.documents.length,
+    shipment.liveQuantityMismatch ?? false
+  );
 
   const factors = [f1, f2, f3, f4, f5];
   const totalScore = Math.max(0, Math.min(100, factors.reduce((s, f) => s + f.points, 0)));

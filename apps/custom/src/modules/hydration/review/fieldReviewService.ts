@@ -20,6 +20,7 @@ import { ExceptionService } from "../../../modules/exceptions/exception.service"
 import { MaterializerRegistry } from "../promotion/materializers";
 import { HydrationLogger } from "../logging/hydrationLogger";
 import type { FieldState, GroundedEvidenceReference } from "../types/canonicalRegistry";
+import { resolveField, type DictionaryField } from "@/lib/documents/fieldDictionary";
 
 export interface FieldReviewSummaryItem {
   fieldKey: string;
@@ -149,6 +150,93 @@ export class FieldReviewService {
   }
 
   /**
+   * Review path for document-scoped fields (ports, vessel, voyage, B/L number):
+   * fields with no Shipment column and no canonical registry entry. The
+   * corrected value is written back onto `ShipmentDocument.extractedJson`
+   * (`tradeMetadata`), a `FieldApproval` records who confirmed it, and the
+   * field's open exception is resolved. No materializer, no Shipment.version bump.
+   */
+  private static async submitDocumentAnnotation(input: {
+    accountId: string;
+    userId: string;
+    userName: string;
+    shipmentId: string;
+    documentId: string;
+    dictField: DictionaryField;
+    action: "APPROVE" | "EDIT" | "REJECT" | "MARK_NOT_APPLICABLE" | "SELECT_ALTERNATE";
+    value: string;
+  }): Promise<FieldReviewActionResult> {
+    const { accountId, userId, userName, shipmentId, documentId, dictField, action } = input;
+    const tmKey = dictField.tradeMetadataKey ?? dictField.canonicalKey;
+    const approvalKey = dictField.tradeMetadataKey ?? dictField.canonicalKey;
+
+    const storedValue =
+      action === "REJECT" ? "[REJECTED]" : action === "MARK_NOT_APPLICABLE" ? "[NOT_APPLICABLE]" : input.value.trim();
+
+    if ((action === "APPROVE" || action === "EDIT") && !storedValue) {
+      return { success: false, status: 400, errorCode: "VALUE_REQUIRED", message: "A value is required." };
+    }
+
+    const doc = await db.shipmentDocument.findFirst({
+      where: { id: documentId, accountId, shipmentId },
+      select: { id: true, extractedJson: true },
+    });
+    if (!doc) {
+      return { success: false, status: 404, errorCode: "DOCUMENT_NOT_FOUND", message: "The document is not attached to this shipment." };
+    }
+
+    // Merge the corrected value into extractedJson.tradeMetadata so every reader
+    // (Field Review panel, document viewer, downstream agents) sees it.
+    if (action === "APPROVE" || action === "EDIT") {
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = doc.extractedJson ? (JSON.parse(doc.extractedJson) as Record<string, unknown>) : {};
+      } catch {
+        parsed = {};
+      }
+      const tradeMetadata = { ...(parsed.tradeMetadata as Record<string, unknown> | undefined) };
+      tradeMetadata[tmKey] = storedValue;
+      parsed.tradeMetadata = tradeMetadata;
+      await db.shipmentDocument.update({
+        where: { id: documentId },
+        data: { extractedJson: JSON.stringify(parsed) },
+      });
+    }
+
+    await FactAuditService.logChangeEvent({
+      shipmentId,
+      userId,
+      changeType: "USER_FIELD_UPDATE",
+      field: approvalKey,
+      previousValue: null,
+      newValue: storedValue,
+      reason: `Document field ${action.toLowerCase()} via field review`,
+    }).catch(() => {});
+
+    await db.fieldApproval.create({
+      data: {
+        accountId,
+        shipmentId,
+        documentId,
+        fieldKey: approvalKey,
+        value: storedValue,
+        approvedByUserId: userId,
+        approvedByName: userName,
+      },
+    });
+
+    await ExceptionService.resolveDocumentFieldException(
+      documentId,
+      dictField.canonicalKey,
+      accountId,
+      { userId, name: userName },
+      action === "EDIT" ? "Corrected via document field review" : "Confirmed via document field review"
+    );
+
+    return { success: true, status: 200 };
+  }
+
+  /**
    * Submits a field review mutation (APPROVE, EDIT, REJECT, MARK_NOT_APPLICABLE, SELECT_ALTERNATE).
    */
   public static async submitFieldReviewAction(params: {
@@ -163,28 +251,25 @@ export class FieldReviewService {
     candidateId?: string;
     expectedVersion?: number;
   }): Promise<FieldReviewActionResult> {
-    const { accountId, userId, userName, shipmentId, documentId, fieldKey, action, candidateId, expectedVersion } = params;
+    const { accountId, userId, userName, shipmentId, documentId, action, candidateId, expectedVersion } = params;
     let value = params.value;
+
+    // Callers pass whatever spelling their surface uses (`hsHtsCode`,
+    // `destinationCountry`, `port_of_discharge`). Resolve to the canonical
+    // registry key first -- a direct `registry[fieldKey]` lookup used to 400
+    // every one of these as UNKNOWN_FIELD (finding #1).
+    const dictField = resolveField(params.fieldKey);
+    const fieldKey = dictField?.canonicalKey ?? params.fieldKey;
 
     HydrationLogger.info(`Submitting field review action '${action}' for field '${fieldKey}'`, {
       accountId,
       shipmentId,
       documentId,
       fieldKey,
+      rawFieldKey: params.fieldKey,
       action,
       expectedVersion,
     });
-
-    const definition = CANONICAL_FIELD_REGISTRY_V1[fieldKey];
-    if (!definition) {
-      return {
-        success: false,
-        status: 400,
-        errorCode: "UNKNOWN_FIELD",
-        message: `Field '${fieldKey}' is not registered.`,
-      };
-    }
-    const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
 
     const document = await db.shipmentDocument.findFirst({
       where: { id: documentId, accountId, shipmentId },
@@ -198,6 +283,33 @@ export class FieldReviewService {
         message: "The document is not attached to this shipment.",
       };
     }
+
+    const definition = CANONICAL_FIELD_REGISTRY_V1[fieldKey];
+    if (!definition) {
+      // Document-scoped fields (ports, vessel, voyage, B/L number) have no
+      // Shipment column and no registry entry. They are still reviewable:
+      // record the corrected value on the document, log an approval, and clear
+      // the exception -- just without a materializer (finding #2).
+      if (dictField && dictField.scope === "document") {
+        return this.submitDocumentAnnotation({
+          accountId,
+          userId,
+          userName,
+          shipmentId,
+          documentId,
+          dictField,
+          action,
+          value,
+        });
+      }
+      return {
+        success: false,
+        status: 400,
+        errorCode: "UNKNOWN_FIELD",
+        message: `Field '${params.fieldKey}' is not registered.`,
+      };
+    }
+    const factField = (definition.materializerConfig.targetColumn as string) || fieldKey;
 
     if (action === "SELECT_ALTERNATE" && !candidateId) {
       return {

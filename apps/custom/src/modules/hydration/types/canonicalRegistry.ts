@@ -130,6 +130,33 @@ export interface FieldInventoryItem {
   entityKind: EntityKind;
   isDriftKey: boolean;
   notes?: string;
+  /**
+   * The snake_case name(s) this field carries in `extractionSchemas.ts`
+   * (e.g. `bl_number`, or `seller_name`/`exporter_name` across doc types), used
+   * to line up `MISSING_EXTRACTION:*` exceptions with what the extractor
+   * actually produced. Absent when no per-doc-type schema names this field.
+   */
+  extractionSchemaKeys?: string[];
+  /**
+   * The `fieldKey` this field is compared under in `reconciliationRules.ts`
+   * (e.g. `totalQuantity`). The extraction agent writes an `ExtractionField`
+   * row under this exact name so `runReconciliationEngine` can find it.
+   */
+  reconciliationKey?: string;
+  /**
+   * Document types this field is expected to appear on, matched as a
+   * case-insensitive substring against `ShipmentDocument.docType`
+   * (e.g. `["Bill of Lading"]`, `["Commercial Invoice", "Packing List"]`).
+   * `["*"]` or absent = expected on any document.
+   */
+  docTypes?: string[];
+  /**
+   * Where an approved value lands:
+   * - `shipment` / `lineItem`: materialized onto a column via the canonical registry.
+   * - `document`: annotation only — persisted on `extractedJson.tradeMetadata`
+   *   plus a `FieldApproval` row, no shipment column (ports, vessel, voyage).
+   */
+  scope?: "shipment" | "lineItem" | "document";
 }
 
 export interface EvalMetrics {

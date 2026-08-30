@@ -162,7 +162,15 @@ describe("computeReadinessScore — factor 5: reconciliation pass", () => {
       withTwoDocs({ blockingReconciliationIssues: 1 })
     );
     expect(factors[4].points).toBe(0);
-    expect(factors[4].contributingItems[0]).toContain("holding 10pts");
+    expect(factors[4].contributingItems[0]).toContain("unresolved blocking reconciliation issue");
+  });
+
+  it("awards 0 pts on a live invoice-vs-packing quantity mismatch even with no issue row yet", () => {
+    const { factors } = computeReadinessBreakdown(
+      withTwoDocs({ blockingReconciliationIssues: 0, liveQuantityMismatch: true })
+    );
+    expect(factors[4].points).toBe(0);
+    expect(factors[4].contributingItems[0]).toContain("quantity mismatch");
   });
 });
 

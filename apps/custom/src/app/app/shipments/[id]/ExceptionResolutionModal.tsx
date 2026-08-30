@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ShieldAlert, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, ShieldAlert, Sparkles, Upload, Pencil } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { caughtMessage, cn } from "@/lib/utils";
+import { reasonsForCategory, type ExceptionCategory } from "@/modules/exceptions/resolutionReasons";
 
 import type { HtsSuggestion, ShipmentLineItemRow } from "./workspaceTypes";
 
@@ -19,6 +20,12 @@ interface ExceptionItem {
   desc: string;
   actionText: string;
   actionType: string;
+  /** Real ExceptionItem.category column, for filtering the waive reason picklist. */
+  dbCategory?: string | null;
+  documentId?: string | null;
+  fieldKey?: string | null;
+  currentValue?: string | null;
+  conflict?: { field: string; expectedValue: string; actualValue: string; sources: string[] } | null;
 }
 
 interface ExceptionResolutionModalProps {
@@ -58,9 +65,16 @@ export function ExceptionResolutionModal({
   // Certificate upload state
   const [fileName, setFileName] = useState("");
 
+  // Field-correction state (MISSING_EXTRACTION:* exceptions)
+  const [correctionValue, setCorrectionValue] = useState("");
+
+  // Waive state (generic findings with no correctable field)
+  const [waiveReasonCode, setWaiveReasonCode] = useState("");
+  const [waiveNote, setWaiveNote] = useState("");
+
   // Sync initial values
   useEffect(() => {
-    if (exception && lineItems.length > 0) {
+    if (exception) {
       const targetItem = lineItems[1] || lineItems[0];
       // Resets the form when a different exception is opened into the same mounted
       // dialog, so the previous exception's edits are never submitted against it.
@@ -70,6 +84,9 @@ export function ExceptionResolutionModal({
       setCustomQtyVal("");
       setPoaSignedName("");
       setFileName("");
+      setCorrectionValue(exception.currentValue || "");
+      setWaiveReasonCode("");
+      setWaiveNote("");
     }
   }, [exception, lineItems]);
 
@@ -96,7 +113,90 @@ export function ExceptionResolutionModal({
 
   if (!isOpen || !exception) return null;
 
+  const isFieldCorrection = exception.actionType === "FIELD_CORRECTION";
+  const isWaive = !isFieldCorrection && exception.actionType === "DEFAULT";
+  const waiveReasons = reasonsForCategory(
+    (exception.dbCategory as ExceptionCategory | null) ?? null
+  );
+
   const handleResolve = async () => {
+    // Field correction: write the value through the field-review path, which
+    // persists it and auto-resolves this exception. No more clearing the queue
+    // without a real write (finding #1).
+    if (isFieldCorrection) {
+      if (!correctionValue.trim()) {
+        alert("Enter the correct value before saving.");
+        return;
+      }
+      if (!exception.documentId || !exception.fieldKey) {
+        alert("This exception is missing its document reference and can't be corrected here.");
+        return;
+      }
+      setSaveLoading(true);
+      try {
+        const res = await fetch(
+          `/api/shipments/${shipmentId}/documents/${exception.documentId}/field-review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fieldKey: exception.fieldKey,
+              action: "EDIT",
+              value: correctionValue.trim(),
+            }),
+          }
+        );
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || data.message || "Failed to save the corrected value");
+        }
+        onClose();
+        router.refresh();
+      } catch (err) {
+        alert(caughtMessage(err, "Failed to save the corrected value"));
+      } finally {
+        setSaveLoading(false);
+      }
+      return;
+    }
+
+    // Waive: an accountable risk acceptance — reason code + note required, and
+    // the API enforces the risk-acceptance permission.
+    if (isWaive) {
+      if (!waiveReasonCode) {
+        alert("Choose a reason before waiving this exception.");
+        return;
+      }
+      if (!waiveNote.trim()) {
+        alert("Add a short note explaining the decision.");
+        return;
+      }
+      setSaveLoading(true);
+      try {
+        const res = await fetch(`/api/exceptions/${exception.dbId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "WAIVED",
+            resolutionReasonCode: waiveReasonCode,
+            resolutionReason: waiveNote.trim(),
+            expectedVersion: exception.version,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || data.message || "Failed to waive exception");
+        }
+        onClose();
+        router.refresh();
+      } catch (err) {
+        alert(caughtMessage(err, "Failed to waive exception"));
+      } finally {
+        setSaveLoading(false);
+      }
+      return;
+    }
+
     setSaveLoading(true);
     try {
       // 1. Perform backend mutations depending on the exception category
@@ -220,8 +320,14 @@ export function ExceptionResolutionModal({
       <ModalHeader
         titleId={TITLE_ID}
         title={exception.title}
-        subtitle="Resolve exception item directly in Qubere Workspace"
-        icon={<Sparkles className="w-5 h-5" />}
+        subtitle={
+          isFieldCorrection
+            ? "Provide the correct value for this field"
+            : isWaive
+              ? "Waive this exception with a recorded reason"
+              : "Resolve exception item directly in Qubere Workspace"
+        }
+        icon={isFieldCorrection ? <Pencil className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
         onClose={onClose}
       />
 
@@ -240,6 +346,65 @@ export function ExceptionResolutionModal({
 
       {/* Core Resolution Fields depending on Exception Category */}
       <div className="py-2">
+        {/* 0a. Missing field correction — writes the value through the field
+            review path, which persists it and clears this exception. */}
+        {isFieldCorrection && (
+          <div className="space-y-3 text-xs">
+            <Label className="font-bold">Correct value</Label>
+            <Input
+              value={correctionValue}
+              onChange={(e) => setCorrectionValue(e.target.value)}
+              placeholder="Enter the value as it appears on the document…"
+              className="bg-surface-muted focus:bg-white font-bold text-[12px]"
+              disabled={saveLoading}
+              autoFocus
+            />
+            <p className="text-[10px] text-ink-muted leading-relaxed">
+              Saved to the document&apos;s extracted fields and recorded against your name.
+              The exception clears once the value is provided.
+            </p>
+          </div>
+        )}
+
+        {/* 0b. Waive — accountable risk acceptance for findings with no
+            correctable field. Reason code + note required; the API enforces
+            the risk-acceptance permission. */}
+        {isWaive && (
+          <div className="space-y-3 text-xs">
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-normal">
+              Waiving accepts the risk this exception describes. It stays on the
+              record with your name, the reason, and your note.
+            </div>
+            <div className="space-y-1">
+              <Label className="font-bold">Reason</Label>
+              <select
+                value={waiveReasonCode}
+                onChange={(e) => setWaiveReasonCode(e.target.value)}
+                disabled={saveLoading}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface-muted focus:bg-white text-ink font-semibold focus:outline-none focus:border-brand"
+              >
+                <option value="">— Choose a reason —</option>
+                {waiveReasons.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="font-bold">Note</Label>
+              <textarea
+                value={waiveNote}
+                onChange={(e) => setWaiveNote(e.target.value)}
+                disabled={saveLoading}
+                rows={3}
+                placeholder="Explain the decision — what was checked, who confirmed it."
+                className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface-muted focus:bg-white text-ink focus:outline-none focus:border-brand resize-none"
+              />
+            </div>
+          </div>
+        )}
+
         {/* 1. HTS Code resolution UI */}
         {exception.actionType === "HTS" && (
           <div className="space-y-3 relative text-xs">
@@ -416,8 +581,18 @@ export function ExceptionResolutionModal({
         <Button variant="secondary" onClick={onClose} disabled={saveLoading}>
           Cancel
         </Button>
-        <Button onClick={handleResolve} loading={saveLoading}>
-          {saveLoading ? "Saving..." : "Resolve & Save"}
+        <Button
+          onClick={handleResolve}
+          loading={saveLoading}
+          variant={isWaive ? "secondary" : "primary"}
+        >
+          {saveLoading
+            ? "Saving..."
+            : isFieldCorrection
+              ? "Save correction"
+              : isWaive
+                ? "Waive exception"
+                : "Resolve & Save"}
         </Button>
       </ModalFooter>
     </Modal>

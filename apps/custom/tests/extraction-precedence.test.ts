@@ -11,9 +11,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  */
 
 const dbMock = {
-  shipmentDocument: { findFirst: vi.fn(), updateMany: vi.fn() },
+  shipmentDocument: { findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   documentParseVersion: { create: vi.fn() },
-  agentDecision: { create: vi.fn() },
+  agentDecision: { findFirst: vi.fn(), create: vi.fn() },
+  extractionField: { deleteMany: vi.fn(), createMany: vi.fn() },
   auditLog: { create: vi.fn() },
 };
 
@@ -29,7 +30,7 @@ vi.mock("@/modules/shipment/shipmentPartyService", () => ({
   ShipmentPartyService: { assignParty: (p: unknown) => assignParty(p) },
 }));
 vi.mock("@/modules/exceptions/exception.service", () => ({
-  ExceptionService: { syncDocumentFieldExceptions: (p: unknown) => syncExceptions(p) },
+  ExceptionService: { syncExtractionFieldExceptions: (p: unknown) => syncExceptions(p) },
 }));
 
 const { DocumentIntelligenceAgent } = await import("@/modules/agents/documentIntelligenceAgent");
@@ -69,6 +70,7 @@ beforeEach(() => {
   dbMock.shipmentDocument.findFirst.mockResolvedValue({
     id: DOCUMENT,
     fileName: "INV-1.pdf",
+    documentType: "COMMERCIAL_INVOICE",
     parseVersions: [],
   });
   dbMock.shipmentDocument.updateMany.mockResolvedValue({ count: 1 });

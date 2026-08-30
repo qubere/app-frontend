@@ -109,6 +109,14 @@ export interface DbExceptionItem {
   sourceAgent?: string | null;
   category?: string | null;
   severity?: string | null;
+  /**
+   * Set on per-document field exceptions (`MISSING_EXTRACTION:*`) — the document
+   * the field was missing from, the snake_case field key, and the stable code.
+   * When present, the exception resolves by correcting the value, not by waiving.
+   */
+  documentId?: string | null;
+  fieldKey?: string | null;
+  code?: string | null;
 }
 
 /**
@@ -124,6 +132,16 @@ export interface ResolvableException {
   desc: string;
   actionText: string;
   actionType: string;
+  /** Present on per-document field exceptions — routes the modal to a "correct the value" input. */
+  documentId?: string | null;
+  fieldKey?: string | null;
+  code?: string | null;
+  /** Real ExceptionItem.category column, for filtering the waive reason picklist. */
+  dbCategory?: string | null;
+  /** Prefill for the correction input, when the value is already extracted but unconfirmed. */
+  currentValue?: string | null;
+  /** Cross-document conflict values, from the linked ReconciliationIssue. */
+  conflict?: { field: string; expectedValue: string; actualValue: string; sources: string[] } | null;
 }
 
 /**
@@ -147,6 +165,14 @@ export interface ExceptionCard {
   actionHref?: string;
   dbId?: string;
   version?: number;
+  documentId?: string | null;
+  fieldKey?: string | null;
+  code?: string | null;
+  dbCategory?: string | null;
+  currentValue?: string | null;
+  conflict?: { field: string; expectedValue: string; actualValue: string; sources: string[] } | null;
+  /** Source document label, for grouping the flat list (finding #8). */
+  groupLabel?: string;
 }
 
 /** True when a card carries the ids the resolution modal writes back with. */

@@ -13,7 +13,6 @@ import {
 import { CanonicalShipmentService } from "@/modules/shipment/canonicalShipmentService";
 import { Badge } from "@/components/ui/Badge";
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";
-import { PipelineProgressTracker } from "./PipelineProgressTracker";
 import { ShipmentTitleEditor } from "./ShipmentTitleEditor";
 import { ShipmentClientEditor } from "./ShipmentClientEditor";
 import { DestinationCountryEditor } from "./DestinationCountryEditor";
@@ -32,6 +31,12 @@ import { ShipmentTabsPanel } from "./ShipmentTabsPanel";
 import { ClientActionsPanel } from "./ClientActionsPanel";
 import { DeadlineRail } from "@/components/deadlines/DeadlineRail";
 import { computeReadinessBreakdown } from "@/lib/shipmentReadiness";
+import {
+  canonicalizeFieldKey,
+  expectedFieldsForDocType,
+  extractedValueFor,
+  resolveField,
+} from "@/lib/documents/fieldDictionary";
 import type { ExtractedLineItem } from "./workspaceTypes";
 import type { CategoryDetail } from "./PreFilingReadiness";
 import type { ReadinessBreakdown } from "@/lib/shipmentReadiness";
@@ -266,65 +271,46 @@ export default async function ShipmentWorkspacePage(props: {
 
   const activeExceptions = fullShipment.exceptionItems || [];
 
+  // FieldApproval rows are written under whatever key form the surface used
+  // (canonical `shipment.originCountry`, tradeMetadata `portOfDischarge`, ...);
+  // index them by canonical id so a lookup matches regardless.
   const latestApprovalByField: Record<string, { name: string; approvedAt: string }> = {};
   const approvalByDocField = new Map<string, { name: string; approvedAt: string }>();
   for (const fa of fieldApprovals) {
     const snapshot = { name: fa.approvedByName, approvedAt: fa.approvedAt.toISOString() };
+    const canon = canonicalizeFieldKey(fa.fieldKey) ?? fa.fieldKey;
+    if (!latestApprovalByField[canon]) latestApprovalByField[canon] = snapshot;
     if (!latestApprovalByField[fa.fieldKey]) latestApprovalByField[fa.fieldKey] = snapshot;
-    const docKey = `${fa.documentId}:${fa.fieldKey}`;
-    if (!approvalByDocField.has(docKey)) approvalByDocField.set(docKey, snapshot);
+    for (const k of new Set([`${fa.documentId}:${canon}`, `${fa.documentId}:${fa.fieldKey}`])) {
+      if (!approvalByDocField.has(k)) approvalByDocField.set(k, snapshot);
+    }
   }
 
-  // "What fields do we expect from this document, and did we get them" --
-  // built from the same tradeMetadata Document Intelligence already
-  // extracts and persists (documentIntelligenceAgent.ts), cross-referenced
-  // with real FieldApproval provenance. Passed to ExceptionsDrawer so the
-  // Exceptions panel can group by source document instead of showing a flat
-  // list of exceptions that all happen to point at the same file.
-  // Keys must match ShipmentDocument.extractedJson.tradeMetadata's real field
-  // names (see documentIntelligenceAgent.ts / DOCUMENT_TRADE_FIELDS in
-  // decisions/editableFields.ts, the other reader of the same JSON) -- a
-  // mismatched key here silently reads undefined and renders "Missing" even
-  // when the value was genuinely extracted. portOfEntry/entryType/netWeight
-  // are intentionally absent: they are broker/system-determined, never
-  // produced by document extraction, so they belong on a different review
-  // surface, not this one. quantity/description (line-item fields) are
-  // handled by LineItemsTable below, not here -- tradeMetadata has no
-  // scalar quantity/description of its own to read.
-  const FIELD_REVIEW_LABELS: Record<string, string> = {
-    exporterName: "Exporter Name",
-    importerName: "Importer / Consignee Name",
-    originCountry: "Country of Origin",
-    destinationCountry: "Destination Country",
-    carrier: "Carrier",
-    incoterm: "Incoterm",
-    invoiceNumber: "Invoice Number",
-    invoiceDate: "Invoice Date",
-    invoiceSubtotal: "Total Invoice Amount",
-    currency: "Invoice Currency",
-    totalWeight: "Gross Weight",
-    transportDocumentNumber: "Bill of Lading",
-    hsHtsCode: "HTS Classification Code",
-  };
+  // "What fields do we expect from THIS document type, and did we get them" --
+  // driven by the shared field dictionary (fieldDictionary.ts), so a Packing
+  // List is asked for weight/carton count and a Bill of Lading for vessel /
+  // ports / B-L number, instead of every document getting the same 13-field
+  // checklist (finding #7). HTS is a line-item concern, reviewed in
+  // LineItemsTable, so the dictionary deliberately excludes it here (finding #3).
   const documentFieldSummaries = documents
     .filter((d) => Boolean(d.extractedJson))
     .map((d) => {
-      // Only the three keys in FIELD_REVIEW_LABELS are read out of this, and a
-      // key the extractor never produced must read as absent rather than as a
-      // value, so the index signature admits undefined.
-      let tradeMetadata: Record<string, string | null | undefined> = {};
+      let tradeMetadata: Record<string, unknown> = {};
+      let extractedLineItems: unknown[] = [];
       try {
-        // The filter above guarantees extractedJson is present; `?? "{}"` only
-        // satisfies the compiler, which cannot see across the filter.
-        tradeMetadata = JSON.parse(d.extractedJson ?? "{}").tradeMetadata || {};
+        const parsed = JSON.parse(d.extractedJson ?? "{}");
+        tradeMetadata = parsed.tradeMetadata || {};
+        extractedLineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems : [];
       } catch {
-        // Stored JSON that no longer parses leaves every field reading MISSING,
-        // which is the honest outcome -- nothing was recoverable from it.
+        // Stored JSON that no longer parses leaves every field reading MISSING.
       }
 
-      const fields = Object.keys(FIELD_REVIEW_LABELS).map((key) => {
-        const value: string | null = tradeMetadata[key] || null;
-        const approval = approvalByDocField.get(`${d.id}:${key}`);
+      const fields = expectedFieldsForDocType(d.docType).map((spec) => {
+        const key = spec.tradeMetadataKey ?? spec.canonicalKey;
+        const value = extractedValueFor(spec.canonicalKey, tradeMetadata, extractedLineItems as never[]);
+        const approval =
+          approvalByDocField.get(`${d.id}:${spec.canonicalKey}`) ??
+          approvalByDocField.get(`${d.id}:${key}`);
         const status: "MISSING" | "CONFIRMED" | "NEEDS_REVIEW" = !value
           ? "MISSING"
           : approval
@@ -332,7 +318,7 @@ export default async function ShipmentWorkspacePage(props: {
             : "NEEDS_REVIEW";
         return {
           key,
-          label: FIELD_REVIEW_LABELS[key],
+          label: spec.label,
           value,
           status,
           approvedByName: approval?.name,
@@ -446,37 +432,47 @@ export default async function ShipmentWorkspacePage(props: {
       const parsed = JSON.parse(doc.extractedJson);
       const kv = parsed.keyValuePairs || {};
 
-      if (kv["Vessel"]) extractedVessel = kv["Vessel"];
-      if (kv["Voyage Number"]) extractedVoyage = kv["Voyage Number"];
-      if (kv["Booking Reference"]) extractedBookingRef = kv["Booking Reference"];
-      if (kv["Port of Loading"]) extractedPortOfLoading = kv["Port of Loading"];
-      if (kv["Port of Discharge"]) extractedPortOfDischarge = kv["Port of Discharge"];
-      if (kv["Container No"]) extractedContainerNo = kv["Container No"];
-      if (kv["Gross Weight"]) extractedGrossWeight = kv["Gross Weight"];
-      if (kv["Shipper"]) extractedShipper = kv["Shipper"];
-      if (kv["Consignee"]) extractedConsignee = kv["Consignee"];
-      if (kv["Notify Party"]) extractedNotifyParty = kv["Notify Party"];
+      // Prefer the structured tradeMetadata (stable keys) and fall back to the
+      // raw key-value pairs (Gemini's freeform labels). Reading only `kv`
+      // false-flagged fields as "not extracted" that were sitting in
+      // tradeMetadata all along (findings #3, #5).
+      const tm = parsed.tradeMetadata || {};
+      extractedVessel = extractedVessel || tm.vesselName || kv["Vessel"] || "";
+      extractedVoyage = extractedVoyage || tm.voyageNumber || kv["Voyage Number"] || "";
+      extractedBookingRef = extractedBookingRef || tm.transportDocumentNumber || kv["Booking Reference"] || "";
+      extractedPortOfLoading = extractedPortOfLoading || tm.portOfLoading || kv["Port of Loading"] || "";
+      extractedPortOfDischarge = extractedPortOfDischarge || tm.portOfDischarge || kv["Port of Discharge"] || "";
+      extractedContainerNo = extractedContainerNo || tm.containerNumber || kv["Container No"] || "";
+      extractedGrossWeight = extractedGrossWeight || tm.totalWeight || kv["Gross Weight"] || "";
+      extractedShipper = extractedShipper || tm.exporterName || tm.shipper || kv["Shipper"] || "";
+      extractedConsignee = extractedConsignee || tm.importerName || tm.consignee || kv["Consignee"] || "";
+      extractedNotifyParty = extractedNotifyParty || tm.notifyParty || kv["Notify Party"] || "";
       if (kv["Method of Despatch"]) extractedMethodOfDespatch = kv["Method of Despatch"];
     } catch { }
   }
 
   // 2. Shipment & Entry Details
-  const missingShipmentFields = [];
-  if (!shipment.carrierName) missingShipmentFields.push("Carrier");
-  if (!shipment.portOfEntry) missingShipmentFields.push("Port of Entry");
-  if (!shipment.entryType) missingShipmentFields.push("Entry Type");
-  if (!shipment.incoterm) missingShipmentFields.push("Incoterm");
+  // Two different sources feed this category, and the reviewer flagged that
+  // conflating them tells a user to "re-check the documents" for data that was
+  // never on a document (finding #6). Keep them separate.
+  const missingEntryRecordFields = []; // set on the shipment record, not extracted
+  if (!shipment.carrierName) missingEntryRecordFields.push("Carrier");
+  if (!shipment.portOfEntry) missingEntryRecordFields.push("Port of Entry");
+  if (!shipment.entryType) missingEntryRecordFields.push("Entry Type");
+  if (!shipment.incoterm) missingEntryRecordFields.push("Incoterm");
 
+  const missingTransportDocFields = []; // read off the uploaded transport document
   if (documents.length > 0) {
-    if (!extractedBookingRef) missingShipmentFields.push("Bill of Lading / Booking Reference");
-    if (!extractedVessel) missingShipmentFields.push("Vessel Name");
-    if (!extractedVoyage) missingShipmentFields.push("Voyage Number");
-    if (!extractedPortOfLoading) missingShipmentFields.push("Port of Loading");
-    if (!extractedPortOfDischarge) missingShipmentFields.push("Port of Discharge");
-    if (!extractedMethodOfDespatch) missingShipmentFields.push("Mode of Transport");
-    if (!extractedContainerNo) missingShipmentFields.push("Container Number");
-    if (!extractedGrossWeight) missingShipmentFields.push("Gross Weight");
+    if (!extractedBookingRef) missingTransportDocFields.push("Bill of Lading / Booking Reference");
+    if (!extractedVessel) missingTransportDocFields.push("Vessel Name");
+    if (!extractedVoyage) missingTransportDocFields.push("Voyage Number");
+    if (!extractedPortOfLoading) missingTransportDocFields.push("Port of Loading");
+    if (!extractedPortOfDischarge) missingTransportDocFields.push("Port of Discharge");
+    if (!extractedMethodOfDespatch) missingTransportDocFields.push("Mode of Transport");
+    if (!extractedContainerNo) missingTransportDocFields.push("Container Number");
+    if (!extractedGrossWeight) missingTransportDocFields.push("Gross Weight");
   }
+  const missingShipmentFields = [...missingEntryRecordFields, ...missingTransportDocFields];
 
   let shipmentStatus: "Ready" | "Needs Information" = "Ready";
   let shipmentResult = "All transport parameters matched";
@@ -490,9 +486,21 @@ export default async function ShipmentWorkspacePage(props: {
     shipmentActionRequired = "Upload Bill of Lading or Forwarding Instructions.";
   } else if (missingShipmentFields.length > 0) {
     shipmentStatus = "Needs Information";
-    shipmentResult = `Missing transport parameters: ${missingShipmentFields.length} fields`;
-    shipmentDetails = `The following transport metadata fields are missing from document extraction: ${missingShipmentFields.join(", ")}. These are required for manifest reconciliation.`;
-    shipmentActionRequired = `Provide missing parameters: ${missingShipmentFields.join(", ")}`;
+    shipmentResult = `${missingShipmentFields.length} transport field${missingShipmentFields.length > 1 ? "s" : ""} outstanding`;
+    const parts: string[] = [];
+    if (missingEntryRecordFields.length > 0) {
+      parts.push(`Not yet set on the shipment record: ${missingEntryRecordFields.join(", ")}.`);
+    }
+    if (missingTransportDocFields.length > 0) {
+      parts.push(`Not found on the uploaded transport document: ${missingTransportDocFields.join(", ")}.`);
+    }
+    shipmentDetails = parts.join(" ");
+    shipmentActionRequired =
+      missingEntryRecordFields.length > 0 && missingTransportDocFields.length > 0
+        ? `Set ${missingEntryRecordFields.join(", ")} on the shipment; provide ${missingTransportDocFields.join(", ")} from the transport document.`
+        : missingEntryRecordFields.length > 0
+          ? `Set on the shipment record: ${missingEntryRecordFields.join(", ")}.`
+          : `Provide from the transport document: ${missingTransportDocFields.join(", ")}.`;
   }
 
   // 3. Transaction Parties
@@ -589,6 +597,14 @@ export default async function ShipmentWorkspacePage(props: {
     merchandiseResult = "Classification unverified — no document attached";
     merchandiseDetails = "Line items exist for this shipment, but no document is currently attached to substantiate their HTS classification. Their stored confidence scores predate detachment and can't be trusted as current.";
     merchandiseActionRequired = "Attach the commercial invoice or supporting document that backs this classification.";
+  } else if (displayLineItems.some((item) => !item.htsCode)) {
+    // "HTS codes verified" must not show while a line still has no code at all
+    // (finding #3 — summary said READY while every document's HTS read Missing).
+    const missing = displayLineItems.filter((item) => !item.htsCode);
+    merchandiseStatus = "Needs Review";
+    merchandiseResult = `${missing.length} line item${missing.length > 1 ? "s" : ""} not classified`;
+    merchandiseDetails = `Line ${missing.map((m) => m.lineNumber).join(", ")} ${missing.length > 1 ? "have" : "has"} no HTS code assigned yet.`;
+    merchandiseActionRequired = "Classify the remaining line items in the Verified Line Items table.";
   } else if (vagueItems.length > 0) {
     merchandiseStatus = "Needs Review";
     merchandiseResult = `Line ${vagueItems[0].lineNumber} classification review required`;
@@ -787,7 +803,7 @@ export default async function ShipmentWorkspacePage(props: {
       whyItMatters: "CBP regulations mandate a valid power of attorney to establish filing authority. Transmitting without a valid POA is a severe regulatory violation.",
       actionOwner: importerActionOwner,
       actionRequired: importerActionRequired,
-      source: "Importer Profile Database",
+      source: "Importer of record master data",
       timestamp: shipment.updatedAt.toISOString(),
       evidence:
         importerStatus === "Ready"
@@ -812,7 +828,7 @@ export default async function ShipmentWorkspacePage(props: {
       whyItMatters: "Carrier name, SCAC codes, bill numbers, and arrival dates are required for vessel manifest matching and cargo release authorization.",
       actionOwner: "Importer",
       actionRequired: shipmentActionRequired,
-      source: "Carrier Waybill Ingestion API",
+      source: "Shipment record + transport document",
       timestamp: shipment.updatedAt.toISOString(),
       evidence:
         shipmentStatus === "Ready" && bolDoc
@@ -1084,7 +1100,20 @@ export default async function ShipmentWorkspacePage(props: {
     })),
     avgExtractionConfidence: avgExtractionConfidence ?? undefined,
     blockingReconciliationIssues: blockingReconciliationCount,
+    // Same signal the "6. Quantity, Packaging & Reconciliation" category uses,
+    // so the readiness factor and that category can never contradict each
+    // other (finding #3).
+    liveQuantityMismatch: qtyStatus === "Blocked",
   });
+
+  // The stored `shipment.readinessScore` / `healthStatus` columns are only
+  // written by a handful of routes and go stale after any other mutation
+  // (resolving an exception, editing a line item). The ribbon below already
+  // recomputes the score every render — show that number in the header badge
+  // and health pill too, so the page never disagrees with itself (finding #3).
+  const freshReadinessScore = readinessBreakdown.totalScore;
+  const freshHealthStatus =
+    freshReadinessScore >= 80 ? "Healthy" : freshReadinessScore >= 50 ? "At Risk" : "Critical";
 
   // Pre-built once here (not inline in the ternary they replaced) so
   // `ShipmentTabsPanel` -- a Client Component -- can hold which tab is active
@@ -1323,7 +1352,7 @@ export default async function ShipmentWorkspacePage(props: {
 
     // 2. Human Field Edits & Approvals (from FieldApproval)
     ...fieldApprovals.map((fa) => {
-      const label = FIELD_REVIEW_LABELS[fa.fieldKey] || fa.fieldKey.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()).trim();
+      const label = resolveField(fa.fieldKey)?.label || fa.fieldKey.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()).trim();
       return {
         id: `field-approval-${fa.id}`,
         action: "FIELD_APPROVED",
@@ -1342,7 +1371,7 @@ export default async function ShipmentWorkspacePage(props: {
       const userName = sce.user
         ? [sce.user.firstName, sce.user.lastName].filter(Boolean).join(" ") || sce.user.email
         : "User";
-      const fieldLabel = FIELD_REVIEW_LABELS[sce.field] || sce.field.replace(/([A-Z])/g, " $1").trim();
+      const fieldLabel = resolveField(sce.field)?.label || sce.field.replace(/([A-Z])/g, " $1").trim();
       return {
         id: `change-event-${sce.id}`,
         action: sce.changeType || "FIELD_UPDATED",
@@ -1518,49 +1547,45 @@ export default async function ShipmentWorkspacePage(props: {
 
           <div className="flex items-center space-x-3 flex-wrap gap-y-2">
             {/* Health status badge — derived by CanonicalShipmentService or last reconciliation. */}
-            {shipment.healthStatus && (
-              <span
-                title={
-                  shipment.healthStatus === "Critical"
-                    ? "Blocking exceptions or reconciliation conflicts prevent filing"
-                    : shipment.healthStatus === "At Risk"
-                      ? "Open exceptions or missing data require attention before filing"
-                      : "No blocking issues detected"
-                }
-                className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-help ${shipment.healthStatus === "Critical"
-                    ? "bg-rose-50 text-rose-700 border-rose-200"
-                    : shipment.healthStatus === "At Risk"
-                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  }`}
-              >
-                {shipment.healthStatus}
-              </span>
-            )}
+            <span
+              title={
+                freshHealthStatus === "Critical"
+                  ? "Blocking exceptions or reconciliation conflicts prevent filing"
+                  : freshHealthStatus === "At Risk"
+                    ? "Open exceptions or missing data require attention before filing"
+                    : "No blocking issues detected"
+              }
+              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border cursor-help ${freshHealthStatus === "Critical"
+                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                  : freshHealthStatus === "At Risk"
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                }`}
+            >
+              {freshHealthStatus}
+            </span>
 
             {canManageJourney && (!trackingProjection?.journey?.legs || trackingProjection.journey.legs.length === 0) && (
               <AddTransportLegButton shipmentId={shipment.id} />
             )}
 
-            {/* Readiness score — progress bar with percentage. */}
-            {shipment.readinessScore !== null && shipment.readinessScore !== undefined && (
-              <div className="flex items-center space-x-2" title={`Filing readiness: ${shipment.readinessScore}%`}>
-                <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${shipment.readinessScore >= 80
-                        ? "bg-emerald-500"
-                        : shipment.readinessScore >= 50
-                          ? "bg-amber-500"
-                          : "bg-rose-500"
-                      }`}
-                    style={{ width: `${shipment.readinessScore}%` }}
-                  />
-                </div>
-                <span className="text-[10px] font-extrabold text-ink-muted tabular-nums">
-                  {shipment.readinessScore}%
-                </span>
+            {/* Readiness score — progress bar with percentage (recomputed live). */}
+            <div className="flex items-center space-x-2" title={`Filing readiness: ${freshReadinessScore}%`}>
+              <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${freshReadinessScore >= 80
+                      ? "bg-emerald-500"
+                      : freshReadinessScore >= 50
+                        ? "bg-amber-500"
+                        : "bg-rose-500"
+                    }`}
+                  style={{ width: `${freshReadinessScore}%` }}
+                />
               </div>
-            )}
+              <span className="text-[10px] font-extrabold text-ink-muted tabular-nums">
+                {freshReadinessScore}%
+              </span>
+            </div>
 
             {metrics.isReadyForFiling ? (
               <Link

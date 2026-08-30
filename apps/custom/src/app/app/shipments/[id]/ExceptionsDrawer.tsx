@@ -9,6 +9,7 @@ import { DocumentFieldReviewModal, DocumentFieldSummary } from "./DocumentFieldR
 import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 import { Modal } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
+import { canonicalizeFieldKey } from "@/lib/documents/fieldDictionary";
 import {
   isResolvableException,
   type DbExceptionItem,
@@ -61,6 +62,7 @@ export function ExceptionsDrawer({
 
   const [approvingField, setApprovingField] = useState<string | null>(null);
   const [batchApprovingDoc, setBatchApprovingDoc] = useState<string | null>(null);
+  const [fieldReviewError, setFieldReviewError] = useState<string | null>(null);
 
   const [editingFieldKey, setEditingFieldKey] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
@@ -92,37 +94,47 @@ export function ExceptionsDrawer({
     }
   }, [requestingDocType]);
 
+  const postFieldReview = async (
+    docId: string,
+    body: { fieldKey: string; action: string; value?: string }
+  ): Promise<boolean> => {
+    const res = await fetch(`/api/shipments/${shipmentId}/documents/${docId}/field-review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || data.message || `Save failed (${res.status})`);
+    }
+    return true;
+  };
+
   const handleInlineEditSave = async (docId: string, fieldKey: string) => {
     if (!editingValue.trim()) return;
     const key = `${docId}:${fieldKey}`;
     setSavingInlineField(key);
+    setFieldReviewError(null);
     try {
-      const res = await fetch(`/api/shipments/${shipmentId}/documents/${docId}/field-review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fieldKey, action: "EDIT", value: editingValue.trim() }),
-      });
-      if (res.ok) router.refresh();
+      await postFieldReview(docId, { fieldKey, action: "EDIT", value: editingValue.trim() });
+      setEditingFieldKey(null);
+      router.refresh();
     } catch (err) {
-      console.error("Field review edit save failed", err);
+      setFieldReviewError(err instanceof Error ? err.message : "Field review edit failed");
     } finally {
       setSavingInlineField(null);
-      setEditingFieldKey(null);
     }
   };
 
   const handleInlineApprove = async (docId: string, fieldKey: string, value: string) => {
     const key = `${docId}:${fieldKey}`;
     setApprovingField(key);
+    setFieldReviewError(null);
     try {
-      const res = await fetch(`/api/shipments/${shipmentId}/documents/${docId}/field-review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fieldKey, action: "APPROVE", value }),
-      });
-      if (res.ok) router.refresh();
+      await postFieldReview(docId, { fieldKey, action: "APPROVE", value });
+      router.refresh();
     } catch (err) {
-      console.error("Field review approval failed", err);
+      setFieldReviewError(err instanceof Error ? err.message : "Field review approval failed");
     } finally {
       setApprovingField(null);
     }
@@ -165,29 +177,38 @@ export function ExceptionsDrawer({
 
   const handleBatchApprove = async (doc: DocumentFieldSummary) => {
     setBatchApprovingDoc(doc.documentId);
+    setFieldReviewError(null);
     try {
       const unconfirmed = doc.fields.filter((f) => f.status === "NEEDS_REVIEW" && f.value);
-      await Promise.all(
+      const results = await Promise.allSettled(
         unconfirmed.map((f) =>
-          fetch(`/api/shipments/${shipmentId}/documents/${doc.documentId}/field-review`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fieldKey: f.key, action: "APPROVE", value: f.value }),
-          })
+          postFieldReview(doc.documentId, { fieldKey: f.key, action: "APPROVE", value: f.value! })
         )
       );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) {
+        setFieldReviewError(`${failed} of ${unconfirmed.length} field${failed === 1 ? "" : "s"} could not be confirmed.`);
+      }
       router.refresh();
     } catch (err) {
-      console.error("Batch approval failed", err);
+      setFieldReviewError(err instanceof Error ? err.message : "Batch approval failed");
     } finally {
       setBatchApprovingDoc(null);
     }
   };
 
-  // Filter out exceptions that have been resolved
+  // Filter out exceptions that have been resolved. Cross-document conflicts
+  // (`CONFLICT:*`) are rendered from the ReconciliationIssue rows below, so the
+  // paired ExceptionItem the engine also writes is dropped here to avoid the
+  // same conflict showing up twice.
   const openExceptions = exceptionItems.filter(
-    (ex) => ex.status !== "RESOLVED" && ex.status !== "Resolved"
+    (ex) =>
+      ex.status !== "RESOLVED" &&
+      ex.status !== "Resolved" &&
+      !(ex.code || "").startsWith("CONFLICT:")
   );
+
+  const docNameById = new Map(documentFieldSummaries.map((d) => [d.documentId, d.fileName]));
 
   // Map database exception items to UI objects
   const exceptions: ExceptionCard[] = openExceptions.map((dbEx) => {
@@ -199,6 +220,11 @@ export function ExceptionsDrawer({
     const isPoa = descLower.includes("poa") || descLower.includes("power of attorney");
     const isInvoiceMissing = descLower.includes("commercial invoice missing");
     const isPackingMissing = descLower.includes("packing list missing");
+    // A per-document field exception (`MISSING_EXTRACTION:<snake_key>`) — it
+    // resolves by supplying the value, not by waiving.
+    const isFieldException =
+      Boolean(dbEx.documentId && dbEx.fieldKey) &&
+      (dbEx.code || "").startsWith("MISSING_EXTRACTION:");
 
     let category = "VALIDATION";
     let title = dbEx.description.split(":")[0]?.trim() || "Compliance Exception";
@@ -276,6 +302,28 @@ export function ExceptionsDrawer({
       desc = dbEx.description;
     }
 
+    // A per-document field exception always resolves by supplying the value —
+    // this overrides any keyword match above (e.g. "Country of Origin was not
+    // extracted" must not open the HTS/COO flows).
+    if (isFieldException) {
+      category = "FIELDS";
+      title = dbEx.description.split(" was not ")[0]?.trim() || dbEx.description;
+      desc = dbEx.description;
+      icon = <Pencil className="w-4 h-4 text-brand" />;
+      actionText = "Provide value →";
+      actionType = "FIELD_CORRECTION";
+    }
+
+    const docSummary = dbEx.documentId
+      ? documentFieldSummaries.find((d) => d.documentId === dbEx.documentId)
+      : undefined;
+    const exCanonical = canonicalizeFieldKey(dbEx.fieldKey);
+    const currentValue = isFieldException
+      ? docSummary?.fields.find(
+          (f) => f.key === dbEx.fieldKey || canonicalizeFieldKey(f.key) === exCanonical
+        )?.value ?? null
+      : null;
+
     return {
       id: dbEx.id,
       dbId: dbEx.id,
@@ -286,6 +334,12 @@ export function ExceptionsDrawer({
       icon,
       actionText,
       actionType,
+      documentId: dbEx.documentId ?? null,
+      fieldKey: dbEx.fieldKey ?? null,
+      code: dbEx.code ?? null,
+      dbCategory: dbEx.category ?? null,
+      currentValue,
+      groupLabel: dbEx.documentId ? docNameById.get(dbEx.documentId) ?? "Document field review" : undefined,
     };
   });
 
@@ -302,9 +356,23 @@ export function ExceptionsDrawer({
       icon: <AlertTriangle className="w-4 h-4 text-amber-500" />,
       actionText: `Add ${type} →`,
       actionType: "UPLOAD_DIRECT",
+      groupLabel: "Missing documents",
     }));
 
   // Cross-document reconciliation conflicts from the field-comparison engine.
+  // `issue.field` is the rule id (e.g. "QTY_INV_PACK") — turn it into a label.
+  const CONFLICT_LABELS: Record<string, string> = {
+    QTY_INV_PACK: "Quantity: invoice vs packing list",
+    QTY_INV_BL: "Quantity: invoice vs bill of lading",
+    VAL_INV_PACK: "Total value: invoice vs packing list",
+    CURR_INV_PACK: "Currency: invoice vs packing list",
+    CURR_INV_BL: "Currency: invoice vs bill of lading",
+    WEIGHT_INV_PACK: "Gross weight: invoice vs packing list",
+    WEIGHT_PACK_BL: "Gross weight: packing list vs bill of lading",
+    ORIGIN_COO_INV: "Country of origin: certificate vs invoice",
+    BL_NUM_INV_BL: "B/L number: invoice vs bill of lading",
+    CONTAINER_BL_PACK: "Container number: bill of lading vs packing list",
+  };
   const conflictExceptions: (ExceptionCard & { conflictIssueId: string })[] = reconciliationIssues
     .filter((issue) => issue.status === "Open")
     .map((issue) => {
@@ -313,8 +381,8 @@ export function ExceptionsDrawer({
         id: `conflict-${issue.id}`,
         conflictIssueId: issue.id,
         category: "CONFLICTS",
-        title: issue.field.replace(/_/g, " → ").replace(/[A-Z]+/g, (m) => m),
-        desc: `${issue.expectedValue} — expected to match — ${issue.actualValue}. Sources: ${issue.sourceDocuments.join(", ")}.`,
+        title: CONFLICT_LABELS[issue.field] || issue.field.replace(/_/g, " "),
+        desc: `${issue.expectedValue} vs ${issue.actualValue}${issue.sourceDocuments.length ? ` — ${issue.sourceDocuments.join(", ")}` : ""}.`,
         icon: isBlocking ? (
           <AlertCircle className="w-4 h-4 text-red-500" />
         ) : (
@@ -322,6 +390,13 @@ export function ExceptionsDrawer({
         ),
         actionText: "Resolve Conflict →",
         actionType: "CONFLICT",
+        groupLabel: "Cross-document conflicts",
+        conflict: {
+          field: issue.field,
+          expectedValue: issue.expectedValue,
+          actualValue: issue.actualValue,
+          sources: issue.sourceDocuments,
+        },
       };
     });
 
@@ -329,6 +404,33 @@ export function ExceptionsDrawer({
   const totalPendingFields = documentFieldSummaries.reduce(
     (acc, doc) => acc + (doc.totalCount - doc.confirmedCount),
     0
+  );
+
+  // Group cards so the list stays scannable as volume grows (finding #8):
+  // conflicts first, then missing documents, then per-document field gaps,
+  // then everything else.
+  const GROUP_ORDER = ["Cross-document conflicts", "Missing documents"];
+  const groupFor = (ex: ExceptionCard): string => {
+    if (ex.groupLabel) return ex.groupLabel;
+    if (ex.category === "CONFLICTS") return "Cross-document conflicts";
+    if (ex.category === "MISSING") return "Missing documents";
+    return "Compliance findings";
+  };
+  const groupedExceptions = new Map<string, ExceptionCard[]>();
+  for (const ex of allExceptions) {
+    const g = groupFor(ex);
+    const arr = groupedExceptions.get(g) ?? [];
+    arr.push(ex);
+    groupedExceptions.set(g, arr);
+  }
+  const rank = (g: string) => {
+    const i = GROUP_ORDER.indexOf(g);
+    if (i !== -1) return i;
+    if (g === "Compliance findings") return 98;
+    return 50; // per-document groups, alphabetical among themselves
+  };
+  const groupEntries = [...groupedExceptions.entries()].sort(
+    (a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0])
   );
 
   return (
@@ -409,10 +511,21 @@ export function ExceptionsDrawer({
           </Link>
         </div>
 
-        {/* Tab 1: Exceptions & Action Items Grid */}
+        {/* Tab 1: Exceptions & Action Items — grouped for scannability */}
         {panelTab === "EXCEPTIONS" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
-            {allExceptions.map((ex) => (
+          <div className="space-y-5 pt-1">
+            {groupEntries.map(([groupName, cards]) => (
+              <div key={groupName} className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">
+                    {groupName}
+                  </h4>
+                  <span className="text-[10px] font-bold text-ink-muted bg-surface-muted border border-border rounded-full px-1.5">
+                    {cards.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {cards.map((ex) => (
               <div
                 key={ex.id}
                 className="p-4 rounded-xl bg-surface-muted border border-border space-y-2 hover:border-brand transition-all duration-200"
@@ -481,9 +594,12 @@ export function ExceptionsDrawer({
                   </Link>
                 )}
               </div>
+                  ))}
+                </div>
+              </div>
             ))}
             {allExceptions.length === 0 && (
-              <div className="col-span-full py-8 text-center text-ink-muted text-xs">
+              <div className="py-8 text-center text-ink-muted text-xs">
                 No open exceptions for this shipment.
               </div>
             )}
@@ -501,6 +617,18 @@ export function ExceptionsDrawer({
                 Review OCR extracted values directly or click Approve All
               </span>
             </div>
+            {fieldReviewError && (
+              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[11px] font-semibold text-red-800">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{fieldReviewError}</span>
+                <button
+                  onClick={() => setFieldReviewError(null)}
+                  className="ml-auto text-red-500 hover:text-red-700 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             {documentFieldSummaries.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {documentFieldSummaries.map((doc) => {

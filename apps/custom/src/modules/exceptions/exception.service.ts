@@ -21,6 +21,7 @@ import { validateReasonCode, isRiskAcceptanceReason, type ExceptionCategory } fr
 import { notify } from "@/modules/notifications/notify";
 import type { DocumentType } from "@prisma/client";
 import { getRequiredFields } from "@/lib/documents/extractionSchemas";
+import { resolveField } from "@/lib/documents/fieldDictionary";
 
 export interface ExceptionListQuery {
   status?: string;
@@ -113,16 +114,6 @@ export interface ExceptionResolver {
   userId: string;
   name: string;
 }
-
-// Fields Document Intelligence extracts on every document and that have a
-// real place to be written back to (see field-review route) -- kept in one
-// place so the label shown to users always matches the fieldKey used to
-// group/resolve exceptions.
-export const DOCUMENT_FIELD_LABELS: Record<string, string> = {
-  exporterName: "Exporter Name",
-  importerName: "Importer / Consignee Name",
-  originCountry: "Country of Origin",
-};
 
 export const VALID_EXCEPTION_STATES: readonly string[] = EXCEPTION_STATES;
 
@@ -320,61 +311,6 @@ export class ExceptionService {
     return updated;
   }
 
-  /**
-   * Keeps per-document field exceptions in sync with the latest extraction
-   * for one document: opens an exception for each expected field that's
-   * still missing, and auto-resolves any that are now present (e.g. after
-   * a document was re-processed). Never touches fields that were never in
-   * DOCUMENT_FIELD_LABELS -- this is intentionally narrow, not a general
-   * validation engine.
-   */
-  static async syncDocumentFieldExceptions(input: {
-    accountId: string;
-    shipmentId: string;
-    documentId: string;
-    fileName: string;
-    fields: Record<string, string | null | undefined>;
-  }) {
-    for (const fieldKey of Object.keys(DOCUMENT_FIELD_LABELS)) {
-      const value = input.fields[fieldKey];
-      const label = DOCUMENT_FIELD_LABELS[fieldKey];
-
-      const existingOpen = await db.exceptionItem.findFirst({
-        where: { documentId: input.documentId, fieldKey, status: { not: "Resolved" } },
-        omit: { resolutionReasonCode: true },
-      });
-
-      if (!value) {
-        if (!existingOpen) {
-          await createExceptionItem({
-            accountId: input.accountId,
-            shipmentId: input.shipmentId,
-            documentId: input.documentId,
-            fieldKey,
-            code: `MISSING_FIELD:${fieldKey}`,
-            category: "MISSING_DATA",
-            type: "missing_document",
-            severity: "Medium",
-            blocking: false,
-            description: `${label} was not found on ${input.fileName}.`,
-            requiredAction: `Provide ${label} or confirm it's not applicable.`,
-            sourceAgent: "Document Intelligence Agent",
-          });
-        }
-      } else if (existingOpen) {
-        await db.exceptionItem.update({
-          where: { id: existingOpen.id },
-          data: {
-            status: "Resolved",
-            resolvedAt: new Date(),
-            resolvedBy: "SYSTEM",
-            resolvedByName: "Automated re-extraction",
-            resolutionNote: `${label} was found on reprocessing: "${value}".`,
-          },
-        });
-      }
-    }
-  }
 
   /**
    * C-5: Sync MISSING_DATA exceptions for per-document-type required fields.
@@ -448,14 +384,31 @@ export class ExceptionService {
     resolver: ExceptionResolver,
     note: string
   ) {
-    const existingOpen = await db.exceptionItem.findFirst({
-      where: { documentId, fieldKey, accountId, status: { not: "Resolved" } },
+    // Exceptions are stored under the snake_case extraction-schema key
+    // (`bl_number`), while callers pass whatever spelling their surface uses
+    // (`transportDocumentNumber`, `tracking.billOfLading`). Resolve every open
+    // exception on this document whose stored key maps to the same dictionary
+    // field, so approving/editing a value clears its exception regardless of
+    // which vocabulary raised it.
+    const field = resolveField(fieldKey);
+    const keyForms = new Set<string>([fieldKey]);
+    if (field) {
+      keyForms.add(field.inventory.legacyKey);
+      if (field.tradeMetadataKey) keyForms.add(field.tradeMetadataKey);
+      for (const k of field.extractionSchemaKeys) keyForms.add(k);
+    }
+
+    const openForDoc = await db.exceptionItem.findMany({
+      where: { documentId, accountId, status: { not: "Resolved" }, fieldKey: { not: null } },
       omit: { resolutionReasonCode: true },
     });
-    if (!existingOpen) return null;
+    const matches = openForDoc.filter(
+      (ex) => ex.fieldKey && (keyForms.has(ex.fieldKey) || resolveField(ex.fieldKey)?.canonicalKey === field?.canonicalKey)
+    );
+    if (matches.length === 0) return null;
 
-    return db.exceptionItem.update({
-      where: { id: existingOpen.id },
+    await db.exceptionItem.updateMany({
+      where: { id: { in: matches.map((m) => m.id) } },
       data: {
         status: "Resolved",
         resolvedAt: new Date(),
@@ -464,5 +417,6 @@ export class ExceptionService {
         resolutionNote: note,
       },
     });
+    return matches[0];
   }
 }
