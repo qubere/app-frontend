@@ -33,7 +33,8 @@ export default async function CompliancePage(props: {
     rawTab === "notifications" ||
     rawTab === "community-screening" ||
     rawTab === "rdps" ||
-    rawTab === "bulk-screening"
+    rawTab === "bulk-screening" ||
+    rawTab === "reports"
       ? rawTab
       : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
@@ -49,13 +50,17 @@ export default async function CompliancePage(props: {
   const mayReadBulkCompliance = holdsPermission(context, "compliance.bulk_screening.view");
   const mayCreateBulkCompliance = holdsPermission(context, "compliance.bulk_screening.create");
   const mayImportPreApprovals = holdsPermission(context, "compliance.restricted_party.approve");
+  const mayReadReports = holdsPermission(context, "compliance.reports.view");
+  const mayGenerateReports = holdsPermission(context, "compliance.reports.generate");
+  const mayManageReports = holdsPermission(context, "compliance.reports.manage");
   const resolvedTab =
     (activeTab === "audit" && !mayReadAuditHistory) ||
     (activeTab === "history" && !mayReadExecutionHistory) ||
     (activeTab === "notifications" && !mayManageNotificationSettings) ||
     (activeTab === "community-screening" && !mayReadCommunityScreening) ||
     (activeTab === "rdps" && !mayReadRdps) ||
-    (activeTab === "bulk-screening" && !mayReadBulkCompliance)
+    (activeTab === "bulk-screening" && !mayReadBulkCompliance) ||
+    (activeTab === "reports" && !mayReadReports)
       ? "overview"
       : activeTab;
 
@@ -342,6 +347,9 @@ export default async function CompliancePage(props: {
         mayReadBulkCompliance={mayReadBulkCompliance}
         mayCreateBulkCompliance={mayCreateBulkCompliance}
         mayImportPreApprovals={mayImportPreApprovals}
+        mayReadReports={mayReadReports}
+        mayGenerateReports={mayGenerateReports}
+        mayManageReports={mayManageReports}
       />
     </div>
   );

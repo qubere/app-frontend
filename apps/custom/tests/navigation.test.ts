@@ -200,6 +200,7 @@ describe("navigation coverage -- nothing broker-critical is orphaned", () => {
     "/app/hts",
     "/app/tariffs",
     "/app/simulator",
+    "/app/intelligence",
     "/app/billing",
     "/app/billing/exceptions",
     "/app/clients",
