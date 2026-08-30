@@ -1268,8 +1268,10 @@ model ShipmentDocument {
   activeParseVersionId String?
 
   /// Where this document row originated. EMAIL rows are created by the
-  /// inbound-email worker; UPLOAD rows by the manual upload route.
-  source String @default("UPLOAD") // UPLOAD, EMAIL
+  /// inbound-email worker; UPLOAD rows by the manual upload route; API rows by
+  /// the /v1/intake/document ingest endpoint. EMAIL and API rows both run
+  /// shipment auto-matching after parse.
+  source String @default("UPLOAD") // UPLOAD, EMAIL, API
 
   /// Direct assignee for a standalone/unattached document (e.g. the inbound
   /// route's default assignee for a freshly emailed, unmatched document).

@@ -624,7 +624,7 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
 
   let shipmentId = document?.shipmentId ?? null;
 
-  if (shipmentId === null && document?.source === "EMAIL") {
+  if (shipmentId === null && (document?.source === "EMAIL" || document?.source === "API")) {
     shipmentId = await tryAutoMatchShipment(run);
   }
 

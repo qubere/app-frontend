@@ -106,9 +106,14 @@ coverage and are comfortable sending documents to a third party.
 
 ## Status
 
-- [ ] A. Matching engine
-- [ ] B. Candidate picker UI
-- [ ] C. Conflict lane
-- [ ] D. Evidence viewer
+- [x] A. Matching engine — `identifierExtraction.ts` + weighted `shipmentMatching.ts` + `trackingIdentifierSync.ts`; migration `20260830030000`
+- [x] B. Candidate picker UI — `AttachPopover` in `DocumentsClient.tsx`
+- [x] C. Conflict lane — `DOCUMENT_MATCH_CONFLICT` notification + Documents-page badge; cleared on attach
+- [x] D. Evidence viewer — `EvidenceExpander` on decision cards + `initialFieldName` deep-link into `DocumentReviewPanel`
 - [ ] E. Intake API hardening
 - [ ] F. Malware scanning
+
+Migration `20260830030000` applied directly to the shared Supabase DB via
+`prisma db execute` (idempotent `IF NOT EXISTS`); the `_prisma_migrations`
+table there is already 25 migrations behind repo state, so `migrate deploy`
+was not run.
