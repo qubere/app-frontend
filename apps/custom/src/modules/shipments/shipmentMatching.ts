@@ -382,3 +382,18 @@ export async function matchShipmentForDocument(
 
   return { matchedShipmentId, candidates: scored };
 }
+
+/**
+ * True when the matcher found no confident single shipment but two or more are
+ * plausible -- i.e. a human needs to pick. Distinct from "no match at all"
+ * (zero candidates) and from a clean auto-attach.
+ */
+export function isMatchConflict(result: {
+  matchedShipmentId: string | null;
+  candidates: ScoredCandidate[];
+}): boolean {
+  return (
+    result.matchedShipmentId === null &&
+    result.candidates.filter((c) => c.score >= SUGGEST_THRESHOLD).length >= 2
+  );
+}

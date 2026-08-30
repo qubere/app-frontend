@@ -1022,7 +1022,7 @@ export function DocumentsClient({
 
                     <td className="py-3.5 px-5 font-mono text-[11px]">
                       {doc.unattached ? (
-                        <div className="relative inline-block">
+                        <div className="relative inline-flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => setAttachingDocId(attachingDocId === doc.id ? null : doc.id)}
@@ -1032,6 +1032,34 @@ export function DocumentsClient({
                           >
                             <Paperclip className="w-3.5 h-3.5" />
                           </button>
+                          {(() => {
+                            const strong = (doc.shipmentCandidates ?? []).filter((c) => c.confidenceScore >= 0.5);
+                            if (strong.length >= 2) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setAttachingDocId(attachingDocId === doc.id ? null : doc.id)}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors cursor-pointer"
+                                  title={`${strong.length} shipments match — pick one`}
+                                >
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                  {strong.length} match
+                                </button>
+                              );
+                            }
+                            if (strong.length === 1) {
+                              return (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-brand/10 text-brand border border-brand/20"
+                                  title="A likely shipment was found"
+                                >
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  suggested
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                           {attachingDocId === doc.id && (
                             <AttachPopover
                               doc={doc}

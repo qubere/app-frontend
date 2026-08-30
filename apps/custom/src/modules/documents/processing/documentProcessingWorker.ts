@@ -31,7 +31,8 @@ import { pollDelayMs, readProcessingLimits } from "../parser/config";
 import { getDocumentParserProvider } from "../parser/registry";
 import { assessQuality, qualifiesAsActive } from "../parser/qualityGate";
 import { persistRunArtifacts, parseArtifactIndex, loadNormalizedResult } from "../parser/artifactStore";
-import { matchShipmentForDocument, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
+import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
+import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
 import {
   completeRun,
   createOrFindRun,
@@ -715,15 +716,36 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     select: { inboundEmail: { select: { subject: true } } },
   });
 
-  const { matchedShipmentId } = await matchShipmentForDocument({
+  const matchResult = await matchShipmentForDocument({
     accountId: run.document.accountId,
     documentId: run.documentId,
     emailSubject: inboundAttachment?.inboundEmail.subject ?? null,
     parsedText,
   });
+  const { matchedShipmentId } = matchResult;
 
   if (matchedShipmentId === null) {
-    log("auto_match.no_match", { runId: run.id, documentId: run.documentId });
+    if (isMatchConflict(matchResult)) {
+      log("auto_match.conflict", {
+        runId: run.id,
+        documentId: run.documentId,
+        candidates: matchResult.candidates.length,
+      });
+      // No confident single shipment but several are plausible -- surface it
+      // so a human disambiguates on the Documents page. Dedupe on the document
+      // so a reprocess doesn't re-notify.
+      await notifyAccountRoleHolders({
+        accountId: run.document.accountId,
+        type: "DOCUMENT_MATCH_CONFLICT",
+        message: `"${run.document.fileName}" matches ${matchResult.candidates.length} shipments — pick the right one.`,
+        entityType: "ShipmentDocument",
+        entityId: run.documentId,
+        permission: "document.update",
+        dedupe: true,
+      }).catch((err) => log("auto_match.conflict_notify_failed", { runId: run.id, error: String(err) }));
+    } else {
+      log("auto_match.no_match", { runId: run.id, documentId: run.documentId });
+    }
     return null;
   }
 

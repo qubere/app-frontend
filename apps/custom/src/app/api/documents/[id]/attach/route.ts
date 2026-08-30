@@ -52,6 +52,15 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     data: { shipmentId },
   });
 
+  // The document now has a shipment -- clear any "pick the right shipment"
+  // conflict notifications that were raised for it.
+  await db.notification
+    .updateMany({
+      where: { accountId: ctx.accountId, type: "DOCUMENT_MATCH_CONFLICT", entityId: id, read: false },
+      data: { read: true },
+    })
+    .catch(() => {});
+
   await createAuditLog({
     accountId: ctx.accountId,
     userId: ctx.userId,

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   extractIdentifierCandidates,
   matchShipmentForDocument,
+  isMatchConflict,
   AUTO_ATTACH_THRESHOLD,
   SUGGEST_THRESHOLD,
   type ShipmentIdentifierLookup,
@@ -221,5 +222,21 @@ describe("matchShipmentForDocument", () => {
     );
 
     expect(result.matchedShipmentId).toBeNull();
+    expect(isMatchConflict(result)).toBe(true);
+  });
+
+  it("isMatchConflict is false for a clean match and for no match", async () => {
+    const clean = await matchShipmentForDocument(
+      input({ emailSubject: "SHP-2026-000042" }),
+      makeLookup({
+        async findByShipmentNumber(_a, n) {
+          return n === "SHP-2026-000042" ? { id: "shp_1" } : null;
+        },
+      }).lookup
+    );
+    expect(isMatchConflict(clean)).toBe(false);
+
+    const none = await matchShipmentForDocument(input({ parsedText: "nothing here" }), makeLookup().lookup);
+    expect(isMatchConflict(none)).toBe(false);
   });
 });
