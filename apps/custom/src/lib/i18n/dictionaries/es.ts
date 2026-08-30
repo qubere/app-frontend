@@ -5,6 +5,9 @@ export const es: TranslationKeys = {
   nav: {
     askQubere: "Preguntar a Qubere",
     today: "Hoy",
+    classificationInbox: "Clasificación",
+    htsWorkspace: "Consulta HTS",
+    intelligencePanels: "Inteligencia Comercial",
     commandCenter: "Centro de Control",
     documents: "Documentos",
     regulatoryUpdates: "Actualizaciones Regulatorias",
@@ -39,6 +42,7 @@ export const es: TranslationKeys = {
     toolingAndDocs: "Herramientas y Admin",
     tradeDocs: "Docs Comerciales",
     dutyDrawbacks: "Duty Drawbacks",
+    dutyRecovery: "Recuperación de Aranceles",
     reconciliation: "Recon ACE",
     postEntry: "Post-Entrada",
     tradeData: "Datos Comerciales",

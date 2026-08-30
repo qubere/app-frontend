@@ -20,6 +20,7 @@ import { DestinationCountryEditor } from "./DestinationCountryEditor";
 import { ExceptionsDrawer } from "./ExceptionsDrawer";
 import { LineItemsTable } from "./LineItemsTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
+import { ComplianceChecksPanel } from "./ComplianceChecksPanel";
 import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
 import { AddTransportLegButton } from "./AddTransportLegButton";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
@@ -97,6 +98,13 @@ export default async function ShipmentWorkspacePage(props: {
     isEnterpriseAdmin ||
     context.permissions.includes("shipment.update");
 
+  // On-demand compliance checks -- mirror each route's own permission so the
+  // panel never offers an action the API will 403: embargo + PGA screen gate on
+  // `ai.use`, reconciliation on `shipments.manage`.
+  const isAccountAdmin = context.isPlatformAdmin || isEnterpriseAdmin;
+  const canRunAiChecks = isAccountAdmin || context.permissions.includes("ai.use");
+  const canRunReconciliation = isAccountAdmin || context.permissions.includes("shipments.manage");
+
 
   // None of these nine depend on each other; run them in parallel.
   const [
@@ -112,6 +120,7 @@ export default async function ShipmentWorkspacePage(props: {
     shipmentChangeEvents,
     customerRequests,
     pipelineJobs,
+    pgaRequirementCount,
   ] = await Promise.all([
     CanonicalShipmentService.getCanonicalState(shipment.id),
     canEditClient
@@ -195,6 +204,9 @@ export default async function ShipmentWorkspacePage(props: {
     db.pipelineJob.findMany({
       where: { shipmentId: shipment.id, accountId: context.accountId },
       orderBy: { createdAt: "desc" },
+    }),
+    db.pgaRequirement.count({
+      where: { shipmentLineItem: { shipmentId: shipment.id, accountId: context.accountId } },
     }),
   ]);
 
@@ -1588,6 +1600,27 @@ export default async function ShipmentWorkspacePage(props: {
             },
             readinessBreakdown,
           }}
+        />
+
+        {/* On-demand compliance checks — embargo, PGA and reconciliation used to
+            run only from the pipeline; a broker can now trigger each and see the
+            result feed straight back into the readiness ribbon above. */}
+        <ComplianceChecksPanel
+          shipmentId={shipment.id}
+          embargoInputs={{
+            countryOfOrigin: shipment.countryOfOrigin ?? null,
+            transshipmentPort: shipment.countryOfExport ?? null,
+            // Shipment carries no manufacturer field; origin + transshipment are
+            // the shipment-level signals the embargo rules match on.
+            manufacturerLocation: null,
+          }}
+          initial={{
+            pgaRequirementCount,
+            openReconciliationIssues: reconciliationIssues.length,
+            criticalReconciliationIssues: reconciliationIssues.filter((i) => i.severity === "Critical").length,
+          }}
+          canRunAiChecks={canRunAiChecks}
+          canRunReconciliation={canRunReconciliation}
         />
 
         {/* Compliance Deadline Rail — every statutory and commercial clock for this

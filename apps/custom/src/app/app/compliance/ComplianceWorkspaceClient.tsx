@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users, Radar, UploadCloud } from "lucide-react";
+import { LayoutDashboard, Search, ListChecks, Clock, ShieldCheck, Mail, Users, Radar, UploadCloud, FileBarChart2 } from "lucide-react";
 import type { ScreeningFindingProps, PartyScreeningResultProps } from "./ScreeningPanel";
 import type { AuditRecordProps } from "./AuditHistoryPanel";
 
@@ -19,6 +19,7 @@ const NotificationSettingsPanel = dynamic(() => import("./NotificationSettingsPa
 const CommunityScreeningPanel = dynamic(() => import("./CommunityScreeningPanel").then((m) => m.CommunityScreeningPanel), { ssr: false });
 const RdpsPanel = dynamic(() => import("./RdpsPanel").then((m) => m.RdpsPanel), { ssr: false });
 const BulkScreeningPanel = dynamic(() => import("./BulkScreeningPanel").then((m) => m.BulkScreeningPanel), { ssr: false });
+const ComplianceReportsClient = dynamic(() => import("../compliance-reports/ComplianceReportsClient").then((m) => m.ComplianceReportsClient), { ssr: false });
 
 export type ScreeningBucketData = {
   items: ScreeningFindingProps[];
@@ -84,7 +85,13 @@ interface ComplianceWorkspaceClientProps {
   mayReadBulkCompliance: boolean;
   /** Gates the upload action within the Bulk Compliance Screening tab -- true when the session holds `compliance.bulk_screening.create`. */
   mayCreateBulkCompliance: boolean;
+  /** Gates the account-wide "Run screening" button on the Embargo sub-tab -- true when the session holds `ai.use`. */
+  mayRunEmbargoSweep: boolean;
   mayImportPreApprovals: boolean;
+  /** Gates the "Reports" tab -- true when the session holds `compliance.reports.view`. */
+  mayReadReports: boolean;
+  mayGenerateReports: boolean;
+  mayManageReports: boolean;
 }
 
 type WorkspaceTab =
@@ -96,7 +103,8 @@ type WorkspaceTab =
   | "notifications"
   | "community-screening"
   | "rdps"
-  | "bulk-screening";
+  | "bulk-screening"
+  | "reports";
 
 export function ComplianceWorkspaceClient({
   initialTab = "overview",
@@ -117,7 +125,11 @@ export function ComplianceWorkspaceClient({
   mayManageRdps,
   mayReadBulkCompliance,
   mayCreateBulkCompliance,
+  mayRunEmbargoSweep,
   mayImportPreApprovals,
+  mayReadReports,
+  mayGenerateReports,
+  mayManageReports,
 }: ComplianceWorkspaceClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -135,6 +147,7 @@ export function ComplianceWorkspaceClient({
     { id: "audit", label: "Audit & History", icon: Clock, hidden: !mayReadAuditHistory },
     { id: "history", label: "Service Usage", icon: ShieldCheck, hidden: !mayReadExecutionHistory },
     { id: "notifications", label: "Notifications", icon: Mail, hidden: !mayManageNotificationSettings },
+    { id: "reports", label: "Reports", icon: FileBarChart2, hidden: !mayReadReports },
   ];
 
   useEffect(() => {
@@ -151,6 +164,8 @@ export function ComplianceWorkspaceClient({
       setActiveTab(mayReadRdps ? "rdps" : "overview");
     } else if (tabParam === "bulk-screening") {
       setActiveTab(mayReadBulkCompliance ? "bulk-screening" : "overview");
+    } else if (tabParam === "reports") {
+      setActiveTab(mayReadReports ? "reports" : "overview");
     } else if (tabParam === "screening" || tabParam === "review") {
       setActiveTab(tabParam);
     } else if (!tabParam) {
@@ -164,6 +179,7 @@ export function ComplianceWorkspaceClient({
     mayReadCommunityScreening,
     mayReadRdps,
     mayReadBulkCompliance,
+    mayReadReports,
   ]);
 
   const selectTab = (tab: WorkspaceTab) => {
@@ -219,6 +235,7 @@ export function ComplianceWorkspaceClient({
           <ScreeningPanel
             screeningBuckets={screeningBuckets}
             mayReadPartyScreening={mayReadPartyScreening}
+            mayRunEmbargoSweep={mayRunEmbargoSweep}
             partyScreeningResults={partyScreeningResults}
           />
         )}
@@ -234,6 +251,9 @@ export function ComplianceWorkspaceClient({
         {activeTab === "rdps" && mayReadRdps && <RdpsPanel mayManageRdps={mayManageRdps} />}
         {activeTab === "bulk-screening" && mayReadBulkCompliance && (
           <BulkScreeningPanel mayCreate={mayCreateBulkCompliance} mayImportPreApprovals={mayImportPreApprovals} />
+        )}
+        {activeTab === "reports" && mayReadReports && (
+          <ComplianceReportsClient canGenerate={mayGenerateReports} canManage={mayManageReports} />
         )}
       </div>
     </div>

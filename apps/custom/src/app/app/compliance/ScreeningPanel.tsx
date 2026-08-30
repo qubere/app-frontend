@@ -41,6 +41,7 @@ export interface PartyScreeningResultProps {
 interface ScreeningPanelProps {
   screeningBuckets: Record<string, ScreeningBucketData>;
   mayReadPartyScreening: boolean;
+  mayRunEmbargoSweep: boolean;
   partyScreeningResults: PartyScreeningResultProps[];
 }
 
@@ -192,8 +193,35 @@ function PartyScreeningList({ results }: { results: PartyScreeningResultProps[] 
   );
 }
 
-export function ScreeningPanel({ screeningBuckets, mayReadPartyScreening, partyScreeningResults }: ScreeningPanelProps) {
+export function ScreeningPanel({ screeningBuckets, mayReadPartyScreening, mayRunEmbargoSweep, partyScreeningResults }: ScreeningPanelProps) {
+  const router = useRouter();
   const [activeSub, setActiveSub] = useState<SubTab>(mayReadPartyScreening ? "party" : "embargo");
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepResult, setSweepResult] = useState<{ tone: "ok" | "warn" | "error"; message: string } | null>(null);
+
+  const runEmbargoSweep = async () => {
+    setSweeping(true);
+    setSweepResult(null);
+    try {
+      const res = await fetch("/api/screening/embargo/sweep", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (res.status === 503) {
+        setSweepResult({ tone: "warn", message: data?.message ?? "No embargo rules are loaded, so nothing was screened." });
+        return;
+      }
+      if (!res.ok) {
+        setSweepResult({ tone: "error", message: data?.error?.message ?? data?.message ?? `Sweep failed (${res.status}).` });
+        return;
+      }
+      setSweepResult({ tone: "ok", message: data?.message ?? "Embargo sweep complete." });
+      // The findings list is server-rendered -- refresh so new rows appear.
+      router.refresh();
+    } catch {
+      setSweepResult({ tone: "error", message: "The request did not reach the server. Nothing changed." });
+    } finally {
+      setSweeping(false);
+    }
+  };
 
   const selectSub = (tab: SubTab) => {
     setActiveSub(tab);
@@ -245,7 +273,27 @@ export function ScreeningPanel({ screeningBuckets, mayReadPartyScreening, partyS
             </Button>
           </Link>
         )}
+        {mayRunEmbargoSweep && activeSub === "embargo" && (
+          <Button variant="secondary" size="sm" onClick={runEmbargoSweep} disabled={sweeping}>
+            {sweeping ? "Running…" : "Run screening"}
+          </Button>
+        )}
       </div>
+
+      {sweepResult && activeSub === "embargo" && (
+        <p
+          role="status"
+          className={`text-xs rounded-lg border px-3 py-2 ${
+            sweepResult.tone === "ok"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : sweepResult.tone === "warn"
+                ? "border-amber-200 bg-amber-50 text-amber-800"
+                : "border-red-200 bg-red-50 text-red-800"
+          }`}
+        >
+          {sweepResult.message}
+        </p>
+      )}
 
       <div key={activeSub}>
         {activeSub === "party" && mayReadPartyScreening && <PartyScreeningList results={partyScreeningResults} />}

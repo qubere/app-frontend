@@ -22,6 +22,8 @@ import { decisionGroupLabel, reviewerLabel, editableFieldsFor } from "@/modules/
 import { triageDecision, type TriageCategory } from "@/modules/decisions/decisionState";
 import type { ShipmentActionGroup, ActionItem } from "@/modules/actions/shipmentActions";
 import type { WorkPriority } from "@/modules/work/workQueue";
+import type { TodayLane, TodayLaneSummary } from "@/modules/today/todayLanes";
+import { TodayLanePanel } from "./TodayLanePanel";
 import { CountdownChip } from "@/components/deadlines/CountdownChip";
 
 export interface DocSummary {
@@ -59,6 +61,21 @@ interface ActionsClientProps {
   teamMembers?: TeamMember[];
   /** Server-applied routed-queue scope (from ?scope=). */
   scope?: "mine" | "team" | "unassigned" | "all";
+  /** Open Operations item count, for the lane strip. */
+  operationsCount?: number;
+  /** Cross-domain compliance lane, or null when the caller lacks compliance.read. */
+  complianceLane?: TodayLaneSummary | null;
+  /** Cross-domain billing lane, or null when the caller lacks billing.exception.view. */
+  billingLane?: TodayLaneSummary | null;
+  initialLane?: TodayLane;
+  /** exceptions.resolve -- resolve/accept-risk compliance findings from Today. */
+  canResolveCompliance?: boolean;
+  /** billing.exception.resolve. */
+  canResolveBilling?: boolean;
+  /** billing.exception.waive. */
+  canWaiveBilling?: boolean;
+  /** specialist.write -- show Escalate on exception rows. */
+  canEscalate?: boolean;
 }
 
 const PRIORITY_LABEL: Record<WorkPriority, string> = {
@@ -90,9 +107,36 @@ export function ActionsClient({
   urgencyByShipment = {},
   teamMembers = [],
   scope = "all",
+  operationsCount,
+  complianceLane = null,
+  billingLane = null,
+  initialLane = "operations",
+  canResolveCompliance = false,
+  canResolveBilling = false,
+  canWaiveBilling = false,
+  canEscalate = false,
 }: ActionsClientProps) {
   const router = useRouter();
   const [localGroups, setLocalGroups] = useState(initialGroups);
+  const [activeLane, setActiveLane] = useState<TodayLane>(initialLane);
+  // Items disposed from a lane this session -- subtracted from the strip counts.
+  const [laneDisposed, setLaneDisposed] = useState<{ compliance: number; billing: number }>({
+    compliance: 0,
+    billing: 0,
+  });
+  const onLaneDisposed = (lane: "compliance" | "billing") =>
+    setLaneDisposed((prev) => ({ ...prev, [lane]: prev[lane] + 1 }));
+
+  const goToLane = (next: TodayLane) => {
+    setActiveLane(next);
+    const params = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    if (next === "operations") params.delete("lane");
+    else params.set("lane", next);
+    // Shallow update: keep the current scroll/work but make the lane linkable.
+    router.replace(`/app/actions${params.toString() ? `?${params.toString()}` : ""}`);
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<WorkPriority | "all">("all");
   const [scopeTab, setScopeTab] = useState<"mine" | "team" | "unassigned" | "all">(scope);
@@ -458,6 +502,47 @@ export function ActionsClient({
         </div>
       </div>
 
+      {/* Lane strip: Operations is the shipment inbox below; Compliance and
+          Billing are cross-domain triage that deep-link to their own surfaces. */}
+      {(complianceLane || billingLane) && (
+        <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-border shadow-2xs overflow-x-auto">
+          {([
+            { lane: "operations" as const, label: "Operations", count: operationsCount ?? localGroups.reduce((n, g) => n + g.items.length, 0), critical: 0, show: true },
+            { lane: "compliance" as const, label: "Compliance", count: Math.max(0, (complianceLane?.openCount ?? 0) - laneDisposed.compliance), critical: complianceLane?.criticalCount ?? 0, show: !!complianceLane },
+            { lane: "billing" as const, label: "Billing", count: Math.max(0, (billingLane?.openCount ?? 0) - laneDisposed.billing), critical: billingLane?.criticalCount ?? 0, show: !!billingLane },
+          ]).filter((l) => l.show).map((l) => {
+            const isActive = activeLane === l.lane;
+            return (
+              <button
+                key={l.lane}
+                onClick={() => goToLane(l.lane)}
+                aria-current={isActive ? "true" : undefined}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  isActive ? "bg-brand text-white shadow-2xs" : "text-ink-muted hover:text-ink hover:bg-surface-muted"
+                }`}
+              >
+                <span>{l.label}</span>
+                <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
+                  isActive ? "bg-white/25 text-white" : l.critical > 0 ? "bg-red-100 text-red-700" : "bg-surface-muted text-ink-muted"
+                }`}>
+                  {l.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {activeLane !== "operations" ? (
+        <TodayLanePanel
+          summary={activeLane === "compliance" ? complianceLane ?? null : billingLane ?? null}
+          lane={activeLane}
+          canResolveCompliance={canResolveCompliance}
+          canResolveBilling={canResolveBilling}
+          canWaiveBilling={canWaiveBilling}
+          onDisposed={onLaneDisposed}
+        />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left: shipment list */}
         <div className="lg:col-span-4 space-y-3">
@@ -743,6 +828,7 @@ export function ActionsClient({
                             shipmentId={selectedGroup.shipmentId}
                             canWrite={canWrite}
                             canWaive={canWaive}
+                            canEscalate={canEscalate}
                             onResolved={() => handleExceptionResolved(item.id)}
                             verified={cat === "verified"}
                             onDocClick={(docId, fileName) => {
@@ -780,6 +866,7 @@ export function ActionsClient({
           )}
         </div>
       </div>
+      )}
 
       {/* Floating selection toolbar */}
       {selectedDecisionIds.size > 0 && (
@@ -1377,6 +1464,7 @@ function ExceptionCard({
   shipmentId,
   canWrite,
   canWaive,
+  canEscalate = false,
   onResolved,
   verified = false,
   onDocClick,
@@ -1387,6 +1475,7 @@ function ExceptionCard({
   shipmentId?: string;
   canWrite: boolean;
   canWaive: boolean;
+  canEscalate?: boolean;
   onResolved: () => void;
   verified?: boolean;
   onDocClick?: (docId: string, fileName: string) => void;
@@ -1537,6 +1626,7 @@ function ExceptionCard({
           exceptionId={item.id}
           version={item.version}
           canWaive={canWaive}
+          canEscalate={canEscalate}
           documentId={targetDoc?.id || item.documentId || item.raw.documentId}
           onResolved={() => { setResolved(true); onResolved(); }}
         />

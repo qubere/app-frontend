@@ -6,10 +6,25 @@ import { runNormalizationPipeline } from "@/lib/products/normalizationEngine";
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
-  const { rawDescription, source, partNumber, countryOfOrigin, htsCode } = body;
+  const { rawDescription, source, partNumber, countryOfOrigin, htsCode, productId } = body;
 
   if (!rawDescription || typeof rawDescription !== "string" || rawDescription.trim().length === 0) {
     return NextResponse.json({ error: "rawDescription is required" }, { status: 400 });
+  }
+
+  // When called from a product's detail page, the canonical record is bound to
+  // that Product so it surfaces in the "Master & aliases" tab (which filters on
+  // productId). Verify ownership before trusting the id.
+  let linkedProductId: string | null = null;
+  if (typeof productId === "string" && productId.length > 0) {
+    const owned = await db.product.findFirst({
+      where: { id: productId, accountId: ctx.accountId, deletedAt: null },
+      select: { id: true },
+    });
+    if (owned === null) {
+      return NextResponse.json({ error: "No such product." }, { status: 404 });
+    }
+    linkedProductId = owned.id;
   }
 
   const pipeline = runNormalizationPipeline(rawDescription.trim());
@@ -40,6 +55,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
 
   if (existingAlias?.canonicalProduct) {
     const cp = existingAlias.canonicalProduct;
+    if (linkedProductId !== null && cp.productId === null) {
+      await db.canonicalProduct.update({ where: { id: cp.id }, data: { productId: linkedProductId } });
+    }
     return NextResponse.json({
       normalizedProduct: {
         canonicalProductId: cp.id,
@@ -73,6 +91,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       data: {
         accountId: ctx.accountId,
         canonicalName,
+        productId: linkedProductId,
         partNumber: partNumber ?? null,
         countryOfOrigin: countryOfOrigin ?? null,
         htsCode: htsCode ?? null,
@@ -90,6 +109,15 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       include: { aliases: true },
     });
   } else {
+    // Link this canonical record to the product it was normalized from, if it
+    // is not already bound to one.
+    if (linkedProductId !== null && canonicalProduct.productId === null) {
+      await db.canonicalProduct.update({
+        where: { id: canonicalProduct.id },
+        data: { productId: linkedProductId },
+      });
+      canonicalProduct = { ...canonicalProduct, productId: linkedProductId };
+    }
     // Attach alias if the raw description is new
     const aliasExists = await db.productAlias.findFirst({
       where: { canonicalProductId: canonicalProduct.id, aliasName: rawDescription },

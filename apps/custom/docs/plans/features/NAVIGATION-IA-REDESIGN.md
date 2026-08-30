@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phase 1 in review (this PR) · Phases 2–3 scoped, not built
+**Status:** Phases 1–4d + follow-ups (Escalate, standalone classification detail, permission catalogue) shipped, in review. Not built: per-tenant Filing Settings (needs product design), cross-run proposal compare, misc `/api/v1` dead-route cleanup.
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -162,43 +162,219 @@ Today already unifies **Operations** work: `/app/actions` merges `AgentDecision`
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Work
+### Phase 2a — SHIPPED
 
-1. Extract a `TodayLane` union type + a per-lane loader that returns a common
-   `TodayItem` shape (`{ id, lane, priority, dueAt, groupKey, groupLabel, title,
-   summary, actions[] }`).
-2. Operations lane = adapter over the existing `ShipmentActionGroup`.
-3. Compliance lane = new query over `ScreeningFinding` where status ∈ open/review,
-   grouped by party/shipment. Actions: Review, Waive (needs `compliance.override`),
-   Clear.
-4. Billing lane = new query over `BillingException` where `status = OPEN`, grouped
-   by invoice/client. Actions: Resolve, Snooze.
-5. Lane chips filter client-side; counts come from the loaders.
-6. Rail badge = Σ open items across lanes, scoped to "Mine" — reuse the existing
-   `usePolling` pattern already in `Sidebar.tsx`.
-7. Keep action vocabularies **distinct** per type (approve/reject vs waive/resolve
-   vs snooze) — do not flatten to a generic "Action" (see
-   `memory/project_actions_page_merge.md`).
+- `src/modules/today/todayLanes.ts` — pure layer: `TodayLane` union,
+  `TodayLaneItem` shape (`{ id, lane, kind, severity, title, summary, groupKey,
+  groupLabel, clientName, shipmentNumber, href, createdAt }`), severity
+  normalizers, row→item mappers, `groupLaneItems`, `summarizeLane`. Fully unit
+  tested (`tests/today-lanes.test.ts`).
+- `src/modules/today/loadTodayLanes.ts` — `loadComplianceLane` (open
+  `ComplianceFinding` **+** `ComplianceScreeningFinding` — the schema has no
+  `ScreeningFinding`; the review queue is `ComplianceFinding`, screening hits are
+  `ComplianceScreeningFinding`), `loadBillingLane` (open `BillingException`),
+  `loadTodayLaneCounts` (cheap `count()` for the badge).
+- `/app/actions` (`page.tsx`) loads both lanes in its existing `Promise.all`,
+  gated by `compliance.read` / `billing.exception.view` — an ungranted lane is
+  `null` and its chip never renders. Lanes are **account-wide** (the
+  My/Team/Unassigned scope only applies to assignable Operations work).
+- `ActionsClient` renders a lane strip (`Operations · Compliance · Billing` with
+  counts, `?lane=` linkable); `TodayLanePanel` renders the compliance/billing
+  lane as grouped cards.
+- `/api/today/summary` + a second `usePolling` in `Sidebar.tsx` drive the "Today"
+  rail badge (Σ open across visible lanes).
 
-### Phasing inside Phase 2
+### Phase 2b — SHIPPED (inline disposition)
 
-- 2a: Compliance lane (query-shaped already).
-- 2b: Billing lane once `BillingException` has a matching read model.
-- Until 2b, the Billing chip deep-links to `/app/billing/exceptions`.
+- `TodayLanePanel` is interactive. Each row gets action buttons by kind, gated
+  by permission (page passes `canResolveCompliance` = `exceptions.resolve`,
+  `canResolveBilling` = `billing.exception.resolve`, `canWaiveBilling` =
+  `billing.exception.waive`):
+  - `review-finding` -> **Resolve** / **Accept risk** (`POST
+    /api/findings/:id/resolve`, status `Resolved` / `AcceptedRisk`; accept-risk
+    requires a note).
+  - `screening-finding` -> **Mark resolved** (`POST
+    /api/screening-findings/:id/resolve`).
+  - `billing-exception` -> **Resolve** / **Waive** (`POST
+    /api/billing/exceptions/:id/disposition`, reason required).
+- Action verbs stay **distinct per kind** -- no generic "Action" (see
+  `memory/project_actions_page_merge.md`).
+- Billing core extracted to `src/lib/billing/disposeBillingException.ts` (shared
+  by the workspace server action and the new Today route -- same optimistic-lock
+  + audit behavior). `billing-tenant-isolation.test.ts` scan now covers
+  `src/lib/billing/`.
+- Optimistic: disposed rows drop from the panel and the lane-strip count
+  decrements. `tests/today-lane-disposition.test.ts`.
+
+### Phase 2b follow-up — NOT built
+
+- **Cross-lane "breaching soon"** band -- needs deadline/exposure data on the
+  compliance + billing rows (only Operations carries `urgencyByShipment` today).
+- **Undo** on a just-disposed row (the APIs support re-opening `ComplianceFinding`
+  but not the others).
 
 ---
 
-## 6. Route consolidation (Phase 3)
+## 6. Notification hub (Phase 3)
 
-- Merge `/app/regulatory` content into the `/app/tariffs` hub, or make `/app/tariffs`
-  a thin redirect to a single "Trade Reference" page. Two routes, one concept today.
-- Fold `/app/compliance-reports` in as a tab on `/app/compliance` (it already has
-  Audit / History tabs).
-- Widen the notification bell: wire compliance license-alerts, SLA sweeps, billing
-  leakage, and regulatory ingests into `/api/notifications` so the bell is the one
-  place "something changed while you were away" shows up.
+The bell was the right shape but half-wired: every notification linked to
+`/app/documents` regardless of what raised it, and there was no categorization.
+
+### Phase 3a — SHIPPED
+
+- `src/modules/notifications/notificationRouting.ts` — **pure** (no DB, shared by
+  the client bell and the server): `NotificationCategory`, `NOTIFICATION_TYPE_META`
+  (every `type` string → category + label), `resolveNotificationHref` (routes by
+  entity then category — `AgentDecision` → `/app/actions?decisionId=`,
+  `ExceptionItem` → `?exceptionId=`, `CustomsFiling` → `/app/filing/:id`, licence
+  → `/app/license-management`, billing → `/app/billing/exceptions`, …).
+- `src/modules/notifications/notify.ts` — the one way to raise a bell
+  notification. Typed `type`, optional `dedupe` (replaces the ad-hoc
+  "findFirst then maybe create" guard in inbound-email + quarantine-review),
+  best-effort (logs + swallows — a notification is never load-bearing).
+- All six existing producers migrated to `notify()` (`slaSweepJob` ×2,
+  `exception.service`, `inboundEmailWorker`, `quarantineReview`, `work/assign`,
+  `work/[kind]/[id]/escalate`) — they now carry a category and link to the item.
+- `/api/notifications` enriches each row with `category` / `categoryLabel` /
+  `href`; `NotificationBell` renders a category icon + label and links via the
+  server-computed `href` (client fallback to the same pure function).
+- `tests/notification-routing.test.ts` — routing table, category mapping,
+  `notify()` dedupe + error-swallow.
+
+### Phase 3b — SHIPPED
+
+- `src/modules/notifications/notifyAccount.ts` — `notifyAccountRoleHolders`:
+  fan-out for events with no single assignee. Active OWNER/ADMIN members +
+  holders of a named permission, deduped, one notification each.
+- **License expiring / utilization** — `src/modules/licenses/licenseAlertNotifications.ts`:
+  `notifyLicenseAlerts` reuses `computeLicenseAlerts`, collapses to one row per
+  (license, kind), notifies `licenses.view` holders (`LICENSE_EXPIRING` /
+  `LICENSE_UTILIZATION`, entity `License`). Called from the `license-alerts` cron
+  alongside the email digest, in its own try/catch.
+- **Regulatory update** — the existing `regulatory-ingest` producer migrated to
+  `notify()`: `regulatory_alert` -> `REGULATORY_UPDATE` + `entityType:
+  "RegulatoryUpdate"`, so it links to `/app/regulatory` not `/app/documents`.
+  `regulatory_alert` kept as a legacy routing alias.
+- **SLA at risk** — new pass in `slaSweepJob` (step 2b): an assigned, untouched
+  decision/exception within `AT_RISK_LEAD_MS` (4h) of its SLA deadline warns its
+  assignee once (`SLA_AT_RISK`, `dedupe`). `SlaSweepResult.atRiskWarnings` added.
+- Tests: `tests/notification-producers.test.ts`.
+
+### Phase 3b follow-up — NOT built
+
+- **Billing revenue leakage** — `detectRevenueLeakage` has the signal, but
+  `BillingException` rows are seed-only today; needs a real producer job first.
+- **Compliance findings** — bridge `persistComplianceScreeningFindings` into a
+  `COMPLIANCE_FINDING` bell row.
+
+## 7. Route consolidation (Phase 3c — SHIPPED)
+
+- **`/app/tariffs` retired.** The hub only ever linked to Regulatory Updates and
+  the Tariff Simulator, both now their own Data & Intelligence rows. The page
+  `redirect()`s to `/app/regulatory`; the route stays in `UNLISTED_NAV_ITEMS` so
+  deep links + the Copilot `navHref: "/app/tariffs"` still resolve.
+- **`/app/compliance-reports` → the "Reports" tab of `/app/compliance`.** The page
+  `redirect()`s to `/app/compliance?tab=reports`; `ComplianceWorkspaceClient`
+  renders `ComplianceReportsClient` (self-contained, fetches its own data) under a
+  new tab gated on `compliance.reports.view` / `.generate` / `.manage`. Route
+  kept in `UNLISTED_NAV_ITEMS`.
+- Both sidebar rows removed; the `regulatory` list was already server-loaded
+  (the #112 "pinned to one update" claim was stale).
 - Per-tenant **Filing Settings** page (distinct from the platform-global
-  `/app/filing-config`) if customers need to configure their own filing defaults.
+  `/app/filing-config`) — still not built; a net-new feature, not IA work.
+
+---
+
+## 6b. Front doors for headless capabilities (Phase 4)
+
+From the API→UI gap audit (issue #112): customs capabilities that are fully
+built server-side but have no way to trigger them from the UI.
+
+### Phase 4a — SHIPPED (on-demand shipment checks)
+
+- `ComplianceChecksPanel` on the shipment workspace (under the readiness ribbon):
+  **Run / Re-run** buttons for **Embargo screening** (`POST /api/screening/embargo`),
+  **PGA screening** (`POST /api/pga/screen`), **Reconciliation** (`POST /api/reconcile`).
+  Each shows a compact status (Clear / Action needed / Blocked / Not screened) and
+  `router.refresh()`es so persisted `PgaRequirement` / `ReconciliationIssue` rows
+  flow back into the readiness ribbon + exceptions drawer.
+- Gated on `canManageJourney` (shipment write access) -- the same proxy the
+  journey controls use. `/api/screening/embargo` + `/api/pga/screen` gate on the
+  uncatalogued `ai.use`, `/api/reconcile` on the uncatalogued `shipments.manage`
+  -- pre-existing route bugs, not fixed here.
+- Result mappers extracted to `complianceCheckResults.ts` (pure, tested).
+
+### Phase 4b — SHIPPED (Classification Inbox)
+
+- `/app/classification` — a queue of every `ClassificationCase` for the account
+  (only the per-product case *detail* existed before). Server-rendered list +
+  `ClassificationInboxClient`: triage filter chips (Needs review / In progress /
+  Decided / Failed / All) with counts, description search, per-row status +
+  top-proposal HTS + confidence band.
+- **Re-run** inline per row → `POST /api/v1/classification/cases/:id/runs`, then
+  `router.refresh()`. Works for any case (needs only the case id).
+- "Open" links to the existing detail page via the subject's
+  `canonicalProductId`; product-less cases show the row but the link is inert
+  (a standalone `/app/classification/:caseId` detail route is a follow-up).
+- `GET /api/v1/classification/cases` enhanced to include the latest run's
+  top-ranked proposal (+ HTS node) so the inbox renders without per-row calls.
+- Nav: `classification` item under Operations, gated on `classification.read`.
+- Filter logic extracted to `classificationInboxFilters.ts` (pure, tested).
+
+### Phase 4c — SHIPPED (HTS Workspace)
+
+- `/app/hts` — HTS Lookup, under Data & Intelligence. Client workspace:
+  code / keyword **search** (`GET /api/v1/hts/search`), and a detail pane for a
+  selected code with **hierarchy** (`/codes/:code/hierarchy`), **duty rates**
+  (from the search node), and **legal / chapter notes** (`/codes/:code/notes` —
+  citation + text). `?code=` deep-links (resolved via `/codes/:code`).
+- Search was only ever inline in line-item editing; chapter notes — the
+  reasonable-care artifact for a classification defense — had no surface at all.
+- `htsFormat.ts` (pure: `codeLevelLabel`, `isClassifiable`, `headlineRate`,
+  `normalizeHtsQuery`) + `tests/hts-format.test.ts`.
+
+### Phase 4d — SHIPPED (Trade Intelligence)
+
+- `/app/intelligence` (Data & Intelligence) — three tabs:
+  - **HTS Benchmarks** — `GET /api/trade-intel/benchmarks` (industry avg duty,
+    avg declared price, top origin, US import volume)
+  - **Broker Scorecard** — `GET /api/risk/brokers` (accuracy %, override rate,
+    correction rate, review time — banded green/amber/red)
+  - **Supplier Risk** — `GET /api/risk/suppliers` (score + level, violation /
+    missing-doc / PGA / classification issue counts)
+- All three APIs had seed-data bugs already removed, so they can return empty —
+  each tab has an explicit empty state.
+- `intelligenceFormat.ts` (pure: `riskTone`, `accuracyTone`, `overrideTone`,
+  `compactUsd`, `pct`) + `tests/intelligence-format.test.ts`.
+
+### Follow-ups — SHIPPED
+
+- **Standalone classification detail** — `ClassificationCaseDetail` extracted from
+  `products/[id]/classification/[caseId]/page.tsx` into
+  `classification/ClassificationCaseDetail.tsx` (`{ caseId, backHref, backLabel }`).
+  New route `/app/classification/[caseId]` (Back to inbox); the product-scoped
+  route is now a thin wrapper (Back to product). The inbox links to the standalone
+  route.
+- **Escalate on exception rows** — `ExceptionQuickActions` gets an "Escalate"
+  action (gated on `specialist.write`) → `POST /api/work/exception/:id/escalate`
+  with a required note; the row leaves "My queue" (escalation reassigns to a
+  manager) and the page refreshes.
+- **Permission catalogue** — `ai.use` (new `AI` category), `shipments.manage`,
+  `specialist.write` added to `@qubere/auth` with operational default roles. These
+  gate ~25 live routes via `withAuthenticatedRoute({ permission })` and were
+  unsatisfiable for every non-OWNER role. `permission-catalogue.test.ts` guards
+  the three explicitly. The shipment Compliance-checks panel now gates each button
+  on the route's real permission (`ai.use` / `shipments.manage`) instead of the
+  `canManageJourney` proxy.
+
+### Still NOT built
+- Cross-run proposal compare via `/cases/:id/proposals` (single-run compare
+  already in the detail page).
+- Per-tenant **Filing Settings** — needs product scoping first (which of the
+  platform-global filing-config tables should be tenant-overridable, and how does
+  resolution layer tenant over global). Not a gap to fill; a feature to design.
+- Product `normalize` / `enrich/approve` / `bind-classification`; refund
+  `opportunities/scan` trigger. `/api/v1` vs non-`v1` dead-route cleanup.
 
 ---
 

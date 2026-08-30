@@ -28,6 +28,7 @@ export type NavIcon =
   | "vault"
   | "compliance"
   | "simulator"
+  | "classification"
   | "postEntry"
   | "tradeData"
   | "tariffs"
@@ -85,7 +86,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "shipments", labelKey: "shipments", href: "/app/shipments", icon: "shipments" },
       { id: "documents", labelKey: "documents", href: "/app/documents", icon: "documents" },
       { id: "filing", labelKey: "customsFiling", href: "/app/filing", icon: "filing" },
+      { id: "classification", labelKey: "classificationInbox", href: "/app/classification", icon: "classification", permission: "classification.read" },
       { id: "post-entry", labelKey: "postEntry", href: "/app/post-entry", icon: "postEntry" },
+      { id: "vault", labelKey: "dutyRecovery", href: "/app/vault", icon: "vault" },
     ],
   },
   {
@@ -96,7 +99,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "compliance", labelKey: "complianceMonitoring", href: "/app/compliance", icon: "compliance" },
       { id: "license-management", labelKey: "licenseManagement", href: "/app/license-management", icon: "licenses", permission: "licenses.view" },
       { id: "regulatory", labelKey: "regulatoryUpdates", href: "/app/regulatory", icon: "regulatory" },
-      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
     ],
   },
   {
@@ -105,8 +107,9 @@ export const NAV_SECTIONS: NavSection[] = [
     collapsible: true,
     items: [
       { id: "trade-data", labelKey: "tradeData", href: "/app/trade-data", icon: "tradeData" },
-      { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
+      { id: "hts", labelKey: "htsWorkspace", href: "/app/hts", icon: "tariffs" },
       { id: "simulator", labelKey: "tariffSimulator", href: "/app/simulator", icon: "simulator" },
+      { id: "intelligence", labelKey: "intelligencePanels", href: "/app/intelligence", icon: "reports" },
     ],
   },
   {
@@ -214,7 +217,9 @@ export const NAV_SECTIONS: NavSection[] = [
  * Routes that are authorized and reachable by direct link but not shown as their
  * own sidebar row -- they have a prominent in-app entry point elsewhere:
  *   - products / parties: reached from the Trade Data hub (/app/trade-data)
- *   - reconciliation / vault: reached from the Post-Entry hub (/app/post-entry)
+ *   - reconciliation: reached from the Post-Entry hub (/app/post-entry)
+ *   - tariffs: the old hub, now redirects to /app/regulatory
+ *   - compliance-reports: now the "Reports" tab of /app/compliance
  * navItemByHref() falls back to this list so canAccessHref() (and the Copilot's
  * tool gate) still resolve them.
  */
@@ -222,7 +227,8 @@ export const UNLISTED_NAV_ITEMS: NavItem[] = [
   { id: "products", labelKey: "products", href: "/app/products", icon: "products" },
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
   { id: "reconciliation", labelKey: "reconciliation", href: "/app/reconciliation", icon: "postEntry" },
-  { id: "vault", labelKey: "dutyDrawbacks", href: "/app/vault", icon: "vault" },
+  { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
+  { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
 ];
 
 /** Mirrors hasPermission() in src/lib/auth.ts: platform admins and OWNER bypass checks. */

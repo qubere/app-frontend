@@ -18,6 +18,7 @@ import {
   type ExceptionState,
 } from "./exceptionState";
 import { validateReasonCode, isRiskAcceptanceReason, type ExceptionCategory } from "./resolutionReasons";
+import { notify } from "@/modules/notifications/notify";
 import type { DocumentType } from "@prisma/client";
 import { getRequiredFields } from "@/lib/documents/extractionSchemas";
 
@@ -306,18 +307,14 @@ export class ExceptionService {
       input.assignedToUserId &&
       input.assignedToUserId !== existing.assignedToUserId
     ) {
-      await db.notification
-        .create({
-          data: {
-            accountId,
-            userId: input.assignedToUserId,
-            type: "EXCEPTION_ASSIGNED",
-            message: `Exception "${existing.description}" has been assigned to you.`,
-            entityType: "ExceptionItem",
-            entityId: exceptionId,
-          },
-        })
-        .catch(() => {});
+      await notify({
+        accountId,
+        userId: input.assignedToUserId,
+        type: "EXCEPTION_ASSIGNED",
+        message: `Exception "${existing.description}" has been assigned to you.`,
+        entityType: "ExceptionItem",
+        entityId: exceptionId,
+      });
     }
 
     return updated;

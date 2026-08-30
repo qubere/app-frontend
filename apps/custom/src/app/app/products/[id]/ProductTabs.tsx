@@ -184,30 +184,51 @@ interface ProductAliasRow {
   createdAt: string;
 }
 
+interface BindableDecision {
+  id: string;
+  htsCode: string;
+  jurisdiction: string;
+  attestedAt: string;
+}
+
 interface CanonicalProductWithAliases {
   id: string;
   canonicalName: string;
   sku: string | null;
+  htsCode: string | null;
   aliases: ProductAliasRow[];
+  bindableDecisions: BindableDecision[];
 }
 
-function AliasesTab({ productId, mayEdit }: { productId: string; mayEdit: boolean }) {
+function AliasesTab({
+  productId,
+  mayEdit,
+  mayApprove,
+  normalizeDescription,
+}: {
+  productId: string;
+  mayEdit: boolean;
+  mayApprove: boolean;
+  normalizeDescription: string;
+}) {
+  const router = useRouter();
   const [canonicalProducts, setCanonicalProducts] = useState<CanonicalProductWithAliases[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [newAlias, setNewAlias] = useState<{ canonicalProductId: string; aliasName: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const requested = useRef(false);
 
   const load = useCallback(async () => {
-    if (requested.current) return;
-    requested.current = true;
     setLoading(true);
     try {
       const res = await fetch(`/api/products/${productId}/aliases`);
       if (!res.ok) throw new Error("Request failed");
       const data = await res.json();
       setCanonicalProducts(Array.isArray(data.canonicalProducts) ? data.canonicalProducts : []);
+      setLoadError(null);
     } catch {
       setLoadError("Aliases could not be loaded.");
     } finally {
@@ -215,7 +236,58 @@ function AliasesTab({ productId, mayEdit }: { productId: string; mayEdit: boolea
     }
   }, [productId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (requested.current) return;
+    requested.current = true;
+    load();
+  }, [load]);
+
+  async function createCanonicalRecord() {
+    setBusyAction("normalize");
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/products/normalize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawDescription: normalizeDescription, source: "Product master", productId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.detail ?? data.error ?? "Could not create a canonical record.");
+        return;
+      }
+      await load();
+      // The product's classification / master facts are server-rendered elsewhere.
+      router.refresh();
+    } catch {
+      setActionError("The request did not reach the server. Nothing changed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function bindDecision(canonicalProductId: string, decisionId: string) {
+    setBusyAction(`bind:${canonicalProductId}`);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/v1/products/canonical/${canonicalProductId}/bind-classification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisionId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error?.message ?? data.error ?? "Could not bind the classification.");
+        return;
+      }
+      await load();
+      router.refresh();
+    } catch {
+      setActionError("The request did not reach the server. Nothing changed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   async function handleDelete(aliasId: string) {
     await fetch(`/api/products/${productId}/aliases/${aliasId}`, { method: "DELETE" });
@@ -258,8 +330,29 @@ function AliasesTab({ productId, mayEdit }: { productId: string; mayEdit: boolea
 
   if (canonicalProducts.length === 0) {
     return (
-      <div className="rounded-2xl bg-white border border-border p-8 text-center text-sm text-[#6E6E73]">
-        No canonical product records are linked. Normalize a product description to create one.
+      <div className="rounded-2xl bg-white border border-border p-8 text-center space-y-3">
+        <p className="text-sm text-[#6E6E73]">
+          No canonical product record is linked. A canonical record is the match target that
+          resolves incoming shipment descriptions to this product, and it holds the product
+          master&apos;s bound HTS code.
+        </p>
+        {mayEdit && (
+          <div>
+            <button
+              type="button"
+              disabled={busyAction === "normalize" || !normalizeDescription}
+              onClick={createCanonicalRecord}
+              className="h-8 px-3 rounded-lg bg-brand text-white text-xs font-semibold disabled:opacity-50"
+            >
+              {busyAction === "normalize" ? "Creating…" : "Create canonical record"}
+            </button>
+            {actionError && (
+              <p role="alert" className="text-xs text-red-700 mt-2">
+                {actionError}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -274,6 +367,9 @@ function AliasesTab({ productId, mayEdit }: { productId: string; mayEdit: boolea
               {cp.sku && (
                 <span className="ml-2 text-xs text-[#6E6E73] font-mono">{cp.sku}</span>
               )}
+              {cp.htsCode && (
+                <span className="ml-2 text-xs text-emerald-700 font-mono">HTS {cp.htsCode}</span>
+              )}
             </div>
             {mayEdit && (
               <button
@@ -285,6 +381,34 @@ function AliasesTab({ productId, mayEdit }: { productId: string; mayEdit: boolea
               </button>
             )}
           </div>
+
+          {mayApprove && cp.bindableDecisions.length > 0 && (
+            <div className="px-4 py-3 border-b border-border bg-emerald-50/50 space-y-2">
+              <p className="text-xs font-semibold text-ink">
+                {cp.bindableDecisions.length === 1
+                  ? "An approved classification decision can be bound to this master."
+                  : `${cp.bindableDecisions.length} approved classification decisions can be bound to this master.`}
+              </p>
+              <ul className="space-y-1.5">
+                {cp.bindableDecisions.map((d) => (
+                  <li key={d.id} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-[#6E6E73]">
+                      <span className="font-mono text-ink">{d.htsCode}</span> · {d.jurisdiction} ·
+                      approved {new Date(d.attestedAt).toLocaleDateString()}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busyAction === `bind:${cp.id}`}
+                      onClick={() => bindDecision(cp.id, d.id)}
+                      className="h-7 px-2.5 rounded-lg bg-brand text-white text-xs font-semibold disabled:opacity-50"
+                    >
+                      {busyAction === `bind:${cp.id}` ? "Binding…" : "Bind"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {newAlias?.canonicalProductId === cp.id && (
             <form onSubmit={handleAdd} className="flex gap-2 items-center px-4 py-3 border-b border-border bg-blue-50">
@@ -353,10 +477,16 @@ function AliasesTab({ productId, mayEdit }: { productId: string; mayEdit: boolea
           </table>
         </div>
       ))}
+      {actionError && (
+        <p role="alert" className="text-xs text-red-700">
+          {actionError}
+        </p>
+      )}
       <p className="text-xs text-[#6E6E73]">
         Aliases are the raw names that normalization resolved to a canonical product. An incoming
         shipment description that exactly matches an alias is immediately resolved without re-running
-        the pipeline.
+        the pipeline. Binding an approved classification decision sets the canonical record&apos;s HTS
+        code and cascades it to this product.
       </p>
     </div>
   );
@@ -602,7 +732,14 @@ export function ProductTabs({
       )}
 
       {tab === "aliases" && (
-        <AliasesTab productId={productId} mayEdit={mayEdit} />
+        <AliasesTab
+          productId={productId}
+          mayEdit={mayEdit}
+          mayApprove={mayApprove}
+          normalizeDescription={
+            product.customsDescription || product.commercialDescription || product.productName
+          }
+        />
       )}
 
       {tab === "attributes" && (

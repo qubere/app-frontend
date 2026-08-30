@@ -33,7 +33,8 @@ export default async function CompliancePage(props: {
     rawTab === "notifications" ||
     rawTab === "community-screening" ||
     rawTab === "rdps" ||
-    rawTab === "bulk-screening"
+    rawTab === "bulk-screening" ||
+    rawTab === "reports"
       ? rawTab
       : "overview";
   const mayReadPartyScreening = holdsPermission(context, "compliance.restrictedParty.read");
@@ -47,15 +48,22 @@ export default async function CompliancePage(props: {
   const mayReadRdps = holdsPermission(context, "compliance.rdps.read");
   const mayManageRdps = holdsPermission(context, "compliance.rdps.manage");
   const mayReadBulkCompliance = holdsPermission(context, "compliance.bulk_screening.view");
+  // Mirrors the on-demand embargo check gate on the shipment workspace
+  // (ComplianceChecksPanel) -- the sweep endpoint enforces the same `ai.use`.
+  const mayRunEmbargoSweep = holdsPermission(context, "ai.use");
   const mayCreateBulkCompliance = holdsPermission(context, "compliance.bulk_screening.create");
   const mayImportPreApprovals = holdsPermission(context, "compliance.restricted_party.approve");
+  const mayReadReports = holdsPermission(context, "compliance.reports.view");
+  const mayGenerateReports = holdsPermission(context, "compliance.reports.generate");
+  const mayManageReports = holdsPermission(context, "compliance.reports.manage");
   const resolvedTab =
     (activeTab === "audit" && !mayReadAuditHistory) ||
     (activeTab === "history" && !mayReadExecutionHistory) ||
     (activeTab === "notifications" && !mayManageNotificationSettings) ||
     (activeTab === "community-screening" && !mayReadCommunityScreening) ||
     (activeTab === "rdps" && !mayReadRdps) ||
-    (activeTab === "bulk-screening" && !mayReadBulkCompliance)
+    (activeTab === "bulk-screening" && !mayReadBulkCompliance) ||
+    (activeTab === "reports" && !mayReadReports)
       ? "overview"
       : activeTab;
 
@@ -341,7 +349,11 @@ export default async function CompliancePage(props: {
         mayManageRdps={mayManageRdps}
         mayReadBulkCompliance={mayReadBulkCompliance}
         mayCreateBulkCompliance={mayCreateBulkCompliance}
+        mayRunEmbargoSweep={mayRunEmbargoSweep}
         mayImportPreApprovals={mayImportPreApprovals}
+        mayReadReports={mayReadReports}
+        mayGenerateReports={mayGenerateReports}
+        mayManageReports={mayManageReports}
       />
     </div>
   );

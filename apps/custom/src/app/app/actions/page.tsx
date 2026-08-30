@@ -8,6 +8,7 @@ import { buildShipmentActionGroups } from "@/modules/actions/shipmentActions";
 import { buildWorkQueue, filterWorkQueue, parseWorkFilter } from "@/modules/work/workQueue";
 import { loadWorkQueueForAccountFromPrefetched } from "@/modules/work/workQueueLoader";
 import { RISK_ACCEPTANCE_PERMISSION, openStatusVariants } from "@/modules/exceptions/exceptionState";
+import { loadComplianceLane, loadBillingLane } from "@/modules/today/loadTodayLanes";
 import { ActionsClient } from "./ActionsClient";
 
 export const dynamic = "force-dynamic";
@@ -79,7 +80,28 @@ export default async function ActionsPage(props: {
     scopeWhere = { assignedToUserId: { in: Array.from(new Set(teammates.map((m) => m.userId))) } };
   }
 
-  const [decisions, allDocuments, exceptions, writable, mayWaive, memberships] = await Promise.all([
+  // Today's compliance + billing lanes are account-wide triage (not scoped by
+  // the My/Team/Unassigned tabs, which only apply to assignable Operations
+  // work). Each lane is gated by the same permission that guards its native
+  // surface; a lane the caller may not see is passed as null and its chip
+  // never renders.
+  const [
+    mayViewComplianceLane,
+    mayViewBillingLane,
+    canResolveCompliance,
+    canResolveBilling,
+    canWaiveBilling,
+    canEscalate,
+  ] = await Promise.all([
+    hasPermission("compliance.read"),
+    hasPermission("billing.exception.view"),
+    hasPermission("exceptions.resolve"),
+    hasPermission("billing.exception.resolve"),
+    hasPermission("billing.exception.waive"),
+    hasPermission("specialist.write"),
+  ]);
+
+  const [decisions, allDocuments, exceptions, writable, mayWaive, memberships, complianceLane, billingLane] = await Promise.all([
     db.agentDecision.findMany({
       where: {
         accountId: context.accountId,
@@ -158,6 +180,8 @@ export default async function ActionsPage(props: {
       where: { accountId: context.accountId, status: "ACTIVE" },
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
     }),
+    mayViewComplianceLane ? loadComplianceLane(context.accountId) : Promise.resolve(null),
+    mayViewBillingLane ? loadBillingLane(context.accountId) : Promise.resolve(null),
   ]);
 
   const queueLoaderResult = await loadWorkQueueForAccountFromPrefetched(
@@ -257,6 +281,15 @@ export default async function ActionsPage(props: {
 
   const teamMembers = memberships.map((m) => m.user);
 
+  const operationsCount = groups.reduce((n, g) => n + g.items.length, 0);
+  const laneParam = typeof searchParams.lane === "string" ? searchParams.lane : undefined;
+  const initialLane =
+    laneParam === "compliance" && complianceLane
+      ? "compliance"
+      : laneParam === "billing" && billingLane
+        ? "billing"
+        : "operations";
+
   return (
     <ActionsClient
       groups={groups}
@@ -269,6 +302,14 @@ export default async function ActionsPage(props: {
       urgencyByShipment={urgencyByShipment}
       teamMembers={teamMembers}
       scope={scope}
+      operationsCount={operationsCount}
+      complianceLane={complianceLane}
+      billingLane={billingLane}
+      initialLane={initialLane}
+      canResolveCompliance={canResolveCompliance}
+      canResolveBilling={canResolveBilling}
+      canWaiveBilling={canWaiveBilling}
+      canEscalate={canEscalate}
     />
   );
   });

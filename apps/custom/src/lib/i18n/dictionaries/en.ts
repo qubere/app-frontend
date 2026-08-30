@@ -3,6 +3,9 @@ export const en = {
   nav: {
     askQubere: "Ask Qubere",
     today: "Today",
+    classificationInbox: "Classification",
+    htsWorkspace: "HTS Lookup",
+    intelligencePanels: "Trade Intelligence",
     commandCenter: "Command Center",
     documents: "Documents",
     regulatoryUpdates: "Regulatory Updates",
@@ -39,6 +42,7 @@ export const en = {
     toolingAndDocs: "Tooling & Admin",
     tradeDocs: "Docs",
     dutyDrawbacks: "Duty Drawbacks",
+    dutyRecovery: "Duty Recovery",
     reconciliation: "ACE Recon",
     postEntry: "Post-Entry",
     tradeData: "Trade Data",
