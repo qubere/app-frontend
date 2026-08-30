@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Partner Portal</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Partner Portal</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">"Send me the packing list" becomes<br><span class="accent">a tracked request they answer.</span></h1>
+      <p class="hero-lede">Your importer clients (or an enterprise's suppliers) get their own authenticated, client-scoped window into their shipments, documents, entries, and invoices &mdash; and the document they upload flows straight into the same document-intelligence pipeline your team works from.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">1</div><div class="stat-label">client sees only their own data &mdash; enforced server-side</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">0</div><div class="stat-label">entries visible to a client before the broker publishes</div></div>
+      </div>
+      <p class="honest-note" style="color:rgba(255,255,255,0.55);border-color:var(--amber);margin-top:22px;">Pilot / design-partner ready. Auth, client scoping, and object storage are hardened; generated 7501/invoice <strong>PDF downloads are still stubs</strong> &mdash; don't demo that flow.</p>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">Half your team's day is "any update?" and "can you resend the invoice?"</h2>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"'Send me the commercial invoice.' 'Any update?' 'Resend the invoice?' Every client, every shipment. It's the whole inbox."</p><p class="pain-tag">Broker</p></div>
+        <div class="pain-card"><p class="pain-quote">"I have no idea where my shipment is unless I email my broker and wait. I get a PDF invoice with no context."</p><p class="pain-tag">Broker's client</p></div>
+        <div class="pain-card"><p class="pain-quote">"Collecting origin declarations and certificates from 200 suppliers is a shared mailbox and a spreadsheet."</p><p class="pain-tag">Enterprise</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">A read-and-respond surface for your clients &mdash; scoped, not filtered.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">The customer sees only <strong style="color:#fff">their</strong> shipments, documents, entries, invoices &mdash; enforced on every read path, not hidden in the UI.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">"Ask the customer" is a request raised against a specific shipment, tracked end to end.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A document the customer uploads enters the same parse &rarr; extract &rarr; reconcile &rarr; readiness pipeline as a broker upload.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Entry visibility is an <strong style="color:#fff">explicit publish action</strong> by the broker &mdash; nothing leaks early.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Passwordless, scoped invitations &mdash; access limited to one client and optionally specific product scopes.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Ask the customer -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">"Ask the customer" request workflow</p>
+        <h2 class="feature-headline">Chasing a document is now a tracked request, not an email thread.</h2>
+        <p class="feature-pain">The broker raises a document/data request against a specific shipment from <span class="mono">/app/clients</span>; the customer gets an email, opens it in the portal, and answers or uploads. Status tracked the whole way.</p>
+        <ul class="feature-bullets">
+          <li>The uploaded document does real work the moment it lands</li>
+          <li>Broker sees the request resolve; no "did you get it?"</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Broker: raise "Upload Bill of Lading" on a shipment. Portal: open the request, upload a file, mark answered. Broker: the request shows resolved &mdash; and the doc is on the shipment, processing.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere Portal</span></div><div class="app-breadcrumb"><span>Acme Corporation</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">PC</div><span class="app-username">Priya · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Requests from your broker</div><div class="page-sub">2 open · 1 answered</div></div></div>
+              <div class="panel">
+                <div class="panel-title">Upload Bill of Lading — SHP-2026-000144</div>
+                <div class="field-row"><span class="field-k">Requested by</span><span class="field-v">Joe (Target Brokerage) · 2 days ago</span></div>
+                <div class="field-row"><span class="field-k">Note</span><span class="field-v">Need the MBL to complete the entry — ocean leg.</span></div>
+                <div style="display:flex;gap:8px;margin-top:8px;"><button class="btn-primary">↑ Upload document</button><button class="btn-secondary">Reply</button></div>
+              </div>
+              <div class="panel" style="border-color:#BBF7D0;background:#F0FDF4;">
+                <div class="field-row" style="border-color:#BBF7D0;"><span class="field-k" style="color:#065F46;">Commercial Invoice — answered</span><span class="field-v" style="color:#065F46;">✓ uploaded · now processing on the shipment</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — Shipment + entry visibility -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Shipment &amp; entry visibility</p>
+        <h2 class="feature-headline">Your clients stop calling to ask where things are.</h2>
+        <p class="feature-pain">Per-shipment status, milestones, and the journey &mdash; what the customer would otherwise call to ask. The broker chooses when an entry becomes customer-visible: <span class="mono">customerVisibleAt</span> is an explicit publish action, so nothing appears early.</p>
+        <ul class="feature-bullets">
+          <li>Shipment, freight, and invoice views &mdash; all client-scoped</li>
+          <li>Original documents download; generated-PDF download is stubbed</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Broker: publish a filing to the customer. Portal: the entry now appears under the customer's shipment with status. Contrast a second client's login &mdash; totally separate data.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere Portal</span></div><div class="app-breadcrumb"><span>Acme</span><span style="color:var(--slate-300)">/</span><span class="mono" style="font-size:10px;">SHP-2026-000144</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">PC</div><span class="app-username">Priya · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">SHP-2026-000144</div><div class="page-sub">PO 4471-A · Ocean · ETA Sep 12</div></div><span class="chip chip-progress">In transit</span></div>
+              <div class="panel">
+                <div class="panel-title">Journey</div>
+                <div class="stepper">
+                  <div class="step done"><span class="step-dot">✓</span><span class="step-label">Booked</span></div>
+                  <div class="step done"><span class="step-dot">✓</span><span class="step-label">Origin port</span></div>
+                  <div class="step active"><span class="step-dot">3</span><span class="step-label">On vessel</span></div>
+                  <div class="step"><span class="step-dot">4</span><span class="step-label">Dest port</span></div>
+                  <div class="step"><span class="step-dot">5</span><span class="step-label">Customs</span></div>
+                  <div class="step"><span class="step-dot">6</span><span class="step-label">Delivered</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">Entry QBR-2026-3231902</span><span class="field-v" style="color:var(--blue);">published by your broker · Draft</span></div>
+                <div class="field-row"><span class="field-k">Documents</span><span class="field-v">Commercial Invoice, Packing List · MBL requested</span></div>
+                <div class="field-row"><span class="field-k">Latest invoice</span><span class="field-v"><span class="link">INV-202608-A1</span> · $4,120.00</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Scoped invitations -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Passwordless, scoped invitations</p>
+        <h2 class="feature-headline">The customer sees exactly what you decide, when you decide.</h2>
+        <p class="feature-pain">The broker sends a scoped invitation (<span class="mono">/invite/&lt;token&gt;</span>); the customer accepts and is provisioned with access limited to their client and, optionally, specific product scopes. For enterprises: the same mechanism scoped to a supplier and their POs.</p>
+        <ul class="feature-bullets">
+          <li>Invitation states: PENDING / ACCEPTED / EXPIRED / REVOKED</li>
+          <li>Portal runs as its own origin</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/clients</strong> &rarr; invite a portal user with a client + product scope &rarr; walk the invite-acceptance flow.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Clients</span><span style="color:var(--slate-300)">/</span><span>Portal access</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Portal invitations — Acme Corporation</div><div class="page-sub">scoped to client · optional product scopes</div></div><button class="btn-primary">+ Invite</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Email</th><th>Client scope</th><th>Product scopes</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <tr><td>priya@acme.com</td><td>Acme Corporation</td><td>all</td><td><span class="chip chip-accepted">Accepted</span></td></tr>
+                    <tr><td>logistics@acme.com</td><td>Acme Corporation</td><td>Batteries, Enclosures</td><td><span class="chip chip-progress">Pending</span></td></tr>
+                    <tr><td>old@acme.com</td><td>Acme Corporation</td><td>all</td><td><span class="chip chip-normal">Revoked</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Client scope enforced server-side on every read path</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · WHAT THE CUSTOMER CANNOT DO -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The security model, plainly</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:20px;">What the customer <span class="accent">cannot</span> do.</h2>
+      <ul class="feature-bullets">
+        <li><span style="color:rgba(255,255,255,0.82)">See other clients' data &mdash; client scope is enforced server-side on every read path.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">See unpublished entries &mdash; visibility is an explicit broker action.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Take compliance actions or reach the broker's internal workspace.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Access anything through a guessed URL &mdash; the portal is a separate origin with its own auth.</span></li>
+      </ul>
+      <p class="hero-lede" style="margin-top:24px;font-size:15px;">The security model was hardened through a formal review. It's a read + respond surface, nothing more.</p>
+    </div>
+  </section>
+
+  <!-- 8 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Is this production-ready?"</td><td class="obj-a">Pilot-ready. Auth, client scoping, and object storage are real and were hardened through a formal review. The remaining gap is polished generated-PDF downloads and broader automated two-tenant test coverage &mdash; fine for a design partner, worth being explicit about for a large rollout.</td></tr>
+        <tr><td class="obj-q">"Can we brand it per broker?"</td><td class="obj-a">The portal uses the Qubere design system today. Custom per-broker branding is a roadmap item, not current.</td></tr>
+        <tr><td class="obj-q">"How do suppliers fit the enterprise story?"</td><td class="obj-a">Same mechanism &mdash; an invitation scoped to a party and product scopes &mdash; used for supplier document and origin-data collection rather than importer status visibility.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 9 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"The two questions your clients ask all day &mdash; where is it, did you get my document &mdash; answer themselves."</h2>
+      <p class="hero-lede">And the document they upload does real work the moment it lands.</p>
+      <div class="dark-card"><p>Next step: pick one of your clients as a design partner. We stand up a scoped portal, run the "ask the customer" loop on a real shipment, and you see whether it takes email off your team's plate.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/sales/partner-portal.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

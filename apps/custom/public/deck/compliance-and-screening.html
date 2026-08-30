@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Compliance &amp; Screening</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Compliance &amp; Screening</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">Screening isn't a moment.<br><span class="accent">It's a subscription.</span></h1>
+      <p class="hero-lede">Seven deterministic, rule-table-driven engines &mdash; restricted/denied party, country embargo, UFLPA forced labor, end-use, end-user, anti-boycott, military end-use &mdash; run on every shipment and every party. Qubere keeps re-screening what it already cleared when the party or the watchlist changes, and every hit is immutable evidence.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">7</div><div class="stat-label">concurrent screening engines · never an LLM</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">10+</div><div class="stat-label">government lists ingested on a governed schedule</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">0</div><div class="stat-label">hits ever silently rewritten</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">You screened once, at onboarding. The world moved.</h2>
+      <p class="problem-sub">What a trade-compliance team will tell you:</p>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"We screen against OFAC at onboarding. We do not re-screen when OFAC updates the SDN list &mdash; which is basically weekly."</p><p class="pain-tag">Stale clearances</p></div>
+        <div class="pain-card"><p class="pain-quote">"A name match in our old tool is treated as a legal-identity match. Analysts waste days clearing false positives with no way to record why."</p><p class="pain-tag">False positives</p></div>
+        <div class="pain-card"><p class="pain-quote">"When we clear a party, that's a status field someone can overwrite. There's no immutable record of the hit that was there before."</p><p class="pain-tag">No audit trail</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">Deterministic verdicts. Immutable results. Continuous re-screening.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">Every verdict comes from a <strong style="color:#fff">rule table and a scorer you can inspect</strong> &mdash; not a model that sounds confident.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Results are frozen. Reviewer judgment (False Positive / Blocked / Approved) is a separate 1:1 record &mdash; a clean run never erases an earlier hit.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">RDPS re-screens cleared parties automatically when their data changes or the watchlist changes &mdash; with a drill-down to exactly which parties and why.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A tenant can layer its own embargo rules &mdash; which can only <strong style="color:#fff">add</strong> a HIT, never manufacture a CLEAR.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">License determination refuses to fabricate a control-list outcome it can't back with data.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — RPS + immutable results -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Restricted / denied-party screening</p>
+        <h2 class="feature-headline">A name match is never legal-identity proof.</h2>
+        <p class="feature-pain">Every party is screened against SDN, Consolidated non-SDN, DPL, ISN, SSI, FSE, PLC, NS-MBS &mdash; exact, raw-word, and a phonetic shortlist feeding a fuzzy scorer, plus an independent red-flag keyword check. <strong>Results are immutable; the disposition is separate.</strong></p>
+        <ul class="feature-bullets">
+          <li>Phonetic algorithm (Double Metaphone / Metaphone2) selectable per account</li>
+          <li>An earlier HIT + its "false positive" note stays on the record forever</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>Compliance &rarr; Screening &rarr; Party Screening</strong>. Open a party with two runs &mdash; an earlier HIT with a disposition and a later CLEAR. Both visible. "A real hit can never be status-fielded away."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Compliance</span><span style="color:var(--slate-300)">/</span><span>Party Screening</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Guangzhou Ruixin Trading Co.</div><div class="page-sub">Party PTY-4471 · APPROVED · screening summary: stale (ref-data republished)</div></div><button class="btn-secondary">↻ Re-screen</button></div>
+              <div class="panel">
+                <div class="panel-title">Screening history &mdash; immutable</div>
+                <div class="field-row"><span class="field-k">2026-06-02 · name+address pass</span><span><span class="chip chip-critical">HIT · score 0.91</span> &nbsp;<span style="font-size:10px;color:var(--slate-500);">SDN "GUANGZHOU RUIXIN"</span></span></div>
+                <div class="field-row"><span class="field-k">&nbsp;&nbsp;&nbsp;↳ disposition</span><span class="field-v" style="color:#065F46;">FALSE POSITIVE &mdash; diff. registration #, analyst J.K.</span></div>
+                <div class="field-row"><span class="field-k">2026-08-25 · ref-data republish rescreen</span><span class="chip chip-verified">CLEAR · score 0.44</span></div>
+                <div class="field-row"><span class="field-k">Formal override</span><span class="field-v">none · <span class="link">create</span> (compliance.override)</span></div>
+              </div>
+              <div style="display:flex;gap:8px;"><span class="evidence-tag">Double Metaphone shortlist</span><span class="evidence-tag">scoreDpsMatch</span><span class="evidence-tag">ComplianceKeywordRule</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — RDPS continuous monitoring -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">RDPS · continuous / reverse screening</p>
+        <h2 class="feature-headline">The watchlist changed this week. Did your cleared parties get re-checked?</h2>
+        <p class="feature-pain">A delta-impact dispatcher reacts to a specific reference-data change within minutes; a full-population dispatcher re-screens the whole account on a schedule. Every outcome records whether the result <strong>worsened</strong> and a deterministic transition type.</p>
+        <ul class="feature-bullets">
+          <li>NEW_HIT / ESCALATED / RISK_REDUCED / CLEARED / UNCHANGED</li>
+          <li><strong>Preview Impact</strong>: what a change would match today &mdash; records nothing</li>
+          <li>Hourly sweep catches watchlist entities that expired while still active in every feed</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>Compliance &rarr; RDPS panel</strong>. Open a reference-data change set &rarr; <strong>Impacted Parties</strong>: exactly which parties were re-screened because of it.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Compliance</span><span style="color:var(--slate-300)">/</span><span>RDPS · Continuous Monitoring</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+                <div class="kpi-card"><div class="kpi-label">Open RDPS alerts</div><div class="kpi-value red" style="font-size:18px;">3</div></div>
+                <div class="kpi-card"><div class="kpi-label">Parties monitored</div><div class="kpi-value default" style="font-size:18px;">2,184</div></div>
+                <div class="kpi-card"><div class="kpi-label">Re-screened (24h)</div><div class="kpi-value blue" style="font-size:18px;">47</div></div>
+                <div class="kpi-card"><div class="kpi-label">Last full sweep</div><div class="kpi-value default" style="font-size:13px;">04:00 UTC</div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Change set OFAC-SDN 2026-08-28 · 62 entities added &rarr; <span class="link">Impacted Parties (2)</span></div>
+                <table class="data-table">
+                  <thead><tr><th>Party</th><th>Before</th><th>After</th><th>Transition</th></tr></thead>
+                  <tbody>
+                    <tr><td>Sever­stroy OOO</td><td><span class="chip chip-verified">CLEAR</span></td><td><span class="chip chip-critical">HIT</span></td><td><span class="chip chip-high">NEW_HIT</span></td></tr>
+                    <tr><td>Baltic Marine Ltd</td><td><span class="chip chip-high">POTENTIAL</span></td><td><span class="chip chip-critical">HIT</span></td><td><span class="chip chip-high">ESCALATED</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px;"><span class="evidence-tag">rdps-delta-impact-dispatch · every 10m</span><span class="evidence-tag">reference-data-expiry-sweep · hourly</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Community batch screening -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Community screening · batch</p>
+        <h2 class="feature-headline">A 4,000-row acquired supplier list, screened before lunch.</h2>
+        <p class="feature-pain">Submit a batch (manual or file upload); Qubere runs the <strong>canonical</strong> RPS and embargo engines against every row &mdash; it orchestrates, it never re-implements matching. A denied-party match and a red-flag keyword hit stay independent findings.</p>
+        <ul class="feature-bullets">
+          <li>Per-row category: CONFIRMED_MATCH / POTENTIAL / RED_FLAG_ONLY / PAL_SUPPRESSED</li>
+          <li>A valid pre-approval short-circuits &mdash; its own status, not an ordinary CLEAR</li>
+          <li>Export the whole run as CSV / XLSX</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>Compliance &rarr; Community Screening</strong> &rarr; upload a CSV of ~20 parties (include one obvious SDN-style name). Open the run; walk the per-row labels; export.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Community Screening</span><span style="color:var(--slate-300)">/</span><span class="mono" style="font-size:10px;">RUN-2026-0814</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Acquired-supplier batch · 4,012 rows</div><div class="page-sub">RPS + embargo · completed 6m 11s · 3 confirmed, 9 potential, 14 red-flag</div></div><button class="btn-secondary">↓ Export XLSX</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>#</th><th>Party</th><th>RPS</th><th>Red flag</th><th>Category</th></tr></thead>
+                  <tbody>
+                    <tr><td>0007</td><td>Nanjing Optics Import Export</td><td><span class="chip chip-critical">MATCH</span></td><td>&mdash;</td><td><span class="chip chip-critical">CONFIRMED_MATCH</span></td></tr>
+                    <tr><td>0114</td><td>Dalian Hengli Group Co.</td><td><span class="chip chip-high">0.78</span></td><td>&mdash;</td><td><span class="chip chip-high">POTENTIAL_DENIED_PARTY</span></td></tr>
+                    <tr><td>0233</td><td>Meridian Defense Systems LLC</td><td><span class="chip chip-verified">NO_MATCH</span></td><td><span class="chip chip-high">"military end use"</span></td><td><span class="chip chip-normal">RED_FLAG_ONLY</span></td></tr>
+                    <tr><td>0341</td><td>Hansa Components GmbH</td><td>&mdash;</td><td>&mdash;</td><td><span class="chip chip-progress">PRE_APPROVED_REUSE</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px;"><span class="evidence-tag">uniqueness key: (runId, rowNumber)</span><span class="evidence-tag">most-severe-wins collapse for legacy consumers</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · FEATURE — License determination -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">License determination</p>
+        <h2 class="feature-headline">It will not guess. That is the pitch.</h2>
+        <p class="feature-pain">A deterministic engine (never an LLM) runs classification-format validation, tri-state end-use / end-user handling, and license-exception evaluation as pure functions. Because no jurisdiction control-rule datasets are loaded, it <strong>never fabricates</strong> a LICENSE_REQUIRED / NO_LICENSE_REQUIRED outcome.</p>
+        <ul class="feature-bullets">
+          <li>Returns RULE_DATA_UNAVAILABLE / INCOMPLETE / REVIEW_REQUIRED with full evidence</li>
+          <li>Any sensitive end-use / end-user flag hard-stops to REVIEW_REQUIRED</li>
+          <li>On a positive determination: full utilization ledger, allocations, expiry alerts</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>License Management &rarr; Run determination</strong>. Show the fail-safe outcome and the evidence of exactly what was and wasn't checked. "An engine that says 'here's what I couldn't verify' beats one that guesses."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>License Management</span><span style="color:var(--slate-300)">/</span><span>Determination</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Determination · SHP-2026-000188 · line 2</div><div class="page-sub">ECCN 3A001 · end user: research institute · deterministic engine v3</div></div></div>
+              <div class="panel" style="border-color:#FDE68A;background:#FFFBEB;">
+                <div class="panel-title" style="color:#92400E;">⚑ REVIEW_REQUIRED</div>
+                <div class="field-row" style="border-color:#FDE68A;"><span class="field-k">Reason</span><span class="field-v" style="color:#92400E;">sensitive end-user flag · hard stop</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Evidence &mdash; what was evaluated</div>
+                <div class="field-row"><span class="field-k">Classification format (ECCN)</span><span class="field-v" style="color:var(--green);">valid</span></div>
+                <div class="field-row"><span class="field-k">End-use conditions</span><span class="field-v">2 true · 1 unknown</span></div>
+                <div class="field-row"><span class="field-k">License-exception claim</span><span class="field-v">none claimed</span></div>
+                <div class="field-row"><span class="field-k">Country control-rule dataset</span><span class="field-v" style="color:#92400E;">RULE_DATA_UNAVAILABLE &mdash; not ingested</span></div>
+              </div>
+              <p class="honest-note" style="margin-top:6px;">No control-rule dataset &rarr; the engine will not output a licensing verdict. This is fail-safe by design.</p>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · FEATURE — Notifications, audit, partner API -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Audit, notifications &amp; the partner API</p>
+        <h2 class="feature-headline">Every screen is provable, and every screen can be a service.</h2>
+        <p class="feature-pain">Compliance events queue durable notifications through an outbox/dispatcher (never sent inline, so a mail outage can't lose a hit alert). Every action writes an immutable <span class="mono">AuditLog</span> entry. External systems hit the same read/rescreen behavior by API key.</p>
+        <ul class="feature-bullets">
+          <li>Overview / Screening / Review Queue / Audit History workspace</li>
+          <li><span class="mono">/api/v1/screening/*</span> · scoped (read vs screen) · idempotent · <span class="mono">source: "API"</span></li>
+          <li>Every screen is a metered, invoiceable event (see Billing deck)</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>Compliance &rarr; Audit History</strong> &mdash; the timestamped event stream and export. Then <strong>Admin &rarr; Integrations</strong> &mdash; the API key panel and scopes.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Compliance</span><span style="color:var(--slate-300)">/</span><span>Audit History</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Compliance audit history</div><div class="page-sub">immutable · ~104 catalogued actions · IP / user-agent / request-id captured</div></div><button class="btn-secondary">↓ Export</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Time</th><th>Action</th><th>Entity</th><th>Actor</th><th>Src</th></tr></thead>
+                  <tbody>
+                    <tr><td>12:41:07</td><td class="mono">RPS_RESCREEN</td><td>PTY-4471</td><td>J. Kessler</td><td>UI</td></tr>
+                    <tr><td>12:39:55</td><td class="mono">EMBARGO_SCREEN</td><td>SHP-2026-000188</td><td>system</td><td>PIPE</td></tr>
+                    <tr><td>11:22:03</td><td class="mono">RESTRICTED_PARTY_SCREEN</td><td>PTY-8890</td><td>api-key: acme-prod</td><td>API</td></tr>
+                    <tr><td>09:15:40</td><td class="mono">COMPLIANCE_FORMAL_OVERRIDE_CREATE</td><td>RES-11902</td><td>D. Osei</td><td>UI</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px;"><span class="evidence-tag">ComplianceNotification &rarr; Dispatcher (outbox)</span><span class="evidence-tag">embargo.read / embargo.screen scopes</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · WHAT'S REAL TODAY -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">What's real today</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:20px;">The lists we actually screen against &mdash; live and ingesting.</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 40px;font-family:var(--font-body);">
+        <div style="color:rgba(255,255,255,0.8);font-size:14px;">✓ OFAC SDN + Consolidated non-SDN (~20k entries, streamed)</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:14px;">✓ BIS Consolidated Screening List (10 agency lists)</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:14px;">✓ DHS UFLPA Entity List</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:14px;">✓ CBP CROSS rulings</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:14px;">✓ Dow Jones full feed (provider lineage, multi-valued aliases)</div>
+        <div style="color:rgba(255,255,255,0.5);font-size:14px;">○ PEP / beneficial ownership / corporate registry &mdash; not yet</div>
+      </div>
+      <p class="hero-lede" style="margin-top:26px;font-size:15px;">Sell what's there: the denied-party, embargo, and forced-labor coverage is real and continuous. Say plainly where it stops.</p>
+    </div>
+  </section>
+
+  <!-- 10 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Is this an AI making sanctions calls?"</td><td class="obj-a">No. Every screening verdict is a rule table and a scorer you can inspect. The AI in the platform does analysis <em>inside</em> stages &mdash; it never decides a hit.</td></tr>
+        <tr><td class="obj-q">"Do you do PEP / beneficial ownership?"</td><td class="obj-a">Not yet &mdash; deliberately called out as a known gap, with autonomous approval and deeper fuzzy matching. Denied-party, embargo, and forced-labor coverage is real and continuous.</td></tr>
+        <tr><td class="obj-q">"License determination sounds like it does nothing."</td><td class="obj-a">It does the honest thing &mdash; it refuses to output a fake control-list answer when the data to back it isn't loaded. For a regulated exporter, "REVIEW_REQUIRED, here's what I checked" is worth more than a guess.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 11 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"The watchlist changed this week. Ours re-screened your cleared parties &mdash; and can show you which ones, and why."</h2>
+      <p class="hero-lede">Immutable results, separate dispositions, continuous re-screening. Continuous assurance, not a onboarding checkbox.</p>
+      <div class="dark-card"><p>Next step: send us an anonymized slice of your party master. We'll run it live &mdash; RPS, embargo, UFLPA &mdash; and walk the findings with your compliance lead.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full feature list and talk track: <span class="mono">docs/sales/compliance-and-screening.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

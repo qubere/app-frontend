@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Customs Filing</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Customs Filing</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">The entry builds itself from the shipment &mdash;<br><span class="accent">validated, priced, and frozen.</span></h1>
+      <p class="hero-lede">Qubere takes a shipment's line items, parties, and documents and produces a CBP entry: checked against a real Form 7501 checklist, priced with a live HTS tariff engine, snapshotted as an auditable declaration, and driven through the full transmit &rarr; response &rarr; release lifecycle. No re-keying into ACE.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">18</div><div class="stat-label">CBP entry types in the vocabulary</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">2</div><div class="stat-label">countries live &mdash; added as data, not code</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">0</div><div class="stat-label">duty lines ever understated (unrated &rarr; blank)</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">Every entry is data entry, and every rejection is a surprise.</h2>
+      <p class="problem-sub">What a broker or self-filer will tell you about ACE today:</p>
+      <div class="pain-grid">
+        <div class="pain-card">
+          <p class="pain-quote">"It's on the commercial invoice, it's on the packing list, it's in our product database &mdash; and someone still types it into ACE line by line."</p>
+          <p class="pain-tag">Re-keying</p>
+        </div>
+        <div class="pain-card">
+          <p class="pain-quote">"We find out an entry was wrong when CBP rejects it. Then it's a scramble to figure out which field, fix it, and resubmit &mdash; against a clock."</p>
+          <p class="pain-tag">Rejections</p>
+        </div>
+        <div class="pain-card">
+          <p class="pain-quote">"Duty math is a spreadsheet and a prayer. Nobody's confident about MPF caps, Section 301 stacking, or which HTS rate was in effect that week."</p>
+          <p class="pain-tag">Duty math</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">The data is already here. The entry is a projection of it.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">The draft assembles from line items, parties, and documents already on the shipment &mdash; and <strong style="color:#fff">fails closed</strong> if a destination country, procedure mapping, authority config, or line items are missing.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A named 7501 checklist runs before the entry can move, and again &mdash; unconditionally &mdash; at transmit. Every failure names the field.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Duty, MPF, and fees are computed from the actual published HTS schedule, human-approved before it goes live.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">At transmit, the declaration is <strong style="color:#fff">frozen and versioned</strong> &mdash; later shipment edits never rewrite what was filed.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Every CBP response maps through a table-driven state machine. Adding a country is seed data.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Draft entry from the shipment -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Draft entry from the shipment</p>
+        <h2 class="feature-headline">Send to Customs Filing &mdash; and the entry is already populated.</h2>
+        <p class="feature-pain">The entry is assembled from data the shipment already holds. It <strong>fails closed</strong> on a missing country, procedure, or line item &mdash; you never get a half-built filing that looks complete.</p>
+        <ul class="feature-bullets">
+          <li>One action from a ready shipment, no form</li>
+          <li>Importer, value, country, status on one list</li>
+          <li>Practice-mode (Simulation) filings can never reach a real CBP status</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Open a ready shipment &rarr; <strong>Send to Customs Filing</strong>. Show the draft appear pre-filled. Then open <strong>Customs Filing</strong> and point at the entry list.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div>
+              <div class="app-breadcrumb"><span class="app-breadcrumb-ws">Target Brokerage</span><span style="color:var(--slate-300)">/</span><span class="app-breadcrumb-chip">Account Isolated</span></div>
+            </div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-sidebar">
+              <div class="sidebar-ask"><span>✦</span><span class="sidebar-ask-text">Ask Qubere</span></div>
+              <div class="sidebar-section">Main Operations</div>
+              <div class="nav-item"><span class="nav-item-icon">≡</span><span class="nav-item-label">Actions</span></div>
+              <div class="nav-item"><span class="nav-item-icon">⊞</span><span class="nav-item-label">Command Center</span></div>
+              <div class="nav-item"><span class="nav-item-icon">📦</span><span class="nav-item-label">Shipments</span></div>
+              <div class="nav-item active"><span class="nav-item-icon">📋</span><span class="nav-item-label">Customs Filing</span></div>
+              <div class="nav-item"><span class="nav-item-icon">⚖️</span><span class="nav-item-label">Compliance</span></div>
+              <div class="nav-item"><span class="nav-item-icon">↩︎</span><span class="nav-item-label">Post-Entry</span></div>
+            </div>
+            <div class="app-main"><div class="app-content">
+              <div class="page-header">
+                <div><div class="page-title">Customs Filing &amp; Response Center</div><div class="page-sub">4 filings · 1 draft · 2 transmitted · 1 released</div></div>
+                <button class="btn-primary">+ New filing</button>
+              </div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Entry #</th><th>Importer</th><th>Country</th><th>Type</th><th>Value</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="link mono">QBR-2026-3231761</span></td><td>ABC Manufacturing India Pvt Ltd</td><td>US</td><td>01 · Consumption</td><td>$688.80</td><td><span class="chip chip-accepted">Released</span></td></tr>
+                    <tr><td><span class="link mono">QBR-2026-3231809</span></td><td>Acme Corporation</td><td>US</td><td>01 · Consumption</td><td>$142,400.00</td><td><span class="chip chip-progress">Transmitted</span></td></tr>
+                    <tr><td><span class="link mono">QBR-2026-3231844</span></td><td>Nordwerk GmbH</td><td>DE</td><td>01 · Consumption</td><td>&euro;58,900.00</td><td><span class="chip chip-progress">Transmitted</span></td></tr>
+                    <tr><td><span class="link mono">QBR-2026-3231902</span></td><td>Acme Corporation</td><td>US</td><td>03 · AD/CVD</td><td>$96,120.00</td><td><span class="chip chip-draft">Draft · from SHP-2026-000144</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px;font-family:var(--font-body);font-size:10px;color:var(--slate-400);">
+                <span class="evidence-tag">✓ Type 01 / 03 / 11</span><span class="evidence-tag">✓ ISF 10+2</span><span class="evidence-tag">✓ CBP 3461 / 7501 preview</span>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — 7501 validation checklist -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Form 7501 validation</p>
+        <h2 class="feature-headline">The rejection you're about to get from CBP &mdash; caught here first.</h2>
+        <p class="feature-pain">A named rule set runs before the entry can move and again at transmit: required 7501 blocks, an approved classification on every line, a valid importer CBP number, a real ACE port code, bond not expired, no blocking exceptions. <strong>Each failure names the exact field.</strong></p>
+        <ul class="feature-bullets">
+          <li>Runs unconditionally server-side at transmit &mdash; 422, regardless of what the client believes</li>
+          <li>Readiness-score threshold is configurable</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Click <strong>Validate</strong> on a filing with a gap. Read the blocker list aloud. Fix the classification, re-validate, watch it clear to <strong>Ready for Broker Review</strong>.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div>
+              <div class="app-breadcrumb"><span class="app-breadcrumb-ws">Customs Filing</span><span style="color:var(--slate-300)">/</span><span class="mono" style="font-size:10px;">QBR-2026-3231902</span></div>
+            </div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main" style="border-left:1px solid var(--slate-200);"><div class="app-content">
+              <div class="page-header">
+                <div><div class="page-title">Pre-transmission validation</div><div class="page-sub">QBR-2026-3231902 · Draft · ran 12:41:07</div></div>
+                <button class="btn-secondary">↻ Re-validate</button>
+              </div>
+              <div class="panel" style="border-color:#FCA5A5;background:#FEF2F2;">
+                <div class="panel-title" style="color:#991B1B;">✕ 2 blockers &mdash; cannot transmit</div>
+                <div class="field-row" style="border-color:#FECACA;"><span class="field-k" style="color:#7F1D1D;">ALL_LINES_HAVE_APPROVED_DECISION</span><span class="field-v" style="color:#991B1B;">2 lines: HTS present, no approved classification</span></div>
+                <div class="field-row" style="border-color:#FECACA;"><span class="field-k" style="color:#7F1D1D;">PORT_OF_ENTRY_VALID_ACE_CODE</span><span class="field-v" style="color:#991B1B;">"Los Angeles" &rarr; no 4-digit ACE code</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">✓ 9 checks passed</div>
+                <div class="field-row"><span class="field-k">REQUIRED_7501_BLOCKS_POPULATED</span><span class="field-v" style="color:var(--green);">pass</span></div>
+                <div class="field-row"><span class="field-k">IMPORTER_CBP_NUMBER_VALID</span><span class="field-v" style="color:var(--green);">pass · 9 digits</span></div>
+                <div class="field-row"><span class="field-k">BOND_NOT_EXPIRED</span><span class="field-v" style="color:var(--green);">valid until 2027-03-31</span></div>
+                <div class="field-row"><span class="field-k">NO_BLOCKING_EXCEPTIONS</span><span class="field-v" style="color:var(--green);">pass</span></div>
+                <div class="field-row"><span class="field-k">HTS_RELEASE_CURRENT</span><span class="field-v" style="color:var(--green);">2026 Rev 14 · 3 days old</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — HTS duty engine -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">HTS duty &amp; MPF engine</p>
+        <h2 class="feature-headline">Duty math you can trace to a published rate.</h2>
+        <p class="feature-pain">Not a model, not a heuristic &mdash; a specific published HTS release, refreshed nightly from USITC and <strong>human-approved before it goes live</strong>. If any line is unrated, the duty fields stay blank rather than understating the number.</p>
+        <ul class="feature-bullets">
+          <li>Line-by-line: HTS &rarr; rate &rarr; extended value &rarr; duty</li>
+          <li>Section 301 applied where the rate exists in the data</li>
+          <li>Recomputed at creation, at transmit, and at 7501 build</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Open the <strong>7501 Preview</strong> tab. Walk one line end to end. Note the rate came from a named HTS release, staged DRAFT and published by a person.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div>
+              <div class="app-breadcrumb"><span class="mono" style="font-size:10px;">QBR-2026-3231809</span><span style="color:var(--slate-300)">·</span><span>7501 Preview</span></div>
+            </div>
+            <div class="app-topbar-right"><div class="app-avatar">FR</div><span class="app-username">Frank</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Entry Summary &mdash; CBP Form 7501</div><div class="page-sub">Rates from HTS release <span class="mono">2026-REV-14</span> · published 2026-08-26 by M. Okafor</div></div></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Line</th><th>HTS</th><th>Value</th><th>Rate</th><th>Duty</th><th>301</th></tr></thead>
+                  <tbody>
+                    <tr><td>1 · Lithium-ion cells</td><td class="mono">8507.60.0020</td><td>$61,200.00</td><td>3.4%</td><td>$2,080.80</td><td><span class="chip chip-high">List 3 · 25%</span></td></tr>
+                    <tr><td>2 · Battery mgmt boards</td><td class="mono">8537.10.9170</td><td>$44,900.00</td><td>2.7%</td><td>$1,212.30</td><td>&mdash;</td></tr>
+                    <tr><td>3 · Enclosure, aluminum</td><td class="mono">7616.99.5190</td><td>$36,300.00</td><td>2.5%</td><td>$907.50</td><td>&mdash;</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+                <div class="kpi-card"><div class="kpi-label">Entered value</div><div class="kpi-value default" style="font-size:15px;">$142,400.00</div></div>
+                <div class="kpi-card"><div class="kpi-label">Regular duty</div><div class="kpi-value default" style="font-size:15px;">$4,200.60</div></div>
+                <div class="kpi-card"><div class="kpi-label">Section 301</div><div class="kpi-value amber" style="font-size:15px;">$15,300.00</div></div>
+                <div class="kpi-card"><div class="kpi-label">MPF (capped)</div><div class="kpi-value default" style="font-size:15px;">$634.90</div></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · FEATURE — Snapshot + CBP response lifecycle -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Declaration snapshot &amp; CBP lifecycle</p>
+        <h2 class="feature-headline">What was filed is frozen. Where it stands is one screen.</h2>
+        <p class="feature-pain">At transmit, Qubere freezes the exact shipment, line, document, and header data as filed and builds a versioned canonical declaration. Every CBP response &mdash; accept, reject, release, hold, cancel &mdash; maps through a table-driven state machine. <strong>No logging into ACE to check.</strong></p>
+        <ul class="feature-bullets">
+          <li>Reject &rarr; correct the data &rarr; <strong>Save &amp; Resubmit</strong>, threaded to the original</li>
+          <li>Cancellation is request-then-confirm, with the country-specific fields it needs</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Open the <strong>Response</strong> tab on a transmitted filing &mdash; walk the status history. Then the <strong>Declaration</strong> tab &mdash; point at the version number: "this is what CBP got."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div>
+              <div class="app-breadcrumb"><span class="mono" style="font-size:10px;">QBR-2026-3231761</span><span style="color:var(--slate-300)">·</span><span>Response</span></div>
+            </div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">CBP response lifecycle</div><div class="page-sub">Snapshot v3 · frozen at transmit · shipment edits since do not apply</div></div><span class="chip chip-accepted">Released</span></div>
+              <div class="panel">
+                <div class="panel-title">Status history</div>
+                <div class="chain">
+                  <div class="chain-node"><span class="dot-b"></span>Draft &rarr; Ready for Broker Review &nbsp;<span style="color:var(--slate-400)">· validate.pass · 09:14</span></div>
+                  <div class="chain-node"><span class="dot-b"></span>Broker Approved &nbsp;<span style="color:var(--slate-400)">· S. Chen, License #12345 · 09:22</span></div>
+                  <div class="chain-node"><span class="dot-b"></span>Transmitted &nbsp;<span style="color:var(--slate-400)">· snapshot v3 · SUBMIT · 09:23</span></div>
+                  <div class="chain-node"><span class="dot-b"></span>Accepted &nbsp;<span style="color:var(--slate-400)">· cbp.accept · 09:41</span></div>
+                  <div class="chain-node" style="border-color:#BBF7D0;background:#F0FDF4;"><span class="dot-b" style="background:var(--green)"></span>Released &nbsp;<span style="color:var(--slate-500)">· cbp.release · 11:08</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">Declaration version</span><span class="field-v mono">v3</span></div>
+                <div class="field-row"><span class="field-k">Message thread</span><span class="field-v mono">SUBMIT &rarr; CBP_ACCEPT &rarr; CBP_RELEASE</span></div>
+                <div class="field-row"><span class="field-k">Post-summary correction</span><span class="field-v">eligible · 297 days remain</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · FEATURE — Country-agnostic messaging -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Canonical multi-country messaging</p>
+        <h2 class="feature-headline">Adding Germany was a spreadsheet, not a sprint.</h2>
+        <p class="feature-pain">Entry type, procedure, authority, message routing, response mapping, allowed post-filing edits, and offered actions all resolve from database tables keyed by <span class="mono">(country, procedure)</span>, most-specific-match-wins. Germany was onboarded with <strong>zero application-code changes</strong>.</p>
+        <ul class="feature-bullets">
+          <li>Outbound / inbound messages validated against versioned JSON Schemas</li>
+          <li>A new child action (e.g. AMEND) is one seed row</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Open <strong>Filing Configuration</strong>. Show the procedure / authority / message-catalog tables. "A country is data. That's the enterprise-scale story &mdash; one platform, not one integration per authority."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div>
+              <div class="app-breadcrumb"><span>Filing Configuration</span><span style="color:var(--slate-300)">/</span><span>Procedure mappings</span></div>
+            </div>
+            <div class="app-topbar-right"><div class="app-avatar">PA</div><span class="app-username">Platform Admin</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">FilingProcedureMapping</div><div class="page-sub">Resolved per (country, procedure) · most-specific match wins</div></div><button class="btn-secondary">+ Add mapping</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Country</th><th>Entry type</th><th>Procedure code</th><th>Authority</th><th>Message</th></tr></thead>
+                  <tbody>
+                    <tr><td>🇺🇸 US</td><td>01 Consumption</td><td class="mono">CONSUMPTION</td><td>CBP · ACE/ABI</td><td class="mono">US_ENTRY_SUMMARY_v4</td></tr>
+                    <tr><td>🇺🇸 US</td><td>03 AD/CVD</td><td class="mono">CONSUMPTION_ADCVD</td><td>CBP · ACE/ABI</td><td class="mono">US_ENTRY_SUMMARY_v4</td></tr>
+                    <tr><td>🇩🇪 DE</td><td>01 Consumption</td><td class="mono">4000</td><td>Zoll · ATLAS</td><td class="mono">DE_CUSDEC_v2</td></tr>
+                    <tr><td>🇩🇪 DE</td><td>21 Warehouse</td><td class="mono">7100</td><td>Zoll · ATLAS</td><td class="mono">DE_CUSDEC_v2</td></tr>
+                    <tr><td>🇩🇪 DE</td><td>23 TIB</td><td class="mono">5300</td><td>Zoll · ATLAS</td><td class="mono">DE_CUSDEC_v2</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px;"><span class="evidence-tag">FilingAuthorityConfig</span><span class="evidence-tag">FilingMessageCatalog</span><span class="evidence-tag">FilingResponseStatusMapping</span><span class="evidence-tag">FilingChildActionRule</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Are you actually transmitting to CBP / ACE today?"</td><td class="obj-a">Qubere builds and validates the ABI/ACE message, freezes the declaration, and runs the full response lifecycle &mdash; in the demo a simulated CBP response is applied inline. <strong>Live ABI transmission activates when a customer's CBP filer credentials are configured</strong> (a config switch, not a rebuild); direct ABI certification is on the roadmap.</td></tr>
+        <tr><td class="obj-q">"What entry types do you support end to end?"</td><td class="obj-a">All 18 CBP codes are in the vocabulary. The workflow implemented end to end is consumption-style entry (01 / 03 / 11). Warehouse and in-bond exist as types but don't have regime-specific tracking yet.</td></tr>
+        <tr><td class="obj-q">"Does duty math handle AD/CVD and Section 301?"</td><td class="obj-a">Section 301 is applied where the rate is in the HTS data. Automated AD/CVD scope and rate ingestion isn't live &mdash; flagged for human handling. Unrated lines show blank, never a guess.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"The rejection you're about to get from CBP &mdash; we catch it here, before transmit."</h2>
+      <p class="hero-lede">And every entry carries a frozen, versioned snapshot: what you declared, provable, forever.</p>
+      <div class="dark-card"><p>Next step: bring one of your recent entries. We'll build it in Qubere on a screen-share &mdash; draft, validate, 7501 preview &mdash; and you tell us where it would have saved you time or caught an error.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full feature list, seed scripts, and talk track: <span class="mono">docs/sales/customs-filing.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>
