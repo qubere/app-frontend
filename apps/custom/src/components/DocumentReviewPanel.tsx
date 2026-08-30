@@ -401,6 +401,10 @@ export interface DocumentReviewPanelProps {
   // id placed on the subtitle line so a wrapping dialog can point
   // aria-labelledby at it. Not needed for inline (non-dialog) embedding.
   titleId?: string;
+  // When set, the panel opens straight to the document view with this
+  // extraction field highlighted on its page -- used by the Actions screen's
+  // per-decision evidence list to jump to the exact source of a value.
+  initialFieldName?: string | null;
 }
 
 /** An absent status falls through to the same default as any other. */
@@ -427,6 +431,7 @@ export function DocumentReviewPanel({
   headerRight,
   onClose,
   titleId,
+  initialFieldName = null,
 }: DocumentReviewPanelProps) {
   const router = useRouter();
   const [data, setData] = useState<ExtractionPayload | null>(null);
@@ -777,6 +782,19 @@ export function DocumentReviewPanel({
     if (prov.page) setPdfPage(prov.page);
     setActiveTab("DOC");
   }
+
+  // One-shot: when opened with an initialFieldName (from the Actions evidence
+  // list), jump to that field's page/bbox once the extraction data has loaded.
+  const didJumpToInitialField = useRef(false);
+  useEffect(() => {
+    if (didJumpToInitialField.current || !initialFieldName || !data) return;
+    if (provenanceMap.has(initialFieldName)) {
+      didJumpToInitialField.current = true;
+      jumpToField(initialFieldName);
+    }
+    // jumpToField is stable enough for a one-shot; deps kept minimal on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFieldName, data, provenanceMap]);
 
   // Jump to a ReviewField by index in the right-pane field list.
   const jumpToReviewField = useCallback(

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload } from "lucide-react";
+import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload, ChevronRight } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useDecisionActions } from "@/lib/decisions/useDecisionActions";
 import { ExceptionQuickActions } from "./ExceptionQuickActions";
@@ -159,7 +159,7 @@ export function ActionsClient({
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [activeCategory, setActiveCategory] = useState<"all" | "blocked" | "review" | "verified">("all");
-  const [docModal, setDocModal] = useState<{ documentId: string; fileName: string; fileUrl: string | null } | null>(null);
+  const [docModal, setDocModal] = useState<{ documentId: string; fileName: string; fileUrl: string | null; initialFieldName?: string | null } | null>(null);
   const [exceptionSlideOver, setExceptionSlideOver] = useState<{ exceptionId: string; shipmentId: string | undefined } | null>(null);
   const [notesByDecision, setNotesByDecision] = useState<Record<string, string>>({});
   const [selectedDecisionIds, setSelectedDecisionIds] = useState<Set<string>>(new Set());
@@ -814,9 +814,9 @@ export function ActionsClient({
                             verified={cat === "verified"}
                             selected={selectedDecisionIds.has(item.id)}
                             onToggleSelect={() => toggleDecisionSelection(item.id)}
-                            onDocClick={(docId, fileName) => {
+                            onDocClick={(docId, fileName, fieldName) => {
                               const doc = docLookup.get(docId);
-                              setDocModal({ documentId: docId, fileName, fileUrl: doc?.fileUrl ?? null });
+                              setDocModal({ documentId: docId, fileName, fileUrl: doc?.fileUrl ?? null, initialFieldName: fieldName ?? null });
                             }}
                           />
                         ) : item.kind === "tender" || item.kind === "carrier_invoice" ? (
@@ -967,6 +967,7 @@ export function ActionsClient({
                 documentId={docModal.documentId}
                 fileName={docModal.fileName}
                 fileUrl={docModal.fileUrl}
+                initialFieldName={docModal.initialFieldName}
                 proxyUrl={documentViewUrl(docModal.documentId)}
                 decisions={modalDecisions}
                 onReviewAction={async (decisionId, action) => {
@@ -1171,6 +1172,114 @@ function DecisionBody({ item }: { item: Extract<ActionItem, { kind: "decision" }
   return <p className="text-[11px] text-ink-muted leading-relaxed">{item.decisionSummary || "No details available."}</p>;
 }
 
+interface EvidenceField {
+  fieldName: string;
+  currentValue?: string | null;
+  value?: string | null;
+  pageNumber?: number | null;
+  confidence?: number | null;
+  source?: string | null;
+}
+
+/**
+ * Collapsed-by-default list of the extraction fields a decision rests on. Reads
+ * `/api/documents/:id/extractions` on first open. Each row jumps the document
+ * viewer to that value's page + bounding box -- the "prove every line item"
+ * path, on the card instead of two clicks away.
+ */
+function EvidenceExpander({
+  documentId,
+  onFieldClick,
+}: {
+  documentId: string;
+  onFieldClick: (fieldName: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fields, setFields] = useState<EvidenceField[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || fields !== null || loading) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/documents/${documentId}/extractions`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => {
+        if (cancelled) return;
+        const rf: EvidenceField[] = Array.isArray(data?.reviewFields) ? data.reviewFields : [];
+        setFields(rf);
+      })
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, documentId, fields, loading]);
+
+  const shown = (fields ?? []).filter((f) => (f.currentValue ?? f.value ?? "").toString().trim() !== "");
+
+  return (
+    <div className="border-t border-border/40 pt-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors cursor-pointer"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
+        Evidence{fields ? ` (${shown.length})` : ""}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1">
+          {loading && <p className="text-[10px] text-ink-muted px-1">Loading source fields…</p>}
+          {error && <p className="text-[10px] text-red-600 px-1">Couldn’t load evidence: {error}</p>}
+          {fields && shown.length === 0 && !loading && (
+            <p className="text-[10px] text-ink-muted px-1">No per-field extraction is recorded for this document.</p>
+          )}
+          {shown.map((f) => {
+            const val = (f.currentValue ?? f.value ?? "").toString();
+            const conf = typeof f.confidence === "number" ? Math.round(f.confidence) : null;
+            return (
+              <button
+                key={f.fieldName}
+                onClick={() => onFieldClick(f.fieldName)}
+                className="w-full flex items-center justify-between gap-2 px-2 py-1 rounded-lg border border-border/60 bg-white hover:border-brand hover:bg-brand/5 transition-colors text-left cursor-pointer group"
+                title="Open the document at this value"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[10px] text-ink-muted capitalize">
+                    {f.fieldName.replace(/[_.]/g, " ")}
+                  </span>
+                  <span className="block text-[11px] font-semibold text-ink truncate">{val}</span>
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {f.pageNumber ? (
+                    <span className="text-[9px] font-mono text-ink-muted">p.{f.pageNumber}</span>
+                  ) : null}
+                  {conf !== null && (
+                    <span
+                      className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                        conf >= 90
+                          ? "bg-emerald-100 text-emerald-700"
+                          : conf >= 70
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {conf}%
+                    </span>
+                  )}
+                  <FileText className="w-3 h-3 text-ink-muted group-hover:text-brand" />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Row({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-3 text-[11px]">
@@ -1252,7 +1361,7 @@ function AgentResultCard({
   verified?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
-  onDocClick: (docId: string, fileName: string) => void;
+  onDocClick: (docId: string, fileName: string, fieldName?: string) => void;
 }) {
   const [showNote, setShowNote] = useState(false);
   const label = reviewerLabel(item.raw);
@@ -1308,6 +1417,15 @@ function AgentResultCard({
 
       {/* Extracted data */}
       <DecisionBody item={item} />
+
+      {/* Evidence — the source fields this decision rests on, straight from the
+          document, each a click away from its exact spot on the page. */}
+      {docId && (
+        <EvidenceExpander
+          documentId={docId}
+          onFieldClick={(fieldName) => onDocClick(docId, item.documentName ?? "Document", fieldName)}
+        />
+      )}
 
       {/* Provenance footer */}
       <ProvenanceFooter item={item} />
