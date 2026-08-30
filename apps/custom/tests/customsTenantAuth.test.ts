@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { db } from "@qubere/db";
 import { authorizeRequest, AccountNotEntitledError } from "@qubere/auth";
 import { activateProductWorkspace } from "../../tms/src/modules/shipments/services/shipmentProductWorkspaceService";
@@ -299,5 +299,37 @@ describe("Authentication, Tenant Isolation & Legacy Migration Requirements (Test
       where: { shipmentId: shipment.id, product: "TMS" },
     });
     expect(count).toBe(1);
+  });
+
+  afterAll(async () => {
+    if (!dbAvailable) return;
+    try {
+      await db.shipmentDocument.deleteMany({
+        where: { accountId: { in: [tenantAId, tenantBId] } },
+      });
+      await db.customsCaseDocument.deleteMany({
+        where: { customsCase: { accountId: { in: [tenantAId, tenantBId] } } },
+      });
+      await db.customsCase.deleteMany({
+        where: { accountId: { in: [tenantAId, tenantBId] } },
+      });
+      await db.shipmentProductWorkspace.deleteMany({
+        where: { accountId: { in: [tenantAId, tenantBId] } },
+      });
+      await db.shipment.deleteMany({
+        where: { accountId: { in: [tenantAId, tenantBId] } },
+      });
+      await db.accountProductEntitlement.deleteMany({
+        where: { accountId: { in: [tenantAId, tenantBId] } },
+      });
+      await db.user.deleteMany({
+        where: { id: { in: [userAId, userBId] } },
+      });
+      await db.account.deleteMany({
+        where: { id: { in: [tenantAId, tenantBId] } },
+      });
+    } catch {
+      // Best-effort test cleanup
+    }
   });
 });

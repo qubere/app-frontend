@@ -1,6 +1,9 @@
+"use client";
+
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronRight,
   Circle,
   Clock3,
   FileCheck2,
@@ -137,23 +140,53 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
     <div className="space-y-6">
       {projection.nextAction && (
         <div
-          className={`rounded-3xl border p-5 flex items-start gap-4 ${
+          onClick={() => {
+            const targetId =
+              projection.nextAction?.type === "RESOLVE_EXCEPTION"
+                ? "exceptions-panel"
+                : projection.nextAction?.type === "START_TRACKING" || projection.nextAction?.type === "CHECK_TRACKING_SOURCE"
+                ? "waterfall-view"
+                : "exceptions-panel";
+
+            const el = document.getElementById(targetId) || document.getElementById("exceptions-panel");
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+              el.classList.add("ring-2", "ring-brand", "ring-offset-2", "transition-all");
+              setTimeout(() => el.classList.remove("ring-2", "ring-brand", "ring-offset-2"), 2500);
+            }
+          }}
+          className={`rounded-3xl border p-5 flex items-start justify-between gap-4 cursor-pointer hover:shadow-md transition-all group ${
             projection.health.status === "CRITICAL"
-              ? "bg-rose-50 border-rose-200"
+              ? "bg-rose-50 border-rose-200 hover:border-rose-300"
               : projection.health.status === "ATTENTION" || projection.health.status === "STALE"
-                ? "bg-amber-50 border-amber-200"
-                : "bg-slate-50 border-slate-200"
+                ? "bg-amber-50 border-amber-200 hover:border-amber-300"
+                : "bg-slate-50 border-slate-200 hover:border-slate-300"
           }`}
+          title="Click to resolve this blocker in Action Items"
         >
-          <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${projection.health.status === "CRITICAL" ? "text-rose-600" : "text-amber-600"}`} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-extrabold text-ink">{projection.nextAction.title}</p>
-            <p className="text-xs text-ink-muted mt-1 leading-5">{projection.nextAction.detail}</p>
-            {projection.nextAction.dueAt && (
-              <p className="text-[10px] font-bold uppercase tracking-wider mt-2 text-ink">
-                Due {formatDateTime(projection.nextAction.dueAt)}
-              </p>
-            )}
+          <div className="flex items-start gap-4 min-w-0 flex-1">
+            <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${projection.health.status === "CRITICAL" ? "text-rose-600" : "text-amber-600"}`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-extrabold text-ink group-hover:text-brand transition-colors">
+                  {projection.nextAction.title}
+                </p>
+                <span className="text-[10px] font-extrabold uppercase bg-white/80 text-ink-muted px-2 py-0.5 rounded-full border border-border">
+                  Action Required
+                </span>
+              </div>
+              <p className="text-xs text-ink-muted mt-1 leading-5">{projection.nextAction.detail}</p>
+              {projection.nextAction.dueAt && (
+                <p className="text-[10px] font-bold uppercase tracking-wider mt-2 text-ink">
+                  Due {formatDateTime(projection.nextAction.dueAt)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 text-xs font-bold text-brand group-hover:translate-x-0.5 transition-transform shrink-0 pt-0.5">
+            <span>Resolve Action</span>
+            <ChevronRight className="w-4 h-4" />
           </div>
         </div>
       )}

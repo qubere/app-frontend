@@ -103,19 +103,7 @@ export async function loadDocumentBytes(documentId: string): Promise<LoadedDocum
     return { buffer: onDisk, fileName, mimeType, source: "local-disk" };
   }
 
-  // 2. rawContent persisted in Postgres — UTF-8 text or base64-encoded binary.
-  //    Buffer.from(x, "base64") never throws, it just yields junk for non-base64
-  //    input, so only trust the decode when it produces a recognised signature.
-  if (document.rawContent && document.rawContent.trim()) {
-    const raw = document.rawContent.trim();
-    const decoded = Buffer.from(raw, "base64");
-    const buffer = looksLikeKnownBinary(decoded) ? decoded : Buffer.from(raw, "utf-8");
-    if (buffer.byteLength > 0) {
-      return { buffer, fileName, mimeType, source: "raw-content" };
-    }
-  }
-
-  // 3. Durable object storage (GCS / Vercel Blob).
+  // 2. Durable object storage (GCS / Vercel Blob).
   if (document.fileUrl) {
     try {
       const stored = await readStoredObject(document.fileUrl);
@@ -128,7 +116,19 @@ export async function loadDocumentBytes(documentId: string): Promise<LoadedDocum
         };
       }
     } catch {
-      // Placeholder URL or unreachable object — nothing more to try.
+      // Placeholder URL or unreachable object — fall through to rawContent.
+    }
+  }
+
+  // 3. rawContent persisted in Postgres — UTF-8 text or base64-encoded binary fallback.
+  //    Buffer.from(x, "base64") never throws, it just yields junk for non-base64
+  //    input, so only trust the decode when it produces a recognised signature.
+  if (document.rawContent && document.rawContent.trim()) {
+    const raw = document.rawContent.trim();
+    const decoded = Buffer.from(raw, "base64");
+    const buffer = looksLikeKnownBinary(decoded) ? decoded : Buffer.from(raw, "utf-8");
+    if (buffer.byteLength > 0) {
+      return { buffer, fileName, mimeType, source: "raw-content" };
     }
   }
 

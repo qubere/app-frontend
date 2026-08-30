@@ -13,7 +13,7 @@ steps:
       - "."
   - name: gcr.io/cloud-builders/docker
     id: tms
-    waitFor: ["-"]
+    waitFor: ["customs"]
     args:
       - "build"
       - "--target=tms-web"

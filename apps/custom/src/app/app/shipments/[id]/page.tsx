@@ -14,16 +14,15 @@ import { CanonicalShipmentService } from "@/modules/shipment/canonicalShipmentSe
 import { Badge } from "@/components/ui/Badge";
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";
 import { PipelineProgressTracker } from "./PipelineProgressTracker";
-import { StageStepper } from "@/components/workflow/StageStepper";
 import { ShipmentTitleEditor } from "./ShipmentTitleEditor";
 import { ShipmentClientEditor } from "./ShipmentClientEditor";
 import { DestinationCountryEditor } from "./DestinationCountryEditor";
 import { ExceptionsDrawer } from "./ExceptionsDrawer";
 import { LineItemsTable } from "./LineItemsTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
-import { PreFilingReadiness } from "./PreFilingReadiness";
 import { ComplianceChecksPanel } from "./ComplianceChecksPanel";
 import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
+import { AddTransportLegButton } from "./AddTransportLegButton";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
 import { buildAgentInvocations } from "./agentInvocations";
 import { displayCurrency } from "@/lib/honest";
@@ -1466,12 +1465,9 @@ export default async function ShipmentWorkspacePage(props: {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
-      <StageStepper shipmentId={shipment.id} />
-      <PipelineProgressTracker shipmentId={shipment.id} />
-
       {/* Top Banner & Multi-Dimensional Readiness Header */}
       <div className="bg-white p-6 rounded-3xl border border-border shadow-2xs space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
             <ShipmentTitleEditor
               shipmentId={shipment.id}
@@ -1542,6 +1538,10 @@ export default async function ShipmentWorkspacePage(props: {
               </span>
             )}
 
+            {canManageJourney && (!trackingProjection?.journey?.legs || trackingProjection.journey.legs.length === 0) && (
+              <AddTransportLegButton shipmentId={shipment.id} />
+            )}
+
             {/* Readiness score — progress bar with percentage. */}
             {shipment.readinessScore !== null && shipment.readinessScore !== undefined && (
               <div className="flex items-center space-x-2" title={`Filing readiness: ${shipment.readinessScore}%`}>
@@ -1586,25 +1586,20 @@ export default async function ShipmentWorkspacePage(props: {
           </div>
         </div>
 
-        {/* Multi-Leg Journey Ribbon -- full end-to-end route with per-leg status + documents */}
-        {trackingProjection?.journey && trackingProjection.journey.legs.length > 0 && (
-          <JourneyRibbon
-            data={trackingProjection.journey}
-            canManage={canManageJourney}
-            documents={documents.map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType }))}
-          />
-        )}
-
-        {/* Pre-Filing Readiness Ribbon -- moved directly under the shipment
-            name so status (at risk / ready) is the first thing visible. */}
-        <PreFilingReadiness
-          categories={readinessCategories}
-          overallStatus={{
-            text: overallStatusText,
-            subtext: overallStatusSubtext,
-            type: overallStatusType,
+        {/* Unified Master Journey & Compliance Command Ribbon */}
+        <JourneyRibbon
+          data={trackingProjection?.journey}
+          canManage={canManageJourney}
+          documents={documents.map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType }))}
+          readiness={{
+            categories: readinessCategories,
+            overallStatus: {
+              text: overallStatusText,
+              subtext: overallStatusSubtext,
+              type: overallStatusType,
+            },
+            readinessBreakdown,
           }}
-          readinessBreakdown={readinessBreakdown}
         />
 
         {/* On-demand compliance checks — embargo, PGA and reconciliation used to

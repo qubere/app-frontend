@@ -13,7 +13,6 @@ import { Card, Button } from "@/components/ui";
 import { DocumentWorkspacePanel } from "@/components/DocumentWorkspacePanel";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
-import { ShipmentLifecycleRibbon } from "@/components/ShipmentLifecycleRibbon";
 import { CustomsHandoffCard } from "@/components/CustomsHandoffCard";
 import { AgentExecutionsAuditLog } from "@/components/AgentExecutionsAuditLog";
 
@@ -312,14 +311,6 @@ export function ShipmentWorkspaceClient({
             </div>
           )}
 
-          <ShipmentLifecycleRibbon
-            status={lifecycleStatus}
-            shipmentId={shipment.id}
-            carrierInvoiceId={shipment.carrierInvoices?.[0]?.id}
-            onStageSelect={(i) => {
-              if (i === 3) setActiveTab("CUSTOMS");
-            }}
-          />
 
           <TmsPipelineProgressRibbon
             shipmentId={shipment.id}
