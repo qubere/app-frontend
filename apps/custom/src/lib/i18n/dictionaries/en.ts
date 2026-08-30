@@ -5,6 +5,7 @@ export const en = {
     today: "Today",
     classificationInbox: "Classification",
     htsWorkspace: "HTS Lookup",
+    intelligencePanels: "Trade Intelligence",
     commandCenter: "Command Center",
     documents: "Documents",
     regulatoryUpdates: "Regulatory Updates",

@@ -98,7 +98,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "compliance", labelKey: "complianceMonitoring", href: "/app/compliance", icon: "compliance" },
       { id: "license-management", labelKey: "licenseManagement", href: "/app/license-management", icon: "licenses", permission: "licenses.view" },
       { id: "regulatory", labelKey: "regulatoryUpdates", href: "/app/regulatory", icon: "regulatory" },
-      { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
     ],
   },
   {
@@ -108,8 +107,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: "trade-data", labelKey: "tradeData", href: "/app/trade-data", icon: "tradeData" },
       { id: "hts", labelKey: "htsWorkspace", href: "/app/hts", icon: "tariffs" },
-      { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
       { id: "simulator", labelKey: "tariffSimulator", href: "/app/simulator", icon: "simulator" },
+      { id: "intelligence", labelKey: "intelligencePanels", href: "/app/intelligence", icon: "reports" },
     ],
   },
   {
@@ -218,6 +217,8 @@ export const NAV_SECTIONS: NavSection[] = [
  * own sidebar row -- they have a prominent in-app entry point elsewhere:
  *   - products / parties: reached from the Trade Data hub (/app/trade-data)
  *   - reconciliation / vault: reached from the Post-Entry hub (/app/post-entry)
+ *   - tariffs: the old hub, now redirects to /app/regulatory
+ *   - compliance-reports: now the "Reports" tab of /app/compliance
  * navItemByHref() falls back to this list so canAccessHref() (and the Copilot's
  * tool gate) still resolve them.
  */
@@ -226,6 +227,8 @@ export const UNLISTED_NAV_ITEMS: NavItem[] = [
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
   { id: "reconciliation", labelKey: "reconciliation", href: "/app/reconciliation", icon: "postEntry" },
   { id: "vault", labelKey: "dutyDrawbacks", href: "/app/vault", icon: "vault" },
+  { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
+  { id: "compliance-reports", labelKey: "complianceReports", href: "/app/compliance-reports", icon: "reports", permission: "compliance.reports.view" },
 ];
 
 /** Mirrors hasPermission() in src/lib/auth.ts: platform admins and OWNER bypass checks. */

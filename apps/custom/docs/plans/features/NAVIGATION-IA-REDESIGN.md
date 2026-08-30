@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phases 1 / 2a / 2b / 3a / 3b / 4a / 4b / 4c shipped (in review). Remaining: 3c (route consolidation), 4d (intelligence panels).
+**Status:** Phases 1 / 2a / 2b / 3a / 3b / 3c / 4a / 4b / 4c / 4d shipped (in review). Remaining: small follow-ups (Escalate button, standalone classification detail route, permission-catalogue fix, per-tenant Filing Settings).
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -267,16 +267,21 @@ The bell was the right shape but half-wired: every notification linked to
 - **Compliance findings** — bridge `persistComplianceScreeningFindings` into a
   `COMPLIANCE_FINDING` bell row.
 
-## 7. Route consolidation (Phase 3c — deferred)
+## 7. Route consolidation (Phase 3c — SHIPPED)
 
-Lower priority: not a time-pressure pain point, and route moves are the expensive
-category (guards, tests, deep links, Copilot tool hrefs).
-
-- Merge `/app/regulatory` into a single `/app/tariffs` "Trade Reference" page with
-  tabs; redirect the standalone routes; drop the extra sidebar rows Phase 1 added.
-- Fold `/app/compliance-reports` in as a tab on `/app/compliance`.
+- **`/app/tariffs` retired.** The hub only ever linked to Regulatory Updates and
+  the Tariff Simulator, both now their own Data & Intelligence rows. The page
+  `redirect()`s to `/app/regulatory`; the route stays in `UNLISTED_NAV_ITEMS` so
+  deep links + the Copilot `navHref: "/app/tariffs"` still resolve.
+- **`/app/compliance-reports` → the "Reports" tab of `/app/compliance`.** The page
+  `redirect()`s to `/app/compliance?tab=reports`; `ComplianceWorkspaceClient`
+  renders `ComplianceReportsClient` (self-contained, fetches its own data) under a
+  new tab gated on `compliance.reports.view` / `.generate` / `.manage`. Route
+  kept in `UNLISTED_NAV_ITEMS`.
+- Both sidebar rows removed; the `regulatory` list was already server-loaded
+  (the #112 "pinned to one update" claim was stale).
 - Per-tenant **Filing Settings** page (distinct from the platform-global
-  `/app/filing-config`) — a net-new feature, not IA work.
+  `/app/filing-config`) — still not built; a net-new feature, not IA work.
 
 ---
 
@@ -328,14 +333,27 @@ built server-side but have no way to trigger them from the UI.
 - `htsFormat.ts` (pure: `codeLevelLabel`, `isClassifiable`, `headlineRate`,
   `normalizeHtsQuery`) + `tests/hts-format.test.ts`.
 
-### Phase 4d + follow-ups — NOT built
+### Phase 4d — SHIPPED (Trade Intelligence)
+
+- `/app/intelligence` (Data & Intelligence) — three tabs:
+  - **HTS Benchmarks** — `GET /api/trade-intel/benchmarks` (industry avg duty,
+    avg declared price, top origin, US import volume)
+  - **Broker Scorecard** — `GET /api/risk/brokers` (accuracy %, override rate,
+    correction rate, review time — banded green/amber/red)
+  - **Supplier Risk** — `GET /api/risk/suppliers` (score + level, violation /
+    missing-doc / PGA / classification issue counts)
+- All three APIs had seed-data bugs already removed, so they can return empty —
+  each tab has an explicit empty state.
+- `intelligenceFormat.ts` (pure: `riskTone`, `accuracyTone`, `overrideTone`,
+  `compactUsd`, `pct`) + `tests/intelligence-format.test.ts`.
+
+### Follow-ups — NOT built
 - **4b follow-up** — standalone `/app/classification/:caseId` detail route (today
   the detail page is `/app/products/:id/classification/:caseId` and needs a
   product); cross-run proposal compare via `/cases/:id/proposals`.
-- **4d Intelligence panels** — trade benchmarks (`/api/trade-intel/benchmarks`),
-  broker + supplier risk scorecards (`/api/risk/brokers`, `/api/risk/suppliers`).
 - **Escalate button** — `POST /api/work/:kind/:id/escalate` has no UI trigger in
   Today or the exceptions drawer.
+- `ai.use` / `shipments.manage` not in the permission catalogue.
 - Product `normalize` / `enrich/approve` / `bind-classification`; refund
   `opportunities/scan` trigger.
 

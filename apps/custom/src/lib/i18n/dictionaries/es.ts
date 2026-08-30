@@ -7,6 +7,7 @@ export const es: TranslationKeys = {
     today: "Hoy",
     classificationInbox: "Clasificación",
     htsWorkspace: "Consulta HTS",
+    intelligencePanels: "Inteligencia Comercial",
     commandCenter: "Centro de Control",
     documents: "Documentos",
     regulatoryUpdates: "Actualizaciones Regulatorias",
