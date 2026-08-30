@@ -66,7 +66,15 @@ import {
 } from "@/modules/agents/compliance/restrictedParty/partyScreeningLifecycle";
 import { runRestrictedPartyScreening } from "@/modules/agents/compliance/restrictedParty/restrictedPartyScreening";
 import { persistScreeningRun } from "@/modules/agents/compliance/restrictedParty/persistResult";
-import { checkPreApprovalGate } from "@/modules/agents/compliance/restrictedParty/preApproval";
+import {
+  checkPreApprovalGate,
+  createPreApproval,
+  revokePreApproval,
+  PartyNotFoundForApprovalError,
+  PartyHasNoActiveIdentityForApprovalError,
+  PreApprovalNotFoundError,
+} from "@/modules/agents/compliance/restrictedParty/preApproval";
+import { ComplianceBatchService, ComplianceBatchStateError } from "@/modules/complianceBatch/service";
 import { getNotificationStatusForScreeningResult } from "@/modules/compliance/notifications/notificationQueries";
 import {
   getRun,
@@ -3560,6 +3568,522 @@ const getDashboardMetrics: AssistantTool = {
   },
 };
 
+// ---- tool: list_shipment_license_determinations ----
+//
+// Deterministic, evidence-grounded: reads only persisted
+// LicenseDeterminationResult rows -- never re-derives or estimates a license
+// determination itself (determinationService.ts's header comment reserves
+// that to canonical service callers only; Copilot may explain, never decide).
+
+const listShipmentLicenseDeterminationsSchema = z.object({
+  shipmentId: z.string().describe("Shipment UUID."),
+});
+
+const listShipmentLicenseDeterminations: AssistantTool = {
+  schema: listShipmentLicenseDeterminationsSchema,
+  declaration: {
+    name: "list_shipment_license_determinations",
+    description:
+      "Export/import License Determination results recorded for one shipment (status, base vs. final decision, " +
+      "operation type). Use to find a determinationId for get_license_determination_details, or for 'does this " +
+      "shipment need a license' questions.",
+    parameters: zodToGeminiSchema(listShipmentLicenseDeterminationsSchema),
+  },
+  access: { navHref: "/app/compliance", permission: "compliance.license_determination.view" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = listShipmentLicenseDeterminationsSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { shipmentId } = parsed.data;
+
+    const shipment = await db.shipment.findFirst({ where: { id: shipmentId, accountId: ctx.accountId }, select: { id: true } });
+    if (!shipment) return { error: "Shipment not found" };
+
+    const determinations = await db.licenseDeterminationResult.findMany({
+      where: { shipmentId: shipment.id, accountId: ctx.accountId },
+      orderBy: { automatedAt: "desc" },
+      take: 20,
+      select: {
+        id: true, status: true, baseDecision: true, finalDecision: true, operationType: true,
+        exceptionCode: true, reviewerDisposition: true, automatedAt: true,
+      },
+    });
+
+    return {
+      shipmentId: shipment.id,
+      determinations: determinations.map((d) => ({ ...d, automatedAt: d.automatedAt.toISOString() })),
+    };
+  },
+};
+
+// ---- tool: get_license_determination_details ----
+//
+// Flagship license explainability tool (prompt section 6): reports base
+// decision, final decision, classification/jurisdiction/destination
+// conditions, exception evaluation, missing inputs, rule provenance,
+// reviewer disposition, and any formal overrides -- all from persisted
+// fields. INCOMPLETE/ERROR/RULE_DATA_UNAVAILABLE/INVALID_CLASSIFICATION
+// must never be summarized as license-free; the caller (system prompt) is
+// responsible for that framing, this tool only reports the recorded status.
+
+const getLicenseDeterminationDetailsSchema = z.object({
+  determinationId: z.string().describe("LicenseDeterminationResult id, from list_shipment_license_determinations or the execution history."),
+});
+
+const getLicenseDeterminationDetails: AssistantTool = {
+  schema: getLicenseDeterminationDetailsSchema,
+  declaration: {
+    name: "get_license_determination_details",
+    description:
+      "Full detail for one persisted Export/Import License Determination result: base vs. final decision, " +
+      "classification/destination/end-use conditions evaluated, exception applicability, missing inputs, rule " +
+      "provenance, reviewer disposition, and any formal overrides. Use for 'why is a license required' or 'why is " +
+      "this license determination incomplete' questions.",
+    parameters: zodToGeminiSchema(getLicenseDeterminationDetailsSchema),
+  },
+  access: { navHref: "/app/compliance", permission: "compliance.license_determination.view" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getLicenseDeterminationDetailsSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { determinationId } = parsed.data;
+
+    const result = await db.licenseDeterminationResult.findFirst({
+      where: { id: determinationId, accountId: ctx.accountId },
+    });
+    if (!result) return { error: "License determination not found" };
+
+    const overrides = await db.complianceFormalOverride.findMany({
+      where: { accountId: ctx.accountId, resultRefType: "LicenseDeterminationResult", resultRefId: result.id },
+      orderBy: { overriddenAt: "desc" },
+      take: 10,
+    });
+
+    return {
+      determinationId: result.id,
+      operationType: result.operationType,
+      status: result.status,
+      baseDecision: result.baseDecision,
+      finalDecision: result.finalDecision,
+      reason: result.reason,
+      complianceCountry: result.complianceCountry,
+      destinationCountry: result.destinationCountry,
+      originCountry: result.originCountry,
+      exceptionCode: result.exceptionCode,
+      exceptionDescription: result.exceptionDescription,
+      conditions: result.conditions,
+      missingInputs: result.missingInputs,
+      ruleSource: result.ruleSource,
+      ruleVersion: result.ruleVersion,
+      evidence: result.evidence,
+      automatedAt: result.automatedAt.toISOString(),
+      reviewerDisposition: result.reviewerDisposition,
+      reviewedByUserId: result.reviewedByUserId,
+      reviewedAt: result.reviewedAt?.toISOString() ?? null,
+      reviewReason: result.reviewReason,
+      overrideType: result.overrideType,
+      overrideReason: result.overrideReason,
+      formalOverrides: overrides.map((o) => ({
+        id: o.id, originalDecision: o.originalDecision, overrideDecision: o.overrideDecision, reason: o.reason,
+        overriddenAt: o.overriddenAt.toISOString(), revoked: Boolean(o.revokedAt), revokedAt: o.revokedAt?.toISOString() ?? null,
+      })),
+    };
+  },
+};
+
+// ---- tool: get_bulk_screening_summary ----
+//
+// Reads the persisted ComplianceBatch aggregate counters directly (never
+// re-scans BatchRecord rows to recompute them) plus a top-error-codes
+// breakdown, so the distinction between a processing error (errorRecords)
+// and a compliance finding (failedRecords/reviewRecords/incompleteRecords)
+// stays exactly what aggregation.ts already computed.
+
+const getBulkScreeningSummarySchema = z.object({
+  batchId: z.string().describe("ComplianceBatch id."),
+});
+
+const getBulkScreeningSummary: AssistantTool = {
+  schema: getBulkScreeningSummarySchema,
+  declaration: {
+    name: "get_bulk_screening_summary",
+    description:
+      "Summary of one Bulk Compliance Screening batch (CSV/XLSX/JSON upload): record counts by processing " +
+      "outcome (passed/failed/review/incomplete/error) and the top recorded error codes. Distinguishes processing " +
+      "errors from compliance findings. Use for 'why did this batch complete with errors' or 'what needs review " +
+      "in this batch' questions.",
+    parameters: zodToGeminiSchema(getBulkScreeningSummarySchema),
+  },
+  access: { navHref: "/app/compliance/bulk-screening", permission: "compliance.bulk_screening.view" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getBulkScreeningSummarySchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { batchId } = parsed.data;
+
+    const batch = await ComplianceBatchService.getBatch(ctx.accountId, batchId);
+    if (!batch) return { error: "Batch not found" };
+
+    const errorGroups = await db.batchRecord.groupBy({
+      by: ["errorCode"],
+      where: { accountId: ctx.accountId, batchId, errorCode: { not: null } },
+      _count: { _all: true },
+    });
+    const topErrorCodes = errorGroups
+      .sort((a, b) => b._count._all - a._count._all)
+      .slice(0, 5)
+      .map((g) => ({ errorCode: g.errorCode, count: g._count._all }));
+
+    return {
+      batchId: batch.id,
+      batchType: batch.batchType,
+      processingStatus: batch.processingStatus,
+      complianceStatus: batch.complianceStatus,
+      totalRecords: batch.totalRecords,
+      validRecords: batch.validRecords,
+      processedRecords: batch.processedRecords,
+      passedRecords: batch.passedRecords,
+      failedRecords: batch.failedRecords,
+      reviewRecords: batch.reviewRecords,
+      errorRecords: batch.errorRecords,
+      incompleteRecords: batch.incompleteRecords,
+      errorMessage: batch.errorMessage,
+      startedAt: batch.startedAt?.toISOString() ?? null,
+      completedAt: batch.completedAt?.toISOString() ?? null,
+      topErrorCodes,
+    };
+  },
+};
+
+// ---- tool: prepare_retry_bulk_screening_batch ----
+//
+// Write tool -- requires explicit confirmation, same convention as
+// trigger_manual_rdps_scan. Delegates entirely to
+// ComplianceBatchService.retryBatch, which only requeues records already
+// marked ERROR (a processing failure) -- it never re-evaluates a compliance
+// finding that already completed.
+
+const prepareRetryBulkScreeningBatchSchema = z.object({
+  batchId: z.string().describe("ComplianceBatch id. Batch must be COMPLETED or FAILED with at least one ERROR record."),
+});
+
+const prepareRetryBulkScreeningBatch: AssistantTool = {
+  schema: prepareRetryBulkScreeningBatchSchema,
+  declaration: {
+    name: "prepare_retry_bulk_screening_batch",
+    description:
+      "Requeue only the ERROR (processing-failure) records of a Bulk Compliance Screening batch for reprocessing. " +
+      "Does not touch records that already produced a compliance finding. Only call after explicit confirmation.",
+    parameters: zodToGeminiSchema(prepareRetryBulkScreeningBatchSchema),
+  },
+  access: { navHref: "/app/compliance/bulk-screening", permission: "compliance.bulk_screening.retry" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = prepareRetryBulkScreeningBatchSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { batchId } = parsed.data;
+
+    try {
+      const updated = await ComplianceBatchService.retryBatch(ctx.accountId, batchId, ctx.userId);
+      if (!updated) return { error: "Batch not found" };
+      return { batchId: updated.id, processingStatus: updated.processingStatus };
+    } catch (err) {
+      if (err instanceof ComplianceBatchStateError) return { error: err.message };
+      throw err;
+    }
+  },
+};
+
+// ---- tool: prepare_rescreen_bulk_screening_batch ----
+//
+// Write tool -- requires explicit confirmation. Delegates to
+// ComplianceBatchService.rescreenBatch, which discards prior result links
+// and requeues every valid record for a fresh determination.
+
+const prepareRescreenBulkScreeningBatchSchema = z.object({
+  batchId: z.string().describe("ComplianceBatch id. Batch must be COMPLETED or FAILED."),
+});
+
+const prepareRescreenBulkScreeningBatch: AssistantTool = {
+  schema: prepareRescreenBulkScreeningBatchSchema,
+  declaration: {
+    name: "prepare_rescreen_bulk_screening_batch",
+    description:
+      "Requeue every valid record in a Bulk Compliance Screening batch for a full fresh re-screen, discarding " +
+      "prior result links. Only call after explicit confirmation -- this re-runs real screening, not just a retry " +
+      "of processing errors.",
+    parameters: zodToGeminiSchema(prepareRescreenBulkScreeningBatchSchema),
+  },
+  access: { navHref: "/app/compliance/bulk-screening", permission: "compliance.bulk_screening.rescreen" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = prepareRescreenBulkScreeningBatchSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { batchId } = parsed.data;
+
+    try {
+      const updated = await ComplianceBatchService.rescreenBatch(ctx.accountId, batchId, ctx.userId);
+      if (!updated) return { error: "Batch not found" };
+      return { batchId: updated.id, processingStatus: updated.processingStatus };
+    } catch (err) {
+      if (err instanceof ComplianceBatchStateError) return { error: err.message };
+      throw err;
+    }
+  },
+};
+
+// ---- tool: prepare_create_party_preapproval ----
+//
+// Write tool -- requires explicit confirmation. Delegates entirely to
+// createPreApproval (preApproval.ts), which snapshots the party's current
+// identity/version/reference-data watermark -- this tool never grants
+// clearance on its own judgment, it only records a human-confirmed grant.
+
+const prepareCreatePartyPreapprovalSchema = z.object({
+  partyId: z.string().describe("Party UUID."),
+  reason: z.string().optional().describe("Why this party is being pre-approved for screening reuse."),
+  expiresAt: z.string().datetime().optional().describe("Optional ISO expiry for the pre-approval."),
+});
+
+const prepareCreatePartyPreapproval: AssistantTool = {
+  schema: prepareCreatePartyPreapprovalSchema,
+  declaration: {
+    name: "prepare_create_party_preapproval",
+    description:
+      "Grant a restricted/denied-party screening pre-approval (reuse permission) for a Party's current identity. " +
+      "Only call after explicit confirmation -- this lets future screenings reuse the current result instead of " +
+      "rescreening.",
+    parameters: zodToGeminiSchema(prepareCreatePartyPreapprovalSchema),
+  },
+  access: { navHref: "/app/parties", permission: "compliance.restricted_party.approve" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = prepareCreatePartyPreapprovalSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { partyId, reason, expiresAt } = parsed.data;
+
+    try {
+      const approval = await createPreApproval({
+        accountId: ctx.accountId,
+        partyId,
+        approvedByUserId: ctx.userId,
+        reason: reason ?? null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      });
+      return { approvalId: approval.id, partyId: approval.partyId, status: approval.status, approvedAt: approval.approvedAt.toISOString() };
+    } catch (err) {
+      if (err instanceof PartyNotFoundForApprovalError || err instanceof PartyHasNoActiveIdentityForApprovalError) {
+        return { error: err.message };
+      }
+      throw err;
+    }
+  },
+};
+
+// ---- tool: prepare_revoke_party_preapproval ----
+//
+// Write tool -- requires explicit confirmation. Delegates entirely to
+// revokePreApproval (preApproval.ts).
+
+const prepareRevokePartyPreapprovalSchema = z.object({
+  approvalId: z.string().describe("PartyScreeningApproval id, from get_party_pre_approval_status."),
+  reason: z.string().optional().describe("Why this pre-approval is being revoked."),
+});
+
+const prepareRevokePartyPreapproval: AssistantTool = {
+  schema: prepareRevokePartyPreapprovalSchema,
+  declaration: {
+    name: "prepare_revoke_party_preapproval",
+    description:
+      "Revoke an existing restricted/denied-party screening pre-approval, so future screenings can no longer " +
+      "reuse it. Only call after explicit confirmation.",
+    parameters: zodToGeminiSchema(prepareRevokePartyPreapprovalSchema),
+  },
+  access: { navHref: "/app/parties", permission: "compliance.restricted_party.approve" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = prepareRevokePartyPreapprovalSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const { approvalId, reason } = parsed.data;
+
+    try {
+      const revoked = await revokePreApproval({
+        accountId: ctx.accountId,
+        approvalId,
+        revokedByUserId: ctx.userId,
+        reason: reason ?? null,
+      });
+      return { approvalId: revoked.id, status: revoked.status, revokedAt: revoked.revokedAt?.toISOString() ?? null };
+    } catch (err) {
+      if (err instanceof PreApprovalNotFoundError) return { error: err.message };
+      throw err;
+    }
+  },
+};
+
+// ---- reference-data freshness/health (shared by get_compliance_data_health and get_compliance_daily_brief) ----
+//
+// Platform-level aggregate only (ScreeningEntity/ReferenceDataChangeSet carry
+// no accountId), same convention as get_reference_data_changes -- never
+// Party-identifying detail, only per-source-list freshness metadata.
+
+const DATA_HEALTH_STALE_DAYS = 7;
+
+interface ReferenceSourceHealth {
+  sourceList: string;
+  provider: string | null;
+  publishedRecordCount: number;
+  lastUpdatedAt: string | null;
+  staleDays: number | null;
+  health: "CURRENT" | "STALE" | "UNKNOWN";
+}
+
+async function computeReferenceDataHealth(): Promise<{ sources: ReferenceSourceHealth[]; staleCount: number }> {
+  const groups = await db.screeningEntity.groupBy({
+    by: ["sourceList", "provider"],
+    where: { publicationStatus: "PUBLISHED" },
+    _count: { _all: true },
+    _max: { publishedAt: true, sourceFileDate: true, providerUpdatedAt: true },
+  });
+
+  const now = Date.now();
+  const sources: ReferenceSourceHealth[] = groups.map((g) => {
+    const candidates = [g._max.publishedAt, g._max.sourceFileDate, g._max.providerUpdatedAt].filter(
+      (d): d is Date => d != null
+    );
+    const lastUpdatedAt = candidates.length > 0 ? new Date(Math.max(...candidates.map((d) => d.getTime()))) : null;
+    const staleDays = lastUpdatedAt ? Math.floor((now - lastUpdatedAt.getTime()) / (24 * 60 * 60 * 1000)) : null;
+    return {
+      sourceList: g.sourceList,
+      provider: g.provider,
+      publishedRecordCount: g._count._all,
+      lastUpdatedAt: lastUpdatedAt?.toISOString() ?? null,
+      staleDays,
+      health: staleDays == null ? "UNKNOWN" : staleDays > DATA_HEALTH_STALE_DAYS ? "STALE" : "CURRENT",
+    };
+  });
+
+  return { sources, staleCount: sources.filter((s) => s.health === "STALE" || s.health === "UNKNOWN").length };
+}
+
+// ---- tool: get_compliance_data_health ----
+
+const getComplianceDataHealthSchema = z.object({});
+
+const getComplianceDataHealth: AssistantTool = {
+  schema: getComplianceDataHealthSchema,
+  declaration: {
+    name: "get_compliance_data_health",
+    description:
+      "Freshness and provenance of the decision-driving restricted/denied-party reference data (OFAC/BIS/UFLPA/Dow " +
+      "Jones, etc.): per-source-list record counts, last update timestamp, and staleness. Use for 'is our OFAC " +
+      "data current' or 'which compliance dataset is stale' questions. Platform-level -- not tenant-specific.",
+    parameters: zodToGeminiSchema(getComplianceDataHealthSchema),
+  },
+  access: { permission: "compliance.rdps.read" },
+  execute: async () => {
+    const health = await computeReferenceDataHealth();
+    return {
+      staleThresholdDays: DATA_HEALTH_STALE_DAYS,
+      staleSourceCount: health.staleCount,
+      sources: health.sources,
+    };
+  },
+};
+
+// ---- tool: get_compliance_daily_brief ----
+//
+// Every count below is a backend aggregate (count/groupBy on persisted
+// rows) -- never an LLM scan or estimate. Ordered per the priority the
+// caller should present: critical/blocked first, then RDPS/RPS escalations,
+// embargo failures, license blockers, incomplete determinations, batch
+// errors, reference-data health, then outstanding review workload.
+
+const getComplianceDailyBriefSchema = z.object({
+  hours: z.number().optional().describe("Lookback window in hours for 'new' counts. Defaults to 24."),
+});
+
+const getComplianceDailyBrief: AssistantTool = {
+  schema: getComplianceDailyBriefSchema,
+  declaration: {
+    name: "get_compliance_daily_brief",
+    description:
+      "Backend-computed daily compliance brief for this account: new RPS hits/review-required, embargo failures, " +
+      "license-required/incomplete determinations, RDPS escalations, bulk-screening batch failures, expiring " +
+      "licenses, open compliance exceptions, and reference-data health alerts. Use for 'what changed overnight' or " +
+      "'give me today's compliance brief' questions.",
+    parameters: zodToGeminiSchema(getComplianceDailyBriefSchema),
+  },
+  access: { navHref: "/app/compliance", permission: "compliance.read" },
+  execute: async (ctx, rawArgs) => {
+    const parsed = getComplianceDailyBriefSchema.safeParse(rawArgs);
+    if (!parsed.success) return { error: parsed.error.message };
+    const hours = parsed.data.hours ?? 24;
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      criticalOpenExceptions,
+      newRpsHits,
+      newRpsReviewRequired,
+      newEmbargoFailures,
+      licenseRequired,
+      licenseIncomplete,
+      rdpsEscalations,
+      bulkScreeningFailures,
+      expiringLicenses,
+      openExceptions,
+      dataHealth,
+    ] = await Promise.all([
+      db.exceptionItem.count({
+        where: { accountId: ctx.accountId, severity: "CRITICAL", status: { in: openStatusVariants() } },
+      }),
+      db.complianceExecution.count({
+        where: { accountId: ctx.accountId, executionType: "RESTRICTED_PARTY_SCREENING", finalStatus: "HIT", startedAt: { gte: since } },
+      }),
+      db.complianceExecution.count({
+        where: { accountId: ctx.accountId, executionType: "RESTRICTED_PARTY_SCREENING", finalStatus: "REVIEW_REQUIRED", startedAt: { gte: since } },
+      }),
+      db.complianceExecution.count({
+        where: { accountId: ctx.accountId, executionType: "EMBARGO_SCREENING", finalStatus: "HIT", startedAt: { gte: since } },
+      }),
+      db.complianceExecution.count({
+        where: { accountId: ctx.accountId, executionType: { in: ["LICENSE_DETERMINATION", "IMPORT_CONTROL_DETERMINATION"] }, finalStatus: "LICENSE_REQUIRED", startedAt: { gte: since } },
+      }),
+      db.complianceExecution.count({
+        where: {
+          accountId: ctx.accountId,
+          executionType: { in: ["LICENSE_DETERMINATION", "IMPORT_CONTROL_DETERMINATION"] },
+          finalStatus: { in: ["INCOMPLETE", "RULE_DATA_UNAVAILABLE", "INVALID_CLASSIFICATION", "UNSUPPORTED_JURISDICTION"] },
+          startedAt: { gte: since },
+        },
+      }),
+      db.rdpsPartyOutcome.count({ where: { accountId: ctx.accountId, isWorsening: true, createdAt: { gte: since } } }),
+      db.complianceBatch.count({
+        where: { accountId: ctx.accountId, processingStatus: "FAILED", updatedAt: { gte: since } },
+      }),
+      db.license.count({
+        where: { accountId: ctx.accountId, status: "ACTIVE", expirationDate: { gte: new Date(), lte: soon } },
+      }),
+      db.exceptionItem.count({ where: { accountId: ctx.accountId, status: { in: openStatusVariants() } } }),
+      computeReferenceDataHealth(),
+    ]);
+
+    return {
+      windowHours: hours,
+      priorityOrder: [
+        "criticalOpenExceptions", "newRdpsEscalations", "newRpsHits", "newRpsReviewRequired",
+        "newEmbargoFailures", "licenseRequired", "licenseIncomplete", "expiringLicenses",
+        "bulkScreeningFailures", "referenceDataHealthAlerts", "openExceptions",
+      ],
+      criticalOpenExceptions,
+      newRdpsEscalations: rdpsEscalations,
+      newRpsHits,
+      newRpsReviewRequired,
+      newEmbargoFailures,
+      licenseRequired,
+      licenseIncomplete,
+      expiringLicenses,
+      bulkScreeningFailures,
+      referenceDataHealthAlerts: dataHealth.staleCount,
+      openExceptions,
+    };
+  },
+};
+
 export const ASSISTANT_TOOLS: AssistantTool[] = [
   listShipments,
   getValueAtRisk,
@@ -3632,6 +4156,15 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   listProtests,
   listRefundOpportunities,
   getDashboardMetrics,
+  listShipmentLicenseDeterminations,
+  getLicenseDeterminationDetails,
+  getBulkScreeningSummary,
+  prepareRetryBulkScreeningBatch,
+  prepareRescreenBulkScreeningBatch,
+  prepareCreatePartyPreapproval,
+  prepareRevokePartyPreapproval,
+  getComplianceDataHealth,
+  getComplianceDailyBrief,
 ];
 
 const TOOLS_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.declaration.name, t]));
