@@ -107,6 +107,7 @@ export const NAV_SECTIONS: NavSection[] = [
     collapsible: true,
     items: [
       { id: "trade-data", labelKey: "tradeData", href: "/app/trade-data", icon: "tradeData" },
+      { id: "hts", labelKey: "htsWorkspace", href: "/app/hts", icon: "tariffs" },
       { id: "tariffs", labelKey: "tariffsAndRegulations", href: "/app/tariffs", icon: "tariffs" },
       { id: "simulator", labelKey: "tariffSimulator", href: "/app/simulator", icon: "simulator" },
     ],

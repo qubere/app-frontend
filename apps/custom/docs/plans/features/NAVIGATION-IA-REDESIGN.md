@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phases 1 / 2a / 2b / 3a / 3b / 4a / 4b shipped (in review). Remaining: 3c (route consolidation), 4c (HTS workspace), 4d (intelligence panels).
+**Status:** Phases 1 / 2a / 2b / 3a / 3b / 4a / 4b / 4c shipped (in review). Remaining: 3c (route consolidation), 4d (intelligence panels).
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -316,13 +316,22 @@ built server-side but have no way to trigger them from the UI.
 - Nav: `classification` item under Operations, gated on `classification.read`.
 - Filter logic extracted to `classificationInboxFilters.ts` (pure, tested).
 
-### Phase 4c–4d — NOT built
+### Phase 4c — SHIPPED (HTS Workspace)
+
+- `/app/hts` — HTS Lookup, under Data & Intelligence. Client workspace:
+  code / keyword **search** (`GET /api/v1/hts/search`), and a detail pane for a
+  selected code with **hierarchy** (`/codes/:code/hierarchy`), **duty rates**
+  (from the search node), and **legal / chapter notes** (`/codes/:code/notes` —
+  citation + text). `?code=` deep-links (resolved via `/codes/:code`).
+- Search was only ever inline in line-item editing; chapter notes — the
+  reasonable-care artifact for a classification defense — had no surface at all.
+- `htsFormat.ts` (pure: `codeLevelLabel`, `isClassifiable`, `headlineRate`,
+  `normalizeHtsQuery`) + `tests/hts-format.test.ts`.
+
+### Phase 4d + follow-ups — NOT built
 - **4b follow-up** — standalone `/app/classification/:caseId` detail route (today
   the detail page is `/app/products/:id/classification/:caseId` and needs a
   product); cross-run proposal compare via `/cases/:id/proposals`.
-- **4c HTS Workspace** — a standalone HTS page: search + **chapter notes**
-  (`/api/v1/hts/codes/:code/notes`) + hierarchy tree (`/hierarchy`). No HTS page
-  exists; search is only inline in line-item editing.
 - **4d Intelligence panels** — trade benchmarks (`/api/trade-intel/benchmarks`),
   broker + supplier risk scorecards (`/api/risk/brokers`, `/api/risk/suppliers`).
 - **Escalate button** — `POST /api/work/:kind/:id/escalate` has no UI trigger in
