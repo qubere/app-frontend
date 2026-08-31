@@ -161,7 +161,12 @@ export async function clamdHttpScan(
 ): Promise<ClamavScanResult> {
   const url = opts.baseUrl.replace(/\/+$/, "") + "/scan";
   const form = new FormData();
-  form.append("file", new Blob([bytes]), opts.fileName ?? "upload.bin");
+  // Node's Buffer can be backed by SharedArrayBuffer, while the DOM Blob type
+  // accepts only ArrayBuffer-backed views. Copy into an owned ArrayBuffer view
+  // before crossing the fetch/FormData boundary.
+  const uploadBytes = new Uint8Array(bytes.byteLength);
+  uploadBytes.set(bytes);
+  form.append("file", new Blob([uploadBytes]), opts.fileName ?? "upload.bin");
 
   const res = await fetch(url, {
     method: "POST",
