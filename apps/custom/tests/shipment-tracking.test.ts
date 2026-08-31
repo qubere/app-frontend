@@ -4,6 +4,7 @@ import {
   customsTrackingStatus,
   type BuildTrackingProjectionInput,
   type TrackingEventRecord,
+  type TrackingConnectionRecord,
 } from "@/modules/tracking/shipmentTracking";
 
 const NOW = new Date("2026-08-20T18:00:00.000Z");
@@ -42,10 +43,29 @@ function input(overrides: Partial<BuildTrackingProjectionInput> = {}): BuildTrac
     events: [],
     etaObservations: [],
     subscriptions: [],
+    connections: [],
     deadlines: [],
     openExceptions: [],
     latestFiling: null,
     now: NOW,
+    ...overrides,
+  };
+}
+
+function connection(overrides: Partial<TrackingConnectionRecord> = {}): TrackingConnectionRecord {
+  return {
+    id: "connection-1",
+    name: "Broker carrier feed",
+    provider: "TEST_PROVIDER",
+    status: "ACTIVE",
+    clientId: null,
+    priority: 100,
+    isDefault: true,
+    lastSyncAt: new Date("2026-08-20T12:05:00.000Z"),
+    lastEventAt: new Date("2026-08-20T12:00:00.000Z"),
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    providerDefinition: { displayName: "Test visibility", capabilities: ["PUSH_EVENTS", "ETA"] },
     ...overrides,
   };
 }
@@ -57,13 +77,15 @@ describe("shipment tracking projection", () => {
     expect(projection.health.status).toBe("NOT_TRACKED");
     expect(projection.health.reasonCodes).toContain("TRACKING_NOT_CONFIGURED");
     expect(projection.movement.currentLocation).toBeNull();
-    expect(projection.nextAction?.type).toBe("START_TRACKING");
+    expect(projection.source.state).toBe("NOT_CONFIGURED");
+    expect(projection.nextAction?.type).toBe("CONFIGURE_TRACKING");
   });
 
   it("derives physical movement from actual events without inventing customs release", () => {
     const projection = buildTrackingProjection(
       input({
         identifiers: [{ type: "MBL", value: "MAEU123", issuer: "MAEU", isPrimary: true }],
+        connections: [connection()],
         events: [event()],
         latestFiling: { id: "fil_1", filingStatus: "Preparing" },
       })
@@ -79,6 +101,7 @@ describe("shipment tracking projection", () => {
     const projection = buildTrackingProjection(
       input({
         identifiers: [{ type: "CONTAINER", value: "MSCU1234567", issuer: "MSCU", isPrimary: true }],
+        connections: [connection()],
         events: [event()],
         etaObservations: [
           {
@@ -103,6 +126,7 @@ describe("shipment tracking projection", () => {
     const projection = buildTrackingProjection(
       input({
         identifiers: [{ type: "MBL", value: "MAEU123", issuer: "MAEU", isPrimary: true }],
+        connections: [connection()],
         events: [event()],
         openExceptions: [{ blocking: true, severity: "Critical" }],
         deadlines: [
@@ -139,6 +163,12 @@ describe("shipment tracking projection", () => {
     const projection = buildTrackingProjection(
       input({
         identifiers: [{ type: "MBL", value: "MAEU123", issuer: "MAEU", isPrimary: true }],
+        connections: [
+          connection({
+            lastSyncAt: new Date("2026-08-15T12:05:00.000Z"),
+            lastEventAt: new Date("2026-08-15T12:00:00.000Z"),
+          }),
+        ],
         events: [
           event({
             occurredAt: new Date("2026-08-15T12:00:00.000Z"),
@@ -149,8 +179,22 @@ describe("shipment tracking projection", () => {
     );
 
     expect(projection.health.status).toBe("STALE");
+    expect(projection.source.state).toBe("STALE");
     expect(projection.health.isDataStale).toBe(true);
     expect(projection.nextAction?.type).toBe("CHECK_TRACKING_SOURCE");
+  });
+
+  it("shows an active connection waiting for its first provider update without claiming the feed is stale", () => {
+    const projection = buildTrackingProjection(
+      input({
+        identifiers: [{ type: "MBL", value: "MAEU123", issuer: "MAEU", isPrimary: true }],
+        connections: [connection({ lastSyncAt: null, lastEventAt: null })],
+      })
+    );
+
+    expect(projection.source.state).toBe("WAITING");
+    expect(projection.health.status).toBe("ON_TRACK");
+    expect(projection.health.isDataStale).toBe(false);
   });
 });
 
