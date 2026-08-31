@@ -9,6 +9,7 @@ import { generateShipmentNumber } from "@/modules/shipments/shipmentNumber";
 import { ENTRY_TYPE_CODES, normalizeEntryType } from "@/modules/filing/entryType";
 import { COUNTRY_CODES, normalizeCountryCode } from "@/modules/shipment/countryCode";
 import { MANUAL_INTAKE_INITIAL_STATUS } from "@/modules/shipments/shipmentStatus";
+import { resolveImporterContext } from "@/modules/onboarding/importerContext";
 
 const createShipmentSchema = z.object({
   importerName: z.string().trim().min(1, "Importer name is required").max(200),
@@ -207,6 +208,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     }
   }
 
+  const importerCtx = await resolveImporterContext(ctx.accountId, input.clientId);
+  const resolvedImporterName = importerCtx.importerName ?? input.importerName;
+
   const auditSource = req.headers?.get?.("x-qubere-source") === "CHAT" ? "CHAT" : "UI";
 
   const shipmentNumber = await generateShipmentNumber(db, ctx.accountId);
@@ -217,7 +221,8 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       data: {
         accountId: ctx.accountId,
         shipmentNumber,
-        importerName: input.importerName,
+        importerName: resolvedImporterName,
+        importerOfRecordId: importerCtx.importerOfRecordId ?? null,
         poReference: input.poReference,
         entryType: entryTypeCode,
         incoterm: input.incoterm,
