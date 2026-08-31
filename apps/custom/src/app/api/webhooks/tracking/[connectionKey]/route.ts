@@ -1,4 +1,4 @@
-import { handleTrackingWebhook } from "../route";
+import { handleTrackingWebhook } from "../handler";
 
 export async function POST(
   request: Request,
