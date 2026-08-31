@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Circle, AlertCircle, Clock, Minus } from "lucide-react";
 import { Button, Badge } from "@/components/ui";
 import { StepLegalEntity } from "./steps/StepLegalEntity";
+import { StepFiveOhSix } from "./steps/StepFiveOhSix";
 import { StepBilling } from "./steps/StepBilling";
 import { StepReviewActivate } from "./steps/StepReviewActivate";
 import type { ChecklistItem, ChecklistStatus } from "@/modules/onboarding/readiness";
@@ -13,6 +14,22 @@ import type { ChecklistItem, ChecklistStatus } from "@/modules/onboarding/readin
 interface ReadinessResult {
   ready: boolean;
   checklist: ChecklistItem[];
+}
+
+interface FiveOhSixRecord {
+  id: string;
+  status: string;
+  deliveryMethod: string | null;
+  transmissionRef: string | null;
+  submittedAt: string | null;
+  payload: unknown;
+}
+
+interface OnboardingEntity {
+  id: string;
+  importerNumberType: string;
+  importerNumber: string | null;
+  legalEntity: { legalName: string; entityType: string; taxIdentifier?: string | null } | null;
 }
 
 interface OnboardingCaseData {
@@ -23,8 +40,8 @@ interface OnboardingCaseData {
   stepStatus: Record<string, unknown>;
   client: { id: string; name: string; contactEmail?: string | null } | null;
   primaryImporter: { id: string; name: string } | null;
-  entities: unknown[];
-  fiveOhSixRecords: unknown[];
+  entities: OnboardingEntity[];
+  fiveOhSixRecords: FiveOhSixRecord[];
   readiness: ReadinessResult;
 }
 
@@ -114,6 +131,16 @@ export function OnboardingWizardClient({ initialCase, initialStep }: Props) {
             entities={caseData.entities as Parameters<typeof StepLegalEntity>[0]["entities"]}
             path={caseData.path}
             onSaved={async () => { await refreshCase(); setActiveStep(2); }}
+          />
+        );
+      case 2:
+        return (
+          <StepFiveOhSix
+            caseId={caseData.id}
+            path={caseData.path}
+            entities={caseData.entities}
+            initialRecords={caseData.fiveOhSixRecords as unknown as Parameters<typeof StepFiveOhSix>[0]["initialRecords"]}
+            onSaved={async () => { await refreshCase(); setActiveStep(3); }}
           />
         );
       case 6:
