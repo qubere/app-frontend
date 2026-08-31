@@ -252,6 +252,66 @@ draft
 
 `modules/filing/filingReadiness.ts` gains a blocker source: `importerOnboardingIncomplete`. A `CustomsFiling` whose `importerOfRecordId` maps to a non-`active` `OnboardingCase` (or an IOR with an expired POA / lapsed bond) surfaces a `FilingBlockerCode.IMPORTER_NOT_ONBOARDED` with a deep link to the case. This is the mechanism that stops "discovered during filing."
 
+<<<<<<< Updated upstream
+=======
+### 4.4 Client profile → shipment inheritance (enter once, reuse forever)
+
+**The point of onboarding is that the client's compliance profile is captured once and every subsequent shipment inherits it automatically.** An operator creating shipment #47 for an onboarded importer never re-types the EIN, the CBP importer number, the bond number, or attaches the POA again.
+
+**Today this does not happen.** `POST /api/shipments` takes a free-text `importerName` and an optional `clientId` but never sets `Shipment.importerOfRecordId`; `POST /api/filing` never sets `CustomsFiling.importerOfRecordId` / `bondId`. The 7501 builder (`form7501.ts:255-276`) already *reads through* `filing.importerOfRecordId` → `cbpImporterNumber` and `filing.bondId` → `bondNumber` with provenance — the plumbing exists, nothing fills it. That is the carryover gap this feature closes.
+
+**Model.** The onboarded records are the canonical source of truth:
+
+```
+Client (commercial relationship)
+  └─ OnboardingEntity ──┬─ LegalEntity        (legal name, address, entity type, country)
+     (per importing      ├─ ImporterOfRecord  (EIN/SSN/CBP number, registrationStatus)
+      entity, S4)        ├─ PowerOfAttorney   (executed, unexpired — the authority)
+                         └─ Bond              (verified, sufficient — own | broker | STB)
+```
+
+A `Client` with one importing entity resolves unambiguously. A `Client` with several (S4) has a **default importing entity** plus a per-shipment picker (bill-to / ship-to may differ across the group).
+
+**Inheritance rules.**
+
+| When | Behavior |
+|---|---|
+| Shipment created with `clientId` (UI, chat, API, EDI, or document intake) | Resolve the client's active `OnboardingEntity`; set `Shipment.importerOfRecordId`, `importerName` (from `LegalEntity.legalName`), and default `entryType`/`portOfEntry` from the client's profile defaults if set. Multi-entity → set the default, flag `needsImporterSelection: true`. |
+| Filing created from a shipment | `CustomsFiling.importerOfRecordId` ← `Shipment.importerOfRecordId`; `CustomsFiling.bondId` ← the entity's active `Bond` (continuous/own or linked broker bond); STB → prompt for the per-entry bond. |
+| POA / bond referenced on a filing | Never copied onto the filing as strings — resolved live through the FK at draft-build and validation time, so a mid-stream revocation (S8) or bond lapse (S13) immediately invalidates in-flight filings rather than leaving a stale snapshot. |
+| Client not yet `active` | Shipment can still be drafted (intake, classification, valuation all work) but `filingReadiness` blocks transmission with `IMPORTER_NOT_ONBOARDED`. |
+| Operator overrides the inherited importer on a specific shipment | Allowed, but it's an explicit action, audit-logged, and shown as "overridden from client default" — not a silent free-text field. |
+
+**Per-shipment screens** render the inherited block **read-only with a source chip** ("From ACME Corp onboarding, POA executed 2026-07-14, bond verified 2026-08-02") and an "override for this shipment" affordance behind a confirmation. The shipment intake form's free-text importer name field is replaced by a client/entity selector when a `clientId` is present.
+
+**What is genuinely per-shipment** (never inherited): commercial invoice value, HTS lines, origin, PGA data, entry-specific dates, carrier, conveyance, bill of lading. Onboarding covers *who the importer is and whether we may file for them*, not *what is in this container*.
+
+**Implementation:** a `resolveImporterContext(clientId, opts)` helper in `src/modules/onboarding/importerContext.ts` is the single resolver; `POST /api/shipments`, `POST /api/filing`, the chat shipment-creation tool, the EDI/`TransportationOrder` promotion path, and document-intake shipment creation all call it. No caller re-implements the lookup.
+
+#### 4.4.1 The `Client` field on the shipment intake form
+
+**Today the intake form ([`shipments/new/page.tsx`](../../../apps/custom/src/app/app/shipments/new/page.tsx)) does the opposite of what it should:** "Importer of Record Name" is a required free-text box and "Client" is an optional dropdown defaulting to *No Client*, with no link between them and no autofill. This feature **inverts** that: `Client` is the primary field and everything importer-related is derived from it.
+
+**Autofill / lock rules for the `Client` field (in priority order):**
+
+| Context at shipment creation | `Client` field behavior |
+|---|---|
+| Portal / customer user (`ctx.authorizedClientIds` is their own scoped set, `isAllClients: false`) | **Pre-selected and locked.** A single authorized client → fixed. Several → a picker limited to `authorizedClientIds` (they cannot create for any other importer — tenant isolation already enforces this; the UI just shouldn't offer it). |
+| Broker specialist scoped to exactly one client (`!ctx.isAllClients && ctx.authorizedClientIds.length === 1`) | **Pre-selected**, editable only if they actually have broader access. |
+| "＋ New shipment" launched from a client detail page / client workspace (`?clientId=` in the URL) | **Pre-filled** from that context, editable. |
+| Shipment created from a document or inbound email already matched to a client (`DocumentShipmentCandidate`, `InboundSenderRoute.clientId`) | **Pre-filled** from the match, editable, with the match reason shown ("matched from sender acme-ap@acme.com"). |
+| Broker admin / all-clients user, no other context | No autofill — **required** picker (searchable; recently-used clients first). Selecting the client is what triggers importer/bond/POA inheritance, so it is no longer "optional." |
+
+**Once a `Client` is chosen (or pre-filled):**
+
+- If the client is **onboarded and `active`** with a single importing entity → the "Importer of Record" free-text field is **replaced** by a read-only inherited block (legal name, CBP number, bond, POA status) with a source chip. `resolveImporterContext` sets `Shipment.importerOfRecordId` + `importerName` on submit.
+- Client onboarded, **multiple** importing entities (S4) → show an entity selector (default = the client's default entity), still no free-text.
+- Client **not yet onboarded / not `active`** → keep the free-text importer field, and surface an inline "This client isn't onboarded yet — [start onboarding]" note; the shipment is created but `filingReadiness` will block transmission (`IMPORTER_NOT_ONBOARDED`).
+- **No client** (genuinely ad-hoc / one-off) → current free-text behavior, unchanged. Still allowed, just no longer the default path.
+
+**Server side:** `POST /api/shipments` accepts `clientId` and calls `resolveImporterContext`; it must also **re-assert** that `clientId ∈ ctx.authorizedClientIds` (or `ctx.isAllClients`) — the autofill is a UX convenience, the authorization check is not optional.
+
+>>>>>>> Stashed changes
 ---
 
 ## 5. UI / UX specification
@@ -823,6 +883,12 @@ Each phase is independently shippable and leaves the product more correct than b
 | Idempotency | Duplicate `5106/transmit` and `bond/verify` with same key → single side effect. |
 | ERP | Dedupe exact (EIN) + fuzzy (name/address); proposal commit writes `IntegrationEntityMap`; re-pull updates not duplicates. |
 | Broker compliance | Filing-authority check: national permit only vs district-required; account `restricted` blocks activation-independent filing. |
+<<<<<<< Updated upstream
+=======
+| Carryover (§4.4) | `resolveImporterContext` for single-entity, multi-entity (needs-selection), not-yet-active, and no-client shipments; shipment + filing FK inheritance; live POA/bond resolution reflects a revocation mid-filing; explicit override is audited. |
+| Client field (§4.4.1) | Autofill/lock resolves correctly for portal user / single-assigned specialist / `?clientId=` / doc-match / admin-no-context; `POST /api/shipments` rejects a `clientId` outside `ctx.authorizedClientIds` even when the client exists in the account. |
+| Country seams (§1.3) | Wizard renders from `CountryOnboardingProfile`; a synthetic non-US profile with a different step set produces a different wizard and different mandatory checklist with no code change; `OnboardingCase.status` contains no country-specific literal. |
+>>>>>>> Stashed changes
 
 ---
 
@@ -866,6 +932,13 @@ EDIT src/app/app/bonds/BondsClient.tsx                (real verify)
 EDIT src/app/api/importers-of-record/route.ts         (remove hardcoded fallbacks)
 EDIT src/app/api/importers-of-record/[id]/poa/route.ts (remove defaulting; delegate to onboarding)
 EDIT src/modules/filing/filingReadiness.ts            (IMPORTER_NOT_ONBOARDED blocker)
+<<<<<<< Updated upstream
+=======
+EDIT src/app/api/shipments/route.ts                   (call resolveImporterContext; assert clientId ∈ ctx.authorizedClientIds; §4.4)
+EDIT src/app/app/shipments/new/page.tsx               (Client = primary field w/ autofill+lock per §4.4.1; importer block derived from client)
+EDIT src/app/api/filing/route.ts                      (inherit importerOfRecordId + bondId from shipment; §4.4)
+EDIT chat shipment-creation tool + TransportationOrder→Shipment promotion + doc-intake shipment create  (all route through resolveImporterContext)
+>>>>>>> Stashed changes
 EDIT src/lib/filing/transmissionProvider.ts           (query-traffic support — shared w/ ABI Phase 1)
 EDIT src/app/app/{clients,importers-of-record,bonds,poa}/*  (status column + guided CTA)
 EDIT apps/portal/…/onboarding/[token]/                (self-service wizard — P8)
