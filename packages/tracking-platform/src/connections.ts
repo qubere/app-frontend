@@ -144,7 +144,7 @@ export async function configureTrackingConnection(
   const include = {
     client: { select: { id: true, name: true } },
     trackingProviderDefinition: {
-      select: { id: true, key: true, displayName: true, status: true, capabilities: true },
+      select: { id: true, key: true, displayName: true, adapterKey: true, status: true, capabilities: true },
     },
   };
 

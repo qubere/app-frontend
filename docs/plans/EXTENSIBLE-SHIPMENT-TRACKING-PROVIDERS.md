@@ -251,6 +251,7 @@ Do not show a map when there are no real coordinates. Do not show `0`, `--`, a f
 - [x] Keep TMS behavior through a thin product-policy wrapper
 - [x] Expose the signed, connection-specific webhook through Customs
 - [x] Move Customs integration administration onto shared connection commands
+- [x] Move TMS integration administration onto the same commands after the Customs path
 - [x] Surface provider connection, waiting, stale, and error states in the Customs Shipment page
 - [x] Validate the broker journey across connection setup, signed ingestion, idempotent retry, movement projection, source health, and customs-source boundaries
 

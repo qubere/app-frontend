@@ -91,9 +91,10 @@ describe("tracking connection commands", () => {
     const dbClient = dbMock();
     dbClient.client.findFirst.mockResolvedValue(null);
 
-    await expect(configureTrackingConnection(input, { dbClient })).rejects.toMatchObject<
-      Partial<TrackingConnectionError>
-    >({ code: "CLIENT_NOT_FOUND", status: 404 });
+    await expect(configureTrackingConnection(input, { dbClient })).rejects.toMatchObject({
+      code: "CLIENT_NOT_FOUND",
+      status: 404,
+    } satisfies Partial<TrackingConnectionError>);
     expect(dbClient.integrationConfig.create).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,11 @@ import { z } from "zod";
 import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { createAuditLog } from "@qubere/decisions";
-import { createDefaultTrackingProviderRegistry } from "@qubere/tracking";
+import {
+  configureTrackingConnection,
+  listTrackingProviderDefinitions,
+  TrackingConnectionError,
+} from "@qubere/tracking-platform";
 
 const createConnectionSchema = z.object({
   providerDefinitionId: z.string().min(1),
@@ -44,23 +48,7 @@ function presentConnection(connection: any) {
 export const GET = withAuthenticatedRoute(
   async ({ ctx }: any) => {
     const [providers, connections, clients] = await Promise.all([
-      (db as any).trackingProviderDefinition.findMany({
-        where: { status: { in: ["ACTIVE", "PREVIEW"] } },
-        orderBy: [{ status: "asc" }, { displayName: "asc" }],
-        select: {
-          id: true,
-          key: true,
-          displayName: true,
-          adapterKey: true,
-          status: true,
-          authType: true,
-          supportedModes: true,
-          capabilities: true,
-          documentationUrl: true,
-          operationalNotes: true,
-          configSchema: true,
-        },
-      }),
+      listTrackingProviderDefinitions({ dbClient: db }),
       (db as any).integrationConfig.findMany({
         where: { accountId: ctx.accountId, category: "SHIPMENT_TRACKING" },
         orderBy: [{ isDefault: "desc" }, { priority: "asc" }, { createdAt: "desc" }],
@@ -98,63 +86,32 @@ export const POST = withAuthenticatedRoute(
       );
     }
     const input = parsed.data;
-    const provider = await (db as any).trackingProviderDefinition.findFirst({
-      where: { id: input.providerDefinitionId, status: { in: ["ACTIVE", "PREVIEW"] } },
-    });
-    if (!provider) {
-      return NextResponse.json({ error: "PROVIDER_NOT_AVAILABLE" }, { status: 404 });
-    }
-    if (input.clientId) {
-      const client = await db.client.findFirst({
-        where: { id: input.clientId, accountId: ctx.accountId, status: "ACTIVE" },
-        select: { id: true },
-      });
-      if (!client) return NextResponse.json({ error: "CLIENT_NOT_FOUND" }, { status: 404 });
-    }
-
-    const registry = createDefaultTrackingProviderRegistry();
-    if (!registry.has(provider.adapterKey)) {
-      return NextResponse.json(
-        { error: "ADAPTER_NOT_DEPLOYED", message: "The provider adapter is not deployed in this release." },
-        { status: 409 }
-      );
-    }
-    const adapter = registry.get(provider.adapterKey);
-    const configErrors = adapter.validateConfig({
-      providerKey: provider.key,
-      connectionId: "pending",
-      connectionKey: "pending",
-      environment: input.environment,
-      baseUrl: input.baseUrl,
-      config: input.configJson,
-    });
-    if (configErrors.length) {
-      return NextResponse.json({ error: "INVALID_PROVIDER_CONFIG", issues: configErrors }, { status: 400 });
-    }
-
-    const connection = await (db as any).integrationConfig.create({
-      data: {
-        accountId: ctx.accountId,
-        clientId: input.clientId ?? null,
-        category: "SHIPMENT_TRACKING",
-        provider: provider.key,
-        name: input.name,
-        status: "ACTIVE",
-        trackingProviderDefinitionId: provider.id,
-        credentialRef: input.credentialRef ?? null,
-        webhookSecretRef: input.webhookSecretRef,
-        baseUrl: input.baseUrl ?? null,
-        environment: input.environment,
-        configJson: input.configJson,
-        isDefault: input.isDefault,
-      },
-      include: {
-        client: { select: { id: true, name: true } },
-        trackingProviderDefinition: {
-          select: { id: true, key: true, displayName: true, status: true, capabilities: true },
+    let connection: any;
+    try {
+      connection = await configureTrackingConnection(
+        {
+          accountId: ctx.accountId,
+          clientId: input.clientId,
+          providerDefinitionId: input.providerDefinitionId,
+          name: input.name,
+          environment: input.environment,
+          baseUrl: input.baseUrl,
+          webhookSecretRef: input.webhookSecretRef,
+          credentialRef: input.credentialRef,
+          config: input.configJson,
+          isDefault: input.isDefault,
         },
-      },
-    });
+        { dbClient: db }
+      );
+    } catch (error) {
+      if (error instanceof TrackingConnectionError) {
+        return NextResponse.json(
+          { error: error.code, message: error.message, issues: error.issues },
+          { status: error.status }
+        );
+      }
+      throw error;
+    }
 
     await createAuditLog({
       accountId: ctx.accountId,
@@ -164,10 +121,10 @@ export const POST = withAuthenticatedRoute(
       entityId: connection.id,
       source: "UI",
       metadata: {
-        provider: provider.key,
+        provider: connection.provider,
         clientId: input.clientId ?? null,
         environment: input.environment,
-        adapterKey: provider.adapterKey,
+        adapterKey: connection.trackingProviderDefinition?.adapterKey,
       },
     });
 
