@@ -36,7 +36,8 @@ export type NavIcon =
   | "reports"
   | "licenses"
   | "onboarding"
-  | "brokerCompliance";
+  | "brokerCompliance"
+  | "support";
 
 export interface NavItem {
   id: string;
@@ -234,6 +235,7 @@ export const NAV_SECTIONS: NavSection[] = [
  * tool gate) still resolve them.
  */
 export const UNLISTED_NAV_ITEMS: NavItem[] = [
+  { id: "support", labelKey: "helpCenter", href: "/app/support", icon: "support" },
   { id: "products", labelKey: "products", href: "/app/products", icon: "products" },
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
   { id: "reconciliation", labelKey: "reconciliation", href: "/app/reconciliation", icon: "postEntry" },
