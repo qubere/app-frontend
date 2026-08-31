@@ -1199,9 +1199,33 @@ function MessageBubble({ message, onQuickReply }: { message: MessageDisplay; onQ
     /shall i proceed|ready to create|confirm.*shipment|want me to create|go ahead/i.test(message.text) &&
     toolCalls.every((tc) => tc?.name !== "create_shipment");
 
+  // Search tools that return a list — suppress empty duplicates:
+  // keep only the last call per search tool name when all results were empty,
+  // and suppress those entirely if there is a text response (the text already
+  // covers the "nothing found" case).
+  const SEARCH_TOOLS = new Set(["search_products", "search_parties", "search_shipments", "list_shipments"]);
+  const visibleToolCalls = (() => {
+    const hasText = Boolean(message.text);
+    const seen = new Set<string>();
+    const deduped = [...toolCalls].reverse().filter((tc) => {
+      if (!tc || !SEARCH_TOOLS.has(tc.name)) return true;
+      const r = tc.result as Record<string, unknown> | undefined;
+      const isEmpty =
+        (Array.isArray(r?.products) && (r.products as unknown[]).length === 0) ||
+        (Array.isArray(r?.parties) && (r.parties as unknown[]).length === 0) ||
+        (Array.isArray(r?.shipments) && (r.shipments as unknown[]).length === 0);
+      if (!isEmpty) return true;
+      if (hasText) return false; // text covers it
+      if (seen.has(tc.name)) return false; // keep only one empty card per tool
+      seen.add(tc.name);
+      return true;
+    }).reverse();
+    return deduped;
+  })();
+
   return (
     <div style={{ marginBottom: 24 }}>
-      {toolCalls.map((tc, i) => <ToolCard key={i} tc={tc} />)}
+      {visibleToolCalls.map((tc, i) => <ToolCard key={i} tc={tc} />)}
       {message.text && <MdText text={message.text} />}
       {!message.text && toolCalls.length === 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: th.inkMuted }}>
