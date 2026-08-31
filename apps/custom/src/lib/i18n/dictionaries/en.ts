@@ -8,6 +8,7 @@ export const en = {
     intelligencePanels: "Trade Intelligence",
     commandCenter: "Command Center",
     documents: "Documents",
+    tradeRepository: "Trade Repository",
     regulatoryUpdates: "Regulatory Updates",
     dataAndIntelligence: "Data & Intelligence",
     billingWorkspace: "Billing",

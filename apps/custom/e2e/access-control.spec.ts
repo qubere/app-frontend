@@ -12,6 +12,7 @@ const PROTECTED_PAGES = [
   "/app/dashboard",
   "/app/shipments",
   "/app/documents",
+  "/app/trade-repository",
   "/app/decisions",
   "/app/filing",
   "/app/work",
@@ -28,10 +29,13 @@ const SELF_GUARDED_GET_APIS = [
   "/api/shipments",
   "/api/filing",
   "/api/findings",
+  "/api/document-associations",
+  "/api/documents/some-id/associations",
+  "/api/documents/some-id/signed-url",
 ];
 
 // POST-only, so a GET would answer 405 and prove nothing about the guard.
-const SELF_GUARDED_POST_APIS = ["/api/reconcile", "/api/admin/users"];
+const SELF_GUARDED_POST_APIS = ["/api/reconcile", "/api/admin/users", "/api/document-associations/some-id/unlink"];
 
 test.describe("signed out", () => {
   for (const path of PROTECTED_PAGES) {
@@ -72,6 +76,15 @@ test.describe("signed out", () => {
 
     expect(res.status()).not.toBe(201);
     expect(res.status()).not.toBe(200);
+  });
+
+  test("linking a document to an entity is refused before it can write", async ({ request }) => {
+    const res = await request.post("/api/document-associations", {
+      data: { documentId: "e2e-doc", entityType: "SHIPMENT", entityId: "e2e-shipment" },
+      maxRedirects: 0,
+    });
+
+    expect(res.status()).toBe(401);
   });
 
   test("the document proxy rejects a host that merely contains the storage domain", async ({

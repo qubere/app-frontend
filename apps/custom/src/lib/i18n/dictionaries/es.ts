@@ -10,6 +10,7 @@ export const es: TranslationKeys = {
     intelligencePanels: "Inteligencia Comercial",
     commandCenter: "Centro de Control",
     documents: "Documentos",
+    tradeRepository: "Repositorio Comercial",
     regulatoryUpdates: "Actualizaciones Regulatorias",
     dataAndIntelligence: "Datos e Inteligencia",
     billingWorkspace: "Facturación",

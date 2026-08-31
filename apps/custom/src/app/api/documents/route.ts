@@ -53,6 +53,17 @@ export async function GET(req: Request) {
         }),
       ]);
 
+      const documentIds = documents.map((doc) => doc.id);
+      const associationCounts =
+        documentIds.length > 0
+          ? await db.documentAssociation.groupBy({
+              by: ["documentId"],
+              where: { accountId: ctx.accountId, documentId: { in: documentIds }, active: true },
+              _count: { _all: true },
+            })
+          : [];
+      const linkedCountByDocId = new Map(associationCounts.map((row) => [row.documentId, row._count._all]));
+
       return NextResponse.json({
         documents: documents.map((doc) => ({
           id: doc.id,
@@ -73,6 +84,7 @@ export async function GET(req: Request) {
           shipmentStatus: doc.shipment?.status ?? null,
           shipmentDeleted: Boolean(doc.shipment?.deletedAt),
           extractedFieldCount: doc._count.extractionFields,
+          linkedEntityCount: linkedCountByDocId.get(doc.id) ?? 0,
         })),
         page: query.page,
         pageSize: query.pageSize,

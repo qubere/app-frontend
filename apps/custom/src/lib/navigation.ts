@@ -15,6 +15,7 @@ export type NavIcon =
   | "bonds"
   | "poa"
   | "documents"
+  | "tradeRepository"
   | "actions"
   | "decisions"
   | "exceptions"
@@ -85,6 +86,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: "shipments", labelKey: "shipments", href: "/app/shipments", icon: "shipments" },
       { id: "documents", labelKey: "documents", href: "/app/documents", icon: "documents" },
+      { id: "trade-repository", labelKey: "tradeRepository", href: "/app/trade-repository", icon: "tradeRepository", permission: "document.read" },
       { id: "filing", labelKey: "customsFiling", href: "/app/filing", icon: "filing" },
       { id: "classification", labelKey: "classificationInbox", href: "/app/classification", icon: "classification", permission: "classification.read" },
       { id: "post-entry", labelKey: "postEntry", href: "/app/post-entry", icon: "postEntry" },

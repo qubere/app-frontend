@@ -42,6 +42,39 @@ enum DocumentType {
   OTHER
 }
 
+/// Business entity types a document can be linked to via DocumentAssociation.
+/// Kept intentionally small -- add a value only once real route/RBAC support
+/// exists for that entity type.
+enum DocumentEntityType {
+  SHIPMENT
+  PARTY
+  PRODUCT
+  LICENSE
+  FILING
+}
+
+/// Semantics of a document-to-entity link. GENERAL is the safe default when
+/// no more specific relationship is known.
+enum DocumentRelationshipType {
+  SOURCE_DOCUMENT
+  SUPPORTING_DOCUMENT
+  FILING_ATTACHMENT
+  LICENSE_EVIDENCE
+  ORIGIN_EVIDENCE
+  GENERAL
+}
+
+/// How a DocumentAssociation came to exist -- used for display and audit, not
+/// for authorization (authorization always derives from the authenticated
+/// account context, never from this field).
+enum DocumentAssociationSource {
+  USER
+  DOCUMENT_INTELLIGENCE
+  INTEGRATION
+  SYSTEM
+  MIGRATION
+}
+
 // Normalized shipment-tracking vocabulary. Provider payloads are retained
 // separately; these enums are the stable contract consumed by Qubere's UI,
 // rules, and APIs.
@@ -369,6 +402,7 @@ model Account {
   licenseNotes                    LicenseNote[]
   licenseAllocations              LicenseAllocation[]
   licenseConfig                   AccountLicenseConfig?
+  documentAssociations            DocumentAssociation[]
 
   @@index([type])
   @@index([slug])
@@ -1307,6 +1341,7 @@ model ShipmentDocument {
   proofsOfDelivery         ProofOfDelivery[]
   carrierInvoices          CarrierInvoice[]
   customerRequestDocuments CustomerRequestDocument[]
+  associations             DocumentAssociation[]
 
   @@index([shipmentId])
   @@index([clientId])
@@ -1319,6 +1354,44 @@ model ShipmentDocument {
   @@index([accountId, createdAt])
   @@index([accountId, status, createdAt])
   @@index([accountId, malwareScanStatus])
+}
+
+/// Reusable, audited relationship between a canonical document
+/// (ShipmentDocument) and any Qubere business entity. This is additive to --
+/// not a replacement for -- ShipmentDocument.shipmentId, which remains the
+/// primary/legacy Shipment link. Unlink never deletes a row (active=false);
+/// re-linking always creates a new row so full history is preserved.
+model DocumentAssociation {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  documentId String
+  document   ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  entityType      DocumentEntityType
+  entityId        String
+  /// Human-readable identifier (e.g. shipment number) captured at link time so
+  /// history/activity views don't need a live join to a possibly-deleted entity.
+  entityDisplayId String?
+
+  relationshipType DocumentRelationshipType @default(GENERAL)
+  source           DocumentAssociationSource @default(USER)
+
+  /// false once unlinked. Never physically deleted -- see module docs.
+  active Boolean @default(true)
+
+  linkedBy String
+  linkedAt DateTime @default(now())
+
+  unlinkedBy String?
+  unlinkedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, documentId, active])
+  @@index([accountId, entityType, entityId, active])
+  @@index([accountId, linkedAt])
 }
 
 /// Authorizes one normalized sender email to route inbound documents into

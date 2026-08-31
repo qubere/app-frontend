@@ -56,6 +56,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   bonds: ShieldCheck,
   poa: FileSignature,
   documents: Files,
+  tradeRepository: Database,
   actions: ListChecks,
   decisions: Scale,
   exceptions: TriangleAlert,
