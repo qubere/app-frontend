@@ -2,7 +2,7 @@
 // used in src/lib/abi/. Credentials are resolved via SecretStoreResolver; never
 // store API keys in IntegrationConfig plaintext columns.
 
-export type EsignProviderName = "DOCUSIGN" | "DROPBOX_SIGN" | "INTERNAL" | "MANUAL_UPLOAD";
+export type EsignProviderName = "DOCUSIGN" | "DROPBOX_SIGN" | "OPEN_SIGN" | "INTERNAL" | "MANUAL_UPLOAD";
 
 export interface EsignSignerInput {
   name: string;

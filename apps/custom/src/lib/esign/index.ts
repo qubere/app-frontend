@@ -5,15 +5,18 @@ export type { EsignProvider, EsignProviderName, EsignEnvelopeInput, EsignEnvelop
 export { InternalProvider } from "./providers/internalProvider";
 export { ManualUploadProvider } from "./providers/manualUploadProvider";
 export { DropboxSignProvider } from "./providers/dropboxSignProvider";
+export { OpenSignProvider } from "./providers/openSignProvider";
 
 import type { EsignProvider, EsignProviderName } from "./types";
 import { InternalProvider } from "./providers/internalProvider";
 import { ManualUploadProvider } from "./providers/manualUploadProvider";
 import { DropboxSignProvider } from "./providers/dropboxSignProvider";
+import { OpenSignProvider } from "./providers/openSignProvider";
 
 export function getEsignProvider(name?: EsignProviderName | null): EsignProvider {
-  const resolved = name ?? ((process.env.ESIGN_PROVIDER ?? "") as EsignProviderName) || "INTERNAL";
+  const resolved = (name ?? (process.env.ESIGN_PROVIDER as EsignProviderName | undefined) ?? "INTERNAL") as EsignProviderName;
   switch (resolved) {
+    case "OPEN_SIGN": return new OpenSignProvider();
     case "DROPBOX_SIGN": return new DropboxSignProvider();
     case "MANUAL_UPLOAD": return new ManualUploadProvider();
     case "INTERNAL":

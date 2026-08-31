@@ -10,6 +10,7 @@ import { StepFiveOhSix } from "./steps/StepFiveOhSix";
 import { StepBond } from "./steps/StepBond";
 import StepPoa from "./steps/StepPoa";
 import { StepBilling } from "./steps/StepBilling";
+import { StepScreening } from "./steps/StepScreening";
 import { StepReviewActivate } from "./steps/StepReviewActivate";
 import type { ChecklistItem, ChecklistStatus } from "@/modules/onboarding/readiness";
 
@@ -32,6 +33,7 @@ interface OnboardingEntity {
   importerNumberType: string;
   importerNumber: string | null;
   bondCoverage: string;
+  screeningStatus?: string;
   legalEntity: { legalName: string; entityType: string; taxIdentifier?: string | null } | null;
   importerOfRecord: { id: string; name: string } | null;
   poa: {
@@ -202,6 +204,20 @@ export function OnboardingWizardClient({ initialCase, initialStep }: Props) {
             caseId={caseData.id}
             entities={caseData.entities as Parameters<typeof StepBond>[0]["entities"]}
             onSaved={async () => { await refreshCase(); setActiveStep(5); }}
+          />
+        );
+      case 5:
+        return (
+          <StepScreening
+            caseId={caseData.id}
+            entities={caseData.entities.map((e) => ({
+              id: e.id,
+              importerNumber: e.importerNumber,
+              importerNumberType: e.importerNumberType,
+              screeningStatus: e.screeningStatus ?? "pending",
+              legalEntity: e.legalEntity ? { legalName: e.legalEntity.legalName } : null,
+            }))}
+            onSaved={async () => { await refreshCase(); setActiveStep(6); }}
           />
         );
       case 6:
