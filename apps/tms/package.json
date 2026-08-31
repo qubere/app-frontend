@@ -23,6 +23,7 @@
     "@qubere/decisions": "*",
     "@qubere/storage": "*",
     "@qubere/tracking": "*",
+    "@qubere/tracking-platform": "*",
     "clsx": "^2.1.1",
     "inngest": "^4.16.0",
     "lucide-react": "^1.16.0",

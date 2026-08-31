@@ -1,6 +1,6 @@
 # Extensible Shipment Tracking Provider System
 
-Status: first production slice implemented on `codex/extensible-tracking-providers`
+Status: Customs-first production slice in progress on `codex/extensible-tracking-providers`
 Owner: Platform / TMS / Customs
 Applies to: `apps/custom`, `apps/tms`, shared shipment data model
 
@@ -46,6 +46,19 @@ flowchart TD
     D --> E["Canonical tracking events"]
     E --> F["Shipment projection + UX"]
 ```
+
+### Decision: pure adapters and infrastructure runtime are separate packages
+
+The initial slice located database orchestration inside the TMS application. That was acceptable for proving the adapter contract but conflicts with Customs-first ownership and would force every product to copy security-sensitive ingestion code.
+
+The implementation therefore uses two shared layers:
+
+- `@qubere/tracking` contains pure provider contracts, registry behavior, payload verification/parsing, and event mapping. It has no database or product dependency.
+- `@qubere/tracking-platform` contains connection resolution, Secret Manager access, raw-payload storage, tenant/client scoping, idempotent persistence, ETA history, subscription state, and operational health.
+
+Customs and TMS expose their own thin HTTP routes and inject product policy through an `onSignalPersisted` hook. Customs recomputes regulatory deadlines when an ETA or arrival anchor changes. TMS evaluates logistics exceptions. Neither policy is embedded in the provider adapter or platform runtime.
+
+This is an intentional divergence from the first TMS-local implementation. It gives Customs the first production consumer while keeping the same runtime available to TMS and future products.
 
 ### Database-managed provider catalog
 
@@ -231,6 +244,15 @@ Do not show a map when there are no real coordinates. Do not show `0`, `--`, a f
 - [x] Shipment connection-health UX
 - [x] Database-backed TMS integration administration with enable/pause controls
 - [x] Removal of fabricated connection cards, generated browser secrets, and shipment ETA/risk defaults
+
+### Slice 1.5 — Customs-first platformization
+
+- [x] Extract database/secrets/storage orchestration into `@qubere/tracking-platform`
+- [x] Keep TMS behavior through a thin product-policy wrapper
+- [x] Expose the signed, connection-specific webhook through Customs
+- [ ] Move Customs integration administration onto shared connection commands
+- [ ] Surface provider connection, waiting, stale, and error states in the Customs Shipment page
+- [ ] Validate the broker journey with route, ingestion, projection, and UI flow tests
 
 ### Slice 2 — first commercial provider
 

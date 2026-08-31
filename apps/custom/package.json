@@ -30,6 +30,8 @@
     "@qubere/decisions": "*",
     "@qubere/shipment-legs": "*",
     "@qubere/storage": "*",
+    "@qubere/tracking": "*",
+    "@qubere/tracking-platform": "*",
     "@types/nodemailer": "^8.0.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

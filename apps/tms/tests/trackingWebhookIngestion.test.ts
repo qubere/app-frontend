@@ -90,7 +90,7 @@ describe("database-backed tracking webhook ingestion", () => {
         now: () => receivedAt,
         secretResolver: { resolveSecret: vi.fn().mockResolvedValue(secret) },
         rawPayloadStore: { store: vi.fn().mockResolvedValue("gs://private/tracking/event.json") },
-        evaluateExceptions: vi.fn().mockResolvedValue(null),
+        onSignalPersisted: vi.fn().mockResolvedValue(null),
       }
     );
 

@@ -5,13 +5,14 @@ import {
   type TrackingWebhookIngestionDependencies,
   type TrackingWebhookIngestionInput,
 } from "@qubere/tracking-platform";
-import { evaluateTrackingExceptions } from "../exceptionDetector";
+import { recomputeShipmentDeadlines } from "../deadlines/deadline.service";
 
 export * from "@qubere/tracking-platform";
 
 /**
- * TMS is a thin consumer of the platform runtime. Its logistics exception
- * policy is deliberately injected so the shared layer remains product-neutral.
+ * Customs consumes the platform feed first. ETA and arrival changes are handed
+ * to the existing deadline engine; customs release/hold state is never inferred
+ * from a carrier event and remains owned by ABI/ACE response processing.
  */
 export function ingestTrackingWebhook(
   input: TrackingWebhookIngestionInput,
@@ -21,9 +22,10 @@ export function ingestTrackingWebhook(
     ...dependencies,
     onSignalPersisted:
       dependencies.onSignalPersisted ??
-      (async ({ accountId, shipmentId, etaDeltaMinutes }) => {
-        if (typeof etaDeltaMinutes !== "number" || etaDeltaMinutes === 0) return null;
-        return evaluateTrackingExceptions({ accountId, shipmentId, etaDeltaMinutes });
+      (async ({ accountId, shipmentId, canonicalEventType, etaDeltaMinutes }) => {
+        const changedArrivalAnchor = ["PORT_ARRIVED", "CONTAINER_DISCHARGED"].includes(canonicalEventType);
+        if (etaDeltaMinutes === null && !changedArrivalAnchor) return null;
+        return recomputeShipmentDeadlines(shipmentId, accountId);
       }),
   });
 }
