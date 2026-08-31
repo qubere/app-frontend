@@ -232,6 +232,20 @@ Do not show a map when there are no real coordinates. Do not show `0`, `--`, a f
 - No configured source results in `NOT_CONFIGURED`, not simulated data.
 - Unit tests cover adapter registration, signature verification, mapping precedence, idempotency, and tenant isolation.
 
+## Customer journey validation matrix
+
+| Customer journey | Expected outcome | Automated evidence |
+| --- | --- | --- |
+| Broker configures an account- or client-scoped provider | The connection is stored with a secret reference, validated adapter configuration, and no invented sync timestamp | Shared connection command tests |
+| Provider sends a correctly signed arrival and ETA update | One normalized event, ETA observation, subscription update, and healthy source projection are persisted for the owning tenant | Customs tracking customer-journey test |
+| Provider retries the same delivery | The request is acknowledged as a duplicate without another event or ETA observation | Customs tracking customer-journey and platform ingestion tests |
+| A different tenant's shipment identifier is submitted | The delivery is rejected and cannot mutate the shipment | Platform tenancy tests |
+| Movement data arrives while the entry remains filed | The physical rail advances while the customs rail remains filed; carrier data never fabricates CBP release | Customs tracking customer-journey test |
+| A new provider connection has only historical events from another source | The selected connection remains waiting until it supplies its own verified event | Customs projection tests |
+| A source becomes stale, unhealthy, paused, or absent | The Shipment page names the state and offers the appropriate configure, start, or review action | Customs projection tests and source-card states |
+
+Production promotion also requires clean typechecks, lint, database migration replay, schema-drift generation, unit tests, OpenAPI validation, and production builds for both Customs and TMS.
+
 ## Delivery sequence
 
 ### Slice 1 — foundation
