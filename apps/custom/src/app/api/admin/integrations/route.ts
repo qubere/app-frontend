@@ -22,15 +22,21 @@ const saveIntegrationSchema = z.object({
   environment: z.enum(["PRODUCTION", "SANDBOX"]).default("PRODUCTION"),
   configJson: z.record(z.string(), z.unknown()).optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "ERROR"]).default("ACTIVE"),
+  providerDefinitionId: z.string().optional().nullable(),
+  credentialRef: z.string().optional().nullable(),
+  webhookSecretRef: z.string().optional().nullable(),
 });
 
 export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
-  const [configs, clients] = await Promise.all([
-    db.integrationConfig.findMany({
+  const [configs, clients, trackingProviders] = await Promise.all([
+    (db as any).integrationConfig.findMany({
       where: { accountId: ctx.accountId },
       orderBy: { createdAt: "desc" },
       include: {
         client: { select: { id: true, name: true } },
+        trackingProviderDefinition: {
+          select: { id: true, key: true, displayName: true, status: true, capabilities: true },
+        },
         _count: { select: { payloads: true } },
       },
     }),
@@ -39,9 +45,24 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    (db as any).trackingProviderDefinition.findMany({
+      where: { status: { in: ["ACTIVE", "PREVIEW"] } },
+      orderBy: { displayName: "asc" },
+      select: {
+        id: true,
+        key: true,
+        displayName: true,
+        adapterKey: true,
+        status: true,
+        authType: true,
+        supportedModes: true,
+        capabilities: true,
+        operationalNotes: true,
+      },
+    }),
   ]);
 
-  const formattedConfigs = configs.map((c) => ({
+  const formattedConfigs = configs.map((c: any) => ({
     id: c.id,
     category: c.category,
     provider: c.provider,
@@ -59,6 +80,11 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
     lastErrorAt: c.lastErrorAt ? c.lastErrorAt.toISOString() : null,
     lastErrorMessage: c.lastErrorMessage,
     payloadCount: c._count.payloads,
+    providerDefinitionId: c.trackingProviderDefinitionId ?? null,
+    providerDefinition: c.trackingProviderDefinition ?? null,
+    hasCredentialRef: Boolean(c.credentialRef),
+    hasWebhookSecretRef: Boolean(c.webhookSecretRef),
+    callbackPath: c.connectionKey ? `/api/webhooks/tracking/${c.connectionKey}` : null,
     createdAt: c.createdAt.toISOString(),
   }));
 
@@ -70,6 +96,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
   return NextResponse.json({
     accountName: ctx.accountName,
     integrations: formattedConfigs,
+    trackingProviders,
     clients: formattedClients,
     requestId,
   });
@@ -91,7 +118,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     );
   }
 
-  const { category, provider, name, clientId, apiKey, apiSecret, baseUrl, environment, configJson, status } = parsed.data;
+  const { category, providerDefinitionId, credentialRef, webhookSecretRef, name, clientId, apiKey, apiSecret, baseUrl, environment, configJson, status } = parsed.data;
 
   const targetClientId = clientId && clientId.trim().length > 0 ? clientId.trim() : null;
 
@@ -104,16 +131,34 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     }
   }
 
+  let provider = parsed.data.provider;
+  let trackingProvider: any = null;
+  if (category === "SHIPMENT_TRACKING") {
+    if (!providerDefinitionId || !webhookSecretRef) {
+      return NextResponse.json(
+        { error: "Tracking connections require a provider definition and webhook Secret Manager reference", requestId },
+        { status: 400 }
+      );
+    }
+    trackingProvider = await (db as any).trackingProviderDefinition.findFirst({
+      where: { id: providerDefinitionId, status: { in: ["ACTIVE", "PREVIEW"] } },
+    });
+    if (!trackingProvider) {
+      return NextResponse.json({ error: "Tracking provider is not available", requestId }, { status: 404 });
+    }
+    provider = trackingProvider.key;
+  }
+
   const existing = await db.integrationConfig.findFirst({
     where: { accountId: ctx.accountId, provider, clientId: targetClientId },
   });
 
-  const finalApiKey = apiKey && !apiKey.startsWith("••••") ? apiKey : existing?.apiKey ?? null;
-  const finalApiSecret = apiSecret && !apiSecret.startsWith("••••") ? apiSecret : existing?.apiSecret ?? null;
+  const finalApiKey = category === "SHIPMENT_TRACKING" ? null : apiKey && !apiKey.startsWith("••••") ? apiKey : existing?.apiKey ?? null;
+  const finalApiSecret = category === "SHIPMENT_TRACKING" ? null : apiSecret && !apiSecret.startsWith("••••") ? apiSecret : existing?.apiSecret ?? null;
   const jsonInput = (configJson ?? {}) as Prisma.InputJsonValue;
 
   const config = existing
-    ? await db.integrationConfig.update({
+    ? await (db as any).integrationConfig.update({
         where: { id: existing.id },
         data: {
           category,
@@ -128,9 +173,12 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           lastSyncAt: new Date(),
           lastErrorAt: null,
           lastErrorMessage: null,
+          trackingProviderDefinitionId: trackingProvider?.id ?? null,
+          credentialRef: category === "SHIPMENT_TRACKING" ? credentialRef ?? null : null,
+          webhookSecretRef: category === "SHIPMENT_TRACKING" ? webhookSecretRef ?? null : null,
         },
       })
-    : await db.integrationConfig.create({
+    : await (db as any).integrationConfig.create({
         data: {
           accountId: ctx.accountId,
           clientId: targetClientId,
@@ -144,6 +192,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           environment,
           configJson: jsonInput,
           lastSyncAt: new Date(),
+          trackingProviderDefinitionId: trackingProvider?.id ?? null,
+          credentialRef: category === "SHIPMENT_TRACKING" ? credentialRef ?? null : null,
+          webhookSecretRef: category === "SHIPMENT_TRACKING" ? webhookSecretRef ?? null : null,
         },
       });
 
@@ -160,6 +211,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       name,
       clientId: targetClientId,
       environment,
+      providerDefinitionId: trackingProvider?.id ?? null,
     },
   });
 
@@ -174,7 +226,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       clientId: config.clientId,
       baseUrl: config.baseUrl ?? "",
       environment: config.environment,
-      apiKeyMasked: maskSecret(config.apiKey),
+      apiKeyMasked: category === "SHIPMENT_TRACKING" ? "" : maskSecret(config.apiKey),
       configJson: (config.configJson as Record<string, unknown>) ?? {},
       lastSyncAt: config.lastSyncAt?.toISOString() ?? null,
     },

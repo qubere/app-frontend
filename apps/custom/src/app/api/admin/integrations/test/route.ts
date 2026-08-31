@@ -20,33 +20,6 @@ const testIntegrationSchema = z.object({
 function generateMockPayload(provider: string, category: string) {
   const timestamp = new Date().toISOString();
   switch (provider.toUpperCase()) {
-    case "VIZION":
-    case "PROJECT44":
-    case "FOURKITES":
-    case "TERMINAL49":
-    case "EASYPOST":
-      return {
-        provider,
-        category: "SHIPMENT_TRACKING",
-        status: "CONNECTED",
-        fetchedAt: timestamp,
-        sampleShipmentTrack: {
-          containerNumber: "MSCU9876543",
-          mblNumber: "MAEU99812421",
-          carrier: "MSC",
-          vessel: "MSC MAYA",
-          voyage: "2608W",
-          mode: "OCEAN",
-          originPort: "CNSHA",
-          destinationPort: "USLAX",
-          estimatedArrival: "2026-08-25T14:00:00Z",
-          milestones: [
-            { event: "VESSEL_DEPARTURE", location: "Shanghai, CN", timestamp: "2026-08-15T08:30:00Z", status: "ACTUAL" },
-            { event: "IN_TRANSIT", location: "Pacific Ocean", timestamp: timestamp, status: "ACTUAL" },
-            { event: "VESSEL_ARRIVAL", location: "Los Angeles, US", timestamp: "2026-08-25T14:00:00Z", status: "ESTIMATED" },
-          ],
-        },
-      };
     case "SAP":
     case "NETSUITE":
     case "DYNAMICS365":
@@ -108,6 +81,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   }
 
   const { category, provider, name, clientId, apiKey, apiSecret, baseUrl, environment, configJson, savePayload } = parsed.data;
+
+  if (category === "SHIPMENT_TRACKING") {
+    return NextResponse.json(
+      {
+        error: "Tracking health checks require a deployed provider adapter and never generate sample shipment events.",
+        requestId,
+      },
+      { status: 409 }
+    );
+  }
 
   const targetClientId = clientId && clientId.trim().length > 0 ? clientId.trim() : null;
 

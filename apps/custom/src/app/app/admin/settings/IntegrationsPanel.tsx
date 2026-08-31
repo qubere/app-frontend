@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -46,12 +46,29 @@ export interface IntegrationConfigItem {
   lastErrorMessage?: string | null;
   payloadCount: number;
   createdAt: string;
+  providerDefinitionId?: string | null;
+  hasCredentialRef?: boolean;
+  hasWebhookSecretRef?: boolean;
+  callbackPath?: string | null;
+}
+
+export interface TrackingProviderCatalogItem {
+  id: string;
+  key: string;
+  displayName: string;
+  adapterKey: string;
+  status: "ACTIVE" | "PREVIEW";
+  authType: string;
+  supportedModes: string[];
+  capabilities: string[];
+  operationalNotes?: string | null;
 }
 
 export interface IntegrationsApiResponse {
   accountName: string;
   integrations: IntegrationConfigItem[];
   clients?: ClientOptionItem[];
+  trackingProviders?: TrackingProviderCatalogItem[];
 }
 
 interface ProviderOption {
@@ -61,6 +78,7 @@ interface ProviderOption {
   defaultBaseUrl: string;
   icon?: string;
   requiresSecret?: boolean;
+  providerDefinitionId?: string;
 }
 
 interface CategoryGroup {
@@ -79,14 +97,7 @@ const CATEGORIES: CategoryGroup[] = [
     description: "Connect real-time ocean container, vessel, flight, and parcel tracking status feeds.",
     badge: "Tracking",
     icon: Truck,
-    providers: [
-      { id: "VIZION", name: "Vizion API", description: "Ocean container tracking & port terminal milestones", defaultBaseUrl: "https://api.vizionapi.com/v1" },
-      { id: "PROJECT44", name: "project44", description: "Global ocean, air & truckload visibility platform", defaultBaseUrl: "https://api.project44.com/v4" },
-      { id: "FOURKITES", name: "FourKites", description: "Real-time supply chain tracking & predictive ETAs", defaultBaseUrl: "https://api.fourkites.com/v2" },
-      { id: "TERMINAL49", name: "Terminal49", description: "Ocean container & port terminal availability feed", defaultBaseUrl: "https://api.terminal49.com/v2" },
-      { id: "EASYPOST", name: "EasyPost", description: "Parcel shipping & multi-carrier tracking API", defaultBaseUrl: "https://api.easypost.com/v2" },
-      { id: "CUSTOM_TRACKING", name: "Custom Tracking REST Feed", description: "Connect any carrier REST endpoint or custom JSON API", defaultBaseUrl: "https://api.yourdomain.com/tracking" },
-    ],
+    providers: [],
   },
   {
     id: "ERP",
@@ -120,23 +131,39 @@ export function IntegrationsPanel({
   accountName,
   integrations,
   clients = [],
+  trackingProviders = [],
   onSaved,
   compact = true,
 }: {
   accountName: string;
   integrations: IntegrationConfigItem[];
   clients?: ClientOptionItem[];
+  trackingProviders?: TrackingProviderCatalogItem[];
   onSaved: () => void;
   compact?: boolean;
 }) {
   const [expandedCategory, setExpandedCategory] = useState<string | null>("SHIPMENT_TRACKING");
-  const [selectedProviderId, setSelectedProviderId] = useState<string>("VIZION");
+  const categories = useMemo(() => CATEGORIES.map((category) => category.id === "SHIPMENT_TRACKING"
+    ? {
+        ...category,
+        providers: trackingProviders.map((provider) => ({
+          id: provider.key,
+          name: provider.displayName,
+          description: provider.operationalNotes ?? provider.capabilities.join(", "),
+          defaultBaseUrl: "",
+          providerDefinitionId: provider.id,
+        })),
+      }
+    : category), [trackingProviders]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>(trackingProviders[0]?.key ?? "");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
 
   // Form State
   const [apiKey, setApiKey] = useState("");
+  const [webhookSecretRef, setWebhookSecretRef] = useState("");
+  const [credentialRef, setCredentialRef] = useState("");
   const [apiSecret, _setApiSecret] = useState("");
-  const [baseUrl, setBaseUrl] = useState("https://api.vizionapi.com/v1");
+  const [baseUrl, setBaseUrl] = useState("");
   const [environment, setEnvironment] = useState<"PRODUCTION" | "SANDBOX">("PRODUCTION");
   const [configMetadata, setConfigMetadata] = useState("");
 
@@ -150,7 +177,8 @@ export function IntegrationsPanel({
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const activeCategoryObj = CATEGORIES.find((c) => c.id === expandedCategory);
+  const activeCategoryObj = categories.find((c) => c.id === expandedCategory);
+  const isTrackingCategory = activeCategoryObj?.id === "SHIPMENT_TRACKING";
   const selectedProviderObj =
     activeCategoryObj?.providers.find((p) => p.id === selectedProviderId) ?? activeCategoryObj?.providers[0];
 
@@ -170,7 +198,7 @@ export function IntegrationsPanel({
       return;
     }
     setExpandedCategory(catId);
-    const firstProv = CATEGORIES.find((c) => c.id === catId)?.providers[0];
+    const firstProv = categories.find((c) => c.id === catId)?.providers[0];
     if (firstProv) {
       setSelectedProviderId(firstProv.id);
       setBaseUrl(firstProv.defaultBaseUrl);
@@ -205,7 +233,7 @@ export function IntegrationsPanel({
           provider: selectedProviderObj.id,
           name: selectedProviderObj.name,
           clientId: selectedClientId || undefined,
-          apiKey: apiKey || undefined,
+          apiKey: activeCategoryObj.id === "SHIPMENT_TRACKING" ? undefined : apiKey || undefined,
           apiSecret: apiSecret || undefined,
           baseUrl: baseUrl || undefined,
           environment,
@@ -257,12 +285,15 @@ export function IntegrationsPanel({
           provider: selectedProviderObj.id,
           name: selectedProviderObj.name,
           clientId: selectedClientId || undefined,
-          apiKey: apiKey || undefined,
+          apiKey: activeCategoryObj.id === "SHIPMENT_TRACKING" ? undefined : apiKey || undefined,
           apiSecret: apiSecret || undefined,
           baseUrl: baseUrl || undefined,
           environment,
           configJson: parsedConfig,
           status: "ACTIVE",
+          providerDefinitionId: selectedProviderObj.providerDefinitionId,
+          webhookSecretRef: activeCategoryObj.id === "SHIPMENT_TRACKING" ? webhookSecretRef || undefined : undefined,
+          credentialRef: activeCategoryObj.id === "SHIPMENT_TRACKING" ? credentialRef || undefined : undefined,
         }),
       });
 
@@ -356,7 +387,7 @@ export function IntegrationsPanel({
         </h4>
 
         <div className="space-y-2.5">
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const isExpanded = expandedCategory === cat.id;
             const Icon = cat.icon;
             const configuredCount = integrations.filter((i) => i.category === cat.id).length;
@@ -449,19 +480,35 @@ export function IntegrationsPanel({
 
                     {/* Form Input Fields */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-ink flex items-center space-x-1">
-                          <Key className="w-3.5 h-3.5 text-ink-muted" />
-                          <span>API Key / Secret Token</span>
-                        </label>
-                        <input
-                          type="password"
-                          placeholder="e.g. viz_live_98124791823"
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-border rounded-xl text-xs font-mono text-ink shadow-2xs focus:ring-2 focus:ring-brand/20 focus:border-brand outline-none"
-                        />
-                      </div>
+                      {isTrackingCategory ? (
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-ink flex items-center space-x-1">
+                            <Key className="w-3.5 h-3.5 text-ink-muted" />
+                            <span>Webhook Secret Manager Reference</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="projects/PROJECT/secrets/tracking-feed/versions/latest"
+                            value={webhookSecretRef}
+                            onChange={(e) => setWebhookSecretRef(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-border rounded-xl text-xs font-mono text-ink shadow-2xs focus:ring-2 focus:ring-brand/20 focus:border-brand outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-ink flex items-center space-x-1">
+                            <Key className="w-3.5 h-3.5 text-ink-muted" />
+                            <span>API Key / Secret Token</span>
+                          </label>
+                          <input
+                            type="password"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-border rounded-xl text-xs font-mono text-ink shadow-2xs focus:ring-2 focus:ring-brand/20 focus:border-brand outline-none"
+                          />
+                        </div>
+                      )}
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-ink flex items-center space-x-1">
@@ -512,12 +559,28 @@ export function IntegrationsPanel({
                         </label>
                         <input
                           type="text"
-                          placeholder='{"webhookSecret": "whsec_..."}'
+                          placeholder='{"signatureMode": "HMAC_SHA256"}'
                           value={configMetadata}
                           onChange={(e) => setConfigMetadata(e.target.value)}
                           className="w-full px-3 py-2 bg-white border border-border rounded-xl text-xs font-mono text-ink shadow-2xs focus:ring-2 focus:ring-brand/20 focus:border-brand outline-none"
                         />
                       </div>
+
+                      {isTrackingCategory && (
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <label className="text-xs font-semibold text-ink flex items-center space-x-1">
+                            <Key className="w-3.5 h-3.5 text-ink-muted" />
+                            <span>Outbound Credential Reference (Optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="projects/PROJECT/secrets/provider-api-key/versions/latest"
+                            value={credentialRef}
+                            onChange={(e) => setCredentialRef(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-border rounded-xl text-xs font-mono text-ink shadow-2xs focus:ring-2 focus:ring-brand/20 focus:border-brand outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* Alert Error Message */}
@@ -532,18 +595,20 @@ export function IntegrationsPanel({
                     <div className="flex items-center justify-between pt-2 border-t border-border">
                       <div className="text-[11px] text-ink-muted flex items-center space-x-1">
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Encrypted API credentials stored securely per tenant</span>
+                        <span>{isTrackingCategory ? "Only Secret Manager references are stored" : "Encrypted API credentials stored securely per tenant"}</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={handleTestConnection}
-                          disabled={isTesting || isSaving}
-                          className="px-4 py-2 text-xs font-bold text-brand bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors cursor-pointer flex items-center space-x-1.5 disabled:opacity-50"
-                        >
-                          {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                          <span>Test Connection & Fetch Data</span>
-                        </button>
+                        {!isTrackingCategory && (
+                          <button
+                            type="button"
+                            onClick={handleTestConnection}
+                            disabled={isTesting || isSaving}
+                            className="px-4 py-2 text-xs font-bold text-brand bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors cursor-pointer flex items-center space-x-1.5 disabled:opacity-50"
+                          >
+                            {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                            <span>Test Connection & Fetch Data</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
