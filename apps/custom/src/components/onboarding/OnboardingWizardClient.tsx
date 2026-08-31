@@ -7,6 +7,8 @@ import { ArrowLeft, CheckCircle2, Circle, AlertCircle, Clock, Minus } from "luci
 import { Button, Badge } from "@/components/ui";
 import { StepLegalEntity } from "./steps/StepLegalEntity";
 import { StepFiveOhSix } from "./steps/StepFiveOhSix";
+import { StepBond } from "./steps/StepBond";
+import StepPoa from "./steps/StepPoa";
 import { StepBilling } from "./steps/StepBilling";
 import { StepReviewActivate } from "./steps/StepReviewActivate";
 import type { ChecklistItem, ChecklistStatus } from "@/modules/onboarding/readiness";
@@ -29,7 +31,50 @@ interface OnboardingEntity {
   id: string;
   importerNumberType: string;
   importerNumber: string | null;
+  bondCoverage: string;
   legalEntity: { legalName: string; entityType: string; taxIdentifier?: string | null } | null;
+  importerOfRecord: { id: string; name: string } | null;
+  poa: {
+    id: string;
+    status: string;
+    executionMethod: string | null;
+    signerName: string | null;
+    signerTitle: string | null;
+    signerRole: string | null;
+    expirationDate: string | null;
+    executedDocumentUrl: string | null;
+    envelope: {
+      id: string;
+      provider: string;
+      status: string;
+      sentAt: string | null;
+      completedAt: string | null;
+    } | null;
+  } | null;
+  bond: {
+    id: string;
+    bondNumber: string;
+    bondType: string;
+    suretyName: string;
+    suretyCode: string | null;
+    bondAmount: string;
+    activityCode: string | null;
+    effectiveDate: string | null;
+    expirationDate: string | null;
+    status: string;
+    lastVerifiedAt: string | null;
+    verifications?: Array<{
+      id: string;
+      method: string;
+      result: string;
+      suretyCode: string | null;
+      suretyName: string | null;
+      queriedImporterNumber: string | null;
+      responseRaw: string | null;
+      discrepancies: unknown[] | null;
+      performedAt: string;
+    }>;
+  } | null;
 }
 
 interface OnboardingCaseData {
@@ -141,6 +186,22 @@ export function OnboardingWizardClient({ initialCase, initialStep }: Props) {
             entities={caseData.entities}
             initialRecords={caseData.fiveOhSixRecords as unknown as Parameters<typeof StepFiveOhSix>[0]["initialRecords"]}
             onSaved={async () => { await refreshCase(); setActiveStep(3); }}
+          />
+        );
+      case 3:
+        return (
+          <StepPoa
+            caseId={caseData.id}
+            entities={caseData.entities as Parameters<typeof StepPoa>[0]["entities"]}
+            onSaved={async () => { await refreshCase(); setActiveStep(4); }}
+          />
+        );
+      case 4:
+        return (
+          <StepBond
+            caseId={caseData.id}
+            entities={caseData.entities as Parameters<typeof StepBond>[0]["entities"]}
+            onSaved={async () => { await refreshCase(); setActiveStep(5); }}
           />
         );
       case 6:

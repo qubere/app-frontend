@@ -371,6 +371,8 @@ model Account {
   licenseConfig                   AccountLicenseConfig?
 
   onboardingCases          OnboardingCase[]
+  onboardingEntities       OnboardingEntity[]
+  onboardingEvents         OnboardingEvent[]
   fiveOhSixRecords         FiveOhSixRecord[]
   bondVerifications        BondVerification[]
   poaTemplates             PoaTemplate[]
@@ -9824,6 +9826,7 @@ model OnboardingCase {
 model OnboardingEntity {
   id                 String   @id @default(cuid())
   accountId          String
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   caseId             String
   case               OnboardingCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
   legalEntityId      String?
@@ -10008,6 +10011,7 @@ model BrokerDistrictPermit {
 model OnboardingEvent {
   id          String         @id @default(cuid())
   accountId   String
+  account     Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   caseId      String
   case        OnboardingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
   type        String

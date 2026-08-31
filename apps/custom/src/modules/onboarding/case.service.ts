@@ -66,7 +66,7 @@ export class CaseService {
           include: {
             legalEntity: true,
             importerOfRecord: true,
-            poa: true,
+            poa: { include: { envelope: true } },
             bond: { include: { verifications: { orderBy: { performedAt: "desc" }, take: 1 } } },
           },
         },
