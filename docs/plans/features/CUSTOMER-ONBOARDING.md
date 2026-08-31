@@ -306,6 +306,28 @@ A `Client` with one importing entity resolves unambiguously. A `Client` with sev
 
 **Implementation:** a `resolveImporterContext(clientId, opts)` helper in `src/modules/onboarding/importerContext.ts` is the single resolver; `POST /api/shipments`, `POST /api/filing`, the chat shipment-creation tool, the EDI/`TransportationOrder` promotion path, and document-intake shipment creation all call it. No caller re-implements the lookup.
 
+#### 4.4.1 The `Client` field on the shipment intake form
+
+**Today the intake form ([`shipments/new/page.tsx`](../../../apps/custom/src/app/app/shipments/new/page.tsx)) does the opposite of what it should:** "Importer of Record Name" is a required free-text box and "Client" is an optional dropdown defaulting to *No Client*, with no link between them and no autofill. This feature **inverts** that: `Client` is the primary field and everything importer-related is derived from it.
+
+**Autofill / lock rules for the `Client` field (in priority order):**
+
+| Context at shipment creation | `Client` field behavior |
+|---|---|
+| Portal / customer user (`ctx.authorizedClientIds` is their own scoped set, `isAllClients: false`) | **Pre-selected and locked.** A single authorized client → fixed. Several → a picker limited to `authorizedClientIds` (they cannot create for any other importer — tenant isolation already enforces this; the UI just shouldn't offer it). |
+| Broker specialist scoped to exactly one client (`!ctx.isAllClients && ctx.authorizedClientIds.length === 1`) | **Pre-selected**, editable only if they actually have broader access. |
+| "＋ New shipment" launched from a client detail page / client workspace (`?clientId=` in the URL) | **Pre-filled** from that context, editable. |
+| Shipment created from a document or inbound email already matched to a client (`DocumentShipmentCandidate`, `InboundSenderRoute.clientId`) | **Pre-filled** from the match, editable, with the match reason shown ("matched from sender acme-ap@acme.com"). |
+| Broker admin / all-clients user, no other context | No autofill — **required** picker (searchable; recently-used clients first). Selecting the client is what triggers importer/bond/POA inheritance, so it is no longer "optional." |
+
+**Once a `Client` is chosen (or pre-filled):**
+
+- If the client is **onboarded and `active`** with a single importing entity → the "Importer of Record" free-text field is **replaced** by a read-only inherited block (legal name, CBP number, bond, POA status) with a source chip. `resolveImporterContext` sets `Shipment.importerOfRecordId` + `importerName` on submit.
+- Client onboarded, **multiple** importing entities (S4) → show an entity selector (default = the client's default entity), still no free-text.
+- Client **not yet onboarded / not `active`** → keep the free-text importer field, and surface an inline "This client isn't onboarded yet — [start onboarding]" note; the shipment is created but `filingReadiness` will block transmission (`IMPORTER_NOT_ONBOARDED`).
+- **No client** (genuinely ad-hoc / one-off) → current free-text behavior, unchanged. Still allowed, just no longer the default path.
+
+**Server side:** `POST /api/shipments` accepts `clientId` and calls `resolveImporterContext`; it must also **re-assert** that `clientId ∈ ctx.authorizedClientIds` (or `ctx.isAllClients`) — the autofill is a UX convenience, the authorization check is not optional.
 ---
 
 ## 5. UI / UX specification
@@ -883,6 +905,7 @@ Each phase is independently shippable and leaves the product more correct than b
 | ERP | Dedupe exact (EIN) + fuzzy (name/address); proposal commit writes `IntegrationEntityMap`; re-pull updates not duplicates. |
 | Broker compliance | Filing-authority check: national permit only vs district-required; account `restricted` blocks activation-independent filing. |
 | Carryover (§4.4) | `resolveImporterContext` for single-entity, multi-entity (needs-selection), not-yet-active, and no-client shipments; shipment + filing FK inheritance; live POA/bond resolution reflects a revocation mid-filing; explicit override is audited. |
+| Client field (§4.4.1) | Autofill/lock resolves correctly for portal user / single-assigned specialist / `?clientId=` / doc-match / admin-no-context; `POST /api/shipments` rejects a `clientId` outside `ctx.authorizedClientIds` even when the client exists in the account. |
 | Country seams (§1.3) | Wizard renders from `CountryOnboardingProfile`; a synthetic non-US profile with a different step set produces a different wizard and different mandatory checklist with no code change; `OnboardingCase.status` contains no country-specific literal. |
 
 ---
@@ -931,7 +954,8 @@ EDIT src/app/app/bonds/BondsClient.tsx                (real verify)
 EDIT src/app/api/importers-of-record/route.ts         (remove hardcoded fallbacks)
 EDIT src/app/api/importers-of-record/[id]/poa/route.ts (remove defaulting; delegate to onboarding)
 EDIT src/modules/filing/filingReadiness.ts            (IMPORTER_NOT_ONBOARDED blocker)
-EDIT src/app/api/shipments/route.ts                   (call resolveImporterContext — set importerOfRecordId from clientId; §4.4)
+EDIT src/app/api/shipments/route.ts                   (call resolveImporterContext; assert clientId ∈ ctx.authorizedClientIds; §4.4)
+EDIT src/app/app/shipments/new/page.tsx               (Client = primary field w/ autofill+lock per §4.4.1; importer block derived from client)
 EDIT src/app/api/filing/route.ts                      (inherit importerOfRecordId + bondId from shipment; §4.4)
 EDIT chat shipment-creation tool + TransportationOrder→Shipment promotion + doc-intake shipment create  (all route through resolveImporterContext)
 EDIT src/lib/filing/transmissionProvider.ts           (query-traffic support — shared w/ ABI Phase 1)
