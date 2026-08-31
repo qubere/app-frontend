@@ -252,7 +252,7 @@ Do not show a map when there are no real coordinates. Do not show `0`, `--`, a f
 - [x] Expose the signed, connection-specific webhook through Customs
 - [x] Move Customs integration administration onto shared connection commands
 - [x] Surface provider connection, waiting, stale, and error states in the Customs Shipment page
-- [ ] Validate the broker journey with route, ingestion, projection, and UI flow tests
+- [x] Validate the broker journey across connection setup, signed ingestion, idempotent retry, movement projection, source health, and customs-source boundaries
 
 ### Slice 2 — first commercial provider
 

@@ -189,12 +189,14 @@ describe("shipment tracking projection", () => {
       input({
         identifiers: [{ type: "MBL", value: "MAEU123", issuer: "MAEU", isPrimary: true }],
         connections: [connection({ lastSyncAt: null, lastEventAt: null })],
+        events: [event({ provider: "RETIRED_PROVIDER" })],
       })
     );
 
     expect(projection.source.state).toBe("WAITING");
     expect(projection.health.status).toBe("ON_TRACK");
     expect(projection.health.isDataStale).toBe(false);
+    expect(projection.movement.status).toBe("IN_TRANSIT");
   });
 });
 

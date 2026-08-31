@@ -404,14 +404,21 @@ export function buildTrackingProjection(input: BuildTrackingProjectionInput): Sh
   const primaryConnection =
     connections.find((connection) => subscribedConnectionIds.has(connection.id)) ?? connections[0] ?? null;
   const hasTrackingConfiguration = Boolean(primaryConnection);
-  const freshnessAnchor = lastSync;
+  const primarySubscriptionTimes = input.subscriptions
+    .filter((subscription) => subscription.integrationConfigId === primaryConnection?.id)
+    .flatMap((subscription) => [subscription.lastSyncAt, subscription.lastEventAt]);
+  const connectionLastSuccess = [
+    primaryConnection?.lastSyncAt,
+    primaryConnection?.lastEventAt,
+    ...primarySubscriptionTimes,
+  ]
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const freshnessAnchor = connectionLastSuccess;
   const isDataStale =
     hasTrackingConfiguration &&
     Boolean(freshnessAnchor && now.getTime() - freshnessAnchor.getTime() > staleAfterHours(input.shipment.transportMode) * 3_600_000);
   const failedSubscription = input.subscriptions.some((subscription) => subscription.status === "FAILED");
-  const connectionLastSuccess = [primaryConnection?.lastSyncAt, primaryConnection?.lastEventAt]
-    .filter((value): value is Date => Boolean(value))
-    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   const connectionHasError = Boolean(
     primaryConnection &&
       (primaryConnection.status === "ERROR" ||
@@ -539,7 +546,7 @@ export function buildTrackingProjection(input: BuildTrackingProjectionInput): Sh
       providerDisplayName: primaryConnection?.providerDefinition?.displayName ?? null,
       scope: primaryConnection ? (primaryConnection.clientId ? "CLIENT" : "ACCOUNT") : null,
       lastEventAt: primaryConnection?.lastEventAt ?? lastActual?.occurredAt ?? null,
-      lastSyncAt: primaryConnection?.lastSyncAt ?? lastSync,
+      lastSyncAt: primaryConnection?.lastSyncAt ?? connectionLastSuccess,
       lastErrorAt: primaryConnection?.lastErrorAt ?? null,
       lastErrorMessage: primaryConnection?.lastErrorMessage ?? null,
     },
