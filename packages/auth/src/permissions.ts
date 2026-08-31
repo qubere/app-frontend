@@ -108,6 +108,17 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "client.assign_users", description: "Assign specialist users to client.", category: "Client", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
   { name: "client.manage_settings", description: "Configure client-specific workspace settings.", category: "Client", defaultRoles: ["BROKER_ADMIN", "OWNER"] },
 
+  // Onboarding
+  { name: "onboarding.manage", description: "Create and manage importer onboarding cases, run wizard steps.", category: "Client", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN"] },
+  { name: "onboarding.activate", description: "Activate an importer (final wizard step — makes client filable).", category: "Client", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+
+  // Broker compliance
+  { name: "broker_compliance.manage", description: "Configure the broker's own license, permits, PQOs, and filer credentials.", category: "Settings", defaultRoles: ["BROKER_ADMIN", "OWNER"] },
+
+  // Parties / bonds — these were phantom permissions; now real entries.
+  { name: "parties.manage", description: "Create and update party and importer-of-record records.", category: "Client", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN"] },
+  { name: "bonds.manage", description: "Create, update, and verify customs bond records.", category: "Client", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN"] },
+
   // Users
   { name: "user.read", description: "View workspace users.", category: "Users", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "BROKER_BILLING", "TMS_ADMIN", "TMS_MANAGER", "TMS_OPERATIONS", "TMS_DISPATCHER", "TMS_BILLING", "TMS_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "MEMBER", "VIEWER"] },
   { name: "user.invite", description: "Invite new users to organization.", category: "Users", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "TMS_ADMIN", "TMS_MANAGER", "OWNER", "ADMIN"] },
