@@ -77,17 +77,14 @@ export async function resolveImporterContext(
   if (entities.length > 1) {
     const primary = entities.find((e) => e.importerOfRecordId === onboardingCase.primaryImporterId) ?? entities[0];
     const legalEntity = primary.importerOfRecordId
-      ? await db.legalEntity.findFirst({
-          where: {
-            importersOfRecord: { some: { id: primary.importerOfRecordId } },
-            accountId,
-          },
-          select: { legalName: true },
+        ? await db.importerOfRecord.findUnique({
+          where: { id: primary.importerOfRecordId },
+          select: { name: true },
         })
       : null;
     return {
       importerOfRecordId: primary.importerOfRecordId ?? null,
-      importerName: legalEntity?.legalName ?? null,
+      importerName: legalEntity?.name ?? null,
       bondId: primary.bondId ?? null,
       needsImporterSelection: true,
     };
@@ -95,18 +92,15 @@ export async function resolveImporterContext(
 
   const entity = entities[0];
   const legalEntity = entity.importerOfRecordId
-    ? await db.legalEntity.findFirst({
-        where: {
-          importersOfRecord: { some: { id: entity.importerOfRecordId } },
-          accountId,
-        },
-        select: { legalName: true },
+    ? await db.importerOfRecord.findUnique({
+        where: { id: entity.importerOfRecordId },
+        select: { name: true },
       })
     : null;
 
   return {
     importerOfRecordId: entity.importerOfRecordId ?? null,
-    importerName: legalEntity?.legalName ?? null,
+    importerName: legalEntity?.name ?? null,
     bondId: entity.bondId ?? null,
     needsImporterSelection: false,
   };

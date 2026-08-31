@@ -39,10 +39,11 @@ export async function POST(req: Request) {
   if (filerCode) {
     const credential = await db.abiFilerCredential.findFirst({
       where: { filerCode: String(filerCode) },
-      select: { accountId: true, connectionKey: true },
+      select: { accountId: true, secretRef: true },
     });
     if (credential) {
-      if (connectionKey && credential.connectionKey && connectionKey !== credential.connectionKey) {
+      // secretRef is used as the bearer token for inbound webhook auth
+      if (connectionKey && credential.secretRef && connectionKey !== credential.secretRef) {
         return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
       }
       accountId = credential.accountId;
@@ -121,8 +122,8 @@ export async function POST(req: Request) {
   await createAuditLog({
     accountId: record.accountId,
     action: result === "accepted" ? "FIVE_OH_SIX_ACCEPTED" : "FIVE_OH_SIX_REJECTED",
-    resourceType: "FiveOhSixRecord",
-    resourceId: record.id,
+    entity: "FiveOhSixRecord",
+    entityId: record.id,
     metadata: { transmissionRef, cbpAssignedNumber, rejectionReasons },
   });
 
