@@ -250,7 +250,7 @@ Do not show a map when there are no real coordinates. Do not show `0`, `--`, a f
 - [x] Extract database/secrets/storage orchestration into `@qubere/tracking-platform`
 - [x] Keep TMS behavior through a thin product-policy wrapper
 - [x] Expose the signed, connection-specific webhook through Customs
-- [ ] Move Customs integration administration onto shared connection commands
+- [x] Move Customs integration administration onto shared connection commands
 - [ ] Surface provider connection, waiting, stale, and error states in the Customs Shipment page
 - [ ] Validate the broker journey with route, ingestion, projection, and UI flow tests
 

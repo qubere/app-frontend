@@ -4,6 +4,11 @@ import { Prisma } from "@prisma/client";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import {
+  configureTrackingConnection,
+  listTrackingProviderDefinitions,
+  TrackingConnectionError,
+} from "@qubere/tracking-platform";
 
 function maskSecret(secret?: string | null): string {
   if (!secret) return "";
@@ -45,21 +50,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    (db as any).trackingProviderDefinition.findMany({
-      where: { status: { in: ["ACTIVE", "PREVIEW"] } },
-      orderBy: { displayName: "asc" },
-      select: {
-        id: true,
-        key: true,
-        displayName: true,
-        adapterKey: true,
-        status: true,
-        authType: true,
-        supportedModes: true,
-        capabilities: true,
-        operationalNotes: true,
-      },
-    }),
+    listTrackingProviderDefinitions({ dbClient: db }),
   ]);
 
   const formattedConfigs = configs.map((c: any) => ({
@@ -131,8 +122,6 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     }
   }
 
-  let provider = parsed.data.provider;
-  let trackingProvider: any = null;
   if (category === "SHIPMENT_TRACKING") {
     if (!providerDefinitionId || !webhookSecretRef) {
       return NextResponse.json(
@@ -140,21 +129,76 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         { status: 400 }
       );
     }
-    trackingProvider = await (db as any).trackingProviderDefinition.findFirst({
-      where: { id: providerDefinitionId, status: { in: ["ACTIVE", "PREVIEW"] } },
-    });
-    if (!trackingProvider) {
-      return NextResponse.json({ error: "Tracking provider is not available", requestId }, { status: 404 });
+    try {
+      const config = await configureTrackingConnection(
+        {
+          accountId: ctx.accountId,
+          clientId: targetClientId,
+          providerDefinitionId,
+          name,
+          status,
+          credentialRef,
+          webhookSecretRef,
+          baseUrl: baseUrl ?? null,
+          environment,
+          config: configJson ?? {},
+        },
+        { dbClient: db }
+      );
+
+      await createAuditLog({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        action: "TRACKING_CONNECTION_CONFIGURED",
+        entity: "IntegrationConfig",
+        entityId: config.id,
+        source: "UI",
+        metadata: {
+          provider: config.provider,
+          category,
+          name,
+          clientId: targetClientId,
+          environment,
+          providerDefinitionId,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        integration: {
+          id: config.id,
+          category: config.category,
+          provider: config.provider,
+          name: config.name,
+          status: config.status,
+          clientId: config.clientId,
+          baseUrl: config.baseUrl ?? "",
+          environment: config.environment,
+          apiKeyMasked: "",
+          configJson: (config.configJson as Record<string, unknown>) ?? {},
+          lastSyncAt: config.lastSyncAt?.toISOString() ?? null,
+          callbackPath: config.connectionKey ? `/api/webhooks/tracking/${config.connectionKey}` : null,
+        },
+      });
+    } catch (error) {
+      if (error instanceof TrackingConnectionError) {
+        return NextResponse.json(
+          { error: error.code, message: error.message, issues: error.issues, requestId },
+          { status: error.status }
+        );
+      }
+      throw error;
     }
-    provider = trackingProvider.key;
   }
 
+  const provider = parsed.data.provider;
+
   const existing = await db.integrationConfig.findFirst({
-    where: { accountId: ctx.accountId, provider, clientId: targetClientId },
+    where: { accountId: ctx.accountId, category, provider, clientId: targetClientId },
   });
 
-  const finalApiKey = category === "SHIPMENT_TRACKING" ? null : apiKey && !apiKey.startsWith("••••") ? apiKey : existing?.apiKey ?? null;
-  const finalApiSecret = category === "SHIPMENT_TRACKING" ? null : apiSecret && !apiSecret.startsWith("••••") ? apiSecret : existing?.apiSecret ?? null;
+  const finalApiKey = apiKey && !apiKey.startsWith("••••") ? apiKey : existing?.apiKey ?? null;
+  const finalApiSecret = apiSecret && !apiSecret.startsWith("••••") ? apiSecret : existing?.apiSecret ?? null;
   const jsonInput = (configJson ?? {}) as Prisma.InputJsonValue;
 
   const config = existing
@@ -173,9 +217,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           lastSyncAt: new Date(),
           lastErrorAt: null,
           lastErrorMessage: null,
-          trackingProviderDefinitionId: trackingProvider?.id ?? null,
-          credentialRef: category === "SHIPMENT_TRACKING" ? credentialRef ?? null : null,
-          webhookSecretRef: category === "SHIPMENT_TRACKING" ? webhookSecretRef ?? null : null,
+          trackingProviderDefinitionId: null,
+          credentialRef: null,
+          webhookSecretRef: null,
         },
       })
     : await (db as any).integrationConfig.create({
@@ -192,9 +236,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           environment,
           configJson: jsonInput,
           lastSyncAt: new Date(),
-          trackingProviderDefinitionId: trackingProvider?.id ?? null,
-          credentialRef: category === "SHIPMENT_TRACKING" ? credentialRef ?? null : null,
-          webhookSecretRef: category === "SHIPMENT_TRACKING" ? webhookSecretRef ?? null : null,
+          trackingProviderDefinitionId: null,
+          credentialRef: null,
+          webhookSecretRef: null,
         },
       });
 
@@ -211,7 +255,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       name,
       clientId: targetClientId,
       environment,
-      providerDefinitionId: trackingProvider?.id ?? null,
+      providerDefinitionId: null,
     },
   });
 
@@ -226,7 +270,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       clientId: config.clientId,
       baseUrl: config.baseUrl ?? "",
       environment: config.environment,
-      apiKeyMasked: category === "SHIPMENT_TRACKING" ? "" : maskSecret(config.apiKey),
+      apiKeyMasked: maskSecret(config.apiKey),
       configJson: (config.configJson as Record<string, unknown>) ?? {},
       lastSyncAt: config.lastSyncAt?.toISOString() ?? null,
     },
