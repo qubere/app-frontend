@@ -65,6 +65,7 @@ type, and an active-run pointer. See
 | Facts + provenance | `ExtractionField` (value, page, bbox, source) |
 | Reconciliation | `ReconciliationIssue`, `ExceptionItem` |
 | Audit | `AuditLog` |
+| Entity linking | `DocumentAssociation` (`entityType`/`entityId`, soft `active` flag) — see below |
 
 ## Processing profiles
 
@@ -335,3 +336,11 @@ microservice is introduced or required.**
    `null`. Adding it means a new column, which was out of scope here.
 8. **Page images and thumbnails are not produced.** `include_images` is off and no
    consumer needs them.
+9. **Entity linking is not part of the parsing pipeline.** A `ShipmentDocument`
+   can be linked to any of `SHIPMENT`/`PARTY`/`PRODUCT`/`LICENSE`/`FILING` via
+   `DocumentAssociation` (`src/modules/documentAssociations/`), rendered by the
+   shared `<EntityDocuments />` component and a cross-entity `Trade Repository`
+   page (`/app/trade-repository`) — but this is a linking/discovery layer on top
+   of an already-processed document, not a new parsing or extraction path.
+   License detail-page wiring is deliberately deferred pending a product
+   decision on that module's existing document mechanism.
