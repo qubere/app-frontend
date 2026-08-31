@@ -1,7 +1,7 @@
 # F16 · Customer Onboarding — Guided Importer Activation, 5106, Bond & POA Verification
 
 > Created: 2026-08-31.
-> Status: **Shipped — P1–P8 on PR #137** (`feat/customer-onboarding-f16`). Open items: P7 ABI codec blocked on CATAIR PDF + ABI cert Phase 3 transport; 5106 transmit button stubbed until then. P8 portal wizard live but `poaEnvelopeSignUrl` requires e-sign provider to populate it per-envelope. Open questions (§13) unresolved — require CBP Client Rep + legal input.
+> Status: **Shipped — P1–P8 + P7 ABI codec on `feat/customer-onboarding-f16`** (cc2b64d4). P7 codec shipped (CATAIR 5106 v12, App ID TP): `src/lib/abi/importerCreate/` (7 files) + transmit route + stub response; real TCP/IP transport is Phase 3 ABI cert work (transport stubbed — always accepted). P8 portal wizard live but `poaEnvelopeSignUrl` requires e-sign provider to populate it per-envelope. Open questions (§13) unresolved — require CBP Client Rep + legal input.
 > Branch: `feat/customer-onboarding-f16`
 > Owner surfaces: new `/app/onboarding/*`, rework of `/app/clients`, `/app/importers-of-record`, `/app/bonds`, `/app/poa`, `/app/admin/integrations`, new `/app/admin/broker-compliance`.
 > Related: [`ABI-CERTIFICATION-READINESS.md`](../ABI-CERTIFICATION-READINESS.md) (transport, `RealAceProvider`, CATAIR envelope), [`7501-draft-and-abi-export.md`](../../requirements/7501-draft-and-abi-export.md) (draft+serializer+profile pattern this doc reuses), [`CUSTOMER-PORTAL-PR97-REVIEW.md`](../review/CUSTOMER-PORTAL-PR97-REVIEW.md) (invite/tenant-isolation), [`QUICKBOOKS-INTEGRATION.md`](./QUICKBOOKS-INTEGRATION.md) (OAuth + `IntegrationSyncLog`/`IntegrationEntityMap` idempotency pattern this doc reuses for ERP).
