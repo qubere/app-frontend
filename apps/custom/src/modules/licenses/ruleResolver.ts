@@ -104,6 +104,7 @@ export function resolveLicenseDetermination(
         classification: { type: classification.type, normalizedValue: classification.normalizedValue },
         conditions: conditions.flags,
         replacementPartsAsserted: conditions.isReplacementParts,
+        encryptionExceptionReferenceNumbers: conditions.referenceNumbers,
       },
     }
   );

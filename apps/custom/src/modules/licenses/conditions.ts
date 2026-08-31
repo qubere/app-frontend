@@ -14,6 +14,8 @@ export interface NormalizedConditions {
   hasSensitiveEndUse: boolean;
   /** True if the replacement-parts indicator is explicitly TRUE. */
   isReplacementParts: boolean;
+  /** Free-text encryption exception reference numbers, when asserted -- evidence only, not validated against BIS records. */
+  referenceNumbers: { zNumber: string | null; ccatsNumber: string | null };
 }
 
 const CONDITION_KEYS: Array<keyof LicenseConditionsInput> = [
@@ -28,6 +30,8 @@ const CONDITION_KEYS: Array<keyof LicenseConditionsInput> = [
   "encryptionSelfClassified",
   "replacementPartsIndicator",
   "militaryEndUseCountry",
+  "endUserCertificateOnFile",
+  "customsFreeZone",
 ];
 
 /** Sensitive end-use/end-user flags that, if TRUE, always force at least REVIEW_REQUIRED. */
@@ -52,6 +56,10 @@ export function normalizeConditions(input: LicenseConditionsInput | undefined): 
 
   const hasSensitiveEndUse = SENSITIVE_END_USE_KEYS.some((key) => flags[key] === "TRUE");
   const isReplacementParts = flags.replacementPartsIndicator === "TRUE";
+  const referenceNumbers = {
+    zNumber: input?.encryptionExceptionZNumber?.trim() || null,
+    ccatsNumber: input?.encryptionExceptionCcatsNumber?.trim() || null,
+  };
 
-  return { flags, unknownFlags, hasSensitiveEndUse, isReplacementParts };
+  return { flags, unknownFlags, hasSensitiveEndUse, isReplacementParts, referenceNumbers };
 }

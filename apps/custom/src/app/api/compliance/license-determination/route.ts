@@ -36,6 +36,10 @@ const requestSchema = z.object({
       encryptionSelfClassified: triState,
       replacementPartsIndicator: triState,
       militaryEndUseCountry: triState,
+      endUserCertificateOnFile: triState,
+      customsFreeZone: triState,
+      encryptionExceptionZNumber: z.string().optional().nullable(),
+      encryptionExceptionCcatsNumber: z.string().optional().nullable(),
     })
     .optional(),
   quantity: z.union([z.number(), z.string()]).optional().nullable(),

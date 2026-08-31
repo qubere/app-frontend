@@ -34,6 +34,20 @@ interface LicenseAlert {
   message: string;
 }
 
+type TriStateOption = "UNKNOWN" | "TRUE" | "FALSE";
+
+const CONDITION_LABELS = {
+  governmentEndUser: "Foreign government end-user",
+  militaryEndUser: "Military end-user",
+  nuclearEndUse: "Nuclear end use",
+  missileTechnologyEndUse: "Missile technology end use",
+  chemicalBiologicalEndUse: "Chemical or biological weapons end use",
+  endUserCertificateOnFile: "End-user certificate/letter of assurance on file",
+  customsFreeZone: "Destination is within a customs free zone",
+  encryptionItem: "Item is an encryption item",
+  encryptionSelfClassified: "Encryption self-classification on file",
+} as const;
+
 const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral"> = {
   ACTIVE: "success",
   DRAFT: "neutral",
@@ -96,6 +110,18 @@ export function LicenseManagementClient({
     destinationCountry: "",
     originCountry: "",
   });
+  const [detConditions, setDetConditions] = useState({
+    governmentEndUser: "UNKNOWN" as TriStateOption,
+    militaryEndUser: "UNKNOWN" as TriStateOption,
+    nuclearEndUse: "UNKNOWN" as TriStateOption,
+    missileTechnologyEndUse: "UNKNOWN" as TriStateOption,
+    chemicalBiologicalEndUse: "UNKNOWN" as TriStateOption,
+    endUserCertificateOnFile: "UNKNOWN" as TriStateOption,
+    customsFreeZone: "UNKNOWN" as TriStateOption,
+    encryptionItem: "UNKNOWN" as TriStateOption,
+    encryptionSelfClassified: "UNKNOWN" as TriStateOption,
+  });
+  const [detReferenceNumbers, setDetReferenceNumbers] = useState({ zNumber: "", ccatsNumber: "" });
   const [detResult, setDetResult] = useState<DeterminationResult | null>(null);
 
   const loadLicenses = () => {
@@ -137,6 +163,13 @@ export function LicenseManagementClient({
     setError(null);
     setDetResult(null);
     try {
+      const conditions: Record<string, string> = {};
+      for (const [key, val] of Object.entries(detConditions)) {
+        if (val !== "UNKNOWN") conditions[key] = val;
+      }
+      if (detReferenceNumbers.zNumber.trim()) conditions.encryptionExceptionZNumber = detReferenceNumbers.zNumber.trim();
+      if (detReferenceNumbers.ccatsNumber.trim()) conditions.encryptionExceptionCcatsNumber = detReferenceNumbers.ccatsNumber.trim();
+
       const data = await fetchJson<{ determination: { id: string; outcome: DeterminationResult } }>(
         "/api/compliance/license-determination",
         {
@@ -146,6 +179,7 @@ export function LicenseManagementClient({
             classification: { type: detForm.classificationType, value: detForm.classificationValue },
             destinationCountry: detForm.destinationCountry || undefined,
             originCountry: detForm.originCountry || undefined,
+            conditions: Object.keys(conditions).length > 0 ? conditions : undefined,
           }),
         }
       );
@@ -298,6 +332,46 @@ export function LicenseManagementClient({
                 />
               </FormField>
             )}
+
+            <div className="space-y-2">
+              <Label>End-Use / End-User Conditions</Label>
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-border p-3">
+                {Object.entries(CONDITION_LABELS).map(([key, label]) => (
+                  <div key={key} className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-ink">{label}</span>
+                    <Select
+                      value={detConditions[key as keyof typeof detConditions]}
+                      onChange={(e) =>
+                        setDetConditions((c) => ({ ...c, [key]: e.target.value as TriStateOption }))
+                      }
+                    >
+                      <option value="UNKNOWN">Unknown</option>
+                      <option value="TRUE">Yes</option>
+                      <option value="FALSE">No</option>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField>
+                <Label>Encryption Exception ZNumber</Label>
+                <Input
+                  value={detReferenceNumbers.zNumber}
+                  onChange={(e) => setDetReferenceNumbers((r) => ({ ...r, zNumber: e.target.value }))}
+                  placeholder="e.g. Z123456"
+                />
+              </FormField>
+              <FormField>
+                <Label>CCATS Number</Label>
+                <Input
+                  value={detReferenceNumbers.ccatsNumber}
+                  onChange={(e) => setDetReferenceNumbers((r) => ({ ...r, ccatsNumber: e.target.value }))}
+                  placeholder="e.g. G123456"
+                />
+              </FormField>
+            </div>
+
             <Button onClick={runDetermination} disabled={busy || !canExecuteDetermination || !detForm.classificationValue}>
               <PlayCircle className="w-4 h-4" /> Run Determination
             </Button>
