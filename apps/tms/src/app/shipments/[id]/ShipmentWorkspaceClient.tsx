@@ -52,7 +52,7 @@ export function ShipmentWorkspaceClient({
   crossDomainRisks: _crossDomainRisks,
   healthSnapshot,
   financials,
-  lifecycleStatus,
+  lifecycleStatus: _lifecycleStatus,
 }: {
   shipment: any;
   journey: any[];
