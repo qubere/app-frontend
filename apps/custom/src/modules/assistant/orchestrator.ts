@@ -46,6 +46,21 @@ function toolResultFailed(output: unknown): boolean {
   return Boolean(output && typeof output === "object" && "error" in (output as Record<string, unknown>));
 }
 
+// Returns true when every result in a round came back empty (zero-row arrays or
+// errors). Two consecutive empty rounds means the model is looping fruitlessly.
+function allResultsEmpty(results: unknown[]): boolean {
+  return results.every((output) => {
+    if (!output || typeof output !== "object") return true;
+    const r = output as Record<string, unknown>;
+    if ("error" in r) return true;
+    for (const v of Object.values(r)) {
+      if (Array.isArray(v) && v.length > 0) return false;
+      if (typeof v === "number" && v > 0) return false;
+    }
+    return true;
+  });
+}
+
 export async function* runAssistantTurn(
   ctx: AccountContext,
   input: ChatTurnInput
@@ -166,6 +181,7 @@ export async function* runAssistantTurn(
     }
     messages.push({ role: "user", content: input.message });
 
+    let anthropicEmptyRounds = 0;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       if (toolCallsMade >= MAX_TOOL_CALLS) break;
       let stream;
@@ -208,6 +224,7 @@ export async function* runAssistantTurn(
       }
 
       const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
+      const roundOutputs: unknown[] = [];
       for (const call of toolCalls) {
         const name = call.name;
         yield { type: "tool_call", name };
@@ -224,6 +241,7 @@ export async function* runAssistantTurn(
         }
         toolCallsMade += 1;
         groundingLedger.recordToolOutput(output);
+        roundOutputs.push(output);
 
         await auditToolExecuted(subject, {
           tool: name,
@@ -241,12 +259,24 @@ export async function* runAssistantTurn(
         });
       }
 
+      if (allResultsEmpty(roundOutputs)) {
+        anthropicEmptyRounds += 1;
+        if (anthropicEmptyRounds >= 2) break;
+      } else {
+        anthropicEmptyRounds = 0;
+      }
+
       messages.push({ role: "user", content: toolResultBlocks });
     }
 
     yield* emitSanitizedReplace();
     await finish("PARTIAL", MAX_TOOL_ROUNDS - 1);
-    yield { type: "error", message: "Stopped after using this question's retrieval budget." };
+    if (!fullText) {
+      yield { type: "text", delta: "I wasn't able to find anything matching that in your account. Try rephrasing or narrowing the question." };
+      yield { type: "done" };
+    } else {
+      yield { type: "error", message: "Stopped after using this question's retrieval budget." };
+    }
     return;
   }
 
@@ -263,6 +293,7 @@ export async function* runAssistantTurn(
 
   let nextMessage: string | Part[] = input.message;
 
+  let geminiEmptyRounds = 0;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     if (toolCallsMade >= MAX_TOOL_CALLS) break;
     let stream: AsyncGenerator<{
@@ -281,6 +312,7 @@ export async function* runAssistantTurn(
     let sawFunctionCall = false;
     let lastUsage: unknown = null;
     const functionResponseParts: Part[] = [];
+    const roundOutputs: unknown[] = [];
 
     for await (const chunk of stream) {
       if (chunk.usageMetadata) lastUsage = chunk.usageMetadata;
@@ -308,6 +340,7 @@ export async function* runAssistantTurn(
           }
           toolCallsMade += 1;
           groundingLedger.recordToolOutput(output);
+          roundOutputs.push(output);
           await auditToolExecuted(subject, {
             tool: name,
             ok: !toolResultFailed(output),
@@ -339,11 +372,24 @@ export async function* runAssistantTurn(
       yield { type: "done" };
       return;
     }
+
+    if (allResultsEmpty(roundOutputs)) {
+      geminiEmptyRounds += 1;
+      if (geminiEmptyRounds >= 2) break;
+    } else {
+      geminiEmptyRounds = 0;
+    }
+
     nextMessage = functionResponseParts;
   }
 
   yield { type: "history", turns: sanitizeHistory(chat.getHistory()) };
   yield* emitSanitizedReplace();
   await finish("PARTIAL", MAX_TOOL_ROUNDS - 1);
-  yield { type: "error", message: "Stopped after using this question's retrieval budget." };
+  if (!fullText) {
+    yield { type: "text", delta: "I wasn't able to find anything matching that in your account. Try rephrasing or narrowing the question." };
+    yield { type: "done" };
+  } else {
+    yield { type: "error", message: "Stopped after using this question's retrieval budget." };
+  }
 }
