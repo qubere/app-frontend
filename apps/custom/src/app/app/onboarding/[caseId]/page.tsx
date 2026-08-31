@@ -5,16 +5,18 @@ import { notFound } from "next/navigation";
 import { OnboardingWizardClient } from "@/components/onboarding/OnboardingWizardClient";
 
 interface Props {
-  params: { caseId: string };
-  searchParams: { step?: string };
+  params: Promise<{ caseId: string }>;
+  searchParams: Promise<{ step?: string }>;
 }
 
 export default async function OnboardingCasePage({ params, searchParams }: Props) {
+  const { caseId } = await params;
+  const { step } = await searchParams;
   const context = await getAccountContext();
   if (!context) return null;
 
   const c = await db.onboardingCase.findUnique({
-    where: { id: params.caseId },
+    where: { id: caseId },
     include: {
       client: true,
       primaryImporter: true,
@@ -37,7 +39,7 @@ export default async function OnboardingCasePage({ params, searchParams }: Props
   if (!c || c.accountId !== context.accountId) notFound();
 
   const readiness = computeReadiness(c as Parameters<typeof computeReadiness>[0]);
-  const stepParam = searchParams.step ? parseInt(searchParams.step) : c.currentStep;
+  const stepParam = step ? parseInt(step) : c.currentStep;
 
   return (
     <OnboardingWizardClient
