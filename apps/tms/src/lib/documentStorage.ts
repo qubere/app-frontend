@@ -15,7 +15,7 @@ function bucketName(): string {
 }
 
 /** Cloud Storage when a bucket is configured (and STORAGE_PROVIDER isn't forced local); otherwise local disk. */
-function useGcs(): boolean {
+function shouldUseGcs(): boolean {
   const explicit = process.env.STORAGE_PROVIDER?.toLowerCase();
   if (explicit === "local-fs") return false;
   return explicit === "gcs" || Boolean(process.env.GCS_BUCKET?.trim());
@@ -25,7 +25,7 @@ export async function storeTmsDocument(input: {
   accountId: string; storageName: string; mimeType: string; bytes: Buffer;
 }): Promise<{ url: string; provider: "GCS" | "LOCAL_DEV" }> {
   const objectName = `tms/documents/${input.accountId}/${input.storageName}`;
-  if (useGcs()) {
+  if (shouldUseGcs()) {
     const bucket = bucketName();
     gcs ??= new Storage();
     await gcs.bucket(bucket).file(objectName).save(input.bytes, {
