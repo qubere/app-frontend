@@ -161,7 +161,7 @@ export async function clamdHttpScan(
 ): Promise<ClamavScanResult> {
   const url = opts.baseUrl.replace(/\/+$/, "") + "/scan";
   const form = new FormData();
-  form.append("file", new Blob([bytes]), opts.fileName ?? "upload.bin");
+  form.append("file", new Blob([new Uint8Array(bytes)]), opts.fileName ?? "upload.bin");
 
   const res = await fetch(url, {
     method: "POST",
