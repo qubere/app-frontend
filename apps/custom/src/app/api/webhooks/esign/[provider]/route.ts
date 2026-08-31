@@ -12,8 +12,9 @@ import { createAuditLog } from "@/lib/audit";
 import { getEsignProvider } from "@/lib/esign";
 import type { EsignProviderName } from "@/lib/esign";
 
-export const POST = async (req: Request, { params }: { params: { provider: string } }) => {
-  const providerName = (params.provider?.toUpperCase() ?? "") as EsignProviderName;
+export const POST = async (req: Request, { params }: { params: Promise<{ provider: string }> }) => {
+  const { provider } = await params;
+  const providerName = (provider?.toUpperCase() ?? "") as EsignProviderName;
   if (!["DROPBOX_SIGN"].includes(providerName)) {
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }

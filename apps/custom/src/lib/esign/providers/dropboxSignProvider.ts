@@ -63,7 +63,7 @@ export class DropboxSignProvider implements EsignProvider {
     const eventType: EsignWebhookEvent["eventType"] =
       event.event_type === "signature_request_all_signed" ? "completed" :
       event.event_type === "signature_request_declined" ? "declined" :
-      event.event_type === "signature_request_signed" ? "signed" :
+      event.event_type === "signature_request_signed" ? "delivered" :
       "sent";
 
     return {

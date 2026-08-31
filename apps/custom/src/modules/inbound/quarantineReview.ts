@@ -23,10 +23,6 @@ function log(event: string, fields: Record<string, string | number | boolean | n
   console.log(`[QuarantineReview] ${event}`, fields);
 }
 
-function log(event: string, fields: Record<string, string | number | boolean | null>): void {
-  console.log(`[QuarantineReview] ${event}`, fields);
-}
-
 /**
  * Every export here reads/writes InboundEmail, which has an optional
  * `account` relation -- the shared `db` client auto-filters reads through

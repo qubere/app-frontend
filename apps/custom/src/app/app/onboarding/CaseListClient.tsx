@@ -120,6 +120,9 @@ export function CaseListClient({ cases, brokerProfileStatus }: Props) {
         <Link href="/app/onboarding/import">
           <Button variant="secondary">Bulk import</Button>
         </Link>
+        <Link href="/app/onboarding/erp-review">
+          <Button variant="secondary">ERP review</Button>
+        </Link>
       </div>
 
       {cases.length === 0 && (
@@ -129,9 +132,17 @@ export function CaseListClient({ cases, brokerProfileStatus }: Props) {
           <p className="text-sm max-w-sm mx-auto">
             Start here to guide an importer through CBP registration, Power of Attorney, and bond verification before their first filing.
           </p>
-          <Button onClick={() => setShowNew(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Onboard your first importer
-          </Button>
+          <div className="flex justify-center gap-3 flex-wrap">
+            <Button onClick={() => setShowNew(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Onboard your first importer
+            </Button>
+            <Link href="/app/onboarding/import">
+              <Button variant="outline">Bulk import (CSV)</Button>
+            </Link>
+            <Link href="/app/onboarding/erp-review">
+              <Button variant="outline">Import from ERP</Button>
+            </Link>
+          </div>
         </div>
       )}
 

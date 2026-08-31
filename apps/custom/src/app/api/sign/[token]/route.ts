@@ -3,8 +3,8 @@
 import { NextResponse } from "next/server";
 import { PoaService } from "@/modules/onboarding/poa.service";
 
-export const POST = async (req: Request, { params }: { params: { token: string } }) => {
-  const { token } = params;
+export const POST = async (req: Request, { params }: { params: Promise<{ token: string }> }) => {
+  const { token } = await params;
   if (!token || token.length < 32) {
     return NextResponse.json({ error: "Invalid signing link" }, { status: 400 });
   }
