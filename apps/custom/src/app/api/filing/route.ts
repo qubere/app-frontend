@@ -470,6 +470,16 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           totalTaxes: null,
           totalAmount: calculatedTotal,
           dutyBreakdown,
+          importerOfRecordId: shipment.importerOfRecordId ?? null,
+          bondId: shipment.importerOfRecordId
+            ? (await db.onboardingEntity.findFirst({
+                where: {
+                  accountId: ctx.accountId,
+                  importerOfRecordId: shipment.importerOfRecordId,
+                },
+                select: { bondId: true },
+              }))?.bondId ?? null
+            : null,
         },
         include: {
           shipment: true,

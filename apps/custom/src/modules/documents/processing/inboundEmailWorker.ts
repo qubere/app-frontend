@@ -341,6 +341,7 @@ async function processOneAttachment(params: {
         providerAttachmentId: attachment.id,
         filename: attachmentLabel,
         folder,
+        url: storageResult.url,
         provider: storageResult.provider,
       });
     } catch (error) {
@@ -368,6 +369,7 @@ async function processOneAttachment(params: {
         inboundEmailId: email.id,
         providerAttachmentId: attachment.id,
         filename: attachmentLabel,
+        quarantinedFileUrl: storageResult.url,
       });
       return { stored: true, crossShipmentDuplicateCount: 0 };
     }

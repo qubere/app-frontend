@@ -1,8 +1,8 @@
 # F16 · Customer Onboarding — Guided Importer Activation, 5106, Bond & POA Verification
 
 > Created: 2026-08-31.
-> Status: **Spec — not yet built.** Feeds implementation agents; PR reviewed after.
-> Branch: `feat/customer-onboarding`
+> Status: **Shipped — P1–P8 + P7 ABI codec on `feat/customer-onboarding-f16`** (cc2b64d4). P7 codec shipped (CATAIR 5106 v12, App ID TP): `src/lib/abi/importerCreate/` (7 files) + transmit route + stub response; real TCP/IP transport is Phase 3 ABI cert work (transport stubbed — always accepted). P8 portal wizard live but `poaEnvelopeSignUrl` requires e-sign provider to populate it per-envelope. Open questions (§13) unresolved — require CBP Client Rep + legal input.
+> Branch: `feat/customer-onboarding-f16`
 > Owner surfaces: new `/app/onboarding/*`, rework of `/app/clients`, `/app/importers-of-record`, `/app/bonds`, `/app/poa`, `/app/admin/integrations`, new `/app/admin/broker-compliance`.
 > Related: [`ABI-CERTIFICATION-READINESS.md`](../ABI-CERTIFICATION-READINESS.md) (transport, `RealAceProvider`, CATAIR envelope), [`7501-draft-and-abi-export.md`](../../requirements/7501-draft-and-abi-export.md) (draft+serializer+profile pattern this doc reuses), [`CUSTOMER-PORTAL-PR97-REVIEW.md`](../review/CUSTOMER-PORTAL-PR97-REVIEW.md) (invite/tenant-isolation), [`QUICKBOOKS-INTEGRATION.md`](./QUICKBOOKS-INTEGRATION.md) (OAuth + `IntegrationSyncLog`/`IntegrationEntityMap` idempotency pattern this doc reuses for ERP).
 
@@ -50,9 +50,29 @@ Today Qubere has the **data model** for all three (`ImporterOfRecord`, `PowerOfA
 
 - Actual CBP ABI transport wiring — owned by `ABI-CERTIFICATION-READINESS.md` Phase 1. This feature produces transmission-ready payloads and calls the provider interface; it does not implement the socket.
 - Building the 5106 CATAIR codec from a source PDF — see §6.3; sequenced as its own unit, same discipline as the other `src/lib/abi/*` chapters (pull the PDF, verify positions, round-trip test).
-- Non-US customs onboarding. US CBP only.
+- Non-US customs onboarding **implementation**. US CBP is the only country built here — but the design is structured so other countries are added by plugging in strategies, not forking the flow (see §1.3).
 - Credit-bureau / financial underwriting of importers beyond capturing payment terms and a manual credit-hold flag.
 - Carrier / forwarder onboarding (that is `Carrier`/`CarrierProfile`, a separate flow).
+
+### 1.3 International / multi-country posture
+
+**Honest state:** as specified, the *substance* of onboarding is US-CBP-specific — CBP Form 5106, ABI transmission, a CBP customs bond, 19 CFR 111 broker supervision, the KI/KR importer/bond query. A German or UK importer's onboarding looks materially different (EORI registration instead of 5106; a customs comprehensive guarantee / deferment account instead of a surety bond; direct vs. indirect representation instead of a POA; fiscal representation for non-EU-established importers; no "broker license" concept in most of the EU).
+
+**But the platform around it is already country-agnostic and proven.** The filing/messaging layer resolves every country-specific fact from wildcard reference tables via `findMostSpecificMatch()` — the Germany rollout changed zero application code (`docs/customs-filing/04-new-country-onboarding.md`). `Shipment.destinationCountry` already drives procedure-code / authority / message-name resolution. Onboarding must be built the same way rather than hard-coding CBP.
+
+**Design requirement for this feature (so international is a data/strategy job later, not a rewrite):**
+
+| Concern | Do NOT | DO |
+|---|---|---|
+| The state machine | Bake "5106" / "bond" / "POA" into `OnboardingCase.status` | Keep status generic: `identity_registration`, `financial_security`, `representation_authority`, `screening`, `activation`. The US wizard maps these to 5106 / bond / POA; a future EU wizard maps them to EORI / guarantee / representation appointment. |
+| Steps | One hard-coded 8-step wizard | A `CountryOnboardingProfile` (reference row, keyed by `country` with `"*"` fallback) that declares which steps apply, which artifact model backs each, and which are mandatory. The wizard renders from this profile. |
+| Artifact models | Assume `FiveOhSixRecord` / CBP `Bond` are the only shapes | `FiveOhSixRecord` is `country: "US"`-scoped; sibling models (`EoriRegistration`, `CustomsGuarantee`, …) added later implement a shared `RegistrationArtifact` / `SecurityArtifact` interface. `OnboardingEntity` points at the abstract artifact, not the concrete US one. |
+| Registration transport | Call `RealAceProvider` directly from the wizard | Go through a `RegistrationProvider` interface (`submit`, `getStatus`) — `AbiImporterCreateProvider` is the US impl; other countries get their own (many are portal-only, i.e. a "generate packet + mark filed" impl). |
+| Representation | Model only a US broker POA | `representation_authority` step captures `representationType` (`US_POA` \| `EU_DIRECT` \| `EU_INDIRECT` \| `UK_POA` \| …); the e-sign/upload machinery is shared, the legal fields differ per type. |
+| Screening | US lists only | Screening step takes the destination country + all trade-control regimes that apply (US: OFAC/BIS/UFLPA; EU: consolidated sanctions list; UK: OFSI) — the existing screening path already abstracts providers. |
+| Broker compliance | Assume every country has a broker license | `BrokerComplianceProfile` is `country`-scoped; the "may we file here?" check returns "not applicable — no broker authorization regime" for countries that don't have one. |
+
+**Bottom line:** build the US flow now, but through generic step names, a `CountryOnboardingProfile` reference table, and provider/artifact interfaces — so the first non-US country is a seed script plus one or two new provider impls, mirroring how Germany was added to filing. Adding the abstraction seams is ~1 extra unit in P1; retrofitting them after the US flow hard-codes CBP is a rewrite. This is called out again in P1 of §10 and as open question #10 in §13.
 
 ---
 
@@ -252,8 +272,6 @@ draft
 
 `modules/filing/filingReadiness.ts` gains a blocker source: `importerOnboardingIncomplete`. A `CustomsFiling` whose `importerOfRecordId` maps to a non-`active` `OnboardingCase` (or an IOR with an expired POA / lapsed bond) surfaces a `FilingBlockerCode.IMPORTER_NOT_ONBOARDED` with a deep link to the case. This is the mechanism that stops "discovered during filing."
 
-<<<<<<< Updated upstream
-=======
 ### 4.4 Client profile → shipment inheritance (enter once, reuse forever)
 
 **The point of onboarding is that the client's compliance profile is captured once and every subsequent shipment inherits it automatically.** An operator creating shipment #47 for an onboarded importer never re-types the EIN, the CBP importer number, the bond number, or attaches the POA again.
@@ -310,8 +328,6 @@ A `Client` with one importing entity resolves unambiguously. A `Client` with sev
 - **No client** (genuinely ad-hoc / one-off) → current free-text behavior, unchanged. Still allowed, just no longer the default path.
 
 **Server side:** `POST /api/shipments` accepts `clientId` and calls `resolveImporterContext`; it must also **re-assert** that `clientId ∈ ctx.authorizedClientIds` (or `ctx.isAllClients`) — the autofill is a UX convenience, the authorization check is not optional.
-
->>>>>>> Stashed changes
 ---
 
 ## 5. UI / UX specification
@@ -842,16 +858,19 @@ All routes: `withAuthenticatedRoute`, `accountId` from `ctx`, mutations behind `
 
 **Phasing:**
 
-1. **P1 — data + wizard skeleton (no external calls).** Schema migration, `OnboardingCase` + wizard shell + steps 1/6/7, readiness model, filing-readiness blocker, nav. Manual 5106 (PDF only), manual bond (attestation only), manual POA (upload only). This alone replaces the standalone-modal UX and gates filing correctly.
-2. **P2 — 5106 record + PDF + provenance.** `FiveOhSixRecord`, CBP Form 5106 PDF, ACE-Portal worksheet, `mark-filed`.
-3. **P3 — bond verification.** KI/KR call path (depends on ABI transport being at least query-capable; surety-code + attestation fallbacks ship regardless), sufficiency math + nightly job.
-4. **P4 — POA e-sign.** `src/lib/esign/` + one adapter (Dropbox Sign or DocuSign), templates, webhook.
-5. **P5 — broker compliance + screening gate.** `BrokerComplianceProfile`, filing-authority check, onboarding screening step + disposition.
-6. **P6 — bulk + ERP.** CSV import, ERP adapters + dedupe review.
-7. **P7 — 5106 ABI codec + transmission.** `src/lib/abi/importerCreate/`, once the source PDF + Client Rep confirmation are in hand (tracks ABI cert Phase 3).
-8. **P8 — portal self-service wizard.**
+Each phase is independently shippable and leaves the product more correct than before. "UX enabled" = what a user can actually do end-to-end once the phase ships.
 
-Each phase is independently shippable and leaves the product more correct than before.
+| Phase | Build | UX path this enables | Still manual / stubbed after this phase |
+|---|---|---|---|
+| **P1 · Data + wizard skeleton**<br>*no external calls* | Schema migration (all §6.1 models with generic step names per §1.3); `OnboardingCase` state machine; wizard shell + steps 1 (legal entity), 6 (billing/access), 7 (review/activate); readiness model; `IMPORTER_NOT_ONBOARDED` filing blocker; `resolveImporterContext` + wiring into shipment/filing creation (§4.4); nav entry; `CountryOnboardingProfile` seam. | Operator opens `/app/onboarding/new`, creates a case for a client, captures the legal entity (name, address, entity type, EIN), configures billing, and **activates** — after manually ticking the 5106 / bond / POA checklist items as "handled outside Qubere." From then on **every new shipment for that client auto-inherits the importer** and filing is gated until the case is active. Replaces the disconnected `＋ Add` modals on `/clients`, `/importers-of-record`, `/bonds`, `/poa` with one guided flow. | 5106 = paper/portal, tracked only as a checkbox. Bond = typed in, `attested` only. POA = file upload, no signer identity. Screening = not run. Broker-side compliance = not checked. |
+| **P2 · 5106 record + PDF** | `FiveOhSixRecord` model + provenance; the 5106 field editor (wizard step 2); CBP Form 5106 PDF generation; ACE-Portal data-entry worksheet; `mark-filed` (manual confirmation #). | Step 2 auto-fills a 5106 from the entity data; operator reviews the CBP-specific fields, clicks **Generate 5106 PDF**, files it via ACE Portal or mails it, then records the confirmation number + assigned importer number. The 5106 is now a real tracked artifact with acceptance state, not a checkbox. | No ABI transmission — `Transmit to CBP` button is present but disabled with "not certified yet." CBP acceptance is entered by hand. |
+| **P3 · Bond verification + sufficiency** | `BondVerification` model; KI/KR call path via `RealAceProvider` query traffic; `active_sureties_2025` → `suretyCodes.ts` lookup; `bondSufficiency.ts` + nightly re-check job; replace `BondsClient` fake `handleVerifyCbp`. | Step 4: operator enters the importer's bond and clicks **Verify with CBP** — a real importer/bond query runs, fills/confirms the fields, stores the raw KR record as evidence, and sets `verified`. Sufficiency is computed from projected or historical duty and shown against the bond amount; an undersized bond **blocks activation** with the required figure and a pre-filled surety rider request. Bonds that lapse later raise an action automatically. | KI/KR depends on ABI transport being query-capable (ABI cert Phase 1); until then the surety-code lookup + manual attestation fallbacks carry it, clearly labelled as not-CBP-confirmed. |
+| **P4 · POA e-signature** | `PoaEnvelope` / `PoaTemplate` models; `src/lib/esign/` provider interface + one adapter (DocuSign or Dropbox Sign) + `InternalProvider` + `ManualUploadProvider`; template merge + preview; `/api/webhooks/esign/[provider]`; revocation + expiry propagation. | Step 3: operator picks a POA template, the merge fields fill from entity data, and sends it for **e-signature** to a named signer whose role is validated against the entity type. The wizard shows "awaiting signature"; the webhook completes it, stores the executed PDF + signing certificate, and sets `executed` with a real term. Wet-ink upload (with authority attestation) stays available. Revoking a POA immediately suspends the case and flags open filings. | Only one e-sign vendor wired. Notarization/apostille for non-resident POAs captured as metadata + uploaded proof, not verified. |
+| **P5 · Broker compliance + screening gate** | `BrokerComplianceProfile` (+ PQO / district permits, `country`-scoped); `/app/admin/broker-compliance`; filing-authority check + global banner; onboarding screening step (entity + officers + parent) via the existing screening path; disposition flow. | One-time: an admin records the broker's license, national/district permits, filer code, and 19 CFR 111.28 supervision attestation — the account now shows "ready to file" (or a banner listing what's missing, blocking activation regardless of importer readiness). Per importer: step 5 runs denied-party screening; `FLAGGED` needs an operator note to proceed, `BLOCKED` halts activation until a compliance-role user rejects or overrides with a logged reason. | District-permit granularity only if question #8 says it's needed. Screening list coverage bounded by what the existing path supports (question #6). |
+| **P6 · Bulk + ERP onboarding** | CSV/JSON bulk import (`dry-run` → `commit` → batch dashboard); `src/lib/integrations/erp/*` adapters (first provider per question #7); `erpImport.service` with exact + fuzzy dedupe; `/app/onboarding/erp-review`; `IntegrationEntityMap` write-back. | A broker migrating a book of business uploads a CSV and gets N cases created in `draft` with a per-row blocker list to work through — bonds already on file are auto-found via KI/KR. A broker with a connected ERP pulls the importer's entity + product master, reviews de-dupe proposals (exact on EIN, fuzzy on name/address), and accepts rows into onboarding — re-syncs update instead of creating the 70th duplicate. | ERP is one provider. Product master import is entity-scoped; full product onboarding is F11's job. |
+| **P7 · 5106 ABI transmission** | `src/lib/abi/importerCreate/` codec (source PDF pulled + Client-Rep-confirmed, same discipline as every other chapter); `fromOnboardingEntity` mapper; enable the `Transmit to CBP` button; `/api/webhooks/abi/importer-response`. | Step 2's **Transmit to CBP (ABI)** button goes live for accounts with the certified chapter + an active filer credential: the 5106 is transmitted, CBP's accept/reject comes back automatically, and on a non-resident create the CBP-assigned importer number is written straight back onto the `ImporterOfRecord`. No more portal round-trip. | Tracks ABI cert Phase 3 — ships only after that transport exists. Portal/paper paths remain for accounts not yet certified. |
+| **P8 · Importer self-service portal** | `apps/portal` reduced wizard at `/onboarding/[token]`; proposal-and-approve write model; document upload (articles, W-9, prior CBP correspondence). | The broker invites the importer; the importer confirms their own entity details, provides officer info for the 5106, **signs the POA themselves**, and uploads supporting docs — all scoped to their `Invitation.clientId`. The broker still owns 5106 transmission, bond verification, screening, and activation. Cuts the back-and-forth email chase out of onboarding. | Importer edits land as proposals the broker approves (question #9), not direct writes. |
+| *(later)* **P9 · Second country** | Seed a `CountryOnboardingProfile` for the target country; new `RegistrationProvider` + artifact models (e.g. `EoriRegistration`, `CustomsGuarantee`); representation-type fields. | The wizard renders the right steps for a non-US importer (EORI instead of 5106, guarantee instead of bond, direct/indirect representation instead of a US POA). Mirrors the Germany filing rollout — data + a provider impl, not a fork. | Out of scope for the F16 PRs; the P1 seams are what make it cheap. |
 
 ---
 
@@ -867,6 +886,8 @@ Each phase is independently shippable and leaves the product more correct than b
 - All new mutation routes are idempotent and audited; `5106/transmit` cannot double-file under retry.
 - Non-resident (S2), broker-switch (S3), multi-entity (S4), STB-only (S5), and bulk (S9) scenarios each have an end-to-end Vitest fixture.
 - No hardcoded importer numbers, ports, bond numbers, or addresses anywhere in the new code; unknowns are null + `MISSING` provenance.
+- **Carryover:** after a client is activated, creating a shipment with that `clientId` (via any path — UI, chat, API, EDI, doc intake) auto-sets `Shipment.importerOfRecordId` and `importerName`; the resulting filing inherits `importerOfRecordId` + `bondId`; the 7501 draft populates Blocks 23/25/4 with correct provenance and **zero** re-entry. Multi-entity clients prompt for entity selection instead of silently picking wrong.
+- **International seams:** `OnboardingCase.status` values are the generic set from §1.3 (no "5106"/"bond"/"POA" literal in the state machine); the wizard step list is read from a `CountryOnboardingProfile` row (`US` + `"*"` fallback seeded); registration + security artifacts are referenced through interfaces, not the concrete US models. A dummy `CountryOnboardingProfile` test row with a different step set renders a different wizard without code change.
 
 ## 12. Test plan (Vitest, `apps/custom`, `tests/fixtures/onboarding/`)
 
@@ -883,12 +904,9 @@ Each phase is independently shippable and leaves the product more correct than b
 | Idempotency | Duplicate `5106/transmit` and `bond/verify` with same key → single side effect. |
 | ERP | Dedupe exact (EIN) + fuzzy (name/address); proposal commit writes `IntegrationEntityMap`; re-pull updates not duplicates. |
 | Broker compliance | Filing-authority check: national permit only vs district-required; account `restricted` blocks activation-independent filing. |
-<<<<<<< Updated upstream
-=======
 | Carryover (§4.4) | `resolveImporterContext` for single-entity, multi-entity (needs-selection), not-yet-active, and no-client shipments; shipment + filing FK inheritance; live POA/bond resolution reflects a revocation mid-filing; explicit override is audited. |
 | Client field (§4.4.1) | Autofill/lock resolves correctly for portal user / single-assigned specialist / `?clientId=` / doc-match / admin-no-context; `POST /api/shipments` rejects a `clientId` outside `ctx.authorizedClientIds` even when the client exists in the account. |
 | Country seams (§1.3) | Wizard renders from `CountryOnboardingProfile`; a synthetic non-US profile with a different step set produces a different wizard and different mandatory checklist with no code change; `OnboardingCase.status` contains no country-specific literal. |
->>>>>>> Stashed changes
 
 ---
 
@@ -903,6 +921,8 @@ Each phase is independently shippable and leaves the product more correct than b
 7. **ERP priority.** Which ERP first — NetSuite, SAP, Dynamics? Drives which adapter P6 builds.
 8. **District permit granularity.** Post-2021 CBP largely moved to the national permit; do any of Qubere's target brokers still operate under district permits such that `BrokerDistrictPermit` is worth building now vs. later?
 9. **Portal write model.** Do importer-submitted entity corrections write directly (with broker approval) or into a separate proposal queue? §3.2 assumes proposal + approve; confirm.
+10. **International timeline.** Which non-US country is realistically next (EU / UK / CA), and how soon? Determines how much of the §1.3 abstraction is worth building in P1 vs. deferring — the seams (generic step names, `CountryOnboardingProfile`, provider/artifact interfaces) are cheap now and expensive to retrofit; the concrete second-country impl is not in F16 scope regardless.
+11. **Carryover override policy.** When an operator overrides the client-default importer on one shipment (§4.4), is that ever legitimate, or should it require a supervisor? Affects whether the override is a plain audited action or a permissioned one.
 
 ---
 
@@ -924,6 +944,8 @@ NEW  src/lib/abi/suretyCodes.ts                       (from active_sureties_2025
 NEW  src/lib/esign/                                   (provider iface + adapters)
 NEW  src/lib/integrations/erp/{netsuite,sap,dynamics}/
 NEW  src/lib/onboarding/fiveOhSix/                    (record model, provenance, PDF)
+NEW  src/modules/onboarding/importerContext.ts        (resolveImporterContext — the single carryover resolver, §4.4)
+NEW  src/lib/onboarding/countryProfile.ts             (CountryOnboardingProfile lookup — §1.3 seam)
 NEW  prisma/migrations/<ts>_add_customer_onboarding/
 EDIT packages/db/prisma/schema.prisma                 (§6.1, §6.2)
 EDIT src/lib/navigation.ts                            (§5.1)
@@ -932,13 +954,10 @@ EDIT src/app/app/bonds/BondsClient.tsx                (real verify)
 EDIT src/app/api/importers-of-record/route.ts         (remove hardcoded fallbacks)
 EDIT src/app/api/importers-of-record/[id]/poa/route.ts (remove defaulting; delegate to onboarding)
 EDIT src/modules/filing/filingReadiness.ts            (IMPORTER_NOT_ONBOARDED blocker)
-<<<<<<< Updated upstream
-=======
 EDIT src/app/api/shipments/route.ts                   (call resolveImporterContext; assert clientId ∈ ctx.authorizedClientIds; §4.4)
 EDIT src/app/app/shipments/new/page.tsx               (Client = primary field w/ autofill+lock per §4.4.1; importer block derived from client)
 EDIT src/app/api/filing/route.ts                      (inherit importerOfRecordId + bondId from shipment; §4.4)
 EDIT chat shipment-creation tool + TransportationOrder→Shipment promotion + doc-intake shipment create  (all route through resolveImporterContext)
->>>>>>> Stashed changes
 EDIT src/lib/filing/transmissionProvider.ts           (query-traffic support — shared w/ ABI Phase 1)
 EDIT src/app/app/{clients,importers-of-record,bonds,poa}/*  (status column + guided CTA)
 EDIT apps/portal/…/onboarding/[token]/                (self-service wizard — P8)

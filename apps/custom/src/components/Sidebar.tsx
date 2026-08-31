@@ -34,6 +34,7 @@ import {
   BookOpen,
   DollarSign,
   FileBarChart2,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,8 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   billing: DollarSign,
   reports: FileBarChart2,
   licenses: ShieldCheck,
+  onboarding: ClipboardList,
+  brokerCompliance: ShieldCheck,
 };
 
 interface SidebarProps {

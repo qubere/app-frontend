@@ -35,6 +35,7 @@ vi.mock("@/lib/db", () => ({
   db: dbMock,
   runWithAccountId: (_accountId: string | null | undefined, fn: () => unknown) => fn(),
   withAccountIdContext: (_accountId: string | null | undefined, fn: () => Promise<unknown>) => fn(),
+  runWithDataMode: (_mode: string | null | undefined, fn: () => unknown) => fn(),
   withDataModeContext: (_mode: string | null | undefined, fn: () => Promise<unknown>) => fn(),
 }));
 vi.mock("@/lib/audit", () => ({
