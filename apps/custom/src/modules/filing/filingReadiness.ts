@@ -20,7 +20,8 @@ export type FilingBlockerCode =
   | "MISSING_IMPORTER_OF_RECORD"
   | "MISSING_ENTRY_TYPE"
   | "BLOCKING_EXCEPTIONS"
-  | "CRITICAL_RECONCILIATION";
+  | "CRITICAL_RECONCILIATION"
+  | "IMPORTER_NOT_ONBOARDED";
 
 export interface FilingBlocker {
   code: FilingBlockerCode;
@@ -53,6 +54,7 @@ export interface ReadinessReconciliationIssue {
 
 export interface FilingReadinessSubject {
   importerOfRecordId: string | null;
+  importerOnboardingStatus?: string | null; // "active" passes; any other value blocks
   entryType: string | null;
   lineItems: ReadinessLineItem[];
   documents: ReadinessDocument[];
@@ -173,6 +175,14 @@ export function evaluateFilingReadiness(
       label: "An importer of record",
       detail: "No importer of record is linked to this shipment.",
       anchor: "#overview",
+    });
+  } else if (subject.importerOnboardingStatus && subject.importerOnboardingStatus !== "active") {
+    performed += 1;
+    blockers.push({
+      code: "IMPORTER_NOT_ONBOARDED",
+      label: "Importer onboarding complete",
+      detail: `Importer onboarding case is in status "${subject.importerOnboardingStatus}" — complete the guided onboarding before filing.`,
+      anchor: "/app/onboarding",
     });
   }
 

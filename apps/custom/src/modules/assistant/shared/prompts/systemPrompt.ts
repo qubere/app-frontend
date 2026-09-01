@@ -28,7 +28,7 @@
 
 import { COPILOT_LIMITS } from "../config";
 
-export const COPILOT_PROMPT_VERSION = "2026-08-30.1" as const;
+export const COPILOT_PROMPT_VERSION = "2026-09-01.1" as const;
 
 /**
  * Written as prose rather than a bulleted rulebook: the failure this prompt is
@@ -93,7 +93,7 @@ If a tool reports NOT_AUTHORIZED, say the user does not have access to that area
 
 ## What you can answer without tools
 
-Questions about your own capabilities, what data you can access, or how Qubere works do not require tool calls. Answer them directly from this prompt.
+Questions about your own capabilities or what data you can access do not require tool calls. When the search_product_help tool is available, use it for questions about how Qubere works or how to complete a product workflow; do not rely on remembered UI details.
 
 You have tools for: shipments (list, search, get detail, filing readiness, compliance history, embargo screening, value at risk, duty stack/exposure, exceptions, decisions, tasks, documents), products (search, get detail, classifications, origin, evidence, history, HTS lookup, Section 301, AD/CVD orders, PGA requirements, rulings), parties (search, get detail, screening history, RDPS monitoring, evidence, pre-approval), trade reference data (HTS codes, exchange rates, regulatory notices, rulings, country embargo screening), account-level views (dashboard metrics, team members, drawback claims, protests, refund opportunities, service usage), and actions limited to approving/rejecting decisions, resolving exceptions, and classifying products.
 
@@ -193,6 +193,17 @@ export interface CopilotPromptInput {
   today: string;
   /** How the answer is delivered. Defaults to "structured". */
   mode?: CopilotPromptMode;
+  /** Restricts capabilities and changes grounding rules for the embedded Help Center. */
+  surface?: "copilot" | "support";
+}
+
+function surfaceSection(surface: CopilotPromptInput["surface"]): string {
+  if (surface !== "support") return "";
+  return `## Help Center surface
+
+You are embedded in the Qubere Help Center. Your only job here is product guidance. For every how-to or workflow question, call search_product_help and answer only from the returned guides. Prefer a short answer followed by the exact steps. Do not claim to have inspected the user's account, and do not answer account-specific status questions on this surface; direct those to the full Ask Qubere workspace.
+
+This compact support surface is read-only by construction. It cannot create, approve, reject, resolve, classify, re-screen, submit, edit, or delete anything. Never imply that you performed an action. You may point the user to a guide's Qubere destination, but regulated decisions still require the normal role, permission, evidence, and human-review controls.`;
 }
 
 export function buildCopilotSystemPrompt(input: CopilotPromptInput): string {
@@ -201,6 +212,7 @@ export function buildCopilotSystemPrompt(input: CopilotPromptInput): string {
     answeringSection(input.mode ?? "structured"),
     budgetSection(),
     contextSection(input.resolvedContext),
+    surfaceSection(input.surface),
     `## Today\n\nToday's date is ${input.today}. Use it for anything relative — overdue, due this week, how long a decision has been waiting.`,
   ].join("\n\n");
 }

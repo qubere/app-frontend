@@ -35,7 +35,10 @@ export type NavIcon =
   | "tariffs"
   | "billing"
   | "reports"
-  | "licenses";
+  | "licenses"
+  | "onboarding"
+  | "brokerCompliance"
+  | "support";
 
 export interface NavItem {
   id: string;
@@ -128,6 +131,7 @@ export const NAV_SECTIONS: NavSection[] = [
     labelKey: "management",
     collapsible: true,
     items: [
+      { id: "onboarding", labelKey: "onboarding", href: "/app/onboarding", icon: "onboarding", permission: "onboarding.manage" },
       { id: "clients", labelKey: "clientsAndEntities", href: "/app/clients", icon: "clients" },
       { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord" },
       { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds" },
@@ -139,6 +143,13 @@ export const NAV_SECTIONS: NavSection[] = [
     labelKey: "accountAdmin",
     hiddenFromSidebar: true,
     items: [
+      {
+        id: "broker-compliance",
+        labelKey: "brokerCompliance",
+        href: "/app/admin/broker-compliance",
+        icon: "brokerCompliance",
+        permission: "broker_compliance.manage",
+      },
       {
         id: "account",
         labelKey: "accountProfile",
@@ -226,6 +237,7 @@ export const NAV_SECTIONS: NavSection[] = [
  * tool gate) still resolve them.
  */
 export const UNLISTED_NAV_ITEMS: NavItem[] = [
+  { id: "support", labelKey: "helpCenter", href: "/app/support", icon: "support" },
   { id: "products", labelKey: "products", href: "/app/products", icon: "products" },
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
   { id: "reconciliation", labelKey: "reconciliation", href: "/app/reconciliation", icon: "postEntry" },

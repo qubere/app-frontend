@@ -25,6 +25,7 @@ describe("Bonds, Importers of Record, and POA Navigation Surface", () => {
     expect(management).toBeDefined();
     const hrefs = management!.items.map((i) => i.href);
     expect(hrefs).toEqual([
+      "/app/onboarding",
       "/app/clients",
       "/app/importers-of-record",
       "/app/bonds",

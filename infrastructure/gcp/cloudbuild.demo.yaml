@@ -47,6 +47,56 @@ steps:
       - "--target=db-backup"
       - "--tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/db-backup:${_IMAGE_TAG}"
       - "."
+  - name: gcr.io/cloud-builders/docker
+    id: push-images
+    waitFor: ["customs", "tms", "database", "documents", "backup"]
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/customs-web:${_IMAGE_TAG}"
+        docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/tms-web:${_IMAGE_TAG}"
+        docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/database:${_IMAGE_TAG}"
+        docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/document-worker:${_IMAGE_TAG}"
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: run-migrations
+    waitFor: ["push-images"]
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        gcloud run jobs deploy qubere-migrate-demo \
+          --project="$PROJECT_ID" \
+          --region="${_REGION}" \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/database:${_IMAGE_TAG}" \
+          --service-account="${_RUNTIME_SERVICE_ACCOUNT}" \
+          --set-secrets="DATABASE_URL=qubere-demo-database-url:latest,DIRECT_URL=qubere-demo-direct-url:latest,PRODUCT_HELP_DATABASE_URL=PRODUCT_HELP_DATABASE_URL:latest" \
+          --max-retries=0 \
+          --task-timeout=15m
+        
+        gcloud run jobs execute qubere-migrate-demo \
+          --project="$PROJECT_ID" \
+          --region="${_REGION}" \
+          --wait
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-web-services
+    waitFor: ["run-migrations"]
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        gcloud run deploy qubere-customs-demo \
+          --project="$PROJECT_ID" \
+          --region="${_REGION}" \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/customs-web:${_IMAGE_TAG}"
+
+        gcloud run deploy qubere-tms-demo \
+          --project="$PROJECT_ID" \
+          --region="${_REGION}" \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/tms-web:${_IMAGE_TAG}"
+
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/customs-web:${_IMAGE_TAG}"
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/tms-web:${_IMAGE_TAG}"
@@ -61,3 +111,5 @@ substitutions:
   _CUSTOMS_APP_URL: https://customs-gcp.example.com
   _TMS_APP_URL: https://tms-gcp.example.com
   _NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: required-at-submit
+  _RUNTIME_SERVICE_ACCOUNT: demo-app-runner@qubere-demo.iam.gserviceaccount.com
+

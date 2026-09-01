@@ -27,6 +27,40 @@ To prevent code duplication, maintain consistent security, and enforce unified a
 
 ---
 
+## 📚 Product Help: Generate, Review, Publish
+
+Product help is regenerated change-by-change, reviewed in Git, and then published to PostgreSQL/pgvector for Support Center search and the restricted support agent. Every merge to `main` triggers `.github/workflows/product-help-release.yml`, which scans the exact merged diff and opens a documentation PR when customer-facing guidance needs to change. Approved content is embedded and published after that PR merges.
+
+Use these root commands:
+
+```bash
+# Scan a release range without using AI or changing files.
+npm run product-help:report -- --base <base-sha> --head <head-sha>
+
+# Preview AI-drafted Q&A changes.
+npm run product-help:generate -- --base <base-sha> --head <head-sha>
+
+# Write the reviewable generated corpus and release note.
+npm run product-help:generate -- --base <base-sha> --head <head-sha> --write
+
+# Validate article ids, modules, archives, steps, tags, and routes.
+npm --workspace @qubere/custom run typecheck:product-help
+npm run product-help:validate
+
+# Test Support Center behavior and coverage.
+npm --workspace @qubere/custom test -- --run tests/support-center.test.ts
+
+# Apply the product-help table migration to the selected database.
+npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+
+# Publish reviewed content and refresh changed pgvector embeddings.
+npm run product-help:sync
+```
+
+The complete release lifecycle, safety rules, and one-time GitHub secret setup are documented in **[docs/product-help/README.md](docs/product-help/README.md)**.
+
+---
+
 ## 🏗 Architecture & Key Concepts
 
 ### 1. Account-Based Tenancy Boundary
