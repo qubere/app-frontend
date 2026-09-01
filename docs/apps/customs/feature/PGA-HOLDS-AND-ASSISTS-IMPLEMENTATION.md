@@ -57,4 +57,4 @@ npm run openapi
 npm run build
 ```
 
-The integration test refuses to write unless DATABASE_URL targets localhost/qubere_test. It creates unique account fixtures and removes only those fixtures. The browser workflow uploads screenshots and failure traces as CI artifacts. Live federal transport and real authenticated browser sessions remain outside these automated fixtures.
+The integration test refuses to write unless DATABASE_URL targets localhost/qubere_test. It creates unique account fixtures, suppresses their notification outbox, and retires those accounts after testing. Their records remain in the disposable test database because audit logs are append-only; no audit trigger is disabled. The browser workflow uploads screenshots and failure traces as CI artifacts. Live federal transport and real authenticated browser sessions remain outside these automated fixtures.

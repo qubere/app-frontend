@@ -50,14 +50,17 @@ describe.skipIf(!enabled)("PGA and assist PostgreSQL workflows", () => {
     await db.accountMembership.create({ data: { accountId, userId } });
   });
   afterAll(async () => {
-    if (accountId) {
-      await db.assistDeclaration.deleteMany({ where: { accountId } });
-      await db.assistDecision.deleteMany({ where: { accountId } });
-      await db.assist.deleteMany({ where: { accountId } });
-      await db.account.deleteMany({ where: { id: { in: [accountId, foreignId] } } });
+    try {
+      // AuditLog is append-only even in the test database. Retain its related
+      // fixtures and retire their accounts instead of weakening audit triggers.
+      if (accountId) {
+        await db.complianceNotification.updateMany({ where: { accountId }, data: { deliveryStatus: "SUPPRESSED", bellDeliveredAt: new Date() } });
+        await db.account.updateMany({ where: { id: { in: [accountId, foreignId] } }, data: { status: "INACTIVE", deletedAt: new Date() } });
+      }
+      if (userId) await db.user.update({ where: { id: userId }, data: { deletedAt: new Date() } });
+    } finally {
+      await (db as unknown as PrismaClient).$disconnect();
     }
-    if (userId) await db.user.delete({ where: { id: userId } });
-    await (db as unknown as PrismaClient).$disconnect();
   });
   async function fixture(totalValue = "100.00", allocationMethod = "lump_sum") {
     const importer = await db.importerOfRecord.create({ data: { accountId, name: "Fixture importer", irsEin: randomUUID(), address: {} } });
