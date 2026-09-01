@@ -72,7 +72,7 @@ interface RawExceptionRow {
   shipment: { shipmentNumber: string | null; filingDeadline: Date | null } | null;
 }
 
-function toDecisionRow(d: RawDecisionRow): DecisionRow {
+function toDecisionRow(d: RawDecisionRow, valueByShipment?: Map<string, number>): DecisionRow {
   return {
     id: d.id,
     agentName: d.agentName,
@@ -90,7 +90,26 @@ function toDecisionRow(d: RawDecisionRow): DecisionRow {
     slaBreachedAt: d.slaBreachedAt ?? null,
     escalationLevel: d.escalationLevel ?? 0,
     filingDeadline: d.shipment?.filingDeadline ?? null,
+    valueAtRisk: d.shipmentId ? valueByShipment?.get(d.shipmentId) ?? null : null,
   };
+}
+
+/**
+ * Declared value at risk per shipment: sum of ShipmentLineItem.totalValue.
+ * Issue #202, 2.1.2 — a defensible v1 proxy for exposure (labelled as declared
+ * value, not duty). Scoped to the shipments actually in the queue.
+ */
+async function loadValueAtRiskByShipment(shipmentIds: string[]): Promise<Map<string, number>> {
+  const unique = Array.from(new Set(shipmentIds.filter(Boolean)));
+  if (unique.length === 0) return new Map();
+  const sums = await db.shipmentLineItem.groupBy({
+    by: ["shipmentId"],
+    where: { shipmentId: { in: unique } },
+    _sum: { totalValue: true },
+  });
+  return new Map(
+    sums.map((s) => [s.shipmentId, s._sum.totalValue != null ? Number(s._sum.totalValue) : 0])
+  );
 }
 
 function toDocumentRow(d: RawDocumentRow): DocumentRow {
@@ -104,7 +123,7 @@ function toDocumentRow(d: RawDocumentRow): DocumentRow {
   };
 }
 
-function toExceptionRow(e: RawExceptionRow): ExceptionRow {
+function toExceptionRow(e: RawExceptionRow, valueByShipment?: Map<string, number>): ExceptionRow {
   return {
     id: e.id,
     type: e.type,
@@ -121,6 +140,7 @@ function toExceptionRow(e: RawExceptionRow): ExceptionRow {
     slaBreachedAt: e.slaBreachedAt ?? null,
     escalationLevel: e.escalationLevel ?? 0,
     filingDeadline: e.shipment?.filingDeadline ?? null,
+    valueAtRisk: e.shipmentId ? valueByShipment?.get(e.shipmentId) ?? null : null,
   };
 }
 
@@ -278,10 +298,15 @@ export async function loadWorkQueueForAccount(
     }),
   ]);
 
-  const decisionRows: DecisionRow[] = decisions.map(toDecisionRow);
+  const valueByShipment = await loadValueAtRiskByShipment([
+    ...decisions.map((d) => d.shipmentId).filter((id): id is string => Boolean(id)),
+    ...exceptions.map((e) => e.shipmentId).filter((id): id is string => Boolean(id)),
+  ]);
+
+  const decisionRows: DecisionRow[] = decisions.map((d) => toDecisionRow(d, valueByShipment));
   const filingRows: FilingRow[] = filings.map(toFilingRow);
   const documentRows: DocumentRow[] = documents.map(toDocumentRow);
-  const exceptionRows: ExceptionRow[] = exceptions.map(toExceptionRow);
+  const exceptionRows: ExceptionRow[] = exceptions.map((e) => toExceptionRow(e, valueByShipment));
   const deadlineRows: DeadlineRow[] = deadlines.filter(hasDeadline).map(toDeadlineRow);
 
   const input: WorkQueueInput = {
@@ -404,9 +429,14 @@ export async function loadWorkQueueForAccountFromPrefetched(
   // EXCEPTION_ACTIONABLE_STATUSES (same `openStatusVariants()` set) --
   // no further in-memory filtering needed here.
 
-  const decisionRows: DecisionRow[] = actionableDecisions.map(toDecisionRow);
+  const valueByShipment = await loadValueAtRiskByShipment([
+    ...actionableDecisions.map((d) => d.shipmentId).filter((id): id is string => Boolean(id)),
+    ...rows.exceptions.map((e) => e.shipmentId).filter((id): id is string => Boolean(id)),
+  ]);
+
+  const decisionRows: DecisionRow[] = actionableDecisions.map((d) => toDecisionRow(d, valueByShipment));
   const documentRows: DocumentRow[] = actionableDocuments.map(toDocumentRow);
-  const exceptionRows: ExceptionRow[] = rows.exceptions.map(toExceptionRow);
+  const exceptionRows: ExceptionRow[] = rows.exceptions.map((e) => toExceptionRow(e, valueByShipment));
   const filingRows: FilingRow[] = filings.map(toFilingRow);
   const deadlineRows: DeadlineRow[] = deadlines.filter(hasDeadline).map(toDeadlineRow);
 

@@ -9,7 +9,13 @@ export interface DecisionRow extends ReviewDecision {
   /** AI confidence score (0–100). Present on classification and extraction decisions. */
   confidence?: number | null;
   /** Set when a human reviewer has acted on this decision. */
-  reviewedByUser?: { firstName?: string | null; lastName?: string | null; email: string } | null;
+  reviewedByUser?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email: string;
+    /** The broker license is what separates a licensed sign-off from an operator's note. */
+    brokerLicenseNumber?: string | null;
+  } | null;
 }
 
 export interface DecisionDocument {

@@ -48,4 +48,8 @@ export interface WorkItem {
   escalationLevel?: number;
   filingDeadline: Date | null;
   urgency: UrgencyContext | null;
+  /** Declared value exposed by this item's shipment, in USD. Drives the B-1 rank and its explanation. */
+  valueAtRisk?: number | null;
+  /** True when this item blocks a downstream filing step. */
+  blocking?: boolean;
 }

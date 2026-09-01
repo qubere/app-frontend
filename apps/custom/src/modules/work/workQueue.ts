@@ -162,6 +162,56 @@ export function computeB1Score(
   return timeFactor * moneyFactor * blockingMultiplier;
 }
 
+/** "$1.2M" · "$412k" · "$940" — compact declared-value money for a rank chip. */
+export function formatValueAtRisk(usd: number): string {
+  if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(usd >= 10_000_000 ? 0 : 1)}M`;
+  if (usd >= 1_000) return `$${Math.round(usd / 1_000)}k`;
+  return `$${Math.round(usd)}`;
+}
+
+/** "6h" · "2d" · "45m" — coarse time-to-deadline for a rank chip. */
+function formatHoursShort(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes >= 48 * 60) return `${Math.round(minutes / (60 * 24))}d`;
+  if (minutes >= 60) return `${Math.round(minutes / 60)}h`;
+  return `${minutes}m`;
+}
+
+/**
+ * One line a broker can read aloud to their manager to justify why this item is
+ * where it is in the queue: deadline pressure, dollars exposed, whether it gates
+ * a filing. Issue #202, 2.1.4 — "a rank a broker cannot explain is a rank they
+ * will not trust." Returns "" when the queue has no urgency signal to show
+ * (the caller falls back to age).
+ */
+export function explainRank(item: {
+  urgency?: UrgencyContext | null;
+  filingDeadline?: Date | null;
+  valueAtRisk?: number | null;
+  blocking?: boolean;
+}): string {
+  const parts: string[] = [];
+
+  const now = Date.now();
+  const deadlineMs = item.urgency
+    ? item.urgency.msRemaining
+    : item.filingDeadline
+      ? item.filingDeadline.getTime() - now
+      : null;
+  if (deadlineMs !== null) {
+    if (deadlineMs <= 0) parts.push("Filing overdue");
+    else parts.push(`Files in ${formatHoursShort(deadlineMs)}`);
+  }
+
+  if (item.valueAtRisk != null && item.valueAtRisk > 0) {
+    parts.push(`${formatValueAtRisk(item.valueAtRisk)} declared`);
+  }
+
+  if (item.blocking) parts.push("blocks filing");
+
+  return parts.join(" · ");
+}
+
 // ── Scoring ────────────────────────────────────────────────────────────────
 // Score determines sort order. Higher = more urgent.
 // The score is never shown in the UI — the clock and dollar figure explain.
@@ -341,6 +391,8 @@ export function buildWorkQueue(input: WorkQueueInput): WorkItem[] {
       escalationLevel: decision.escalationLevel ?? 0,
       filingDeadline: decision.filingDeadline ?? null,
       urgency,
+      valueAtRisk: decision.valueAtRisk ?? null,
+      blocking: isBlocking,
     });
   }
 
@@ -456,6 +508,8 @@ export function buildWorkQueue(input: WorkQueueInput): WorkItem[] {
       escalationLevel: exception.escalationLevel ?? 0,
       filingDeadline: exception.filingDeadline ?? null,
       urgency,
+      valueAtRisk: exception.valueAtRisk ?? null,
+      blocking: isBlocking,
     });
   }
 

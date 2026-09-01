@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload, ChevronRight } from "lucide-react";
+import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload, ChevronRight, Zap, Keyboard } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useDecisionActions } from "@/lib/decisions/useDecisionActions";
 import { ExceptionQuickActions } from "./ExceptionQuickActions";
@@ -58,6 +58,11 @@ interface ActionsClientProps {
   documents: DocSummary[];
   /** shipmentNumber → urgency context for countdown chips */
   urgencyByShipment?: Record<string, SerializedUrgency>;
+  /**
+   * shipmentNumber → B-1 queue rank (deadline × dollars × blocking) and the
+   * one-line explanation a broker can justify to their manager.
+   */
+  queueRankByShipment?: Record<string, { score: number; reason: string }>;
   teamMembers?: TeamMember[];
   /** Server-applied routed-queue scope (from ?scope=). */
   scope?: "mine" | "team" | "unassigned" | "all";
@@ -105,6 +110,7 @@ export function ActionsClient({
   userName,
   documents,
   urgencyByShipment = {},
+  queueRankByShipment = {},
   teamMembers = [],
   scope = "all",
   operationsCount,
@@ -245,6 +251,16 @@ export function ActionsClient({
       )
     );
   });
+
+  // Order the shipment list by the B-1 queue score (deadline × dollars ×
+  // blocking) when the server supplied it — severity is an input to that score,
+  // not the sort key. Fall back to the server's priority+age order otherwise.
+  const rankOf = (shipmentNumber: string): number =>
+    queueRankByShipment[shipmentNumber]?.score ?? -1;
+  const haveRanks = Object.keys(queueRankByShipment).length > 0;
+  if (haveRanks) {
+    filteredGroups.sort((a, b) => rankOf(b.shipmentNumber) - rankOf(a.shipmentNumber));
+  }
 
   const initialGroup = initialShipmentId
     ? filteredGroups.find((g) => g.shipmentId === initialShipmentId) ?? filteredGroups[0]
@@ -652,6 +668,13 @@ export function ActionsClient({
                       );
                     })()}
 
+                    {queueRankByShipment[g.shipmentNumber]?.reason && (
+                      <p className="text-[10px] font-semibold text-ink-muted flex items-center gap-1">
+                        <ChevronRight className="w-3 h-3 text-ink-muted/60 shrink-0" />
+                        <span className="truncate">{queueRankByShipment[g.shipmentNumber].reason}</span>
+                      </p>
+                    )}
+
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="flex items-center gap-1 text-[10px] text-ink-muted bg-white border border-border rounded-lg px-2 py-0.5 font-medium">
                         {g.items.length} item{g.items.length !== 1 ? "s" : ""}
@@ -732,6 +755,12 @@ export function ActionsClient({
                       </p>
                     );
                   })()}
+                  {queueRankByShipment[selectedGroup.shipmentNumber]?.reason && (
+                    <p className="text-[11px] font-semibold text-ink-muted mt-1 flex items-center gap-1">
+                      <span className="text-ink-muted/60">Why now:</span>
+                      {queueRankByShipment[selectedGroup.shipmentNumber].reason}
+                    </p>
+                  )}
                 </div>
                 <Link
                   href={`/app/shipments/${selectedGroup.shipmentId}`}
@@ -1289,53 +1318,104 @@ function Row({ label, value, highlight = false }: { label: string; value: string
   );
 }
 
+/**
+ * The screenshot test (issue #202, Gap 8): on its face, every card must say who
+ * decided, when, on what evidence, and under what authority. A human sign-off
+ * and a machine verification must never be mistakable for each other.
+ */
 function ProvenanceFooter({ item }: { item: Extract<ActionItem, { kind: "decision" }> }) {
   const confidence = typeof item.raw.confidence === "number" ? item.raw.confidence : null;
   const reviewer = item.raw.reviewedByUser;
   const reviewerName = reviewer
     ? ([reviewer.firstName, reviewer.lastName].filter(Boolean).join(" ") || reviewer.email)
     : null;
+  const license = reviewer?.brokerLicenseNumber ?? null;
+  const category = categorize(item);
   const isAutoVerified =
-    item.status === "AUTO_VERIFIED" ||
-    item.status === "Auto-Approved" ||
-    item.status === "Verified" ||
-    item.triageState === "AUTO_VERIFIED" ||
-    Boolean(item.raw.autoApproved);
+    !reviewerName &&
+    (item.status === "AUTO_VERIFIED" ||
+      item.status === "Auto-Approved" ||
+      item.status === "Verified" ||
+      item.triageState === "AUTO_VERIFIED" ||
+      Boolean(item.raw.autoApproved));
 
-  const formattedDate = item.raw.updatedAt
-    ? new Date(item.raw.updatedAt).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
+  const when = item.raw.updatedAt ? new Date(item.raw.updatedAt) : null;
+  const formattedDate = when
+    ? when.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : null;
 
-  if (confidence === null && !reviewerName && !isAutoVerified) return null;
-
-  return (
-    <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-border/40">
-      {confidence !== null && (
-        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+  const confidenceChip =
+    confidence !== null ? (
+      <span
+        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border tabular-nums ${
           confidence >= 90
             ? "bg-emerald-50 border-emerald-200 text-emerald-700"
             : confidence >= 70
               ? "bg-amber-50 border-amber-200 text-amber-700"
               : "bg-red-50 border-red-200 text-red-700"
-        }`}>
-          {confidence}% confident
+        }`}
+        title="Model confidence in the proposed answer"
+      >
+        {confidence}% confident
+      </span>
+    ) : null;
+
+  // Human sign-off — the authority line an auditor is looking for.
+  if (reviewerName) {
+    const rejected = category === "blocked" && (item.status === "Rejected" || item.triageState === "REJECTED");
+    return (
+      <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+        <span
+          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+            rejected
+              ? "bg-red-50 border-red-200 text-red-700"
+              : "bg-emerald-50 border-emerald-200 text-emerald-700"
+          }`}
+        >
+          {rejected ? <X className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+          {rejected ? "Rejected" : "Approved"} by {reviewerName}
         </span>
-      )}
-      {reviewerName ? (
-        <span className="text-[10px] text-ink-muted font-medium">
-          Reviewed by <span className="font-semibold text-ink">{reviewerName}</span>
-          {(reviewer as any)?.brokerLicenseNumber ? ` (License #${(reviewer as any).brokerLicenseNumber})` : ""}
-          {formattedDate ? ` on ${formattedDate}` : ""}
+        {license && (
+          <span
+            className="text-[10px] font-semibold text-ink-muted tabular-nums"
+            title="Customs broker license of the reviewer"
+          >
+            License #{license}
+          </span>
+        )}
+        {formattedDate && <span className="text-[10px] text-ink-muted">{formattedDate}</span>}
+        {confidenceChip}
+      </div>
+    );
+  }
+
+  // Machine verification — deliberately distinct: not a human approval.
+  if (isAutoVerified) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-violet-50 border-violet-200 text-violet-700"
+          title={
+            "Verified automatically by the confidence policy — not a licensed human sign-off. " +
+            "Stays on the record for the next audit." +
+            (item.raw.autoApprovalPolicy ? ` Policy: ${item.raw.autoApprovalPolicy}.` : "")
+          }
+        >
+          <Zap className="w-3 h-3" />
+          Auto-verified
+          {item.raw.autoApprovalPolicy ? ` · ${item.raw.autoApprovalPolicy}` : ""}
         </span>
-      ) : isAutoVerified ? (
-        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-          not approved — auto-verified pending next audit {item.raw.autoApprovalPolicy ? `(policy ${item.raw.autoApprovalPolicy})` : ""}
-        </span>
-      ) : null}
+        {confidenceChip}
+        {formattedDate && <span className="text-[10px] text-ink-muted">{formattedDate}</span>}
+      </div>
+    );
+  }
+
+  if (!confidenceChip) return null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+      {confidenceChip}
+      <span className="text-[10px] text-ink-muted">Awaiting review</span>
     </div>
   );
 }
