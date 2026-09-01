@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { validateAgainstActiveSchema } from "./schemaValidator";
 import type { CanonicalFilingRequestData, CanonicalMessage } from "./types";
@@ -15,11 +16,12 @@ export interface CanonicalMessagePublisher {
  * nothing that calls publish() needs to change.
  */
 export class PgCanonicalMessagePublisher implements CanonicalMessagePublisher {
+  constructor(private readonly client: Pick<Prisma.TransactionClient, "filingMessage"> = db) {}
   async publish(queueName: string, message: CanonicalMessage<CanonicalFilingRequestData>): Promise<void> {
     await validateAgainstActiveSchema("ENVELOPE_HEADER", message.header);
     await validateAgainstActiveSchema("FILING_REQUEST_DECLARATION", message.data.declaration);
 
-    await db.filingMessage.create({
+    await this.client.filingMessage.create({
       data: {
         accountId: message.header.customer.accountId,
         filingId: message.header.filingId,

@@ -105,3 +105,17 @@ export async function commitAssistDeclarations(tx:Prisma.TransactionClient,accou
   }
   return created;
 }
+
+export async function assertAssistPublicationContext(tx: Prisma.TransactionClient, accountId: string, filingId: string, prepared: PreparedAssists) {
+  const fresh = await getAssistMatches(accountId, filingId, tx);
+  if (fresh.filing.version !== prepared.filingVersion || fresh.staleDecisions.length) throw assistConflict();
+  const decisions = await tx.assistDecision.findMany({ where: { accountId, filingId, decision: { in: ["Include", "Override"] } } });
+  const existingIds = new Set(prepared.existing.map(d=>d.assistId));
+  const selected = decisions.filter(d=>!existingIds.has(d.assistId));
+  if (selected.length !== prepared.pending.length) throw assistConflict();
+  for (const item of prepared.pending) {
+    const match = fresh.matches.find(m=>m.id===item.assistId);
+    const decision = selected.find(d=>d.id===item.decisionId);
+    if (!match || match.basisHash!==item.basisHash || !decision || decision.updatedAt.getTime()!==item.decisionUpdatedAt.getTime()) throw assistConflict();
+  }
+}

@@ -26,8 +26,8 @@ function normalizeRole(role: string) {
   if (["MANUFACTURER", "M"].includes(r)) return "MANUFACTURER";
   return r;
 }
-export async function getAssistMatches(accountId: string, filingId: string) {
-  const filing = await db.customsFiling.findFirst({
+export async function getAssistMatches(accountId: string, filingId: string, client: Prisma.TransactionClient = db) {
+  const filing = await client.customsFiling.findFirst({
     where: { id: filingId, accountId },
     include: { shipment: { include: {
       lineItems: { where: { accountId }, include: { product: { include: { parties: { where: { accountId, status: "ACTIVE" }, include: { legalEntity: { select: { partyId: true, accountId: true } } } } } } }, orderBy: { lineNumber: "asc" } },
@@ -35,15 +35,15 @@ export async function getAssistMatches(accountId: string, filingId: string) {
     } } },
   });
   if (!filing) throw new DomainError("Filing not found.", "NOT_FOUND", 404);
-  const decisions = await db.assistDecision.findMany({ where: { accountId, filingId } });
-  const declarations = await db.assistDeclaration.findMany({ where: { accountId, filingId } });
+  const decisions = await client.assistDecision.findMany({ where: { accountId, filingId } });
+  const declarations = await client.assistDeclaration.findMany({ where: { accountId, filingId } });
   const shipment = filing.shipment;
   if (!shipment || shipment.accountId !== accountId || shipment.deletedAt) return { matches: [], staleDecisions: decisions.filter(d=>d.decision !== "Dismiss"), declarations, filing };
   const importerId = filing.importerOfRecordId ?? shipment.importerOfRecordId;
   if (!importerId) return { matches: [], staleDecisions: decisions.filter(d=>d.decision !== "Dismiss"), declarations, filing };
-  await expireAssists(accountId);
+  if (client === db) await expireAssists(accountId);
   const now = new Date();
-  const assists = await db.assist.findMany({
+  const assists = await client.assist.findMany({
     where: { accountId, importerOfRecordId: importerId, status: "Active", effectiveFrom: { lte: now }, OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }] },
     include: { suppliers: true, hts: true, _count: { select: { declarations: true } } },
     orderBy: { id: "asc" },

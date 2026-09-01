@@ -119,7 +119,7 @@ async function buildLegacyDeclaration(params: BuildDeclarationParams): Promise<C
       originCountry: item.countryOfOrigin,
       quantity: { value: item.quantity, uom: "PCS" },
       unitPrice: item.unitPrice,
-      totalValue: item.totalValue,
+      totalValue: item.customsValue ?? item.totalValue,
     };
   });
 

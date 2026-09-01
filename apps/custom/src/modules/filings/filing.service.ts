@@ -1,3 +1,5 @@
+import { prepareAssistDeclarations, applyAssistAmountsToTariffLines, commitAssistDeclarations, assertAssistPublicationContext } from "@/lib/valuation/assistDeclarationService";
+import { DomainError } from "@/lib/api/error";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { computeFilingTariff, loadHtsCodesMap, type TariffEngineResult } from "@/lib/tariff/dutyEngine";
@@ -54,6 +56,7 @@ export type FilingSnapshotData = {
     quantity: number;
     unitPrice: number;
     totalValue: number;
+    customsValue?: number;
     htsCode: string;
     countryOfOrigin: string;
   }>;
@@ -234,6 +237,8 @@ export class FilingService {
     if (!filing) throw new Error("NOT_FOUND");
 
     const isStandalone = !filing.shipmentId;
+    const preparedAssists = await prepareAssistDeclarations(accountId, filingId);
+    let snapshotMeta: { hasSection301: boolean; section301List: string | null } | null = null;
 
     let nextStatus: string;
     try {
@@ -321,7 +326,7 @@ export class FilingService {
       }
 
       frozenCurrency = resolveFilingCurrencyContext(country, currencyInput as any);
-      const tariffLines = convertTariffLines(filing.shipment.lineItems, frozenCurrency);
+      const tariffLines = applyAssistAmountsToTariffLines(convertTariffLines(filing.shipment.lineItems, frozenCurrency), preparedAssists);
 
       if (country === "US") {
         const htsCodesMap = await loadHtsCodesMap(tariffLines, country);
@@ -384,13 +389,14 @@ export class FilingService {
           status: filing.shipment.status,
           currentStage: filing.shipment.currentStage,
         },
-        lineItems: filing.shipment.lineItems.map((item) => ({
+        lineItems: filing.shipment.lineItems.map((item, index) => ({
           id: item.id,
           lineNumber: item.lineNumber,
           description: item.description,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           totalValue: Number(item.totalValue),
+          customsValue: computedTariff!.lineResults[index].customsValue,
           htsCode: item.htsCode,
           countryOfOrigin: item.countryOfOrigin,
         })),
@@ -426,11 +432,7 @@ export class FilingService {
             .find(Boolean) ?? null)
         : null;
 
-      await db.filingSnapshot.upsert({
-        where: { filingId },
-        update: { snapshotData: snapshotData as any, hasSection301, section301List },
-        create: { filingId, snapshotData: snapshotData as any, hasSection301, section301List },
-      });
+      snapshotMeta = { hasSection301, section301List };
 
       declaration = await buildCanonicalDeclaration({
         accountId,
@@ -463,7 +465,7 @@ export class FilingService {
       priorMessageId
     );
 
-    await new PgCanonicalMessagePublisher().publish("filing-outbound-queue", message);
+
 
     const existingDutyData =
       filing.dutyBreakdown && !Array.isArray(filing.dutyBreakdown)
@@ -478,9 +480,11 @@ export class FilingService {
         })
       : undefined;
 
-    const updatedFiling = await db.customsFiling.update({
-      where: { id: filingId },
-      data: {
+    const updatedFiling = await db.$transaction(async tx => {
+      await assertAssistPublicationContext(tx, accountId, filingId, preparedAssists);
+      const claimed = await tx.customsFiling.updateMany({
+        where: { id: filingId, accountId, version: filing.version, filingStatus: filing.filingStatus },
+        data: {{
         filingStatus: nextStatus,
         submittedAt: new Date(),
         version: { increment: 1 },
@@ -495,7 +499,19 @@ export class FilingService {
           : {}),
         ...(userId && action === "SUBMIT" ? { transmittedByUserId: userId } : {}),
       },
-    });
+      });
+      if (claimed.count !== 1) throw new DomainError("This filing changed. Review it before submitting again.", "FILING_CONFLICT", 409);
+      await commitAssistDeclarations(tx, accountId, filingId, preparedAssists);
+      if (snapshotData && snapshotMeta) {
+        await tx.filingSnapshot.upsert({
+          where: { filingId },
+          create: { filingId, snapshotData: asInputJson(snapshotData), ...snapshotMeta },
+          update: { snapshotData: asInputJson(snapshotData), ...snapshotMeta },
+        });
+      }
+      await new PgCanonicalMessagePublisher(tx).publish("filing-outbound-queue", message);
+      return tx.customsFiling.findFirstOrThrow({ where: { id: filingId, accountId } });
+    }, { isolationLevel: "Serializable", timeout: 20000 });
 
     return { filing: updatedFiling, messageId: message.header.messageId };
   }
