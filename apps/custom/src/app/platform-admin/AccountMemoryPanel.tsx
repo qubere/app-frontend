@@ -108,7 +108,7 @@ export function AccountMemoryPanel({ accounts }: AccountMemoryPanelProps) {
         });
         fetchMemoryData(selectedAccountId);
       } else {
-        setMessage({ type: "error", text: data.error || "Extraction failed" });
+        setMessage({ type: "error", text: data.error?.message ?? "Extraction failed" });
       }
     } catch {
       setMessage({ type: "error", text: "Network error triggering extraction" });

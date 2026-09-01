@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, FileText } from "lucide-react";
 import { ShipmentDocumentsSection } from "./ShipmentDocumentsSection";
+import { EntityDocuments } from "@/components/EntityDocuments";
 import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 import { LineItemsTable } from "./LineItemsTable";
 import { documentViewUrl } from "@/lib/documentUrl";
@@ -181,7 +182,7 @@ export function DocumentWorkspacePanel({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Left Column: Documents Set Summary */}
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-4 space-y-6">
         <ShipmentDocumentsSection
           shipmentId={shipmentId}
           shipmentNumber={shipmentNumber}
@@ -190,6 +191,7 @@ export function DocumentWorkspacePanel({
           onSelectDoc={selectDoc}
           originStatus={originStatus}
         />
+        <EntityDocuments entityType="SHIPMENT" entityId={shipmentId} />
       </div>
 
       {/* Center Column: Embedded Document Viewer */}

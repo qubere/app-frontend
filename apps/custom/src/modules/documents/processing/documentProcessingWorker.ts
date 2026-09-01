@@ -17,6 +17,7 @@
 import { randomUUID } from "crypto";
 import { db, runWithAccountId } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
+import { linkDocument } from "@/modules/documentAssociations/service";
 import {
   DocumentParserError,
   isDocumentParserError,
@@ -779,6 +780,23 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     metadata: { shipmentId: matchedShipmentId, algorithmVersion: "v2-weighted-multi-identifier" },
     correlationId: run.correlationId,
   });
+
+  // Mirror the direct shipmentId FK into the generalized association table.
+  // Idempotent (linkDocument reuses an existing active row), so a retried
+  // Inngest step never creates a duplicate association.
+  await linkDocument({
+    accountId: run.document.accountId,
+    documentId: run.documentId,
+    entityType: "SHIPMENT",
+    entityId: matchedShipmentId,
+    relationshipType: "SOURCE_DOCUMENT",
+    source: "DOCUMENT_INTELLIGENCE",
+    linkedBy: "SYSTEM",
+    auditSource: "SYSTEM",
+  }).catch((err) =>
+    log("auto_match.association_failed", { runId: run.id, documentId: run.documentId, error: String(err) })
+  );
+
   log("auto_match.matched", { runId: run.id, documentId: run.documentId, shipmentId: matchedShipmentId });
 
   return matchedShipmentId;

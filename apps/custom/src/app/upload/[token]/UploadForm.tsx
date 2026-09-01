@@ -41,7 +41,9 @@ export function UploadForm({ token, documentType, shipmentRef }: UploadFormProps
       const res = await fetch(`/api/upload/${token}`, { method: "POST", body });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((json as { error?: string }).error || `Upload failed (${res.status})`);
+        const errVal = (json as { error?: { message?: string } | string }).error;
+        const errMsg = typeof errVal === "string" ? errVal : errVal?.message;
+        throw new Error(errMsg || `Upload failed (${res.status})`);
       }
       setDuplicates(Array.isArray(json.crossShipmentDuplicates) ? json.crossShipmentDuplicates : []);
       setPhase("done");

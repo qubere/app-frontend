@@ -175,7 +175,7 @@ export function JourneyRibbon({ data, canManage = false, documents = [], readine
       const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...init });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setError(body.error || `Request failed (${res.status})`);
+        setError(body.error?.message || `Request failed (${res.status})`);
         return false;
       }
       router.refresh();

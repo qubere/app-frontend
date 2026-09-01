@@ -470,7 +470,7 @@ export function ClassificationCaseDetail({
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Decision failed");
+        throw new Error(err.error?.message || "Decision failed");
       }
 
       setSelectedProposal(null);

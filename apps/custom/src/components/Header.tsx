@@ -59,10 +59,7 @@ export function Header({
     });
 
   const externalItems = isPlatformAdmin
-    ? [
-        { name: "Qubere Console", href: "/platform-admin", icon: Shield, description: "Cross-tenant platform administration" },
-        { name: "Filing Configuration", href: "/app/filing-config", icon: Settings2, description: "Platform-global customs filing rules" },
-      ]
+    ? [{ name: "Qubere Console", href: "/platform-admin", icon: Shield, description: "Cross-tenant platform administration" }]
     : [];
 
   const menuActions = [
@@ -163,7 +160,7 @@ export function Header({
                 <button
                   onClick={() => {
                     setIsMenuOpen(false);
-                    signOut(() => router.push("/"));
+                    signOut({ redirectUrl: "/sign-in" });
                   }}
                   className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-left text-sm font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                 >

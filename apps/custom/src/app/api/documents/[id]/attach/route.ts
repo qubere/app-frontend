@@ -3,6 +3,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import { linkDocument } from "@/modules/documentAssociations/service";
 import { PipelineOrchestrator } from "@/modules/agents/pipelineOrchestrator";
 import { loadDocumentBytes } from "@/modules/documents/loadDocumentBytes";
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
@@ -71,6 +72,20 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     metadata: { fileName: doc.fileName, previousShipmentId: doc.shipmentId, newShipmentId: shipmentId },
     success: true,
   });
+
+  // Mirror the direct shipmentId FK into the generalized association table
+  // (dual-write -- the direct FK remains the source of truth, this keeps the
+  // Trade Repository / EntityDocuments views in sync). Non-fatal on failure.
+  await linkDocument({
+    accountId: ctx.accountId,
+    documentId: id,
+    entityType: "SHIPMENT",
+    entityId: shipmentId,
+    relationshipType: "GENERAL",
+    source: "USER",
+    linkedBy: ctx.userId,
+    auditSource: "UI",
+  }).catch(() => {});
 
   logEvent({
     action: "document.attached",

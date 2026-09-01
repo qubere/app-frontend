@@ -34,6 +34,24 @@ interface LicenseAlert {
   message: string;
 }
 
+type TriStateOption = "UNKNOWN" | "TRUE" | "FALSE";
+
+const CONDITION_LABELS = {
+  governmentEndUser: "Foreign government end-user",
+  militaryEndUser: "Military end-user",
+  usSubsidiary: "End-user is a U.S. subsidiary of the exporter",
+  endUserCertificateOnFile: "End-user certificate/letter of assurance on file",
+  customsFreeZone: "Destination is within a customs free zone",
+  internalUseOnly: "Product is for internal company use/product development only",
+  replacementPartsIndicator: "Item is intended as replacement parts",
+  encryptionItem: "Item is an encryption item",
+  encryptionSelfClassified: "Encryption self-classification on file",
+  militaryEndUseCountry: "Military end-use country involved",
+  nuclearEndUse: "Nuclear end use",
+  missileTechnologyEndUse: "Missile technology end use",
+  chemicalBiologicalEndUse: "Chemical or biological weapons end use",
+} as const;
+
 const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral"> = {
   ACTIVE: "success",
   DRAFT: "neutral",
@@ -96,6 +114,22 @@ export function LicenseManagementClient({
     destinationCountry: "",
     originCountry: "",
   });
+  const [detConditions, setDetConditions] = useState({
+    governmentEndUser: "UNKNOWN" as TriStateOption,
+    militaryEndUser: "UNKNOWN" as TriStateOption,
+    usSubsidiary: "UNKNOWN" as TriStateOption,
+    endUserCertificateOnFile: "UNKNOWN" as TriStateOption,
+    customsFreeZone: "UNKNOWN" as TriStateOption,
+    internalUseOnly: "UNKNOWN" as TriStateOption,
+    replacementPartsIndicator: "UNKNOWN" as TriStateOption,
+    encryptionItem: "UNKNOWN" as TriStateOption,
+    encryptionSelfClassified: "UNKNOWN" as TriStateOption,
+    militaryEndUseCountry: "UNKNOWN" as TriStateOption,
+    nuclearEndUse: "UNKNOWN" as TriStateOption,
+    missileTechnologyEndUse: "UNKNOWN" as TriStateOption,
+    chemicalBiologicalEndUse: "UNKNOWN" as TriStateOption,
+  });
+  const [detReferenceNumbers, setDetReferenceNumbers] = useState({ zNumber: "", ccatsNumber: "" });
   const [detResult, setDetResult] = useState<DeterminationResult | null>(null);
 
   const loadLicenses = () => {
@@ -137,6 +171,13 @@ export function LicenseManagementClient({
     setError(null);
     setDetResult(null);
     try {
+      const conditions: Record<string, string> = {};
+      for (const [key, val] of Object.entries(detConditions)) {
+        if (val !== "UNKNOWN") conditions[key] = val;
+      }
+      if (detReferenceNumbers.zNumber.trim()) conditions.encryptionExceptionZNumber = detReferenceNumbers.zNumber.trim();
+      if (detReferenceNumbers.ccatsNumber.trim()) conditions.encryptionExceptionCcatsNumber = detReferenceNumbers.ccatsNumber.trim();
+
       const data = await fetchJson<{ determination: { id: string; outcome: DeterminationResult } }>(
         "/api/compliance/license-determination",
         {
@@ -146,6 +187,7 @@ export function LicenseManagementClient({
             classification: { type: detForm.classificationType, value: detForm.classificationValue },
             destinationCountry: detForm.destinationCountry || undefined,
             originCountry: detForm.originCountry || undefined,
+            conditions: Object.keys(conditions).length > 0 ? conditions : undefined,
           }),
         }
       );
@@ -272,7 +314,9 @@ export function LicenseManagementClient({
               </FormField>
             </div>
             <FormField>
-              <Label>Classification Value</Label>
+              <Label>
+                Classification Value <span className="text-red-600">*</span>
+              </Label>
               <Input
                 value={detForm.classificationValue}
                 onChange={(e) => setDetForm((f) => ({ ...f, classificationValue: e.target.value }))}
@@ -281,7 +325,9 @@ export function LicenseManagementClient({
             </FormField>
             {detForm.operationType === "EXPORT" ? (
               <FormField>
-                <Label>Destination Country</Label>
+                <Label>
+                  Destination Country <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   value={detForm.destinationCountry}
                   onChange={(e) => setDetForm((f) => ({ ...f, destinationCountry: e.target.value }))}
@@ -290,7 +336,9 @@ export function LicenseManagementClient({
               </FormField>
             ) : (
               <FormField>
-                <Label>Origin Country</Label>
+                <Label>
+                  Origin Country <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   value={detForm.originCountry}
                   onChange={(e) => setDetForm((f) => ({ ...f, originCountry: e.target.value }))}
@@ -298,6 +346,50 @@ export function LicenseManagementClient({
                 />
               </FormField>
             )}
+
+            <div className="space-y-2">
+              <Label>End-Use / End-User Conditions</Label>
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-border p-3">
+                {Object.entries(CONDITION_LABELS).map(([key, label]) => (
+                  <div key={key} className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-ink">{label}</span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {(["UNKNOWN", "TRUE", "FALSE"] as const).map((option) => (
+                        <label key={option} className="flex items-center gap-1.5 text-xs font-medium text-ink cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`condition-${key}`}
+                            checked={detConditions[key as keyof typeof detConditions] === option}
+                            onChange={() => setDetConditions((c) => ({ ...c, [key]: option }))}
+                            className="w-3.5 h-3.5 text-brand focus:ring-brand cursor-pointer"
+                          />
+                          {option === "UNKNOWN" ? "Unknown" : option === "TRUE" ? "Yes" : "No"}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField>
+                <Label>Encryption Exception ZNumber</Label>
+                <Input
+                  value={detReferenceNumbers.zNumber}
+                  onChange={(e) => setDetReferenceNumbers((r) => ({ ...r, zNumber: e.target.value }))}
+                  placeholder="e.g. Z123456"
+                />
+              </FormField>
+              <FormField>
+                <Label>CCATS Number</Label>
+                <Input
+                  value={detReferenceNumbers.ccatsNumber}
+                  onChange={(e) => setDetReferenceNumbers((r) => ({ ...r, ccatsNumber: e.target.value }))}
+                  placeholder="e.g. G123456"
+                />
+              </FormField>
+            </div>
+
             <Button onClick={runDetermination} disabled={busy || !canExecuteDetermination || !detForm.classificationValue}>
               <PlayCircle className="w-4 h-4" /> Run Determination
             </Button>

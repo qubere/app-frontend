@@ -41,7 +41,7 @@ export function TenantAdminForm({ tenant }: TenantAdminFormProps) {
         setMessage({ type: "success", text: "Tenant profile updated successfully. Audit log created." });
         router.refresh();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update tenant" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to update tenant" });
       }
     } catch (err) {
       console.error(err);

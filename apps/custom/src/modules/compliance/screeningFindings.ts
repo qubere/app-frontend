@@ -103,22 +103,35 @@ export async function persistComplianceScreeningFindings(
 
   if (candidates.length === 0) return;
 
-  const openFindings = await db.complianceScreeningFinding.findMany({
-    where: { accountId, shipmentId, status: "OPEN" },
-    select: { lineNumber: true, category: true, ruleId: true },
-  });
-  const openKey = (r: { lineNumber: number | null; category: string; ruleId: string }) =>
-    `${r.lineNumber ?? "null"}::${r.category}::${r.ruleId}`;
-  const openKeys = new Set(openFindings.map(openKey));
+  // The pipeline re-runs this on every invocation (upload, edit, reconcile,
+  // retry), and concurrent invocations for the same shipment (e.g. several
+  // documents uploaded together) each read openFindings before any of them
+  // commits its insert -- without serialization every one of them sees "no
+  // existing row" and inserts its own, producing N duplicate OPEN findings
+  // for the same (shipmentId, lineNumber, category, ruleId). Hold a
+  // transaction-scoped Postgres advisory lock keyed on shipmentId so
+  // concurrent calls for the same shipment run this read-then-write section
+  // one at a time. Lock key namespace 0 is reserved for this dedup lock --
+  // any future unrelated pg_advisory_xact_lock use in this codebase must
+  // pick a different namespace to avoid colliding with it.
+  const createdRows = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(0, hashtext(${shipmentId}))`;
 
-  const newCandidates = candidates.filter(
-    ({ result: r, category }) =>
-      !openKeys.has(openKey({ lineNumber: r.lineNumber ?? null, category, ruleId: r.ruleId }))
-  );
-  if (newCandidates.length === 0) return;
+    const openFindings = await tx.complianceScreeningFinding.findMany({
+      where: { accountId, shipmentId, status: "OPEN" },
+      select: { lineNumber: true, category: true, ruleId: true },
+    });
+    const openKey = (r: { lineNumber: number | null; category: string; ruleId: string }) =>
+      `${r.lineNumber ?? "null"}::${r.category}::${r.ruleId}`;
+    const openKeys = new Set(openFindings.map(openKey));
 
-  const createdRows = await db.complianceScreeningFinding.createManyAndReturn({
-    data: newCandidates.map(({ result: r, category }) => ({
+    const newCandidates = candidates.filter(
+      ({ result: r, category }) =>
+        !openKeys.has(openKey({ lineNumber: r.lineNumber ?? null, category, ruleId: r.ruleId }))
+    );
+    if (newCandidates.length === 0) return { rows: [], newCandidates };
+
+    const createData = newCandidates.map(({ result: r, category }) => ({
       accountId,
       shipmentId,
       lineNumber: r.lineNumber ?? null,
@@ -127,33 +140,57 @@ export async function persistComplianceScreeningFindings(
       ruleName: r.ruleName,
       severity: r.severity,
       details: r.details,
-    })),
-  }).catch(async () => {
-    // createManyAndReturn requires Prisma 5.14+ / a supporting connector;
-    // fall back to plain createMany (no ids, no execution linking) if
-    // unavailable rather than failing finding persistence outright.
-    await db.complianceScreeningFinding.createMany({
-      data: newCandidates.map(({ result: r, category }) => ({
-        accountId,
-        shipmentId,
-        lineNumber: r.lineNumber ?? null,
-        category,
-        ruleId: r.ruleId,
-        ruleName: r.ruleName,
-        severity: r.severity,
-        details: r.details,
-      })),
-    });
-    return [];
+    }));
+
+    let rows: ({ id: string } | undefined)[];
+    try {
+      rows = await tx.complianceScreeningFinding.createManyAndReturn({ data: createData });
+    } catch (err) {
+      // Only fall back for createManyAndReturn's own "not supported on this
+      // connector" failure (Prisma 5.13 and earlier) -- a real data error
+      // (e.g. a constraint violation) must surface as-is instead of being
+      // silently retried and re-thrown under a different, less specific error.
+      if (!(err instanceof Error) || !err.message.includes("createManyAndReturn")) throw err;
+
+      await tx.complianceScreeningFinding.createMany({ data: createData });
+      // createMany doesn't return ids -- look the just-inserted rows back up
+      // by their dedup key so execution-linking below still runs instead of
+      // silently never firing on connectors without createManyAndReturn.
+      const inserted = await tx.complianceScreeningFinding.findMany({
+        where: {
+          accountId,
+          shipmentId,
+          status: "OPEN",
+          OR: newCandidates.map(({ result: r, category }) => ({
+            lineNumber: r.lineNumber ?? null,
+            category,
+            ruleId: r.ruleId,
+          })),
+        },
+        select: { id: true, lineNumber: true, category: true, ruleId: true },
+      });
+      const byKey = new Map(inserted.map((row) => [openKey(row), row]));
+      // Keep this aligned index-for-index with newCandidates (even if a
+      // lookup somehow misses) -- the forEach below pairs createdRowsList[i]
+      // with newCandidates[i] by position, so filtering here would shift
+      // every later row's category attribution.
+      rows = newCandidates.map(({ result: r, category }) =>
+        byKey.get(openKey({ lineNumber: r.lineNumber ?? null, category, ruleId: r.ruleId }))
+      );
+    }
+    return { rows, newCandidates };
   });
+
+  const { rows: createdRowsList, newCandidates } = createdRows;
+  if (newCandidates.length === 0) return;
 
   // Group the created finding ids by category so exactly one
   // ComplianceExecution is recorded per thin-finding domain present in this
   // batch (not one per finding row).
   const idsByCategory = new Map<ScreeningBucket, string[]>();
-  createdRows.forEach((row, i) => {
+  createdRowsList.forEach((row, i) => {
     const category = newCandidates[i]?.category;
-    if (!category) return;
+    if (!category || !row) return;
     const list = idsByCategory.get(category) ?? [];
     list.push(row.id);
     idsByCategory.set(category, list);

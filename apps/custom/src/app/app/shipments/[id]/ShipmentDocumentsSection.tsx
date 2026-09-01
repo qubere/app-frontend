@@ -107,7 +107,7 @@ export function ShipmentDocumentsSection({
         body: JSON.stringify({ documentIds: ids }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || data.message || "Failed to detach documents");
+      if (!res.ok) throw new Error(data.error?.message ?? data.message ?? "Failed to detach documents");
       const detached: string[] = data.detached ?? [];
       setDocuments((prev) => prev.filter((d) => !detached.includes(d.id)));
       setSelectedIds(new Set());
@@ -141,7 +141,7 @@ export function ShipmentDocumentsSection({
       const res = await fetch(`/api/documents/${docId}/detach`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to detach document");
+        throw new Error(data.error?.message ?? "Failed to detach document");
       }
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
       router.refresh();

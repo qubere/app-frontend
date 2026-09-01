@@ -74,7 +74,7 @@ export function ProtestDetailClient({ protestId }: { protestId: string }) {
         if (d.protest) {
           setProtest(d.protest);
         } else {
-          setError(d.error || "Protest not found");
+          setError(d.error?.message || "Protest not found");
         }
       })
       .catch((e) => setError(e.message))
@@ -113,7 +113,7 @@ export function ProtestDetailClient({ protestId }: { protestId: string }) {
         method: "POST",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Failed to file protest");
+      if (!res.ok) throw new Error(data.message || data.error?.message || "Failed to file protest");
       loadProtest();
     } catch (e: any) {
       setError(e.message);
@@ -136,7 +136,7 @@ export function ProtestDetailClient({ protestId }: { protestId: string }) {
         body: JSON.stringify({ justification: frpJustification }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Failed to request FRP");
+      if (!res.ok) throw new Error(data.message || data.error?.message || "Failed to request FRP");
       setShowFrpModal(false);
       loadProtest();
     } catch (e: any) {

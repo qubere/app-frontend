@@ -19,6 +19,8 @@ describe("document query parsing", () => {
       status: null,
       clientId: null,
       shipmentId: null,
+      linkedEntityType: null,
+      linkedEntityId: null,
       assignedBrokerIds: [],
       archivedOnly: false,
       createdFrom: null,

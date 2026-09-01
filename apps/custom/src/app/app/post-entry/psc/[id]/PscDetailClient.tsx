@@ -76,7 +76,7 @@ export function PscDetailClient({ pscId }: { pscId: string }) {
           setReason(d.psc.reason || "");
           setNotes(d.psc.notes || "");
         } else {
-          setError(d.error || "PSC not found");
+          setError(d.error?.message || "PSC not found");
         }
       })
       .catch((e) => setError(e.message))
@@ -115,7 +115,7 @@ export function PscDetailClient({ pscId }: { pscId: string }) {
         method: "POST",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Failed to mark ready");
+      if (!res.ok) throw new Error(data.message || data.error?.message || "Failed to mark ready");
       loadPsc();
     } catch (e: any) {
       setError(e.message);
@@ -133,7 +133,7 @@ export function PscDetailClient({ pscId }: { pscId: string }) {
         method: "POST",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Failed to submit PSC");
+      if (!res.ok) throw new Error(data.message || data.error?.message || "Failed to submit PSC");
       loadPsc();
     } catch (e: any) {
       setError(e.message);
@@ -156,7 +156,7 @@ export function PscDetailClient({ pscId }: { pscId: string }) {
         body: JSON.stringify({ reason: withdrawReason }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Failed to withdraw PSC");
+      if (!res.ok) throw new Error(data.message || data.error?.message || "Failed to withdraw PSC");
       setShowWithdrawModal(false);
       loadPsc();
     } catch (e: any) {

@@ -744,7 +744,11 @@ export function ChatClient({ context }: ChatClientProps) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: apiMessage, history: historyRef.current }),
       });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { error?: string }).error ?? `${res.status}`); }
+      if (!res.ok) {
+        const e = (await res.json().catch(() => ({}))) as { error?: { message?: string } | string };
+        const errMsg = typeof e.error === "string" ? e.error : e.error?.message;
+        throw new Error(errMsg ?? `${res.status}`);
+      }
       if (!res.body) throw new Error("No response body");
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -1497,7 +1501,7 @@ function ToolCard({ tc }: { tc: ToolCallDisplay }) {
                         setDecisionStatusOverrides((prev) => ({ ...prev, [d.id]: "APPROVED" }));
                         alert("Decision approved successfully.");
                       } else {
-                        alert(`Failed to approve decision: ${data.error || res.statusText || "Unknown error"}`);
+                        alert(`Failed to approve decision: ${data.error?.message ?? res.statusText ?? "Unknown error"}`);
                       }
                     }}>
                     Approve
@@ -1516,7 +1520,7 @@ function ToolCard({ tc }: { tc: ToolCallDisplay }) {
                           setDecisionStatusOverrides((prev) => ({ ...prev, [d.id]: "REJECTED" }));
                           alert("Decision rejected.");
                         } else {
-                          alert(`Failed to reject decision: ${data.error || res.statusText || "Unknown error"}`);
+                          alert(`Failed to reject decision: ${data.error?.message ?? res.statusText ?? "Unknown error"}`);
                         }
                       }
                     }}>
@@ -1576,7 +1580,7 @@ function ToolCard({ tc }: { tc: ToolCallDisplay }) {
                         ex.status = "RESOLVED";
                         alert("Exception resolved.");
                       } else {
-                        alert(`Failed to resolve exception: ${data.error || res.statusText || "Unknown error"}`);
+                        alert(`Failed to resolve exception: ${data.error?.message ?? res.statusText ?? "Unknown error"}`);
                       }
                     }}>
                     Resolve Exception

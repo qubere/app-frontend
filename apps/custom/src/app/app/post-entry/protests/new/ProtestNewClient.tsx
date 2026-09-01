@@ -104,7 +104,7 @@ export function ProtestNewClient() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || data.error || "Failed to create Protest");
+        throw new Error(data.message || data.error?.message || "Failed to create Protest");
       }
 
       // If POA is checked, update it in the created protest

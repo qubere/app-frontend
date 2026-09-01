@@ -3,6 +3,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { validatePathParams } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import { unlinkDocument } from "@/modules/documentAssociations/service";
 import { z } from "zod";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
@@ -43,6 +44,25 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, request
     metadata: { fileName: doc.fileName, previousShipmentId: doc.shipmentId },
     success: true,
   });
+
+  // Mirror the detach into the generalized association table (dual-write).
+  const activeAssociation = await db.documentAssociation.findFirst({
+    where: {
+      accountId: ctx.accountId,
+      documentId: id,
+      entityType: "SHIPMENT",
+      entityId: doc.shipmentId,
+      active: true,
+    },
+  });
+  if (activeAssociation) {
+    await unlinkDocument({
+      accountId: ctx.accountId,
+      associationId: activeAssociation.id,
+      unlinkedBy: ctx.userId,
+      auditSource: "UI",
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ document: updated, requestId });
 

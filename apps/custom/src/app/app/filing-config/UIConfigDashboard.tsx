@@ -304,7 +304,7 @@ export default function UIConfigDashboard({ onEdit }: UIConfigDashboardProps) {
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Unable to update configuration status");
+        throw new Error(error.error?.message || "Unable to update configuration status");
       }
     } catch {
       // Revert on error
@@ -322,7 +322,7 @@ export default function UIConfigDashboard({ onEdit }: UIConfigDashboardProps) {
       );
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Delete failed");
+        throw new Error(err.error?.message || "Delete failed");
       }
       setConfirmDelete(null);
       await load();
@@ -345,7 +345,7 @@ export default function UIConfigDashboard({ onEdit }: UIConfigDashboardProps) {
       );
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Duplicate failed");
+        throw new Error(err.error?.message || "Duplicate failed");
       }
       await load();
     } catch (err) {

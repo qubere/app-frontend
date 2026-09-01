@@ -88,6 +88,7 @@ import {
 } from "@/modules/compliance/rdps/rdpsQueryService";
 import { recordRdpsOutcome } from "@/modules/compliance/rdps/outcomeRecorder";
 import { createAuditLog, AuditAction } from "@/lib/audit";
+import { ProductHelpRepository } from "@/modules/support/productHelp";
 
 /**
  * Helper to convert Zod Object Schema into Gemini-compatible Schema object
@@ -141,6 +142,8 @@ export interface AssistantTool {
   access?: CopilotToolAccess;
   execute: (ctx: AccountContext, args: Record<string, unknown>) => Promise<unknown>;
 }
+
+export type AssistantSurface = "copilot" | "support";
 
 // ---- shared shipment fetch (backs list_shipments and get_value_at_risk) ----
 
@@ -396,7 +399,7 @@ const createShipment: AssistantTool = {
       })
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to create shipment" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to create shipment" };
     return {
       success: true,
       shipmentId: data.shipment.id,
@@ -1442,7 +1445,7 @@ const approveDecision: AssistantTool = {
       })
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to approve decision" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to approve decision" };
     return { success: true, decision: data.decision, classificationApplied: data.classificationApplied };
   },
 };
@@ -1476,7 +1479,7 @@ const rejectDecision: AssistantTool = {
       })
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to reject decision" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to reject decision" };
     return { success: true, decision: data.decision };
   },
 };
@@ -1527,7 +1530,7 @@ const resolveException: AssistantTool = {
       { params: Promise.resolve({ id: exceptionId }) }
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to resolve exception" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to resolve exception" };
     return { success: true, exception: data.exception };
   },
 };
@@ -1572,7 +1575,7 @@ const classifyProduct: AssistantTool = {
     );
     const proposeData = await proposeRes.json();
     if (!proposeRes.ok) {
-      return { success: false, step: "propose", error: proposeData.error ?? "Failed to propose classification" };
+      return { success: false, step: "propose", error: proposeData.error?.message ?? "Failed to propose classification" };
     }
     const classificationId = proposeData.classification.id as string;
 
@@ -1586,7 +1589,7 @@ const classifyProduct: AssistantTool = {
     );
     const startReviewData = await startReviewRes.json();
     if (!startReviewRes.ok) {
-      return { success: false, step: "start_review", error: startReviewData.error ?? "Failed to start review" };
+      return { success: false, step: "start_review", error: startReviewData.error?.message ?? "Failed to start review" };
     }
 
     const approveRes = await classificationReviewPOST(
@@ -1599,7 +1602,7 @@ const classifyProduct: AssistantTool = {
     );
     const approveData = await approveRes.json();
     if (!approveRes.ok) {
-      return { success: false, step: "approve", error: approveData.error ?? "Failed to approve classification" };
+      return { success: false, step: "approve", error: approveData.error?.message ?? "Failed to approve classification" };
     }
     return { success: true, classification: approveData.classification };
   },
@@ -4084,7 +4087,42 @@ const getComplianceDailyBrief: AssistantTool = {
   },
 };
 
+const searchProductHelpSchema = z.object({
+  query: z.string().min(2).describe("The user's product workflow or how-to question"),
+  moduleId: z.string().optional().describe("Optional help module id when the user named a module"),
+});
+
+const searchProductHelp: AssistantTool = {
+  declaration: {
+    name: "search_product_help",
+    description:
+      "Search the reviewed Qubere product-help corpus for current, step-by-step workflow guidance. Use this for every question about how to use Qubere.",
+    parameters: zodToGeminiSchema(searchProductHelpSchema),
+  },
+  schema: searchProductHelpSchema,
+  execute: async (_ctx, rawArgs) => {
+    const args = searchProductHelpSchema.parse(rawArgs);
+    const guides = await ProductHelpRepository.searchInteractive(args.query, {
+      moduleId: args.moduleId,
+      limit: 6,
+    });
+    return {
+      query: args.query,
+      guides: guides.map((guide) => ({
+        id: guide.id,
+        moduleId: guide.moduleId,
+        question: guide.question,
+        answer: guide.answer,
+        steps: guide.steps,
+        href: guide.href ?? null,
+        actionLabel: guide.actionLabel ?? null,
+      })),
+    };
+  },
+};
+
 export const ASSISTANT_TOOLS: AssistantTool[] = [
+  searchProductHelp,
   listShipments,
   getValueAtRisk,
   getTeamMembers,
@@ -4173,6 +4211,15 @@ export function getToolByName(name: string): AssistantTool | undefined {
   return TOOLS_BY_NAME.get(name);
 }
 
-export function availableAssistantTools(ctx: AccountContext): AssistantTool[] {
-  return ASSISTANT_TOOLS.filter((tool) => canUseTool(ctx, tool.access));
+const SUPPORT_TOOL_NAMES = new Set(["search_product_help"]);
+
+export function availableAssistantTools(
+  ctx: AccountContext,
+  surface: AssistantSurface = "copilot"
+): AssistantTool[] {
+  return ASSISTANT_TOOLS.filter(
+    (tool) =>
+      canUseTool(ctx, tool.access) &&
+      (surface !== "support" || SUPPORT_TOOL_NAMES.has(tool.declaration.name ?? ""))
+  );
 }

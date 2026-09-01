@@ -48,7 +48,7 @@ export function AccountAdminForm({ account, onSaved }: AccountAdminFormProps) {
         router.refresh();
         onSaved?.();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update account" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to update account" });
       }
     } catch (err) {
       console.error(err);

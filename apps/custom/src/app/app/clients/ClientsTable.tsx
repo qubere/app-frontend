@@ -176,7 +176,7 @@ export function ClientsTable({ clients, onSaved }: ClientsTableProps) {
         router.refresh();
         onSaved?.();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to add client" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to add client" });
       }
     } catch (err) {
       console.error(err);
@@ -220,7 +220,7 @@ export function ClientsTable({ clients, onSaved }: ClientsTableProps) {
         router.refresh();
         onSaved?.();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to create legal entity" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to create legal entity" });
       }
     } catch (err) {
       console.error(err);

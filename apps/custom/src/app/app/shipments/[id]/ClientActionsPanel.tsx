@@ -152,7 +152,7 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
         refreshRequests();
       } else {
         const errJson = await res.json().catch(() => ({}));
-        alert(`Failed to send reply: ${errJson.message || errJson.error || res.statusText}`);
+        alert(`Failed to send reply: ${errJson.message || errJson.error?.message || res.statusText}`);
       }
     } catch (err) {
       console.error(err);

@@ -91,7 +91,7 @@ export function ComplianceChecksPanel({
       const res = await fn();
       const data = await res.json().catch(() => null);
       if (!res.ok && res.status !== 503) {
-        throw new Error(data?.error || `Request failed (${res.status})`);
+        throw new Error(data?.error?.message || `Request failed (${res.status})`);
       }
       set(map(data));
       // Persisted rows (PgaRequirement / ReconciliationIssue) feed the readiness

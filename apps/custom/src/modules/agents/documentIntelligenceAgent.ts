@@ -271,6 +271,10 @@ export interface TradeMetadata {
   totalQuantity?: string | null;
   cartonCount?: string | null;
   onBoardDate?: string | null;
+  /** Verbatim intended/end-use declaration text, from an End-Use Statement or free-text remarks on any document. Screened by endUseScreening / militaryEndUseScreening. */
+  endUseStatement?: string | null;
+  /** Verbatim free-text narrative/remarks not captured by another field. Screened by antiBoycottScreening. */
+  documentNarrativeText?: string | null;
 }
 
 export interface FilingDetermination {
@@ -337,6 +341,8 @@ export interface DocumentIntelligenceOutput {
   currency: string | null;
   invoiceSubtotal: number | null;
   hasCommercialInvoice: boolean;
+  endUseStatement?: string | null;
+  documentNarrativeText?: string | null;
   missingFields: string[];
   lineItems: LineItemExtraction[];
   confidence: number | MultiDimensionalConfidence;
@@ -407,6 +413,8 @@ const intelligenceSchema: Schema = {
         totalQuantity: { type: Type.STRING, nullable: true },
         cartonCount: { type: Type.STRING, nullable: true },
         onBoardDate: { type: Type.STRING, nullable: true },
+        endUseStatement: { type: Type.STRING, nullable: true },
+        documentNarrativeText: { type: Type.STRING, nullable: true },
       },
     },
     entities: {
@@ -552,6 +560,8 @@ export class DocumentIntelligenceAgent {
     let incoterm: string | null = null;
     let currency: string | null = null;
     let invoiceSubtotal: number | null = null;
+    let endUseStatement: string | null = null;
+    let documentNarrativeText: string | null = null;
     let hasCommercialInvoice = false;
     let confidence = 100;
     const missingFields: string[] = [];
@@ -593,6 +603,7 @@ INSTRUCTIONS:
 2. Populate 'tradeMetadata' with explicit fields visible on the document. Map shipper to exporterName, consignee/importerOfRecord to importerName, countryOfOrigin to originCountry, totalValue to invoiceSubtotal, etc.
    - Keep the three country fields distinct: 'countryOfOrigin' = where the goods were made; 'countryOfExport' = the country the shipment departs from; 'countryOfDestination' = the country the goods are shipped TO (the import/customs destination). Never copy one into another — leave a field null if the document does not state it.
    - On a Bill of Lading / transport document also capture 'vesselName', 'voyageNumber', 'containerNumber', 'portOfLoading', 'portOfDischarge', 'onBoardDate', 'transportDocumentNumber' (the B/L number). On a Packing List also capture 'totalWeight' (gross), 'netWeight', 'cartonCount', 'totalQuantity'.
+   - If the document states the intended/final end-use of the goods (an End-Use Statement/Certificate, or an end-use/intended-use clause in invoice or PO remarks), copy that declaration verbatim into 'endUseStatement'. Copy any other free-text remarks/narrative not covered by another field into 'documentNarrativeText'. Leave both null if no such text is present.
 3. Extract all itemized tabular line items into 'lineItems'.
 4. Determine primaryAgency and secondaryAgencies in 'filingDetermination' based on actual content (e.g. CBP default, FDA for food/medical, EPA for chemicals).
 5. Run consistency checks in 'validations' (line item math, missing fields, page continuity).
@@ -686,6 +697,8 @@ ${instructions}`;
         } else if (typeof parsed.invoiceSubtotal === "number") {
           invoiceSubtotal = parsed.invoiceSubtotal;
         }
+        endUseStatement = parsed.tradeMetadata?.endUseStatement || null;
+        documentNarrativeText = parsed.tradeMetadata?.documentNarrativeText || null;
         if (typeof parsed.hasCommercialInvoice === "boolean") hasCommercialInvoice = parsed.hasCommercialInvoice;
         if (parsed.confidence) confidence = parsed.confidence;
         if (parsed.lineItems && parsed.lineItems.length > 0) lineItems = parsed.lineItems;
@@ -1243,6 +1256,8 @@ ${instructions}`;
       currency,
       invoiceSubtotal,
       hasCommercialInvoice,
+      endUseStatement,
+      documentNarrativeText,
       missingFields,
       lineItems,
       confidence: filingConfidence,

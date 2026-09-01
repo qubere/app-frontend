@@ -611,7 +611,7 @@ export function DocumentReviewPanel({
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to rename document");
+        throw new Error(errData.error?.message ?? "Failed to rename document");
       }
 
       setIsEditingName(false);
@@ -649,7 +649,7 @@ export function DocumentReviewPanel({
         body: JSON.stringify({ decisionId, action: "EDIT_VALUE", fieldKey, value: trimmedValue }),
       });
       const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || "Failed to save edit");
+      if (!res.ok) throw new Error(resData.error?.message ?? "Failed to save edit");
       setEditingField(null);
       setEditingFieldValue("");
       router.refresh();
@@ -673,7 +673,7 @@ export function DocumentReviewPanel({
         body: JSON.stringify({ decisionId, action: "EDIT_VALUE", fieldKey, value }),
       });
       const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || "Failed to save");
+      if (!res.ok) throw new Error(resData.error?.message ?? "Failed to save");
       router.refresh();
     } catch (err) {
       setMissingFieldErrors((prev) => ({

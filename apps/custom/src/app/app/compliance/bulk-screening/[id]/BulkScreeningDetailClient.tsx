@@ -152,7 +152,7 @@ export function BulkScreeningDetailClient({
       const res = await fetch(`/api/compliance/batches/${batchId}/${action}`, { method: "POST" });
       const body = await res.json();
       if (!res.ok) {
-        setActionError(body.error ?? `Failed to ${action} batch.`);
+        setActionError(body.error?.message ?? `Failed to ${action} batch.`);
         return;
       }
       await refresh();

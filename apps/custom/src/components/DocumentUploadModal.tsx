@@ -280,7 +280,7 @@ export function DocumentUploadModal({
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to attach document");
+        throw new Error(data.error?.message ?? "Failed to attach document");
       }
       setSuccessMsg("Document attached and agents triggered.");
       if (typeof window !== "undefined") {

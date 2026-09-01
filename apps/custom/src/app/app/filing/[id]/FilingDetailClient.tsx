@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Label } from "@/components/ui/Input";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "@/components/ui/Modal";
+import { EntityDocuments } from "@/components/EntityDocuments";
 import { displayCurrency, displayDate, displayText } from "@/lib/honest";
 import { filingStages, type FilingStageState } from "@/modules/filings/filingStateMachine";
 import { getFilingConfig, formatCurrencyAmount } from "@/lib/filing/countryConfig";
@@ -499,7 +500,7 @@ export function FilingDetailClient({
   const country = filing.country || shipment?.destinationCountry || "US";
   const config = getFilingConfig(country);
   
-  type Tab = "overview" | "declaration" | "response" | "form7501" | "psc";
+  type Tab = "overview" | "declaration" | "response" | "form7501" | "psc" | "documents";
   const [tab, setTab] = useState<Tab>("overview");
   const [edits] = useState<Record<string, LineItemEdit>>(() =>
     Object.fromEntries((lineItems || []).map((li) => [li.id, { htsCode: li.htsCode, countryOfOrigin: li.countryOfOrigin }]))
@@ -1093,6 +1094,7 @@ export function FilingDetailClient({
             ["response", "Response"],
             config.showForm7501 && ["form7501", config.formPreviewLabel || "7501 Preview"],
             config.showPSC && ["psc", config.postCorrectionLabel || "Post-Summary Correction"],
+            ["documents", "Documents"],
           ].filter(Boolean) as [Tab, string][]
         ).map(([key, label]) => (
           <button
@@ -1652,6 +1654,8 @@ export function FilingDetailClient({
           </div>
         </Card>
       )}
+
+      {tab === "documents" && <EntityDocuments entityType="FILING" entityId={filing.id} />}
 
       {confirmAction && CHILD_ACTION_REGISTRY[confirmAction] && (() => {
         const def = CHILD_ACTION_REGISTRY[confirmAction];

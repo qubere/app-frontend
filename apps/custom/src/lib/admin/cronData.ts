@@ -102,6 +102,14 @@ export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "detai
     description: "Proactively walks the account's entire screened-party population as a periodic safety net, independent of reference-data changes.",
   },
   {
+    id: "db-backup",
+    name: "Automated Database Backup Job",
+    endpoint: "gcloud run jobs execute qubere-db-backup-demo",
+    method: "POST",
+    schedule: "0 */6 * * * (Every 6 hours)",
+    description: "Executes automated Cloud Run DB backup job exporting PostgreSQL pg_dump dumps to GCP Cloud Storage.",
+  },
+  {
     id: "reference-data-expiry-sweep",
     name: "Reference Data Expiry Sweep",
     endpoint: "/api/cron/reference-data-expiry-sweep",

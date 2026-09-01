@@ -334,6 +334,7 @@ export const PARTY_TABS = [
   { id: "roles", label: "Roles" },
   { id: "relationships", label: "Relationships" },
   { id: "evidence", label: "Evidence" },
+  { id: "documents", label: "Documents" },
   { id: "screening", label: "Restricted party screening" },
   { id: "history", label: "History" },
   { id: "rdps", label: "Continuous Monitoring" },

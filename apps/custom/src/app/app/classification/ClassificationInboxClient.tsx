@@ -66,7 +66,7 @@ export function ClassificationInboxClient({ cases, canRun }: { cases: InboxCase[
       const res = await fetch(`/api/v1/classification/cases/${encodeURIComponent(caseId)}/runs`, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error || `Request failed (${res.status})`);
+        throw new Error(body?.error?.message || `Request failed (${res.status})`);
       }
       router.refresh();
     } catch (err) {

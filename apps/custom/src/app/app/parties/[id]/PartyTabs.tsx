@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui";
+import { EntityDocuments } from "@/components/EntityDocuments";
 import { displayDate, displayText } from "@/lib/honest";
 import type { PartyDetail } from "@/modules/party/partyService";
 import {
@@ -843,6 +844,8 @@ export function PartyTabs({
           </table>
         </div>
       )}
+
+      {tab === "documents" && <EntityDocuments entityType="PARTY" entityId={partyId} />}
 
       {tab === "screening" && (
         <div className="space-y-4">

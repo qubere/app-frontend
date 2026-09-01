@@ -244,7 +244,7 @@ export function IntegrationsPanel({
 
       const data = await res.json();
       if (!res.ok) {
-        setErrorMsg(data.error || "Failed to test connection.");
+        setErrorMsg(data.error?.message ?? "Failed to test connection.");
       } else {
         setTestResult({
           success: true,
@@ -299,7 +299,7 @@ export function IntegrationsPanel({
 
       const data = await res.json();
       if (!res.ok) {
-        setErrorMsg(data.error || "Failed to save integration configuration.");
+        setErrorMsg(data.error?.message ?? "Failed to save integration configuration.");
       } else {
         setTestResult({
           success: true,

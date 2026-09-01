@@ -43,7 +43,7 @@ export function ApiKeyPanel({ initialKeys }: ApiKeyPanelProps) {
         body: JSON.stringify({ label: label.trim(), scopes: scopeArray }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create API key");
+      if (!res.ok) throw new Error(data.error?.message ?? "Failed to create API key");
 
       setNewRawKey(data.rawKey);
       setKeys((prev) => [data.apiKey, ...prev]);
@@ -67,7 +67,7 @@ export function ApiKeyPanel({ initialKeys }: ApiKeyPanelProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error ?? "Failed to revoke API key");
+        throw new Error(data.error?.message ?? "Failed to revoke API key");
       }
 
       setKeys((prev) =>

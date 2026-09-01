@@ -1,6 +1,22 @@
 export const DOCUMENT_PAGE_SIZE_DEFAULT = 25;
 export const DOCUMENT_PAGE_SIZE_MAX = 100;
 
+import type { DocumentEntityType } from "@prisma/client";
+
+const DOCUMENT_ENTITY_TYPES: readonly DocumentEntityType[] = [
+  "SHIPMENT",
+  "PARTY",
+  "PRODUCT",
+  "LICENSE",
+  "FILING",
+];
+
+function parseEntityType(value: string | null): DocumentEntityType | null {
+  return value && (DOCUMENT_ENTITY_TYPES as readonly string[]).includes(value)
+    ? (value as DocumentEntityType)
+    : null;
+}
+
 export const DOCUMENT_SORT_COLUMNS = [
   "fileName",
   "docType",
@@ -20,6 +36,9 @@ export interface DocumentQuery {
   clientId: string | null;
   /** A shipment id, or `UNATTACHED` for documents not attached to any shipment. */
   shipmentId: string | null;
+  /** Restricts to documents with an active DocumentAssociation to this entity type/id pair. */
+  linkedEntityType: DocumentEntityType | null;
+  linkedEntityId: string | null;
   /** User ids whose shipments' documents to show; empty means every assignee. */
   assignedBrokerIds: string[];
   /** `archive` restricts to documents on shipments done with filing, or deleted. See ARCHIVE_SHIPMENT_STATUSES. */
@@ -86,6 +105,8 @@ export function parseDocumentQuery(params: URLSearchParams): DocumentQuery {
     status: trimmed(params.get("status")),
     clientId: trimmed(params.get("clientId")),
     shipmentId: trimmed(params.get("shipmentId")),
+    linkedEntityType: parseEntityType(trimmed(params.get("linkedEntityType"))),
+    linkedEntityId: trimmed(params.get("linkedEntityId")),
     assignedBrokerIds: idList(params.get("assignedBrokerIds")),
     archivedOnly: params.get("scope") === "archive",
     createdFrom: dateParam(params.get("from")),
@@ -139,6 +160,9 @@ export interface DocumentWhere {
     assignedBrokerId?: { in: string[] };
     OR?: Array<Record<string, unknown>>;
   };
+  associations?: {
+    some: { entityType: DocumentEntityType; entityId: string; active: true };
+  };
   createdAt?: { gte?: Date; lte?: Date };
   OR?: Array<Record<string, unknown>>;
 }
@@ -156,6 +180,12 @@ export function buildDocumentWhere(accountId: string, query: DocumentQuery): Doc
   if (query.shipmentId) {
     where.shipmentId =
       query.shipmentId === UNATTACHED_SHIPMENT ? null : query.shipmentId;
+  }
+
+  if (query.linkedEntityType && query.linkedEntityId) {
+    where.associations = {
+      some: { entityType: query.linkedEntityType, entityId: query.linkedEntityId, active: true },
+    };
   }
 
   // Client and assignee both live on the shipment, so the document is filtered through it.

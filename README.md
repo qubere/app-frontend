@@ -27,6 +27,40 @@ To prevent code duplication, maintain consistent security, and enforce unified a
 
 ---
 
+## 📚 Product Help: Generate, Review, Publish
+
+Product help is regenerated change-by-change, reviewed in Git, and then published to PostgreSQL/pgvector for Support Center search and the restricted support agent. Every merge to `main` triggers `.github/workflows/product-help-release.yml`, which scans the exact merged diff and opens a documentation PR when customer-facing guidance needs to change. Approved content is embedded and published after that PR merges.
+
+Use these root commands:
+
+```bash
+# Scan a release range without using AI or changing files.
+npm run product-help:report -- --base <base-sha> --head <head-sha>
+
+# Preview AI-drafted Q&A changes.
+npm run product-help:generate -- --base <base-sha> --head <head-sha>
+
+# Write the reviewable generated corpus and release note.
+npm run product-help:generate -- --base <base-sha> --head <head-sha> --write
+
+# Validate article ids, modules, archives, steps, tags, and routes.
+npm --workspace @qubere/custom run typecheck:product-help
+npm run product-help:validate
+
+# Test Support Center behavior and coverage.
+npm --workspace @qubere/custom test -- --run tests/support-center.test.ts
+
+# Apply the product-help table migration to the selected database.
+npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+
+# Publish reviewed content and refresh changed pgvector embeddings.
+npm run product-help:sync
+```
+
+The complete release lifecycle, safety rules, and one-time GitHub secret setup are documented in **[docs/product-help/README.md](docs/product-help/README.md)**.
+
+---
+
 ## 🏗 Architecture & Key Concepts
 
 ### 1. Account-Based Tenancy Boundary
@@ -447,6 +481,41 @@ execution detail view (`compliance.override`-gated), the same generic
 [docs/LICENSE-DETERMINATION-GAP-MATRIX.md](docs/LICENSE-DETERMINATION-GAP-MATRIX.md)
 for the full implementation status, fail-safe rationale, and test coverage.
 
+### 17. Document Association & Trade Repository
+
+`DocumentAssociation` (`src/modules/documentAssociations/`) generalizes
+document-to-record linking beyond the original shipment-only attachment
+model: any `ShipmentDocument` can now be linked to a `SHIPMENT`, `PARTY`,
+`PRODUCT`, `LICENSE`, or `FILING` record, with a stable
+`(accountId, documentId, entityType, entityId)` uniqueness constraint and a
+soft `active` flag rather than hard deletes, so unlinking preserves history.
+`entityResolver.ts` validates that a target entity actually exists (and
+belongs to the caller's account) before a link is created — a link can never
+point at a row from another tenant or one that was never created.
+
+The shared `<EntityDocuments />` component renders the same linked-documents
+list and link/unlink controls on Party, Product, and Filing detail pages, and
+on the shipment `DocumentWorkspacePanel`, against one API surface
+(`/api/document-associations`, `/api/documents/[id]/associations`,
+`/api/documents/[id]/signed-url`) — no per-entity-type document UI to keep in
+sync. `GET /api/documents` accepts `linkedEntityType`/`linkedEntityId` filters
+and returns a `linkedEntityCount` per document so a caller can tell how widely
+a document is already referenced. `scripts/backfill-document-associations.ts`
+one-time-migrates pre-existing shipment-attached documents into the new
+association table.
+
+A standalone cross-entity search surface, **Trade Repository**
+(`/app/trade-repository`, `document.read`-gated), lists every document in the
+account with search/type/status/linked-entity filters independent of any one
+shipment/party/product page. The signed-URL route returns a short-lived
+(15 minute) object-storage URL via `createSignedReadUrl` for documents backed
+by real storage, falling back to the existing streaming proxy
+(`documentViewUrl()` / `/api/documents/proxy`) for local-disk/dev-fallback
+documents or on a storage error — it complements rather than replaces that
+proxy route. License detail-page document wiring is deliberately deferred
+pending a product decision on how it should coexist with that module's
+existing document mechanism.
+
 ---
 
 ## 💰 AI Cost Controls
@@ -562,7 +631,8 @@ provenance cannot claim one model while another did the reading.
 │   └── seed.ts              # Database seed script for test accounts & RBAC
 ├── scripts/
 │   ├── seed-clerk-users.ts  # Programmatic Clerk user provisioning script
-│   └── seed-qubere-trade-network.ts # Demo product/party network seed
+│   ├── seed-qubere-trade-network.ts # Demo product/party network seed
+│   └── backfill-document-associations.ts # One-time backfill into DocumentAssociation
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/          # Clerk Auth routes (/sign-in, /sign-up)

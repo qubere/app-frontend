@@ -90,7 +90,7 @@ export function PscNewClient() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || data.error || "Failed to create PSC");
+        throw new Error(data.message || data.error?.message || "Failed to create PSC");
       }
 
       router.push(`/app/post-entry/psc/${data.psc.id}`);

@@ -42,6 +42,39 @@ enum DocumentType {
   OTHER
 }
 
+/// Business entity types a document can be linked to via DocumentAssociation.
+/// Kept intentionally small -- add a value only once real route/RBAC support
+/// exists for that entity type.
+enum DocumentEntityType {
+  SHIPMENT
+  PARTY
+  PRODUCT
+  LICENSE
+  FILING
+}
+
+/// Semantics of a document-to-entity link. GENERAL is the safe default when
+/// no more specific relationship is known.
+enum DocumentRelationshipType {
+  SOURCE_DOCUMENT
+  SUPPORTING_DOCUMENT
+  FILING_ATTACHMENT
+  LICENSE_EVIDENCE
+  ORIGIN_EVIDENCE
+  GENERAL
+}
+
+/// How a DocumentAssociation came to exist -- used for display and audit, not
+/// for authorization (authorization always derives from the authenticated
+/// account context, never from this field).
+enum DocumentAssociationSource {
+  USER
+  DOCUMENT_INTELLIGENCE
+  INTEGRATION
+  SYSTEM
+  MIGRATION
+}
+
 // Normalized shipment-tracking vocabulary. Provider payloads are retained
 // separately; these enums are the stable contract consumed by Qubere's UI,
 // rules, and APIs.
@@ -369,6 +402,16 @@ model Account {
   licenseNotes                          LicenseNote[]
   licenseAllocations                    LicenseAllocation[]
   licenseConfig                         AccountLicenseConfig?
+  documentAssociations                  DocumentAssociation[]
+
+  onboardingCases         OnboardingCase[]
+  onboardingEntities      OnboardingEntity[]
+  onboardingEvents        OnboardingEvent[]
+  fiveOhSixRecords        FiveOhSixRecord[]
+  bondVerifications       BondVerification[]
+  poaTemplates            PoaTemplate[]
+  poaEnvelopes            PoaEnvelope[]
+  brokerComplianceProfile BrokerComplianceProfile?
 
   @@index([type])
   @@index([slug])
@@ -1131,26 +1174,26 @@ model EtaObservation {
 }
 
 model TrackingSubscription {
-  id                 String                     @id @default(cuid())
-  accountId          String
-  account            Account                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  shipmentId         String
-  shipment           Shipment                   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  id                  String                     @id @default(cuid())
+  accountId           String
+  account             Account                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId          String
+  shipment            Shipment                   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   integrationConfigId String?
   integrationConfig   IntegrationConfig?         @relation(fields: [integrationConfigId], references: [id], onDelete: SetNull)
-  provider           String
-  providerTrackingId String?
-  status             TrackingSubscriptionStatus @default(PENDING)
-  startedAt          DateTime?
-  endedAt            DateTime?
-  lastEventAt        DateTime?
-  lastSyncAt         DateTime?
-  lastErrorAt        DateTime?
-  lastErrorCode      String?
-  nextPollAt         DateTime?
-  retryCount         Int                        @default(0)
-  createdAt          DateTime                   @default(now())
-  updatedAt          DateTime                   @updatedAt
+  provider            String
+  providerTrackingId  String?
+  status              TrackingSubscriptionStatus @default(PENDING)
+  startedAt           DateTime?
+  endedAt             DateTime?
+  lastEventAt         DateTime?
+  lastSyncAt          DateTime?
+  lastErrorAt         DateTime?
+  lastErrorCode       String?
+  nextPollAt          DateTime?
+  retryCount          Int                        @default(0)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
 
   @@unique([accountId, shipmentId, provider])
   @@index([status, nextPollAt])
@@ -1310,6 +1353,7 @@ model ShipmentDocument {
   proofsOfDelivery         ProofOfDelivery[]
   carrierInvoices          CarrierInvoice[]
   customerRequestDocuments CustomerRequestDocument[]
+  associations             DocumentAssociation[]
 
   @@index([shipmentId])
   @@index([clientId])
@@ -1322,6 +1366,44 @@ model ShipmentDocument {
   @@index([accountId, createdAt])
   @@index([accountId, status, createdAt])
   @@index([accountId, malwareScanStatus])
+}
+
+/// Reusable, audited relationship between a canonical document
+/// (ShipmentDocument) and any Qubere business entity. This is additive to --
+/// not a replacement for -- ShipmentDocument.shipmentId, which remains the
+/// primary/legacy Shipment link. Unlink never deletes a row (active=false);
+/// re-linking always creates a new row so full history is preserved.
+model DocumentAssociation {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  documentId String
+  document   ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  entityType      DocumentEntityType
+  entityId        String
+  /// Human-readable identifier (e.g. shipment number) captured at link time so
+  /// history/activity views don't need a live join to a possibly-deleted entity.
+  entityDisplayId String?
+
+  relationshipType DocumentRelationshipType  @default(GENERAL)
+  source           DocumentAssociationSource @default(USER)
+
+  /// false once unlinked. Never physically deleted -- see module docs.
+  active Boolean @default(true)
+
+  linkedBy String
+  linkedAt DateTime @default(now())
+
+  unlinkedBy String?
+  unlinkedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, documentId, active])
+  @@index([accountId, entityType, entityId, active])
+  @@index([accountId, linkedAt])
 }
 
 /// Authorizes one normalized sender email to route inbound documents into
@@ -2503,26 +2585,29 @@ model ComplianceAuditRecord {
 }
 
 model ImporterOfRecord {
-  id                String   @id @default(cuid())
-  accountId         String
-  account           Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name              String
-  irsEin            String
-  cbpImporterNumber String   @unique
-  address           Json
-  bondId            String?
-  bond              Bond?    @relation(fields: [bondId], references: [id], onDelete: SetNull)
+  id                 String   @id @default(cuid())
+  accountId          String
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name               String
+  irsEin             String
+  cbpImporterNumber  String?  @unique // nullable during the pre-CBP-assigned window (S2)
+  registrationStatus String   @default("unregistered") // unregistered | pending_5106 | registered
+  address            Json
+  bondId             String?
+  bond               Bond?    @relation(fields: [bondId], references: [id], onDelete: SetNull)
   // A Client (forwarder's customer) can have multiple legal importer
   // entities on file -- e.g. separate CBP importer numbers per subsidiary.
-  clientId          String?
-  client            Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  clientId           String?
+  client             Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  shipments        Shipment[]
-  customsFilings   CustomsFiling[]
-  customsCases     CustomsCase[]
-  powersOfAttorney PowerOfAttorney[]
+  shipments          Shipment[]
+  customsFilings     CustomsFiling[]
+  customsCases       CustomsCase[]
+  powersOfAttorney   PowerOfAttorney[]
+  onboardingCases    OnboardingCase[]
+  onboardingEntities OnboardingEntity[]
 
   rateCards RateCard[]
   invoices  Invoice[]
@@ -2571,6 +2656,7 @@ model Client {
   invitations       Invitation[]
   shipmentDocuments ShipmentDocument[]
   customerRequests  CustomerRequest[]
+  onboardingCases   OnboardingCase[]
 
   @@index([accountId])
   @@index([accountId, status])
@@ -2653,39 +2739,57 @@ model ImpersonationSession {
 }
 
 model Bond {
-  id             String    @id @default(cuid())
-  accountId      String
-  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  bondType       String    @default("continuous") // continuous | single_transaction
-  suretyName     String    @default("Roanoke Insurance Group")
-  bondNumber     String    @unique
-  bondAmount     Decimal   @default(50000.0)
-  effectiveDate  DateTime  @default(now())
-  expirationDate DateTime?
-  status         String    @default("Active") // Active | Expired | Revoked
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                          String    @id @default(cuid())
+  accountId                   String
+  account                     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bondType                    String    @default("continuous") // continuous | single_transaction
+  suretyName                  String    @default("Roanoke Insurance Group")
+  suretyCode                  String?
+  bondNumber                  String    @unique
+  bondAmount                  Decimal   @default(50000.0)
+  activityCode                String? // CBPF 301 activity code A–T
+  effectiveDate               DateTime  @default(now())
+  expirationDate              DateTime?
+  status                      String    @default("unverified") // unverified | verifying | verified | insufficient | verification_failed | attested | expired | revoked
+  continuousBondFormulaAmount Decimal?  @db.Decimal(16, 2)
+  lastVerifiedAt              DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
-  importersOfRecord ImporterOfRecord[]
-  customsFilings    CustomsFiling[]
-  bondParties       BondParty[]
+  importersOfRecord  ImporterOfRecord[]
+  customsFilings     CustomsFiling[]
+  bondParties        BondParty[]
+  verifications      BondVerification[]
+  onboardingEntities OnboardingEntity[]
 
   @@index([accountId])
 }
 
 model PowerOfAttorney {
-  id                 String           @id @default(cuid())
-  accountId          String
-  account            Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  importerOfRecordId String
-  importerOfRecord   ImporterOfRecord @relation(fields: [importerOfRecordId], references: [id], onDelete: Cascade)
-  grantedByEntity    String
-  signedDate         DateTime         @default(now())
-  expirationDate     DateTime?
-  documentUrl        String?
-  status             String           @default("Active") // Active | Expired | Revoked
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  id                  String           @id @default(cuid())
+  accountId           String
+  account             Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importerOfRecordId  String
+  importerOfRecord    ImporterOfRecord @relation(fields: [importerOfRecordId], references: [id], onDelete: Cascade)
+  grantedByEntity     String
+  signedDate          DateTime         @default(now())
+  expirationDate      DateTime?
+  documentUrl         String?
+  // New fields — signer identity and execution method
+  signerName          String?
+  signerTitle         String?
+  signerRole          String? // OFFICER | AUTHORIZED_EMPLOYEE | GENERAL_PARTNER | MANAGING_MEMBER | INDIVIDUAL
+  executionMethod     String? // E_SIGN | WET_INK | WET_INK_NOTARIZED
+  executedDocumentUrl String?
+  templateId          String?
+  revokedAt           DateTime?
+  revokedReason       String?
+  status              String           @default("draft") // draft | out_for_signature | executed | declined | expired | revoked
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  envelope           PoaEnvelope?
+  onboardingEntities OnboardingEntity[]
 
   @@index([accountId])
   @@index([importerOfRecordId])
@@ -2727,6 +2831,7 @@ model LegalEntity {
   shipmentParties    ShipmentParty[]
   productParties     ProductParty[]
   productIdentifiers ProductIdentifier[]
+  onboardingEntities OnboardingEntity[]
 
   @@index([accountId])
   @@index([clientId])
@@ -8811,6 +8916,38 @@ model MemoryEvidence {
   @@index([memoryId])
 }
 
+/// Shared, product-versioned help content. This is deliberately global rather
+/// than account-scoped: tenant-specific operational memory belongs in
+/// AccountMemory and must never be mixed with Qubere product documentation.
+model ProductHelpArticle {
+  id              String                      @id
+  moduleId        String
+  question        String
+  answer          String                      @db.Text
+  steps           Json
+  href            String?
+  actionLabel     String?
+  tags            String[]                    @default([])
+  aliases         String[]                    @default([])
+  popular         Boolean                     @default(false)
+  status          String                      @default("PUBLISHED")
+  sourcePath      String?
+  contentHash     String
+  searchText      String                      @db.Text
+  /// Plain-array copy retained for exports and environments where vector
+  /// inspection is useful. Live similarity search uses embeddingVector.
+  embedding       Float[]                     @default([])
+  embeddingVector Unsupported("vector(768)")?
+  contentTsv      Unsupported("tsvector")?    @default(dbgenerated("to_tsvector('simple'::regconfig, \"searchText\")"))
+  publishedAt     DateTime                    @default(now())
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@index([moduleId, status])
+  @@index([status, publishedAt])
+  @@index([contentTsv], type: Gin, map: "ProductHelpArticle_contentTsv_gin_idx")
+}
+
 // ---------------------------------------------------------------------------
 // INTEGRATIONS MANAGEMENT
 // ---------------------------------------------------------------------------
@@ -9842,4 +9979,242 @@ model EscalationEvent {
 
   @@index([accountId, workItemId])
   @@index([toUserId, acknowledgedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER ONBOARDING (F16)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model OnboardingCase {
+  id                String            @id @default(cuid())
+  accountId         String
+  account           Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId          String?
+  client            Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  primaryImporterId String?
+  primaryImporter   ImporterOfRecord? @relation(fields: [primaryImporterId], references: [id], onDelete: SetNull)
+
+  path                      String // STANDARD | SWITCHING | NON_RESIDENT | BULK | ERP
+  status                    String    @default("draft")
+  currentStep               Int       @default(1)
+  stepStatus                Json      @default("{}")
+  blockers                  Json      @default("[]")
+  projectedAnnualDutyTaxFee Decimal?  @db.Decimal(16, 2)
+  activatedAt               DateTime?
+  activatedByUserId         String?
+  withdrawnReason           String?
+  assignedUserId            String?
+  source                    String    @default("UI") // UI | PORTAL | BULK_IMPORT | ERP
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entities         OnboardingEntity[]
+  fiveOhSixRecords FiveOhSixRecord[]
+  events           OnboardingEvent[]
+
+  @@index([accountId, status])
+  @@index([accountId, clientId])
+  @@index([assignedUserId])
+}
+
+model OnboardingEntity {
+  id                 String            @id @default(cuid())
+  accountId          String
+  account            Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  caseId             String
+  case               OnboardingCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  legalEntityId      String?
+  legalEntity        LegalEntity?      @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  importerOfRecordId String?
+  importerOfRecord   ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: SetNull)
+
+  importerNumberType   String           @default("EIN") // EIN | SSN | CBP_ASSIGNED
+  importerNumber       String?
+  residentAgent        Json?
+  officers             Json             @default("[]")
+  poaId                String?
+  poa                  PowerOfAttorney? @relation(fields: [poaId], references: [id], onDelete: SetNull)
+  bondId               String?
+  bond                 Bond?            @relation(fields: [bondId], references: [id], onDelete: SetNull)
+  bondCoverage         String           @default("own") // own | broker_bond | single_transaction | none
+  screeningStatus      String           @default("pending") // pending | passed | flagged | blocked | overridden
+  screeningDisposition Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([caseId])
+}
+
+model FiveOhSixRecord {
+  id                 String          @id @default(cuid())
+  accountId          String
+  account            Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  caseId             String?
+  case               OnboardingCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  onboardingEntityId String?
+  legalEntityId      String?
+
+  action             String // CREATE | UPDATE
+  importerNumberType String // EIN | SSN | CBP_ASSIGNED
+  importerNumber     String?
+  payload            Json    @default("{}")
+  provenance         Json    @default("{}")
+
+  status            String  @default("draft") // draft|generated|submitted|accepted|rejected|superseded
+  deliveryMethod    String? // ABI | ACE_PORTAL | PAPER
+  pdfDocumentUrl    String?
+  transmissionRef   String?
+  cbpResponseRaw    String?
+  cbpAssignedNumber String?
+  rejectionReasons  Json?
+
+  submittedAt DateTime?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([accountId, status])
+  @@index([caseId])
+}
+
+model BondVerification {
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bondId    String
+  bond      Bond    @relation(fields: [bondId], references: [id], onDelete: Cascade)
+
+  method                String // CBP_IMPORTER_BOND_QUERY | SURETY_CODE_LOOKUP | MANUAL_ATTESTATION
+  result                String // match | no_bond_on_file | mismatch | lapsed | surety_unconfirmed | error
+  queriedImporterNumber String?
+  requestRaw            String?
+  responseRaw           String?
+  discrepancies         Json?
+  suretyCode            String?
+  suretyName            String?
+  attestedByUserId      String?
+  attestationNote       String?
+
+  performedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([accountId])
+  @@index([bondId, performedAt])
+}
+
+model PoaTemplate {
+  id                   String   @id @default(cuid())
+  accountId            String
+  account              Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                 String
+  version              Int      @default(1)
+  entityTypes          String[]
+  bodyStorageUrl       String
+  termMonths           Int?
+  requiresNotarization Boolean  @default(false)
+  isDefault            Boolean  @default(false)
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([accountId, name, version])
+  @@index([accountId, active])
+}
+
+model PoaEnvelope {
+  id                String          @id @default(cuid())
+  accountId         String
+  account           Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  powerOfAttorneyId String          @unique
+  powerOfAttorney   PowerOfAttorney @relation(fields: [powerOfAttorneyId], references: [id], onDelete: Cascade)
+
+  provider            String // DOCUSIGN | DROPBOX_SIGN | INTERNAL | MANUAL_UPLOAD
+  providerEnvelopeId  String?
+  templateId          String?
+  status              String // created | sent | delivered | signed | completed | declined | voided | error
+  signerName          String
+  signerEmail         String
+  signerTitle         String?
+  signerRole          String
+  sentAt              DateTime?
+  completedAt         DateTime?
+  executedDocumentUrl String?
+  auditTrailUrl       String?
+  webhookEventsRaw    Json      @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([status])
+}
+
+model BrokerComplianceProfile {
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  licenseType                            String    @default("CORPORATE") // INDIVIDUAL | CORPORATE | PARTNERSHIP
+  brokerLicenseNumber                    String?
+  licenseIssueDate                       DateTime?
+  nationalPermitNumber                   String?
+  nationalPermitStatus                   String    @default("none") // none | pending | active | suspended | revoked
+  filerCode                              String?
+  triennialStatusReportDueOn             DateTime?
+  responsibleSupervisionAttestedByUserId String?
+  responsibleSupervisionAttestedAt       DateTime?
+
+  status    String   @default("incomplete") // incomplete | ready | restricted
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permitQualifyingOfficers BrokerPQO[]
+  districtPermits          BrokerDistrictPermit[]
+
+  @@index([accountId])
+}
+
+model BrokerPQO {
+  id                      String                  @id @default(cuid())
+  profileId               String
+  profile                 BrokerComplianceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  userId                  String?
+  name                    String
+  individualLicenseNumber String
+  districts               String[]
+  active                  Boolean                 @default(true)
+  createdAt               DateTime                @default(now())
+
+  @@index([profileId])
+}
+
+model BrokerDistrictPermit {
+  id           String                  @id @default(cuid())
+  profileId    String
+  profile      BrokerComplianceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  districtCode String
+  permitNumber String?
+  status       String                  @default("active") // active | pending | suspended
+  createdAt    DateTime                @default(now())
+
+  @@unique([profileId, districtCode])
+}
+
+model OnboardingEvent {
+  id          String         @id @default(cuid())
+  accountId   String
+  account     Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  caseId      String
+  case        OnboardingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type        String
+  step        Int?
+  actorUserId String?
+  actorType   String         @default("USER") // USER | PORTAL | SYSTEM
+  detail      Json           @default("{}")
+  createdAt   DateTime       @default(now())
+
+  @@index([caseId, createdAt])
 }

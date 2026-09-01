@@ -42,6 +42,14 @@ export interface LicenseConditionsInput {
   encryptionSelfClassified?: TriState;
   replacementPartsIndicator?: TriState;
   militaryEndUseCountry?: TriState;
+  /** End-user certificate or letter of assurance is on file for this party. */
+  endUserCertificateOnFile?: TriState;
+  /** Destination is within a customs free zone. */
+  customsFreeZone?: TriState;
+  /** License exception encryption registration number (BIS), when asserted. */
+  encryptionExceptionZNumber?: string | null;
+  /** Commodity Classification Automated Tracking System number, when asserted. */
+  encryptionExceptionCcatsNumber?: string | null;
 }
 
 export interface LicenseDeterminationRequestInput {

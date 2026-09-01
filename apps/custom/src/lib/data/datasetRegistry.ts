@@ -487,7 +487,7 @@ export async function triggerDatasetRefresh(id: string): Promise<{
       });
       const responseData = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errorMsg = responseData.note || responseData.error || `Endpoint returned HTTP ${res.status}`;
+        const errorMsg = responseData.note || responseData.error?.message || `Endpoint returned HTTP ${res.status}`;
         return { success: false, message: errorMsg };
       }
       return { success: true, message: responseData.note || "Ingestion enqueued." };
@@ -521,7 +521,7 @@ export async function triggerDatasetRefresh(id: string): Promise<{
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      const errorMsg = errorData.error || errorData.reason || `Endpoint returned HTTP ${res.status}`;
+      const errorMsg = errorData.error?.message || errorData.reason || `Endpoint returned HTTP ${res.status}`;
       await db.datasetRefreshLog.update({
         where: { id: log.id },
         data: { status: "FAILED", errorMessage: errorMsg, completedAt: new Date() },

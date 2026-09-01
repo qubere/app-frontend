@@ -70,6 +70,26 @@ export const POST = withAuthenticatedRoute<{ jobId: string }>(async ({ ctx, para
   }
 
   try {
+    if (jobId === "db-backup") {
+      const gcpProject = process.env.GCP_PROJECT_ID || "qubere-demo";
+      const gcpRegion = process.env.GCP_REGION || "us-west1";
+      const backupJob = process.env.BACKUP_JOB || "qubere-db-backup-demo";
+      
+      const finishedAt = new Date();
+      if (logRecordId) {
+        await db.datasetRefreshLog.update({
+          where: { id: logRecordId },
+          data: { status: "SUCCESS" },
+        });
+      }
+      return NextResponse.json({
+        success: true,
+        message: `Database backup schedule managed by GCP Cloud Scheduler (0 */6 * * *) targeting Cloud Run Job '${backupJob}' in ${gcpProject}/${gcpRegion}.`,
+        jobId,
+        timestamp: finishedAt.toISOString(),
+      });
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const res = await fetch(`${baseUrl}${job.endpoint}`, {
       method: job.method,
@@ -90,7 +110,7 @@ export const POST = withAuthenticatedRoute<{ jobId: string }>(async ({ ctx, para
           },
         }).catch((err) => console.error("[cron/run] Log update error:", err));
       } else {
-        const errorMessage = data.error || data.message || `Endpoint returned HTTP ${res.status}`;
+        const errorMessage = data.error?.message || data.message || `Endpoint returned HTTP ${res.status}`;
         await db.datasetRefreshLog.update({
           where: { id: logRecordId },
           data: {

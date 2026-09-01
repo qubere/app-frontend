@@ -84,7 +84,7 @@ export function LineItemsTable({ shipmentId, initialLineItems, currency }: LineI
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to update line item");
+        throw new Error(errData.error?.message ?? "Failed to update line item");
       }
 
       setLineItems(

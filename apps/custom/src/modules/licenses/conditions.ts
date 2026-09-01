@@ -6,6 +6,12 @@
 // unknown flag must instead surface INCOMPLETE/REVIEW_REQUIRED.
 import type { LicenseConditionsInput, TriState } from "./types";
 
+// Keys of LicenseConditionsInput whose value is a TriState (excludes the
+// free-text reference-number fields), so indexed access below stays TriState.
+type TriStateKey = {
+  [K in keyof LicenseConditionsInput]-?: LicenseConditionsInput[K] extends TriState | undefined ? K : never;
+}[keyof LicenseConditionsInput];
+
 export interface NormalizedConditions {
   flags: Record<string, TriState>;
   /** Flag names whose value is UNKNOWN (including entirely absent from the request). */
@@ -14,9 +20,11 @@ export interface NormalizedConditions {
   hasSensitiveEndUse: boolean;
   /** True if the replacement-parts indicator is explicitly TRUE. */
   isReplacementParts: boolean;
+  /** Free-text encryption exception reference numbers, when asserted -- evidence only, not validated against BIS records. */
+  referenceNumbers: { zNumber: string | null; ccatsNumber: string | null };
 }
 
-const CONDITION_KEYS: Array<keyof LicenseConditionsInput> = [
+const CONDITION_KEYS: TriStateKey[] = [
   "governmentEndUser",
   "militaryEndUser",
   "nuclearEndUse",
@@ -28,10 +36,12 @@ const CONDITION_KEYS: Array<keyof LicenseConditionsInput> = [
   "encryptionSelfClassified",
   "replacementPartsIndicator",
   "militaryEndUseCountry",
+  "endUserCertificateOnFile",
+  "customsFreeZone",
 ];
 
 /** Sensitive end-use/end-user flags that, if TRUE, always force at least REVIEW_REQUIRED. */
-const SENSITIVE_END_USE_KEYS: Array<keyof LicenseConditionsInput> = [
+const SENSITIVE_END_USE_KEYS: TriStateKey[] = [
   "governmentEndUser",
   "militaryEndUser",
   "nuclearEndUse",
@@ -52,6 +62,10 @@ export function normalizeConditions(input: LicenseConditionsInput | undefined): 
 
   const hasSensitiveEndUse = SENSITIVE_END_USE_KEYS.some((key) => flags[key] === "TRUE");
   const isReplacementParts = flags.replacementPartsIndicator === "TRUE";
+  const referenceNumbers = {
+    zNumber: input?.encryptionExceptionZNumber?.trim() || null,
+    ccatsNumber: input?.encryptionExceptionCcatsNumber?.trim() || null,
+  };
 
-  return { flags, unknownFlags, hasSensitiveEndUse, isReplacementParts };
+  return { flags, unknownFlags, hasSensitiveEndUse, isReplacementParts, referenceNumbers };
 }

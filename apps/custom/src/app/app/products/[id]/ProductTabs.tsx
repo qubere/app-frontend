@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui";
+import { EntityDocuments } from "@/components/EntityDocuments";
 import { displayDate, displayText } from "@/lib/honest";
 import { findAttributeDefinition } from "@/modules/product/productAttributes";
 import type { ProductDetail } from "@/modules/product/productService";
@@ -253,7 +254,7 @@ function AliasesTab({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setActionError(data.detail ?? data.error ?? "Could not create a canonical record.");
+        setActionError(data.detail ?? data.error?.message ?? "Could not create a canonical record.");
         return;
       }
       await load();
@@ -1165,6 +1166,8 @@ export function ProductTabs({
           </table>
         </div>
       )}
+
+      {tab === "documents" && <EntityDocuments entityType="PRODUCT" entityId={productId} />}
 
       {tab === "history" && (
         <div className="space-y-4">

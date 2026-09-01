@@ -151,7 +151,7 @@ export async function assembleFocusedAssessmentFile(
     });
     if (importer) {
       importerName = importer.name;
-      cbpNumber = importer.cbpImporterNumber;
+      cbpNumber = importer.cbpImporterNumber ?? "";
       addressStr = formatAddress(importer.address);
     }
   } else if (filings.length > 0) {
@@ -159,7 +159,7 @@ export async function assembleFocusedAssessmentFile(
     const importer = f.importerOfRecord ?? f.shipment?.importerOfRecord;
     if (importer) {
       importerName = importer.name;
-      cbpNumber = importer.cbpImporterNumber;
+      cbpNumber = importer.cbpImporterNumber ?? "";
       addressStr = formatAddress(importer.address);
     } else if (f.shipment) {
       importerName = f.shipment.importerName;

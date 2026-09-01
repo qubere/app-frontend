@@ -13,14 +13,30 @@ async function handleIngest(requestId: string) {
     where: { datasetId: DATASET_ID, status: "RUNNING" },
   });
   if (alreadyRunning) {
-    return NextResponse.json(
-      {
-        status: "ALREADY_RUNNING",
-        requestId,
-        note: `BIS CSL ingestion already has a run in progress (started ${alreadyRunning.startedAt.toISOString()}).`,
+    // A RUNNING row older than this route's own execution ceiling means the
+    // prior invocation was killed (timeout/crash) before reaching its catch
+    // block, so it can never self-heal -- reclaim it instead of deadlocking
+    // every future run behind a 409 forever.
+    const staleCutoffMs = maxDuration * 1000 * 1.5;
+    const isStale = Date.now() - alreadyRunning.startedAt.getTime() > staleCutoffMs;
+    if (!isStale) {
+      return NextResponse.json(
+        {
+          status: "ALREADY_RUNNING",
+          requestId,
+          note: `BIS CSL ingestion already has a run in progress (started ${alreadyRunning.startedAt.toISOString()}).`,
+        },
+        { status: 409 }
+      );
+    }
+    await db.datasetRefreshLog.update({
+      where: { id: alreadyRunning.id },
+      data: {
+        status: "FAILED",
+        errorMessage: "Run superseded: exceeded execution ceiling without completing (stale RUNNING row reclaimed).",
+        completedAt: new Date(),
       },
-      { status: 409 }
-    );
+    });
   }
 
   const log = await db.datasetRefreshLog.create({

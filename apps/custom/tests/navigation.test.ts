@@ -21,7 +21,7 @@ function hrefsFor(access: NavAccess): string[] {
 }
 
 describe("navigation visibility", () => {
-  it("keeps account administration and platform tools out of the sidebar for every role", () => {
+  it("keeps account administration and the platform console out of the sidebar for every role", () => {
     // The header account menu renders these, so the sidebar must not repeat them.
     for (const access of [viewer, member, admin, owner, platform]) {
       const hrefs = hrefsFor(access);
@@ -30,7 +30,6 @@ describe("navigation visibility", () => {
       expect(hrefs).not.toContain("/app/admin/roles");
       expect(hrefs).not.toContain("/app/admin/settings");
       expect(hrefs).not.toContain("/platform-admin");
-      expect(hrefs).not.toContain("/app/filing-config");
     }
   });
 
@@ -62,10 +61,12 @@ describe("navigation visibility", () => {
     }
   });
 
-  it("authorizes Filing Configuration only for platform admins (rendered in the header menu)", () => {
+  it("authorizes Filing Configuration only for platform admins (rendered in the sidebar Management section)", () => {
     expect(canAccessHref(platform, "/app/filing-config")).toBe(true);
+    expect(hrefsFor(platform)).toContain("/app/filing-config");
     for (const access of [viewer, member, admin, owner]) {
       expect(canAccessHref(access, "/app/filing-config")).toBe(false);
+      expect(hrefsFor(access)).not.toContain("/app/filing-config");
     }
   });
 
@@ -211,6 +212,7 @@ describe("navigation coverage -- nothing broker-critical is orphaned", () => {
     "/app/parties",
     "/app/reconciliation",
     "/app/vault",
+    "/app/support",
     "/app/filing-config",
   ];
 
