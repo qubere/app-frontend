@@ -56,7 +56,6 @@ ADRs, customs-filing module docs, UI-config framework, sales decks, TMS architec
 
 ### TMS
 - [Modular agent architecture](apps/tms/feature/TMS-MODULAR-AGENT-ARCHITECTURE.md)
-- [Data model review](apps/tms/planning/TMS-DDL-REVIEW.md)
 - [Sales](apps/tms/sales/)
 
 ### WMS
