@@ -45,7 +45,7 @@ export function AssistEntryBanner({filingId,revision}:{filingId:string;revision:
           <label className="text-xs">Reason<select className="ml-2 rounded-lg border border-border p-2" value={overrides[m.id].reason} onChange={e=>setOverrides(v=>({...v,[m.id]:{...v[m.id],reason:e.target.value}}))}><option value="">Choose a reason</option>{OVERRIDE_REASONS.map(r=><option key={r} value={r}>{r.replaceAll("_"," ")}</option>)}</select></label>
         </div>}
       </div>)}
-      {data?.declarations.map(d=><p key={d.id} className="mt-3 text-sm">Declared: {d.currency} {d.amountDeclared} · immutable audit record</p>)}
+      {data?.declarations.map(d=><p key={d.id} className="mt-3 text-sm">Declared: {d.currency} {d.amountDeclared} · recorded at submission</p>)}
     </details>
     <button className="mt-3 text-xs text-brand" onClick={()=>{setConflicts({});setError("");void load().catch(e=>setError(e.message));}}>Refresh assist review</button>
   </section>;

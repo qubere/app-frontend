@@ -72,7 +72,7 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
     const url = URL.createObjectURL(new Blob([detail.hold.rawNotice], { type: "text/plain" }));
     const a = document.createElement("a"); a.href = url; a.download = "agency-hold-" + id + ".txt"; a.click(); URL.revokeObjectURL(url);
   };
-  return <DrawerShell open title="Resolve agency hold" onClose={close} busy={busy} footer={
+  return <DrawerShell open closeLabel="Save and close drawer" title="Resolve agency hold" onClose={close} busy={busy} footer={
     <div className="flex items-center justify-between gap-3">
       <button disabled={busy} onClick={close} className="text-sm text-ink-muted">{editable ? "Save & close" : "Close"}</button>
       {detail?.fields && <div className="flex items-center gap-3">
@@ -133,7 +133,8 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
             <summary className="cursor-pointer font-medium">Record agency response</summary>
             <div className="mt-3 space-y-3">
               <label className="block text-sm">Agency outcome<select className={control} value={response.status} onChange={e => setResponse(v => ({...v, status:e.target.value}))}><option>Processing</option><option>Rejected</option><option>Released</option></select></label>
-              {(["responseCode","reason","rawResponse","rejectedFields","responseAt"] as const).map(key => <label key={key} className="block text-sm">{{responseCode:"Response code",reason:"Agency explanation",rawResponse:"Original response evidence",rejectedFields:"Flagged field IDs (comma-separated)",responseAt:"Response received at"}[key]}<input type={key === "responseAt" ? "datetime-local" : "text"} className={control} value={response[key]} onChange={e => setResponse(v => ({...v, [key]:e.target.value}))}/></label>)}
+              {(["responseCode","reason","rawResponse","responseAt"] as const).map(key => <label key={key} className="block text-sm">{{responseCode:"Response code",reason:"Agency explanation",rawResponse:"Original response evidence",rejectedFields:"Flagged field IDs (comma-separated)",responseAt:"Response received at"}[key]}<input type={key === "responseAt" ? "datetime-local" : "text"} className={control} value={response[key]} onChange={e => setResponse(v => ({...v, [key]:e.target.value}))}/></label>)}
+              {response.status === "Rejected" && <fieldset><legend className="text-sm">Fields requiring correction</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{detail.fields.map(field => <label key={field.id} className="flex gap-2 text-sm"><input type="checkbox" checked={response.rejectedFields.split(",").includes(field.id)} onChange={e => setResponse(v => ({ ...v, rejectedFields: (e.target.checked ? [...v.rejectedFields.split(",").filter(Boolean), field.id] : v.rejectedFields.split(",").filter(id => id !== field.id)).join(",") }))}/>{field.label}</label>)}</div></fieldset>}
               <button className="rounded-lg bg-brand px-4 py-2 text-sm text-white disabled:opacity-40" disabled={busy || !response.responseCode || !response.reason || !response.rawResponse || !response.responseAt} onClick={() => void perform(async () => {
                 await workflowRequest("/api/pga/holds/" + id + "/status", { method:"PATCH", body: JSON.stringify({...response, version:versionRef.current, submissionId:latest.id, responseAt:new Date(response.responseAt).toISOString(), rejectedFields:response.rejectedFields.split(",").map(s=>s.trim()).filter(Boolean)}) });
                 const updated = await load(); onChanged(); if(updated.hold.status === "Rejected") setStep(1);

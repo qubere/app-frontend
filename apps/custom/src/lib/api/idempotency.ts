@@ -41,8 +41,7 @@ export async function checkIdempotency(
     if (existing.expiresAt < new Date()) {
       // Key expired — delete old record and allow re-use
       await db.idempotencyRecord.delete({ where: { id: existing.id } });
-      return { idempotencyKey, requestHash, cachedResponse: null, errorResponse: null };
-    }
+    } else {
 
     if (existing.requestHash !== requestHash) {
       return {
@@ -71,6 +70,8 @@ export async function checkIdempotency(
       cachedResponse: NextResponse.json(existing.responseBody, { status: existing.statusCode }),
       errorResponse: null,
     };
+  }
+
   }
 
   // Atomically reserve the key with PROCESSING status before business execution.
