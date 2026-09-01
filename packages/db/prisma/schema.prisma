@@ -202,6 +202,12 @@ enum DeadlineClass {
 }
 
 model Account {
+  pgaHolds PgaHold[]
+  pgaHoldSubmissions PgaHoldSubmission[]
+  assists Assist[]
+  assistDecisions AssistDecision[]
+  assistDeclarations AssistDeclaration[]
+
   id          String    @id @default(cuid())
   name        String
   slug        String    @unique
@@ -657,6 +663,8 @@ model IdempotencyRecord {
 // -----------------------------------------------------------------------------
 
 model Shipment {
+  pgaHolds PgaHold[]
+
   id                 String                 @id @default(cuid())
   accountId          String
   account            Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -1728,6 +1736,9 @@ model AgentPolicyConfig {
 }
 
 model CustomsFiling {
+  assistDecisions AssistDecision[]
+  assistDeclarations AssistDeclaration[]
+
   id                 String            @id @default(cuid())
   shipmentId         String?
   shipment           Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
@@ -2582,6 +2593,8 @@ model ComplianceAuditRecord {
 }
 
 model ImporterOfRecord {
+  assists Assist[]
+
   id                 String   @id @default(cuid())
   accountId          String
   account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -5206,6 +5219,8 @@ enum PartyMatchStatus {
 /// status, effective dates and evidence. There is deliberately no name and no
 /// country column here, for the same reason there is no `Product.hsCode`.
 model Party {
+  assistScopes AssistParty[]
+
   id        String  @id @default(cuid())
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -10127,4 +10142,151 @@ model OnboardingEvent {
   createdAt   DateTime       @default(now())
 
   @@index([caseId, createdAt])
+}
+
+
+model PgaHold {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId String
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  externalKey String
+  agencyCode String
+  holdCode String
+  reasonText String
+  rawNotice String
+  status String @default("Open")
+  commodityLineRef String?
+  issuedAt DateTime
+  closedAt DateTime?
+  version Int @default(0)
+  draftFormInput Json?
+  draftUpdatedAt DateTime?
+  createdAt DateTime @default(now())
+  submissions PgaHoldSubmission[]
+  @@unique([accountId, externalKey])
+  @@index([accountId, status, issuedAt])
+  @@index([accountId, agencyCode, issuedAt])
+  @@index([shipmentId])
+}
+
+model PgaHoldSubmission {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pgaHoldId String
+  pgaHold PgaHold @relation(fields: [pgaHoldId], references: [id], onDelete: Cascade)
+  idempotencyKey String @unique
+  requestKey String
+  attemptNumber Int
+  messageSetText String
+  formInputJson Json
+  status String @default("Sent")
+  transmissionMode String @default("MANUAL")
+  externalReference String
+  rejectionCode String?
+  rejectionReason String?
+  rejectedFields Json?
+  rawResponse String?
+  operatorUserId String
+  submittedAt DateTime @default(now())
+  responseAt DateTime?
+  @@unique([accountId, requestKey])
+  @@unique([pgaHoldId, attemptNumber])
+  @@index([accountId, pgaHoldId, submittedAt])
+}
+
+model Assist {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importerOfRecordId String?
+  importerOfRecord ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: Restrict)
+  type String
+  description String
+  totalValue Decimal @db.Decimal(18, 2)
+  currency String
+  remainingValue Decimal @db.Decimal(18, 2)
+  allocationMethod String
+  allocationBasis String @default("entries")
+  estimatedVolume Decimal? @db.Decimal(18, 6)
+  estimatedImportValue Decimal? @db.Decimal(18, 2)
+  skuPattern String?
+  status String @default("Draft")
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  version Int @default(0)
+  warningEpoch Int @default(0)
+  createdByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  suppliers AssistParty[]
+  hts AssistHtsScope[]
+  decisions AssistDecision[]
+  declarations AssistDeclaration[]
+  @@index([accountId, status, effectiveTo])
+  @@index([accountId, importerOfRecordId, status])
+}
+
+model AssistParty {
+  id String @id @default(cuid())
+  assistId String
+  assist Assist @relation(fields: [assistId], references: [id], onDelete: Cascade)
+  partyId String
+  party Party @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  role String
+  @@unique([assistId, partyId, role])
+  @@index([partyId])
+}
+
+model AssistHtsScope {
+  id String @id @default(cuid())
+  assistId String
+  assist Assist @relation(fields: [assistId], references: [id], onDelete: Cascade)
+  prefix String
+  @@unique([assistId, prefix])
+}
+
+model AssistDecision {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  assistId String
+  assist Assist @relation(fields: [assistId], references: [id], onDelete: Restrict)
+  filingId String
+  filing CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  decision String
+  amount Decimal @db.Decimal(18, 2)
+  customsAmount Decimal @db.Decimal(18, 2)
+  exchangeRate Decimal @db.Decimal(24, 12)
+  basisHash String
+  assistVersion Int
+  overrideReasonCode String?
+  operatorUserId String
+  updatedAt DateTime @updatedAt
+  @@unique([assistId, filingId])
+  @@index([accountId, filingId])
+}
+
+model AssistDeclaration {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  assistId String
+  assist Assist @relation(fields: [assistId], references: [id], onDelete: Restrict)
+  filingId String
+  filing CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Restrict)
+  amountDeclared Decimal @db.Decimal(18, 2)
+  customsAmount Decimal @db.Decimal(18, 2)
+  currency String
+  customsCurrency String
+  exchangeRate Decimal @db.Decimal(24, 12)
+  lineAmounts Json
+  wasOverride Boolean @default(false)
+  overrideReasonCode String?
+  operatorUserId String
+  declaredAt DateTime @default(now())
+  @@unique([assistId, filingId])
+  @@index([accountId, filingId])
 }
