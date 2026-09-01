@@ -15,30 +15,34 @@ docs/apps/
 
 | Folder | Contents |
 |--------|----------|
-| `feature/` | Live / in-progress feature specs and architecture docs |
-| `planning/` | Project plans, roadmaps, ADRs, audit reports, requirements |
+| `feature/` | Feature specs + architecture reference for shipped/in-progress features |
 | `data/` | Data models, schemas, field dictionaries, API spec |
 | `ops/` | Runbooks, infra, email/domain setup |
 | `support/` | Help center and broker support docs |
 | `sales/` | Sales decks, demo playbooks, pitch docs |
-| `future/` | Unimplemented or speculative features |
-| `bugs/` | Open gap analyses, perf issues, known deficiencies |
+| `planning/adr/` | Architecture Decision Records (the only thing left under `planning/`) |
 
-## Backlog is in GitHub Issues
+## The backlog lives in GitHub Issues
 
-The gap analyses, proposals, `future/` specs, and open-item lists that used to live in
-`bugs/`, `future/`, and `planning/` have been migrated to GitHub Issues so the build
-backlog is filterable in one place. Each issue carries three labels:
+Every gap analysis, proposal, `future/` spec, feature spec, open-item list, roadmap,
+and audit snapshot that used to live in `bugs/`, `future/`, `planning/`, and
+`planning/features/` has been migrated to GitHub Issues so the build backlog is
+filterable in one place. `bugs/` and `future/` no longer exist; `planning/` is now
+just `adr/`.
 
+Each backlog issue carries four labels and opens with an `<Area><impact><effort>` tag:
+
+- `backlog`
 - `area:*` — brokerage-os · compliance · post-entry · billing · cross-cutting · tms
 - `impact:*` — critical · high · medium · low (impact on the customer)
 - `effort:*` — high · medium · low (effort to get it done)
 
-Start at the [**backlog index issue**](https://github.com/qubere/app-frontend/issues) (label `backlog`),
-or filter, e.g. `label:backlog label:impact:critical`.
+Start at the [**backlog index**](https://github.com/qubere/app-frontend/issues?q=is%3Aissue+is%3Aopen+label%3Abacklog) (#226),
+or filter, e.g. [`label:backlog label:impact:critical`](https://github.com/qubere/app-frontend/issues?q=is%3Aissue+is%3Aopen+label%3Abacklog+label%3Aimpact%3Acritical).
+Issues titled `[archive]` are point-in-time audit/review snapshots kept for the record.
 
-Docs that remain here are **reference** material (data models, architecture, ADRs,
-customs-filing module docs, UI-config framework, sales decks, completed audit snapshots).
+Docs that remain in `docs/` are **reference** material (data models, architecture,
+ADRs, customs-filing module docs, UI-config framework, sales decks, TMS architecture).
 
 ## Quick links
 
