@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
-import { buildErrorResponse, errorMessage } from "@/lib/api/error";
+import { DomainError, handleApiError, buildErrorResponse, errorMessage } from "@/lib/api/error";
 import { validatePathParams } from "@/lib/api/validation";
 import { checkIdempotency, persistIdempotency } from "@/lib/api/idempotency";
 import { createAuditLog, AuditAction } from "@/lib/audit";
@@ -226,6 +226,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
 
     return NextResponse.json(responsePayload);
   } catch (error: unknown) {
+    if (error instanceof DomainError) return handleApiError(error, requestId);
     if (errorMessage(error) === "NOT_FOUND") {
       return buildErrorResponse(404, "NOT_FOUND", "Filing case not found", undefined, requestId);
     }

@@ -1,4 +1,5 @@
 "use client";
+import { PgaHoldQueue } from "@/components/pga/PgaHoldQueue";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -49,6 +50,8 @@ interface TeamMember {
 }
 
 interface ActionsClientProps {
+  canReadPga?: boolean;
+  canReviewPga?: boolean;
   groups: ShipmentActionGroup[];
   canWrite: boolean;
   canWaive: boolean;
@@ -97,6 +100,8 @@ const PRIORITY_TEXT: Record<WorkPriority, string> = {
 };
 
 export function ActionsClient({
+  canReadPga = false,
+  canReviewPga = false,
   groups: initialGroups,
   canWrite,
   canWaive,
@@ -373,6 +378,7 @@ export function ActionsClient({
 
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto pb-12">
+      {canReadPga && <PgaHoldQueue canReview={canReviewPga} />}
       {/* Header toolbar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-border shadow-2xs">
         <div className="flex items-center space-x-2.5">

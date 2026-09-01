@@ -59,6 +59,9 @@ export default async function PartyDetailPage(props: {
   const activeAddresses = party.addresses.filter((a) => a.status === "ACTIVE");
   const activeContacts = party.contacts.filter((c) => c.status === "ACTIVE");
   const activeRoles = party.roles.filter((r) => r.status === "ACTIVE");
+  const assistPartyQuery = new URLSearchParams();
+  if (activeRoles.some(role => role.roleType === "MANUFACTURER")) assistPartyQuery.set("manufacturerId", id);
+  if (activeRoles.some(role => role.roleType === "SUPPLIER" || role.roleType === "SELLER") || !assistPartyQuery.size) assistPartyQuery.set("supplierId", id);
   const activeSites = party.sites.filter((s) => s.status === "ACTIVE");
   const activeRelationshipsFrom = party.relationshipsFrom.filter((r) => r.status === "ACTIVE");
   const activeRelationshipsTo = party.relationshipsTo.filter((r) => r.status === "ACTIVE");
@@ -95,6 +98,8 @@ export default async function PartyDetailPage(props: {
           </div>
         )}
       </div>
+
+      {writable && holdsPermission(context, "valuation.update") && <Link className="inline-flex rounded-lg border border-border px-3 py-2 text-sm font-medium text-brand" href={"/app/assists?" + assistPartyQuery.toString()}>+ Add assist for this party</Link>}
 
       {openFlags.length > 0 && (
         <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-5 space-y-4">

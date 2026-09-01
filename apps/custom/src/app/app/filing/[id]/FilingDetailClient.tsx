@@ -1,4 +1,5 @@
 "use client";
+import { AssistEntryBanner } from "./AssistEntryBanner";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -118,6 +119,7 @@ interface AuditLogProps {
 }
 
 interface FilingDetailClientProps {
+  canReadAssists?: boolean;
   filing: FilingProps;
   shipment: ShipmentProps | null; // Now nullable for standalone filings
   lineItems: LineItemProps[];
@@ -480,6 +482,7 @@ function errorFromResponse(data: unknown, fallback: string): string {
 }
 
 export function FilingDetailClient({
+  canReadAssists = false,
   filing,
   shipment,
   lineItems,
@@ -521,6 +524,7 @@ export function FilingDetailClient({
   const [promptedValues, setPromptedValues] = useState<Record<string, unknown>>({});
 
   // Local Reference and Registration Number state
+  const [assistReviewRevision, setAssistReviewRevision] = useState(0);
   const [localReferenceNumber, setLocalReferenceNumber] = useState<string>(
     filing.localReferenceNumber || filing.entryNumber
   );
@@ -739,7 +743,10 @@ export function FilingDetailClient({
       // Then transmit
       const res = await fetch(`/api/filing/${filing.id}/transmit`, { method: "POST" });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(errorFromResponse(data, "Transmit failed."));
+      if (!res.ok) {
+        if (res.status === 409) { setAssistReviewRevision(value => value + 1); router.refresh(); }
+        throw new Error(errorFromResponse(data, "Transmit failed."));
+      }
       setSuccess(
         data?.transmission?.mockResponseApplied
           ? `Filing transmitted. A simulated ${filing.authority} response has been received — see the Response tab.`
@@ -887,7 +894,10 @@ export function FilingDetailClient({
       await saveLineItemEdits();
       const res = await fetch(`/api/filing/${filing.id}/resubmit`, { method: "POST" });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(errorFromResponse(data, "Resubmit failed."));
+      if (!res.ok) {
+        if (res.status === 409) { setAssistReviewRevision(value => value + 1); router.refresh(); }
+        throw new Error(errorFromResponse(data, "Resubmit failed."));
+      }
       setSuccess(
         data?.resubmission?.mockResponseApplied
           ? `Corrections saved, filing resubmitted, and a simulated ${filing.authority} response has been received.`
@@ -1037,6 +1047,7 @@ export function FilingDetailClient({
         </p>
       )}
 
+      {canReadAssists && <AssistEntryBanner filingId={filing.id} revision={filing.updatedAt + ":" + assistReviewRevision} />}
       {validationBlockers.length > 0 && (
         <div role="alert" className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-2">
           <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Filing blocked — resolve before transmitting</p>

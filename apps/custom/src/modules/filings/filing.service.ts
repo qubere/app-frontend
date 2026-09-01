@@ -1,3 +1,6 @@
+import { rethrowWorkflowConflict } from "@/lib/api/workflowConflict";
+import { prepareAssistDeclarations, applyAssistAmountsToTariffLines, commitAssistDeclarations, assertAssistPublicationContext } from "@/lib/valuation/assistDeclarationService";
+import { DomainError } from "@/lib/api/error";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { computeFilingTariff, loadHtsCodesMap, type TariffEngineResult } from "@/lib/tariff/dutyEngine";
@@ -7,15 +10,11 @@ import { resolveMessageContext, resolveTransactionType } from "@/lib/canonicalMe
 import { PgCanonicalMessagePublisher } from "@/lib/canonicalMessaging/publisher";
 import { getActiveSchemaVersion } from "@/lib/canonicalMessaging/schemaValidator";
 import { buildActionExtensions } from "@/lib/canonicalMessaging/actionDataRequirements";
-import { extractedCurrencies } from "@/modules/documents/extractedCurrency";
+import { resolveSubmissionCurrency } from "@/lib/canonicalMessaging/submissionCurrency";
 import {
   convertTariffLines,
-  resolveFilingCurrencyContext,
-  getCustomsValuationCurrency,
-  normalizeCurrencyCode,
   type FilingCurrencyContext,
 } from "@/lib/canonicalMessaging/currencyContext";
-import { ExchangeRateService } from "@/modules/fx/exchangeRateService";
 import type {
   CanonicalFilingRequestData,
   CanonicalMessage,
@@ -54,6 +53,7 @@ export type FilingSnapshotData = {
     quantity: number;
     unitPrice: number;
     totalValue: number;
+    customsValue?: number;
     htsCode: string;
     countryOfOrigin: string;
   }>;
@@ -234,6 +234,8 @@ export class FilingService {
     if (!filing) throw new Error("NOT_FOUND");
 
     const isStandalone = !filing.shipmentId;
+    const preparedAssists = await prepareAssistDeclarations(accountId, filingId);
+    let snapshotMeta: { hasSection301: boolean; section301List: string | null } | null = null;
 
     let nextStatus: string;
     try {
@@ -266,62 +268,8 @@ export class FilingService {
       }
 
       const country = (filing.country || filing.shipment.destinationCountry || "US").toUpperCase();
-      const storedFilingData =
-        filing.dutyBreakdown && !Array.isArray(filing.dutyBreakdown)
-          ? (filing.dutyBreakdown as Record<string, unknown>)
-          : {};
-      const storedCurrencyContext = storedFilingData.currencyContext as
-        | Record<string, unknown>
-        | undefined;
-      const detectedCurrencies = extractedCurrencies(filing.shipment.documents);
-
-      if (detectedCurrencies.length > 1 && !storedCurrencyContext?.commercialCurrency) {
-        throw new Error(
-          `Cannot transmit: commercial invoice documents disagree on currency (${detectedCurrencies.join(", ")}). Resolve the filing commercial currency before submission.`
-        );
-      }
-
-      const detectedCommercialCurrency =
-        detectedCurrencies.length === 1 ? detectedCurrencies[0] : null;
-      let currencyInput = storedCurrencyContext
-        ? storedFilingData
-        : {
-            ...storedFilingData,
-            currencyContext: detectedCommercialCurrency
-              ? { commercialCurrency: detectedCommercialCurrency }
-              : undefined,
-          };
-
-      // No broker-entered rate on file, and the commercial currency is
-      // unambiguous (single detected currency) -- resolve the rate via the
-      // same dated CurrencyFreaks-backed source the valuation route already
-      // uses, rather than blocking transmission for a case a human doesn't
-      // actually need to adjudicate. A manually-entered rate always wins
-      // when present, and a genuine multi-currency conflict (checked above)
-      // still blocks transmission regardless of this fallback.
-      const hasManualRate = Boolean(storedCurrencyContext?.exchangeRate);
-      if (!hasManualRate && detectedCommercialCurrency) {
-        const customsCurrency = storedCurrencyContext?.customsCurrency
-          ? normalizeCurrencyCode(storedCurrencyContext.customsCurrency as string)
-          : getCustomsValuationCurrency(country);
-        const commercialCurrency = normalizeCurrencyCode(detectedCommercialCurrency);
-        if (commercialCurrency !== customsCurrency) {
-          const asOfDate = filing.shipment.ladingDate ? new Date(filing.shipment.ladingDate) : new Date();
-          const rate = await ExchangeRateService.resolveExchangeRate(commercialCurrency, asOfDate);
-          currencyInput = {
-            ...(currencyInput as Record<string, unknown>),
-            currencyContext: {
-              ...(currencyInput as { currencyContext?: Record<string, unknown> }).currencyContext,
-              exchangeRate: rate.toNumber(),
-              exchangeRateSource: "CURRENCYFREAKS_AUTO",
-              exchangeRateEffectiveDate: asOfDate.toISOString(),
-            },
-          };
-        }
-      }
-
-      frozenCurrency = resolveFilingCurrencyContext(country, currencyInput as any);
-      const tariffLines = convertTariffLines(filing.shipment.lineItems, frozenCurrency);
+      frozenCurrency = await resolveSubmissionCurrency(country, filing.dutyBreakdown, filing.shipment);
+      const tariffLines = applyAssistAmountsToTariffLines(convertTariffLines(filing.shipment.lineItems, frozenCurrency), preparedAssists);
 
       if (country === "US") {
         const htsCodesMap = await loadHtsCodesMap(tariffLines, country);
@@ -384,13 +332,14 @@ export class FilingService {
           status: filing.shipment.status,
           currentStage: filing.shipment.currentStage,
         },
-        lineItems: filing.shipment.lineItems.map((item) => ({
+        lineItems: filing.shipment.lineItems.map((item, index) => ({
           id: item.id,
           lineNumber: item.lineNumber,
           description: item.description,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           totalValue: Number(item.totalValue),
+          customsValue: computedTariff!.lineResults[index].customsValue,
           htsCode: item.htsCode,
           countryOfOrigin: item.countryOfOrigin,
         })),
@@ -426,11 +375,7 @@ export class FilingService {
             .find(Boolean) ?? null)
         : null;
 
-      await db.filingSnapshot.upsert({
-        where: { filingId },
-        update: { snapshotData: snapshotData as any, hasSection301, section301List },
-        create: { filingId, snapshotData: snapshotData as any, hasSection301, section301List },
-      });
+      snapshotMeta = { hasSection301, section301List };
 
       declaration = await buildCanonicalDeclaration({
         accountId,
@@ -463,7 +408,7 @@ export class FilingService {
       priorMessageId
     );
 
-    await new PgCanonicalMessagePublisher().publish("filing-outbound-queue", message);
+
 
     const existingDutyData =
       filing.dutyBreakdown && !Array.isArray(filing.dutyBreakdown)
@@ -478,9 +423,11 @@ export class FilingService {
         })
       : undefined;
 
-    const updatedFiling = await db.customsFiling.update({
-      where: { id: filingId },
-      data: {
+    const updatedFiling = await db.$transaction(async tx => {
+      await assertAssistPublicationContext(tx, accountId, filingId, preparedAssists);
+      const claimed = await tx.customsFiling.updateMany({
+        where: { id: filingId, accountId, version: filing.version, filingStatus: filing.filingStatus },
+        data: {
         filingStatus: nextStatus,
         submittedAt: new Date(),
         version: { increment: 1 },
@@ -495,7 +442,19 @@ export class FilingService {
           : {}),
         ...(userId && action === "SUBMIT" ? { transmittedByUserId: userId } : {}),
       },
-    });
+      });
+      if (claimed.count !== 1) throw new DomainError("This filing changed. Review it before submitting again.", "FILING_CONFLICT", 409);
+      await commitAssistDeclarations(tx, accountId, filingId, preparedAssists, userId);
+      if (snapshotData && snapshotMeta) {
+        await tx.filingSnapshot.upsert({
+          where: { filingId },
+          create: { filingId, snapshotData: asInputJson(snapshotData), ...snapshotMeta },
+          update: { snapshotData: asInputJson(snapshotData), ...snapshotMeta },
+        });
+      }
+      await new PgCanonicalMessagePublisher(tx).publish("filing-outbound-queue", message);
+      return tx.customsFiling.findFirstOrThrow({ where: { id: filingId, accountId } });
+    }, { isolationLevel: "Serializable", timeout: 20000 }).catch(rethrowWorkflowConflict);
 
     return { filing: updatedFiling, messageId: message.header.messageId };
   }

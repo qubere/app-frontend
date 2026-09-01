@@ -86,12 +86,20 @@ jobs:
             --exit-code
 
       - name: TypeScript compile
+        id: compile
         run: npm run typecheck:workspaces
 
       - name: Lint
+        id: lint
         run: npm run lint
 
+      - name: PGA and assist PostgreSQL integration
+        env:
+          PGA_ASSIST_INTEGRATION: "1"
+        run: npm --workspace @qubere/custom run test -- tests/pga-assists.integration.test.ts
+
       - name: Unit tests
+        if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-output.log
@@ -105,8 +113,28 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+      - name: Install Chromium for broker workflow checks
+        id: browser_install
+        if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
+        run: npm --workspace @qubere/custom exec -- playwright install --with-deps chromium
+
+      - name: Broker desktop and mobile browser checks
+        if: ${{ !cancelled() && steps.browser_install.conclusion == 'success' }}
+        run: npm --workspace @qubere/custom run test:e2e -- --config playwright.broker.config.ts
+
+      - name: Upload broker browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: broker-browser-checks
+          path: apps/custom/test-results
+          if-no-files-found: ignore
+          retention-days: 3
+
       - name: OpenAPI generation must not error
+        if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
         run: npm run openapi
 
       - name: Production build
+        if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
         run: npm run build

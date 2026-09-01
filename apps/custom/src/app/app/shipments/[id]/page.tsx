@@ -1,4 +1,5 @@
-import { getAccountContext } from "@/lib/auth";
+import { ShipmentPgaHolds } from "./ShipmentPgaHolds";
+import { getAccountContext, hasPermission } from "@/lib/auth";
 import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -62,7 +63,7 @@ function extractedQuantityTotal(lineItems: unknown): number {
 
 export default async function ShipmentWorkspacePage(props: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ docId?: string; view?: string }>;
+  searchParams: Promise<{ docId?: string; view?: string; pgaHold?: string }>;
 }) {
   const params = await props.params;
   const searchParams = await props.searchParams;
@@ -87,6 +88,8 @@ export default async function ShipmentWorkspacePage(props: {
   });
 
   if (!shipment) notFound();
+
+  const [canReadPga, canUpdatePga] = await Promise.all([hasPermission("pga.read"), hasPermission("pga.update")]);
 
   const isEnterpriseAdmin =
     context.accountType === "ENTERPRISE" &&
@@ -1674,6 +1677,8 @@ export default async function ShipmentWorkspacePage(props: {
           />
         </div>
       </div>
+
+      {canReadPga && <ShipmentPgaHolds shipmentId={shipment.id} initialHoldId={searchParams.pgaHold} canUpdate={canUpdatePga} />}
 
       <ShipmentTabsPanel
         initialTab={activeTab}

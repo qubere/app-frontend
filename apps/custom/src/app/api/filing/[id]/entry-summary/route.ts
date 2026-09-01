@@ -1,3 +1,4 @@
+import type { FilingSnapshotData } from "@/modules/filings/filing.service";
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { validatePathParams } from "@/lib/api/validation";
@@ -31,7 +32,13 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, req
     return NextResponse.json({ error: "Filing not found" }, { status: 404 });
   }
 
-  const lineItems = filing.shipment?.lineItems ?? [];
+  const snapshot = filing.snapshot?.snapshotData as unknown as FilingSnapshotData | undefined;
+  const liveLines = filing.shipment?.lineItems ?? [];
+  // Submitted entries use the frozen customs values, which include declared
+  // assists and currency conversion. Never rebuild them from invoice values.
+  const lineItems = snapshot?.lineItems?.some(line => line.customsValue !== undefined)
+    ? snapshot.lineItems.map(line => ({ ...line, productId: liveLines.find(live => live.id === line.id)?.productId ?? null, totalValue: line.customsValue ?? line.totalValue }))
+    : liveLines;
 
   // Fetch approved classification decisions for each line item's product.
   // Joins: ShipmentLineItem.productId → ProductClassification (status=APPROVED)
