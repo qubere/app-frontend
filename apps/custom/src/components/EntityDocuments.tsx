@@ -69,7 +69,7 @@ export function EntityDocuments({ entityType, entityId, canManage = true }: Enti
         `/api/document-associations?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to load linked documents");
+      if (!res.ok) throw new Error(data.error?.message ?? "Failed to load linked documents");
       setAssociations(data.associations ?? []);
       setLoadError(null);
     } catch (err) {
@@ -106,7 +106,7 @@ export function EntityDocuments({ entityType, entityId, canManage = true }: Enti
         body: JSON.stringify({ documentId, entityType, entityId }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to link document");
+      if (!res.ok) throw new Error(data.error?.message ?? "Failed to link document");
       await loadAssociations();
       setSearchTerm("");
       setSearchResults([]);
@@ -123,7 +123,7 @@ export function EntityDocuments({ entityType, entityId, canManage = true }: Enti
     try {
       const res = await fetch(`/api/document-associations/${associationId}/unlink`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to unlink document");
+      if (!res.ok) throw new Error(data.error?.message ?? "Failed to unlink document");
       setAssociations((prev) => prev?.filter((a) => a.id !== associationId) ?? null);
     } catch (err) {
       alert(caughtMessage(err, "Failed to unlink document"));

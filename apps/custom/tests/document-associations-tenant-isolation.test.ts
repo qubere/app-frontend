@@ -56,7 +56,8 @@ describe("document-associations API routes", () => {
     for (const file of ROUTES) {
       const content = readFileSync(file, "utf8");
       if (content.includes("DocumentAssociationError")) {
-        expect(content).toMatch(/status:\s*400/);
+        // Either NextResponse.json(..., { status: 400 }) or buildErrorResponse(400, ...).
+        expect(content).toMatch(/status:\s*400|buildErrorResponse\(400,/);
       }
     }
   });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { buildErrorResponse } from "@/lib/api/error";
 import { validatePathParams } from "@/lib/api/validation";
 import { unlinkDocument, DocumentAssociationError } from "@/modules/documentAssociations/service";
 import { z } from "zod";
@@ -25,7 +26,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       return NextResponse.json({ association });
     } catch (error) {
       if (error instanceof DocumentAssociationError) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
+        return buildErrorResponse(400, "DOCUMENT_ASSOCIATION_ERROR", error.message, undefined, requestId);
       }
       throw error;
     }

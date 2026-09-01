@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { buildErrorResponse } from "@/lib/api/error";
 import { parseAndValidateBody } from "@/lib/api/validation";
 import {
   linkDocument,
@@ -47,7 +48,7 @@ export const POST = withAuthenticatedRoute(
       return NextResponse.json({ association, created }, { status: created ? 201 : 200 });
     } catch (error) {
       if (error instanceof DocumentAssociationError) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
+        return buildErrorResponse(400, "DOCUMENT_ASSOCIATION_ERROR", error.message, undefined, requestId);
       }
       throw error;
     }
@@ -71,10 +72,7 @@ export const GET = withAuthenticatedRoute(
       entityId: url.searchParams.get("entityId"),
     });
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid query", requestId, details: parsed.error.flatten() },
-        { status: 400 }
-      );
+      return buildErrorResponse(400, "INVALID_QUERY", "Invalid query", parsed.error.flatten(), requestId);
     }
 
     const associations = await getEntityDocuments(
