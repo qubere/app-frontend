@@ -221,7 +221,8 @@ export class PoaService {
       throw new Error("POA must have signerName and signerRole before sending");
     }
 
-    const providerName: EsignProviderName = "INTERNAL"; // default; configurable per account
+    const providerName: EsignProviderName =
+      (process.env.ESIGN_PROVIDER as EsignProviderName | undefined) ?? "INTERNAL";
     const provider = getEsignProvider(providerName);
 
     const result = await provider.createEnvelope({
