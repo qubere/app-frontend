@@ -1,7 +1,7 @@
 # Validation — what was converted, what was kept
 
 Baseline: `docs/` at session start (commit `2d8839a1`) had **177 `.md` files**.
-**73 converted to issues + removed** · **104 kept as reference** (excl. `docs/README.md`).
+**88 converted to issues + removed** · **89 kept as reference** (excl. `docs/README.md`).
 
 ## Converted → issue (file removed from repo)
 
@@ -13,14 +13,28 @@ Baseline: `docs/` at session start (commit `2d8839a1`) had **177 `.md` files**.
 | #201 | `docs/apps/customs/bugs/UI-CONFIG-GAP-ANALYSIS.md` |
 | #202 | `docs/apps/customs/bugs/ux-gap-plan.md` |
 | #203 | `docs/apps/customs/feature/CAN-CREATE-NEW-FILING-FEATURE.md` |
+| #274 | `docs/apps/customs/feature/COMPLIANCE-AND-REPORTING-FEATURES.md` |
 | #204 | `docs/apps/customs/feature/DOCUMENT-INTAKE-IMPROVEMENTS.md` |
+| #275 | `docs/apps/customs/feature/ENTRY-NUMBER-GENERATION-EXPLAINED.md` |
+| #276 | `docs/apps/customs/feature/LLM-UNIVERSAL-FIELD-HYDRATION.md` |
+| #277 | `docs/apps/customs/feature/LOCAL-REFERENCE-NUMBER-FEATURE.md` |
 | #206 | `docs/apps/customs/feature/MULTI-CURRENCY-FILING-DESIGN.md` |
+| #278 | `docs/apps/customs/feature/PLATFORM_CAPABILITIES.md` |
+| #279 | `docs/apps/customs/feature/QUICKBOOKS-INTEGRATION.md` |
+| #280 | `docs/apps/customs/feature/SHIPMENT-BASED-FILING-PROCEDURE-SELECTION.md` |
 | #205 | `docs/apps/customs/feature/SHIPMENT-TO-FILING-EVALUATION.md` |
 | #209 | `docs/apps/customs/feature/abi/CATAIR-GAP-CLOSURE-ACTION-PLAN.md` |
 | #210 | `docs/apps/customs/feature/abi/CODEC-COMPLETION-QUEUE.md` |
+| #281 | `docs/apps/customs/feature/ai-chat-interface.md` |
 | #207 | `docs/apps/customs/feature/community-screening.md` |
+| #282 | `docs/apps/customs/feature/compliance-notifications-and-audit.md` |
+| #286 | `docs/apps/customs/feature/compliance/keyword-rule-policy-decision-MILITARY_END_USE-RESTRICTED_PARTY_RED_FLAG.md` |
 | #211 | `docs/apps/customs/feature/customs-filing/07-gap-analysis.md` |
+| #287 | `docs/apps/customs/feature/customs-filing/shipment-filing-workflow-analysis.md` |
+| #283 | `docs/apps/customs/feature/document-intelligence.md` |
+| #284 | `docs/apps/customs/feature/private-embargo-screening.md` |
 | #208 | `docs/apps/customs/feature/rdps-continuous-monitoring.md` |
+| #285 | `docs/apps/customs/feature/restricted-party-screening-implementation-report.md` |
 | #212 | `docs/apps/customs/future/ABI-CERTIFICATION-READINESS.md` |
 | #213 | `docs/apps/customs/future/F15-evals-ai-quality-intelligence.md` |
 | #214 | `docs/apps/customs/future/PGA-HOLD-RESOLUTION-AND-ASSISTS.md` |
@@ -80,6 +94,7 @@ Baseline: `docs/` at session start (commit `2d8839a1`) had **177 `.md` files**.
 | #269 | `docs/apps/tms/planning/review/TMS-04-ux-demo-readiness.md` |
 | #271 | `docs/apps/tms/planning/review/TMS-05-VERIFY.md` |
 | #270 | `docs/apps/tms/planning/review/TMS-05-code-quality-tests.md` |
+| #288 (duplicate — deleted) | `docs/plans/features/CUSTOMER-ONBOARDING.md` |
 
 Plus the 50 Readiness-Teardown capability issues **#148–#197** (no source file — parsed from the artifact) and the earlier **#147**. Index: **#226**.
 
@@ -113,7 +128,7 @@ Data models, field mappings, dataset master docs — reference
 
 </details>
 
-### `docs/apps/customs/feature/` (67)
+### `docs/apps/customs/feature/` (53)
 Feature explainers / shipped-feature records (entry-number generation, hydration, quickbooks (#128), platform capabilities, embargo screening, RPS report, customer onboarding (F16, shipped), etc.) — reference. Say the word to convert these too.
 
 <details><summary>files</summary>
@@ -151,16 +166,9 @@ Feature explainers / shipped-feature records (entry-number generation, hydration
 - 18-appendix-g-condition-codes-v2.pdf
 - 19-importer-consignee-create-update-5106-v12.pdf
 - CATAIR-FIELD-DB-COVERAGE.md
-- COMPLIANCE-AND-REPORTING-FEATURES.md
 - CUSTOMER-ONBOARDING.md
 - DEFAULT-UI-AND-VISIBILITY-CONTROL.md
 - DYNAMIC-UI-CONFIGURATION-ARCHITECTURE.md
-- ENTRY-NUMBER-GENERATION-EXPLAINED.md
-- LLM-UNIVERSAL-FIELD-HYDRATION.md
-- LOCAL-REFERENCE-NUMBER-FEATURE.md
-- PLATFORM_CAPABILITIES.md
-- QUICKBOOKS-INTEGRATION.md
-- SHIPMENT-BASED-FILING-PROCEDURE-SELECTION.md
 - UI-CONFIG-JSON-STRUCTURE.md
 - UI-CONFIG-ORDERING-SYSTEM.md
 - UI-CONFIG-PANELS-AND-GRIDS.md
@@ -169,21 +177,14 @@ Feature explainers / shipped-feature records (entry-number generation, hydration
 - UI-CONFIGURATION-FRAMEWORK.md
 - active_sureties_2025.pdf
 - active_sureties_2025.xlsx
-- ai-chat-interface.md
 - appendix-b-valid-codes.pdf
 - appendix-c-tariff-abbreviations.pdf
 - appendix-e-valid-entry-numbers.pdf
 - appendix-f-duty-calculation.pdf
 - appendix-h-census-codes.pdf
 - appendix-v-government-agency-codes.pdf
-- compliance-notifications-and-audit.md
 - customs-filing-canonical-messaging-changelog.md
-- document-intelligence.md
 - importer-bond-query-v7.pdf
-- keyword-rule-policy-decision-MILITARY_END_USE-RESTRICTED_PARTY_RED_FLAG.md
-- private-embargo-screening.md
-- restricted-party-screening-implementation-report.md
-- shipment-filing-workflow-analysis.md
 - test_statement.pdf
 
 </details>
@@ -255,15 +256,6 @@ reference
 <details><summary>files</summary>
 
 - 19-importer-consignee-create-update-5106-v12.pdf
-
-</details>
-
-### `docs/plans/features/` (1)
-CUSTOMER-ONBOARDING.md — duplicate of the customs/feature copy (F16, shipped)
-
-<details><summary>files</summary>
-
-- CUSTOMER-ONBOARDING.md
 
 </details>
 
