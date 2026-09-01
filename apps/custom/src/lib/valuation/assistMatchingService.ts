@@ -1,3 +1,5 @@
+import { resolveSubmissionCurrency } from "@/lib/canonicalMessaging/submissionCurrency";
+import type { FilingCurrencyContext } from "@/lib/canonicalMessaging/currencyContext";
 import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { DomainError } from "@/lib/api/error";
@@ -30,6 +32,7 @@ export async function getAssistMatches(accountId: string, filingId: string, clie
   const filing = await client.customsFiling.findFirst({
     where: { id: filingId, accountId },
     include: { shipment: { include: {
+      documents: { select: { extractedJson: true } },
       lineItems: { where: { accountId }, include: { product: { include: { parties: { where: { accountId, status: "ACTIVE" }, include: { legalEntity: { select: { partyId: true, accountId: true } } } } } } }, orderBy: { lineNumber: "asc" } },
       shipmentParties: { where: { legalEntity: { accountId } }, include: { legalEntity: { select: { partyId: true } } } },
     } } },
@@ -49,16 +52,19 @@ export async function getAssistMatches(accountId: string, filingId: string, clie
     orderBy: { id: "asc" },
   });
   const globalParties = shipment.shipmentParties.filter(p=>p.legalEntity.partyId).map(p=>({partyId:p.legalEntity.partyId!, role:normalizeRole(p.role)}));
-  const stored = filing.dutyBreakdown && !Array.isArray(filing.dutyBreakdown) ? filing.dutyBreakdown as Record<string, Prisma.JsonValue> : {};
-  const currency = stored.currencyContext && typeof stored.currencyContext === "object" && !Array.isArray(stored.currencyContext) ? stored.currencyContext as Record<string, Prisma.JsonValue> : {};
-  const commercialCurrency = String(currency.commercialCurrency ?? shipment.invoiceCurrency ?? "USD");
-  const customsCurrency = String(currency.customsCurrency ?? "USD");
+  let currency: FilingCurrencyContext | null = null;
+  let currencyError: string | null = null;
+  try {
+    if (assists.length) currency = await resolveSubmissionCurrency(filing.country ?? shipment.destinationCountry ?? "US", filing.dutyBreakdown, shipment);
+  } catch (error) { currencyError = error instanceof Error ? error.message : "Currency could not be resolved."; }
+  const commercialCurrency = currency?.commercialCurrency ?? "USD";
+  const customsCurrency = currency?.customsCurrency ?? "USD";
   const rateDate = shipment.ladingDate ?? now;
   const rateCache = new Map<string, Promise<Decimal>>();
   const rate = (code: string) => {
     if (!rateCache.has(code)) rateCache.set(code, (async () => {
       if (code === "USD") return new Decimal(1);
-      if (code === commercialCurrency && currency.exchangeRate && customsCurrency === "USD") {
+      if (code === commercialCurrency && currency?.exchangeRate && customsCurrency === "USD") {
         const value = new Decimal(String(currency.exchangeRate));
         if (!value.isFinite() || value.lte(0)) throw new Error("A positive declared exchange rate is required.");
         return value;
@@ -81,6 +87,7 @@ export async function getAssistMatches(accountId: string, filingId: string, clie
     let exchangeRate: string | null = null;
     let blockedReason: string | null = null;
     try {
+      if (currencyError) throw new Error(currencyError);
       if ((filing.country ?? shipment.destinationCountry ?? "US") !== "US" || customsCurrency !== "USD") throw new Error("Assist declarations currently support US entries valued in USD.");
       const assistRate = await rate(assist.currency);
       const invoiceRate = await rate(commercialCurrency);

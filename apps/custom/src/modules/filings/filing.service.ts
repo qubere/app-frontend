@@ -10,15 +10,11 @@ import { resolveMessageContext, resolveTransactionType } from "@/lib/canonicalMe
 import { PgCanonicalMessagePublisher } from "@/lib/canonicalMessaging/publisher";
 import { getActiveSchemaVersion } from "@/lib/canonicalMessaging/schemaValidator";
 import { buildActionExtensions } from "@/lib/canonicalMessaging/actionDataRequirements";
-import { extractedCurrencies } from "@/modules/documents/extractedCurrency";
+import { resolveSubmissionCurrency } from "@/lib/canonicalMessaging/submissionCurrency";
 import {
   convertTariffLines,
-  resolveFilingCurrencyContext,
-  getCustomsValuationCurrency,
-  normalizeCurrencyCode,
   type FilingCurrencyContext,
 } from "@/lib/canonicalMessaging/currencyContext";
-import { ExchangeRateService } from "@/modules/fx/exchangeRateService";
 import type {
   CanonicalFilingRequestData,
   CanonicalMessage,
@@ -272,61 +268,7 @@ export class FilingService {
       }
 
       const country = (filing.country || filing.shipment.destinationCountry || "US").toUpperCase();
-      const storedFilingData =
-        filing.dutyBreakdown && !Array.isArray(filing.dutyBreakdown)
-          ? (filing.dutyBreakdown as Record<string, unknown>)
-          : {};
-      const storedCurrencyContext = storedFilingData.currencyContext as
-        | Record<string, unknown>
-        | undefined;
-      const detectedCurrencies = extractedCurrencies(filing.shipment.documents);
-
-      if (detectedCurrencies.length > 1 && !storedCurrencyContext?.commercialCurrency) {
-        throw new Error(
-          `Cannot transmit: commercial invoice documents disagree on currency (${detectedCurrencies.join(", ")}). Resolve the filing commercial currency before submission.`
-        );
-      }
-
-      const detectedCommercialCurrency =
-        detectedCurrencies.length === 1 ? detectedCurrencies[0] : null;
-      let currencyInput = storedCurrencyContext
-        ? storedFilingData
-        : {
-            ...storedFilingData,
-            currencyContext: detectedCommercialCurrency
-              ? { commercialCurrency: detectedCommercialCurrency }
-              : undefined,
-          };
-
-      // No broker-entered rate on file, and the commercial currency is
-      // unambiguous (single detected currency) -- resolve the rate via the
-      // same dated CurrencyFreaks-backed source the valuation route already
-      // uses, rather than blocking transmission for a case a human doesn't
-      // actually need to adjudicate. A manually-entered rate always wins
-      // when present, and a genuine multi-currency conflict (checked above)
-      // still blocks transmission regardless of this fallback.
-      const hasManualRate = Boolean(storedCurrencyContext?.exchangeRate);
-      if (!hasManualRate && detectedCommercialCurrency) {
-        const customsCurrency = storedCurrencyContext?.customsCurrency
-          ? normalizeCurrencyCode(storedCurrencyContext.customsCurrency as string)
-          : getCustomsValuationCurrency(country);
-        const commercialCurrency = normalizeCurrencyCode(detectedCommercialCurrency);
-        if (commercialCurrency !== customsCurrency) {
-          const asOfDate = filing.shipment.ladingDate ? new Date(filing.shipment.ladingDate) : new Date();
-          const rate = await ExchangeRateService.resolveExchangeRate(commercialCurrency, asOfDate);
-          currencyInput = {
-            ...(currencyInput as Record<string, unknown>),
-            currencyContext: {
-              ...(currencyInput as { currencyContext?: Record<string, unknown> }).currencyContext,
-              exchangeRate: rate.toNumber(),
-              exchangeRateSource: "CURRENCYFREAKS_AUTO",
-              exchangeRateEffectiveDate: asOfDate.toISOString(),
-            },
-          };
-        }
-      }
-
-      frozenCurrency = resolveFilingCurrencyContext(country, currencyInput as any);
+      frozenCurrency = await resolveSubmissionCurrency(country, filing.dutyBreakdown, filing.shipment);
       const tariffLines = applyAssistAmountsToTariffLines(convertTariffLines(filing.shipment.lineItems, frozenCurrency), preparedAssists);
 
       if (country === "US") {

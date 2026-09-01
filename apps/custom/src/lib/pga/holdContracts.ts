@@ -9,7 +9,7 @@ export const holdNoticeSchema = z.object({
   holdCode: z.string().trim().min(1).max(40),
   reasonText: z.string().trim().min(1).max(2000),
   rawNotice: z.string().trim().min(1).max(100000),
-  commodityLineRef: z.string().trim().regex(/^[1-9]\\d{0,8}$/).optional(),
+  commodityLineRef: z.string().trim().regex(/^[1-9][0-9]{0,8}$/).optional(),
   issuedAt: z.iso.datetime({ offset: true }),
 }).strict();
 export const holdDraftSchema = z.object({
