@@ -91,3 +91,20 @@ test("registers a draft before activation and previews allocation immediately", 
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeVisible();
   expect(rows[0].remainingValue).toBe("1200");
 });
+
+test("keeps older submission evidence accessible after a hold is released", async ({ page }) => {
+  const records = Array.from({ length: 21 }, (_, index) => ({
+    id: "submission-" + index, externalReference: "REF-" + (index + 1), status: index === 0 ? "Accepted" : "Rejected",
+    transmissionMode: "MANUAL", submittedAt: "2026-01-01T00:00:00Z", rejectionCode: null, rejectionReason: null,
+    rejectedFields: [], messageSetText: "Original filed evidence",
+  }));
+  const base = holdDetail();
+  const detail = { ...base, submissionTotal: records.length, hold: { ...base.hold, status: "Released", submissions: records.slice(0, 20) } };
+  await page.route("**/api/pga/holds/hold**", route => route.fulfill({
+    json: route.request().url().includes("/submissions?") ? { submissions: records.slice(20), total: 21, page: 1 } : detail,
+  }));
+  await page.goto("/"); await page.getByRole("button", { name: "Resolve FDA hold" }).click();
+  await page.getByRole("button", { name: "Show older submissions", exact: true }).click();
+  await expect(page.getByText(/REF-21/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show older submissions", exact: true })).toHaveCount(0);
+});
