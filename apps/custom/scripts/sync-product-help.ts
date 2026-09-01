@@ -13,11 +13,13 @@ import { fileURLToPath } from "node:url";
 // npm executes workspace scripts with apps/custom as the current directory,
 // while Prisma migrations are normally run from the repository root. Resolve
 // the root .env from this file so both commands target the same database.
-// Existing process-level variables still win (dotenv's default override=false),
-// which keeps deployed/CI environments authoritative.
+// When the repository root .env exists, it must win over stale variables
+// exported by a developer's shell; that is the same file Prisma CLI loads for
+// the documented migration command. In deployed/CI environments the file is
+// absent, so injected process-level variables remain authoritative.
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRootEnv = resolve(scriptDirectory, "../../../.env");
-dotenv.config({ path: repositoryRootEnv });
+dotenv.config({ path: repositoryRootEnv, override: true });
 
 import { SUPPORT_ARTICLES, SUPPORT_MODULES } from "@/app/app/support/supportContent";
 
