@@ -8,7 +8,7 @@ export const holdNoticeSchema = z.object({
   agencyCode: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9/]{1,15}$/),
   holdCode: z.string().trim().min(1).max(40),
   reasonText: z.string().trim().min(1).max(2000),
-  rawNotice: z.string().trim().min(1).max(100000),
+  rawNotice: z.string().min(1).max(100000).refine(value => value.trim().length > 0, "Original notice is required"),
   commodityLineRef: z.string().trim().regex(/^[1-9][0-9]{0,8}$/).optional(),
   issuedAt: z.iso.datetime({ offset: true }),
 }).strict();
@@ -27,7 +27,7 @@ export const holdResponseSchema = z.object({
   status: z.enum(["Processing", "Released", "Rejected"]),
   responseCode: z.string().trim().min(1).max(40),
   reason: z.string().trim().min(1).max(2000),
-  rawResponse: z.string().trim().min(1).max(100000),
+  rawResponse: z.string().min(1).max(100000).refine(value => value.trim().length > 0, "Original response is required"),
   rejectedFields: z.array(z.string().max(80)).max(80).default([]),
   responseAt: z.iso.datetime({ offset: true }),
 }).strict();

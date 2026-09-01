@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENCIES, getPreparationFields, restoreHoldDraft, validatePreparation } from "@/lib/pga/holdContracts";
+import { holdNoticeSchema, holdResponseSchema, AGENCIES, getPreparationFields, restoreHoldDraft, validatePreparation } from "@/lib/pga/holdContracts";
 import { parseInboundHoldNotice } from "@/lib/abi/inboundHoldNoticeParser";
 import { composeMessageSet } from "@/lib/abi/pgaMessageSet/composeMessageSet";
 import { getHoldCodeEntry } from "@/lib/abi/holdCodeDictionary";
@@ -24,4 +24,10 @@ describe("hold preparation and evidence boundaries",()=>{
   it("reports inline preparation errors",()=>{
     expect(validatePreparation("FDA",{importer:"",description:"Food",quantity:"-1"})).toMatchObject({importer:expect.any(String),quantity:expect.any(String)});
   });
+});
+
+it("preserves leading whitespace and line endings in original agency evidence", () => {
+  const raw = "  source evidence  \r\n";
+  expect(holdNoticeSchema.parse({ shipmentId: "s", externalKey: "ref", agencyCode: "FDA", holdCode: "code", reasonText: "reason", rawNotice: raw, issuedAt: "2026-01-01T00:00:00Z" }).rawNotice).toBe(raw);
+  expect(holdResponseSchema.parse({ version: 0, submissionId: "sub", status: "Processing", responseCode: "code", reason: "reason", rawResponse: raw, responseAt: "2026-01-01T00:00:00Z" }).rawResponse).toBe(raw);
 });
