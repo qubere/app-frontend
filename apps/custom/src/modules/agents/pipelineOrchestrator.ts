@@ -936,6 +936,8 @@ export class PipelineOrchestrator {
     push("invoiceSubtotal", output.invoiceSubtotal);
     push("invoiceNumber", output.invoiceNumber);
     push("invoiceDate", output.invoiceDate);
+    push("endUseStatement", output.endUseStatement);
+    push("documentNarrativeText", output.documentNarrativeText);
     await FactService.recordMany(shipmentFacts);
 
     await LineItemReconciler.applyDiscoveries({

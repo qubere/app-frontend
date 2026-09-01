@@ -81,6 +81,14 @@ export const SYSTEM_DOCUMENT_TYPES: DocumentTypeDefinition[] = [
     keywords: ["assist declaration", "buyer tooling", "dies", "molds", "design work"],
     description: "Declaration of buyer-furnished assists, tooling, or engineering services.",
   },
+  {
+    code: "END_USE_STATEMENT",
+    name: "End-Use Statement / Certificate",
+    category: "COMPLIANCE",
+    isRequiredForFiling: false,
+    keywords: ["end-use statement", "end use certificate", "statement of end use", "intended use", "final destination and end use", "end user certificate"],
+    description: "Buyer/consignee declaration of the intended end-use of the goods, used for restricted end-use and military end-use screening.",
+  },
 
   // --- TRANSPORT & LOGISTICS DOCUMENTS ---
   {
