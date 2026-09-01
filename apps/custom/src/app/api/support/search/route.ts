@@ -20,7 +20,7 @@ export const GET = withAuthenticatedRoute(async ({ req, requestId }) => {
   }
 
   try {
-    const articles = await ProductHelpRepository.search(query, { moduleId, limit: 12 });
+    const articles = await ProductHelpRepository.searchInteractive(query, { moduleId, limit: 12 });
     return NextResponse.json({ articles, requestId });
   } catch (error) {
     console.warn("[product-help] hybrid search database unavailable; using code-owned corpus", error);

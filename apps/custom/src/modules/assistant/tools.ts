@@ -4102,7 +4102,7 @@ const searchProductHelp: AssistantTool = {
   schema: searchProductHelpSchema,
   execute: async (_ctx, rawArgs) => {
     const args = searchProductHelpSchema.parse(rawArgs);
-    const guides = await ProductHelpRepository.search(args.query, {
+    const guides = await ProductHelpRepository.searchInteractive(args.query, {
       moduleId: args.moduleId,
       limit: 6,
     });

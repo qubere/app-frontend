@@ -130,6 +130,18 @@ export function SupportCenterClient({ initialArticles = SUPPORT_ARTICLES }: { in
       setSuggestionsOpen(false);
       return;
     }
+
+    // The complete reviewed corpus is already present on the page. Show its
+    // matches synchronously so autocomplete never waits for Clerk plus a
+    // remote Postgres round trip. The API response below can still enrich the
+    // list with newly published database content.
+    const localSuggestions = searchSupportArticleList(initialArticles, clean, "all")
+      .slice(0, 8)
+      .map(({ id, moduleId, question, href }) => ({ id, moduleId, question, href }));
+    setSuggestions(localSuggestions);
+    setSuggestionsOpen(localSuggestions.length > 0);
+    setActiveSuggestion(-1);
+
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
@@ -138,18 +150,25 @@ export function SupportCenterClient({ initialArticles = SUPPORT_ARTICLES }: { in
         });
         if (!response.ok) return;
         const payload = (await response.json()) as { suggestions?: SupportSuggestion[] };
-        setSuggestions(payload.suggestions ?? []);
-        setSuggestionsOpen((payload.suggestions?.length ?? 0) > 0);
+        const merged = [...(payload.suggestions ?? []), ...localSuggestions]
+          .filter((suggestion, index, all) => all.findIndex((item) => item.id === suggestion.id) === index)
+          .slice(0, 8);
+        setSuggestions(merged);
+        setSuggestionsOpen(merged.length > 0);
         setActiveSuggestion(-1);
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setSuggestions([]);
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          // Keep the instant in-page matches when the optional enrichment
+          // request is slow or unavailable.
+          setSuggestions(localSuggestions);
+        }
       }
-    }, 180);
+    }, 120);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [initialArticles, query]);
 
   async function runSearch(nextQuery: string) {
     const clean = nextQuery.trim();
@@ -198,7 +217,7 @@ export function SupportCenterClient({ initialArticles = SUPPORT_ARTICLES }: { in
 
   return (
     <div className="-m-8 min-h-[calc(100vh-4rem)] bg-[#F5F5F7]">
-      <section className="relative overflow-hidden border-b border-border bg-white">
+      <section className="relative overflow-visible border-b border-border bg-white">
         <div className="absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_50%_-20%,rgba(0,113,227,0.18),transparent_62%)]" />
         <div className="relative mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14 lg:px-10">
           <div className="mx-auto max-w-3xl text-center">

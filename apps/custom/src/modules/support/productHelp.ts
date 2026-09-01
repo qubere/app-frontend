@@ -163,6 +163,24 @@ export class ProductHelpRepository {
     return hydrateRanked(ids);
   }
 
+  /**
+   * Fast path for interactive product help. Most broker questions use words
+   * that exist in the reviewed guide, so avoid an embedding request unless
+   * lexical search genuinely found nothing. The full hybrid search remains
+   * the fallback for conceptual or differently worded questions.
+   */
+  static async searchInteractive(
+    query: string,
+    options: { limit?: number; moduleId?: string } = {}
+  ): Promise<ProductHelpArticleView[]> {
+    const clean = query.trim();
+    if (!clean) return [];
+    const limit = Math.min(Math.max(options.limit ?? 8, 1), 20);
+    const lexical = await this.lexicalIds(clean, limit, options.moduleId);
+    if (lexical.length > 0) return hydrateRanked(lexical);
+    return this.search(clean, options);
+  }
+
   static async upsert(input: {
     article: ProductHelpArticleView;
     aliases: string[];
