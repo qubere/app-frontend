@@ -6,6 +6,12 @@ import { AGENCIES } from "@/lib/pga/holdContracts";
 
 type Hold = { id: string; shipmentId: string; agencyCode: string; holdCode: string; status: string; reasonText: string; issuedAt: string;
   shipment: { shipmentNumber: string; importerName: string; filingDeadline: string | null } };
+function holdAge(issuedAt: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(issuedAt)) / 60000));
+  if (minutes < 60) return minutes + "m";
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? hours + "h " + (minutes % 60) + "m" : Math.floor(hours / 24) + "d " + (hours % 24) + "h";
+}
 export function PgaHoldQueue({ canReview }: { canReview: boolean }) {
   const [data, setData] = useState<{ holds: Hold[]; total: number } | null>(null);
   const [error, setError] = useState("");
@@ -46,7 +52,7 @@ export function PgaHoldQueue({ canReview }: { canReview: boolean }) {
       </div>
       <ul className="space-y-2">{holds.map(h => <li key={h.id} className="flex flex-wrap items-center gap-3">
         <span className={"rounded-full px-2 py-1 text-xs font-semibold " + (h.status === "Rejected" ? "bg-red-50 text-red-800" : h.agencyCode === "FDA" ? "bg-blue-50 text-blue-800" : h.agencyCode === "USDA" ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-800")}>{h.agencyCode} · {h.status}</span>
-        <span className="text-xs text-ink-muted" title={new Date(h.issuedAt).toLocaleString()}>{Math.max(0, Math.floor((Date.now() - Date.parse(h.issuedAt)) / 86400000))} days</span>
+        <span className="text-xs text-ink-muted" title={new Date(h.issuedAt).toLocaleString()}>{holdAge(h.issuedAt)}</span>
         <Link className="text-sm font-medium text-brand" href={"/app/shipments/" + id + "?pgaHold=" + h.id}>Resolve hold →</Link>
       </li>)}</ul>
     </div>)}
