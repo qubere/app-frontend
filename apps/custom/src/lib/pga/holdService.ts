@@ -1,3 +1,4 @@
+import { rethrowWorkflowConflict } from "@/lib/api/workflowConflict";
 import { createHash } from "crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -72,7 +73,7 @@ export async function recordHold(accountId: string, userId: string, input: unkno
     if (existing.shipmentId !== shipment.id || existing.rawNotice !== notice.rawNotice) throw new DomainError("This source reference already belongs to a different notice.", "HOLD_SOURCE_CONFLICT", 409);
     return existing;
   }
-  const hold = await db.pgaHold.create({ data: { ...notice, issuedAt: new Date(notice.issuedAt), accountId } });
+  const hold = await db.pgaHold.create({ data: { ...notice, issuedAt: new Date(notice.issuedAt), accountId } }).catch(rethrowWorkflowConflict);
   await createAuditLog({ accountId, userId, action: AuditAction.PGA_HOLD_RECORDED, entity: "Shipment", entityId: shipment.id, source: "UI", metadata: { holdId: hold.id, agencyCode: hold.agencyCode, origin: "BROKER_RECORDED_NOTICE" } });
   return hold;
 }
@@ -89,6 +90,7 @@ export async function saveHoldDraft(accountId: string, userId: string, id: strin
 }
 export async function recordManualSubmission(accountId: string, userId: string, id: string, requestKey: string, input: z.infer<typeof holdSubmitSchema>) {
   const hold = await getHold(accountId, id);
+  if (!getPreparationFields(hold.agencyCode)) throw new DomainError("This agency is not supported. Export the original notice for manual follow-up.", "UNSUPPORTED_AGENCY", 422);
   const prior = await db.pgaHoldSubmission.findFirst({ where: { accountId, requestKey } });
   if (prior) {
     if (prior.pgaHoldId !== id || prior.externalReference !== input.externalReference || prior.messageSetText !== input.messageSetText) throw new DomainError("Request key was already used for another submission.", "IDEMPOTENCY_CONFLICT", 409);
@@ -105,7 +107,7 @@ export async function recordManualSubmission(accountId: string, userId: string, 
       formInputJson: input.formInput, messageSetText: input.messageSetText,
       externalReference: input.externalReference, operatorUserId: userId, transmissionMode: "MANUAL", status: "Sent",
     } });
-  }, { isolationLevel: "Serializable" });
+  }, { isolationLevel: "Serializable" }).catch(rethrowWorkflowConflict);
   await createAuditLog({ accountId, userId, action: AuditAction.PGA_HOLD_SUBMITTED, entity: "Shipment", entityId: hold.shipmentId, source: "UI", metadata: { holdId: id, submissionId: submission.id, transmissionMode: "MANUAL", externalReference: input.externalReference, agencyAccepted: false } });
   return submission;
 }
@@ -124,7 +126,7 @@ export async function recordAgencyResponse(accountId: string, userId: string, id
       rejectionReason: input.status === "Rejected" ? input.reason : null,
       rejectedFields: input.rejectedFields, rawResponse: input.rawResponse, responseAt,
     } });
-  }, { isolationLevel: "Serializable" });
+  }, { isolationLevel: "Serializable" }).catch(rethrowWorkflowConflict);
   await createAuditLog({ accountId, userId, action: input.status === "Rejected" ? AuditAction.PGA_HOLD_REJECTED : AuditAction.PGA_HOLD_STATUS_UPDATED, entity: "Shipment", entityId: hold.shipmentId, source: "UI", metadata: { holdId: id, status: input.status, responseCode: input.responseCode, provenance: "BROKER_RECORDED_AGENCY_RESPONSE" } });
   return getHoldDetail(accountId, id);
 }

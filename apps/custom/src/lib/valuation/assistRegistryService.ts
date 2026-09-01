@@ -1,3 +1,4 @@
+import { rethrowWorkflowConflict } from "@/lib/api/workflowConflict";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { DomainError } from "@/lib/api/error";
@@ -81,7 +82,7 @@ export async function updateAssist(accountId: string, userId: string, id: string
       await tx.assistParty.createMany({ data: patch.input.suppliers.map(p => ({ ...p, assistId: id })) });
       await tx.assistHtsScope.createMany({ data: patch.input.hts.map(prefix => ({ prefix, assistId: id })) });
     }
-  }, { isolationLevel: "Serializable" });
+  }, { isolationLevel: "Serializable" }).catch(rethrowWorkflowConflict);
   await createAuditLog({ accountId, userId, action: status === "Suspended" ? AuditAction.ASSIST_SUSPENDED : AuditAction.ASSIST_UPDATED, entity: "Assist", entityId: id, source: "UI", metadata: { transition: patch.action, status } });
   return getAssist(accountId, id);
 }

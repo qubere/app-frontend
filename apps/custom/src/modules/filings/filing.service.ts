@@ -1,3 +1,4 @@
+import { rethrowWorkflowConflict } from "@/lib/api/workflowConflict";
 import { prepareAssistDeclarations, applyAssistAmountsToTariffLines, commitAssistDeclarations, assertAssistPublicationContext } from "@/lib/valuation/assistDeclarationService";
 import { DomainError } from "@/lib/api/error";
 import type { Prisma } from "@prisma/client";
@@ -511,7 +512,7 @@ export class FilingService {
       }
       await new PgCanonicalMessagePublisher(tx).publish("filing-outbound-queue", message);
       return tx.customsFiling.findFirstOrThrow({ where: { id: filingId, accountId } });
-    }, { isolationLevel: "Serializable", timeout: 20000 });
+    }, { isolationLevel: "Serializable", timeout: 20000 }).catch(rethrowWorkflowConflict);
 
     return { filing: updatedFiling, messageId: message.header.messageId };
   }

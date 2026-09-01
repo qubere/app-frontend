@@ -18,7 +18,7 @@ export const assistInputSchema = z.object({
   hts: z.array(z.string().regex(/^(\d{4}|\d{6}|\d{8}|\d{10})$/, "Use a 4, 6, 8, or 10 digit HTS prefix.")).max(100).default([]),
   effectiveFrom: z.iso.datetime({ offset: true }),
   effectiveTo: z.iso.datetime({ offset: true }).nullable().default(null),
-}).strict().refine(v => !v.effectiveTo || v.effectiveTo >= v.effectiveFrom, "End date must follow start date.");
+}).strict().refine(v => !v.effectiveTo || Date.parse(v.effectiveTo) >= Date.parse(v.effectiveFrom), "End date must follow start date.");
 export const assistPatchSchema = z.object({
   version: z.number().int().nonnegative(),
   action: z.enum(["edit", "activate", "suspend", "reactivate"]),

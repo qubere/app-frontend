@@ -1,3 +1,4 @@
+import { rethrowWorkflowConflict } from "@/lib/api/workflowConflict";
 import { queueAssistAlert } from "@/modules/notifications/assistAlertNotifications";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -31,7 +32,7 @@ export async function saveAssistDecision(accountId: string, userId: string, id: 
     const locked = await tx.customsFiling.updateMany({ where:{ id:input.filingId,accountId,version:result.filing.version,filingStatus:{in:EDITABLE}}, data:{ updatedAt:new Date() } });
     if (!locked.count) throw assistConflict();
     await tx.assistDecision.upsert({ where:{assistId_filingId:{assistId:id,filingId:input.filingId}},create:{...data,accountId,assistId:id,filingId:input.filingId},update:data });
-  },{isolationLevel:"Serializable"});
+  },{isolationLevel:"Serializable"}).catch(rethrowWorkflowConflict);
   await createAuditLog({ accountId,userId,action:dismiss?AuditAction.ASSIST_DISMISSED:AuditAction.ASSIST_CONFIRMED,entity:"CustomsFiling",entityId:input.filingId,source:"UI",metadata:{assistId:id,decision:kind,amount:data.amount,overrideReasonCode:data.overrideReasonCode,staged:true} });
   return { staged:true,decision:kind,message:dismiss?"Non-inclusion recorded.":"Included for the next submission. The ledger balance has not changed." };
 }
