@@ -725,6 +725,20 @@ export const BASE_SUPPORT_ARTICLES: SupportArticle[] = [
     tags: ["settings", "integration", "quickbooks", "api key", "webhook", "stage gate", "escalation", "agent policy"],
   },
   {
+    id: "filing-configuration",
+    moduleId: "billing-admin",
+    question: "Where do I manage platform-wide customs filing configuration?",
+    answer: "Filing Configuration is a platform-admin-only workspace under Management for cross-tenant customs filing rules. It is separate from a single account's Settings and only appears in the sidebar for platform administrators.",
+    steps: [
+      "Open the Management section of the sidebar (visible to platform admins only).",
+      "Select Filing Configuration.",
+      "Review or update the platform-global filing rules, then confirm the change applies to the intended tenants.",
+    ],
+    href: "/app/filing-config",
+    actionLabel: "Open Filing Configuration",
+    tags: ["filing configuration", "platform admin", "cross-tenant", "customs rules", "management"],
+  },
+  {
     id: "notification-center",
     moduleId: "start",
     question: "How do I use notifications without losing my place?",
