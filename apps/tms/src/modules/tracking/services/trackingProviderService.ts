@@ -1,18 +1,12 @@
 import { db } from "@qubere/db";
 import type { AccountContext } from "@qubere/auth";
+import { mapProviderEvent, type TrackingEventMappingRule } from "@qubere/tracking";
+import { TrackingWebhookError } from "@qubere/tracking-platform";
 import { publishTransportationEvent } from "../../events/services/eventService";
 
-export type TrackingProviderType =
-  | "PROJECT44"
-  | "FOURKITES"
-  | "VIZION"
-  | "TERMINAL_API"
-  | "EDI_214"
-  | "OCEAN_CARRIER_SCRAPE"
-  | "MANUAL_UPDATE";
-
 export interface IngestTrackingSignalInput {
-  provider: TrackingProviderType;
+  provider: string;
+  connectionId?: string;
   shipmentId?: string;
   movementId?: string;
   rawEventCode: string;
@@ -23,73 +17,85 @@ export interface IngestTrackingSignalInput {
   carrierReference?: string;
 }
 
-export async function ingestRawTrackingSignal(
-  ctx: AccountContext,
-  input: IngestTrackingSignalInput
-) {
+async function loadEventMapping(provider: string, connectionId: string, rawEventCode: string) {
+  const definition = await db.trackingProviderDefinition.findUnique({
+    where: { key: provider },
+    select: {
+      eventMappings: {
+        where: { active: true },
+      },
+    },
+  });
+  if (!definition) {
+    throw new TrackingWebhookError(
+      "PROVIDER_UNAVAILABLE",
+      409,
+      `Tracking provider "${provider}" is not configured in the provider catalog.`
+    );
+  }
+  const mapped = mapProviderEvent(
+    rawEventCode,
+    connectionId,
+    definition.eventMappings as TrackingEventMappingRule[]
+  );
+  if (!mapped) {
+    throw new TrackingWebhookError(
+      "EVENT_MAPPING_MISSING",
+      422,
+      `No active event mapping exists for provider "${provider}" code "${rawEventCode}".`
+    );
+  }
+  return mapped;
+}
+
+/**
+ * Compatibility entry point for existing services. Provider mapping now comes
+ * from the database; no provider names or keyword rules live in application code.
+ */
+export async function ingestRawTrackingSignal(ctx: AccountContext, input: IngestTrackingSignalInput) {
   const occurredAt = input.occurredAt ?? new Date();
+  const mapped = await loadEventMapping(input.provider, input.connectionId ?? "", input.rawEventCode);
 
-  // Map provider raw event code to standardized TransportationEvent code
-  const eventType = mapProviderEventCode(input.rawEventCode);
-
-  // Update Shipment arrival / ETA if provided
+  // These are compatibility caches only. Canonical event and ETA history remain
+  // authoritative and are persisted by the webhook ingestion service.
   if (input.shipmentId) {
-    const updateData: any = {};
-    if (input.newEstimatedArrival) {
-      updateData.estimatedArrival = input.newEstimatedArrival;
-    }
-    if (eventType === "CONTAINER_DISCHARGED" || eventType === "PORT_ARRIVED") {
+    const updateData: { estimatedArrival?: Date; arrivalDate?: Date } = {};
+    if (input.newEstimatedArrival) updateData.estimatedArrival = input.newEstimatedArrival;
+    if (["CONTAINER_DISCHARGED", "PORT_ARRIVED"].includes(mapped.canonicalEventType)) {
       updateData.arrivalDate = occurredAt;
     }
-
     if (Object.keys(updateData).length > 0) {
-      await db.shipment.update({
-        where: { id: input.shipmentId },
+      await db.shipment.updateMany({
+        where: { id: input.shipmentId, accountId: ctx.accountId },
         data: updateData,
       });
     }
   }
 
-  // Publish standardized TransportationEvent
   const event = await publishTransportationEvent(ctx, {
     entityType: input.movementId ? "MOVEMENT" : "SHIPMENT",
     entityId: input.movementId ?? input.shipmentId ?? "shp_unknown",
     shipmentId: input.shipmentId ?? null,
     movementId: input.movementId ?? null,
-    eventType,
-    source: "API",
+    eventType: mapped.canonicalEventType,
+    source:
+      mapped.sourceType === "CBP"
+        ? "CBP"
+        : mapped.sourceType === "TERMINAL"
+          ? "TERMINAL"
+          : "API",
     sourceReference: `${input.provider}:${input.carrierReference ?? input.rawEventCode}`,
     occurredAt,
-    location: input.location as any,
+    location: input.location as Record<string, unknown> | undefined,
     payload: {
       provider: input.provider,
+      connectionId: input.connectionId ?? null,
+      mappingId: mapped.mappingId,
       rawEventCode: input.rawEventCode,
       eventDescription: input.eventDescription ?? input.rawEventCode,
-      newEstimatedArrival: input.newEstimatedArrival,
+      newEstimatedArrival: input.newEstimatedArrival?.toISOString() ?? null,
     },
   });
 
-  return { event, eventType };
-}
-
-export function mapProviderEventCode(rawCode: string): string {
-  const normalized = rawCode.toUpperCase().replace(/[\s\-_]+/g, "_");
-
-  if (normalized.includes("DISCHARGE") || normalized.includes("UNLOAD")) {
-    return "CONTAINER_DISCHARGED";
-  }
-  if (normalized.includes("GATE_OUT") || normalized.includes("OUT_PORT")) {
-    return "GATE_OUT_PORT";
-  }
-  if (normalized.includes("DEPART") || normalized.includes("VESSEL_DEPART")) {
-    return "VESSEL_DEPARTED";
-  }
-  if (normalized.includes("ARRIV") || normalized.includes("PORT_ARRIV")) {
-    return "PORT_ARRIVED";
-  }
-  if (normalized.includes("DELIVER") || normalized.includes("POD")) {
-    return "DELIVERED";
-  }
-
-  return "TRACKING_UPDATE";
+  return { event, eventType: mapped.canonicalEventType, mappingId: mapped.mappingId };
 }

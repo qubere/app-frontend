@@ -84,12 +84,36 @@ export interface EtaObservationRecord {
 }
 
 export interface TrackingSubscriptionRecord {
+  integrationConfigId: string | null;
   provider: string;
   status: string;
   lastEventAt: Date | null;
   lastSyncAt: Date | null;
   lastErrorAt: Date | null;
   lastErrorCode: string | null;
+}
+
+export type TrackingSourceState =
+  | "NOT_CONFIGURED"
+  | "WAITING"
+  | "CONNECTED"
+  | "STALE"
+  | "ERROR"
+  | "INACTIVE";
+
+export interface TrackingConnectionRecord {
+  id: string;
+  name: string;
+  provider: string;
+  status: string;
+  clientId: string | null;
+  priority: number;
+  isDefault: boolean;
+  lastSyncAt: Date | null;
+  lastEventAt: Date | null;
+  lastErrorAt: Date | null;
+  lastErrorMessage: string | null;
+  providerDefinition: { displayName: string; capabilities: string[] } | null;
 }
 
 export interface TrackingDeadlineRecord {
@@ -126,8 +150,20 @@ export interface ShipmentTrackingProjection {
     reasonCodes: string[];
     isDataStale: boolean;
   };
+  source: {
+    state: TrackingSourceState;
+    connectionId: string | null;
+    connectionName: string | null;
+    provider: string | null;
+    providerDisplayName: string | null;
+    scope: "ACCOUNT" | "CLIENT" | null;
+    lastEventAt: Date | null;
+    lastSyncAt: Date | null;
+    lastErrorAt: Date | null;
+    lastErrorMessage: string | null;
+  };
   nextAction: {
-    type: "START_TRACKING" | "RESOLVE_EXCEPTION" | "CHECK_TRACKING_SOURCE" | "COMPLETE_CUSTOMS";
+    type: "CONFIGURE_TRACKING" | "START_TRACKING" | "RESOLVE_EXCEPTION" | "CHECK_TRACKING_SOURCE" | "COMPLETE_CUSTOMS";
     title: string;
     detail: string;
     dueAt: Date | null;
@@ -212,6 +248,7 @@ export interface BuildTrackingProjectionInput {
   events: TrackingEventRecord[];
   etaObservations: EtaObservationRecord[];
   subscriptions: TrackingSubscriptionRecord[];
+  connections?: TrackingConnectionRecord[];
   deadlines: TrackingDeadlineRecord[];
   openExceptions: { blocking: boolean; severity: string | null }[];
   latestFiling: { id: string; filingStatus: string } | null;
@@ -358,12 +395,49 @@ export function buildTrackingProjection(input: BuildTrackingProjectionInput): Sh
   const blockers = input.openExceptions.filter(
     (exception) => exception.blocking || exception.severity === "Critical" || exception.severity === "High"
   ).length;
-  const hasTrackingConfiguration = input.identifiers.length > 0 || input.subscriptions.length > 0 || input.events.length > 0;
-  const freshnessAnchor = lastSync;
+  const connections = [...(input.connections ?? [])].sort(
+    (a, b) => Number(b.isDefault) - Number(a.isDefault) || a.priority - b.priority
+  );
+  const subscribedConnectionIds = new Set(
+    input.subscriptions.map((subscription) => subscription.integrationConfigId).filter(Boolean)
+  );
+  const primaryConnection =
+    connections.find((connection) => subscribedConnectionIds.has(connection.id)) ?? connections[0] ?? null;
+  const hasTrackingConfiguration = Boolean(primaryConnection);
+  const primarySubscriptionTimes = input.subscriptions
+    .filter((subscription) => subscription.integrationConfigId === primaryConnection?.id)
+    .flatMap((subscription) => [subscription.lastSyncAt, subscription.lastEventAt]);
+  const connectionLastSuccess = [
+    primaryConnection?.lastSyncAt,
+    primaryConnection?.lastEventAt,
+    ...primarySubscriptionTimes,
+  ]
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const freshnessAnchor = connectionLastSuccess;
   const isDataStale =
     hasTrackingConfiguration &&
-    (!freshnessAnchor || now.getTime() - freshnessAnchor.getTime() > staleAfterHours(input.shipment.transportMode) * 3_600_000);
+    Boolean(freshnessAnchor && now.getTime() - freshnessAnchor.getTime() > staleAfterHours(input.shipment.transportMode) * 3_600_000);
   const failedSubscription = input.subscriptions.some((subscription) => subscription.status === "FAILED");
+  const connectionHasError = Boolean(
+    primaryConnection &&
+      (primaryConnection.status === "ERROR" ||
+        (primaryConnection.lastErrorAt &&
+          (!connectionLastSuccess || primaryConnection.lastErrorAt.getTime() > connectionLastSuccess.getTime())))
+  );
+  const sourceState: TrackingSourceState = !primaryConnection
+    ? orderedEvents.length > 0
+      ? "INACTIVE"
+      : "NOT_CONFIGURED"
+    : primaryConnection.status === "INACTIVE"
+      ? "INACTIVE"
+      : connectionHasError || failedSubscription
+        ? "ERROR"
+        : isDataStale
+          ? "STALE"
+          : !freshnessAnchor
+            ? "WAITING"
+            : "CONNECTED";
   const customs = customsTrackingStatus(input.latestFiling?.filingStatus);
   const reasonCodes: string[] = [];
 
@@ -375,9 +449,9 @@ export function buildTrackingProjection(input: BuildTrackingProjectionInput): Sh
     reasonCodes.push("CUSTOMS_BLOCKER_OPEN");
   } else if (!hasTrackingConfiguration) {
     health = "NOT_TRACKED";
-  } else if (failedSubscription) {
+  } else if (sourceState === "INACTIVE" || sourceState === "ERROR") {
     health = "ATTENTION";
-    reasonCodes.push("TRACKING_PROVIDER_FAILED");
+    reasonCodes.push(sourceState === "INACTIVE" ? "TRACKING_CONNECTION_INACTIVE" : "TRACKING_PROVIDER_FAILED");
   } else if (isDataStale) {
     health = "STALE";
     reasonCodes.push("TRACKING_DATA_STALE");
@@ -402,14 +476,28 @@ export function buildTrackingProjection(input: BuildTrackingProjectionInput): Sh
         : "Clear the blocking evidence or approval before filing.",
       dueAt: nextOpenDeadline?.dueAt ?? eta.eta,
     };
-  } else if (!hasTrackingConfiguration) {
+  } else if (!primaryConnection) {
+    nextAction = {
+      type: "CONFIGURE_TRACKING",
+      title: "Connect a tracking source",
+      detail: "Choose the carrier, forwarder, or visibility feed your brokerage already uses. Historical events remain visible, but no new updates can arrive until a source is connected.",
+      dueAt: null,
+    };
+  } else if (sourceState === "INACTIVE") {
+    nextAction = {
+      type: "CHECK_TRACKING_SOURCE",
+      title: "Enable the tracking connection",
+      detail: "This shipment has a matching provider connection, but it is inactive. Enable it before relying on live movement updates.",
+      dueAt: null,
+    };
+  } else if (input.identifiers.length === 0 && input.events.length === 0) {
     nextAction = {
       type: "START_TRACKING",
       title: "Add a carrier reference to start tracking",
       detail: "Add an MBL, booking, container, MAWB, PRO, or tracking number. Qubere will not infer movement without a source.",
       dueAt: null,
     };
-  } else if (failedSubscription || isDataStale) {
+  } else if (sourceState === "ERROR" || sourceState === "STALE") {
     nextAction = {
       type: "CHECK_TRACKING_SOURCE",
       title: failedSubscription ? "Tracking provider needs attention" : "Carrier data is stale",
@@ -450,6 +538,18 @@ export function buildTrackingProjection(input: BuildTrackingProjectionInput): Sh
       filingId: input.latestFiling?.id ?? null,
     },
     health: { status: health, reasonCodes, isDataStale },
+    source: {
+      state: sourceState,
+      connectionId: primaryConnection?.id ?? null,
+      connectionName: primaryConnection?.name ?? null,
+      provider: primaryConnection?.provider ?? orderedEvents[0]?.provider ?? null,
+      providerDisplayName: primaryConnection?.providerDefinition?.displayName ?? null,
+      scope: primaryConnection ? (primaryConnection.clientId ? "CLIENT" : "ACCOUNT") : null,
+      lastEventAt: primaryConnection?.lastEventAt ?? lastActual?.occurredAt ?? null,
+      lastSyncAt: primaryConnection?.lastSyncAt ?? connectionLastSuccess,
+      lastErrorAt: primaryConnection?.lastErrorAt ?? null,
+      lastErrorMessage: primaryConnection?.lastErrorMessage ?? null,
+    },
     nextAction,
     identifiers: input.identifiers,
     legs: [...input.legs].sort((a, b) => a.sequence - b.sequence),
@@ -470,6 +570,7 @@ export async function getShipmentTrackingProjection(
     where: { id: shipmentId, accountId, deletedAt: null },
     select: {
       id: true,
+      clientId: true,
       shipmentNumber: true,
       transportMode: true,
       estimatedArrival: true,
@@ -513,6 +614,7 @@ export async function getShipmentTrackingProjection(
       },
       trackingSubscriptions: {
         select: {
+          integrationConfigId: true,
           provider: true,
           status: true,
           lastEventAt: true,
@@ -559,6 +661,29 @@ export async function getShipmentTrackingProjection(
 
   if (!shipment) return null;
 
+  const connections = await (db as any).integrationConfig.findMany({
+    where: {
+      accountId,
+      category: "SHIPMENT_TRACKING",
+      OR: [{ clientId: null }, ...(shipment.clientId ? [{ clientId: shipment.clientId }] : [])],
+    },
+    orderBy: [{ isDefault: "desc" }, { priority: "asc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      name: true,
+      provider: true,
+      status: true,
+      clientId: true,
+      priority: true,
+      isDefault: true,
+      lastSyncAt: true,
+      lastEventAt: true,
+      lastErrorAt: true,
+      lastErrorMessage: true,
+      trackingProviderDefinition: { select: { displayName: true, capabilities: true } },
+    },
+  });
+
   const baseProjection = buildTrackingProjection({
     shipment,
     identifiers: shipment.trackingIdentifiers,
@@ -568,6 +693,10 @@ export async function getShipmentTrackingProjection(
     events: shipment.trackingEvents,
     etaObservations: shipment.etaObservations,
     subscriptions: shipment.trackingSubscriptions,
+    connections: connections.map((connection: any) => ({
+      ...connection,
+      providerDefinition: connection.trackingProviderDefinition,
+    })),
     deadlines: shipment.complianceDeadlines,
     openExceptions: shipment.exceptionItems,
     latestFiling: shipment.customsFilings[0] ?? null,

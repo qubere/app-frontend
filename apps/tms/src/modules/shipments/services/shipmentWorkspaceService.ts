@@ -95,6 +95,7 @@ export async function getShipmentWorkspaceDetails(
       trackingIdentifiers: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
       trackingEquipment: { orderBy: { createdAt: "asc" } },
       etaObservations: { orderBy: { estimatedAt: "desc" }, take: 1 },
+      trackingSubscriptions: { orderBy: { updatedAt: "desc" } },
       transportationOrders: { orderBy: { createdAt: "desc" } },
       shipmentMovements: {
         orderBy: { sequence: "asc" },
@@ -131,6 +132,30 @@ export async function getShipmentWorkspaceDetails(
     take: 200,
     include: { user: { select: { firstName: true, lastName: true, email: true } } },
   }) ?? [];
+  const trackingConnections = await (db as any).integrationConfig?.findMany({
+    where: {
+      accountId: ctx.accountId,
+      category: "SHIPMENT_TRACKING",
+      OR: [{ clientId: null }, { clientId: shipment.clientId }],
+    },
+    orderBy: [{ isDefault: "desc" }, { priority: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      provider: true,
+      status: true,
+      environment: true,
+      isDefault: true,
+      lastSyncAt: true,
+      lastEventAt: true,
+      lastHealthCheckAt: true,
+      lastErrorAt: true,
+      lastErrorMessage: true,
+      trackingProviderDefinition: {
+        select: { key: true, displayName: true, status: true, capabilities: true },
+      },
+    },
+  }) ?? [];
 
   const journey = computeMultimodalJourney(shipment);
   const crossDomainRisks = evaluateCrossDomainRisks(shipment);
@@ -155,7 +180,7 @@ export async function getShipmentWorkspaceDetails(
   const markupOnCostPct = costAmount > 0 ? (grossProfit / costAmount) * 100 : 0;
 
   const workspace = {
-    shipment: { ...shipment, pipelineJobs, auditLogs },
+    shipment: { ...shipment, pipelineJobs, auditLogs, trackingConnections },
     journey,
     crossDomainRisks,
     healthSnapshot,

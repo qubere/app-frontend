@@ -59,10 +59,10 @@ export function ShipmentsWorkbenchClient({ initialShipments }: { initialShipment
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          importerName: newImporterName.trim() || "Acme Import Logistics LLC",
+          importerName: newImporterName.trim(),
           transportMode: newTransportMode,
-          originPort: newOriginPort.trim() || "CNSHA",
-          destinationPort: newDestinationPort.trim() || "USOAK",
+          originPort: newOriginPort.trim(),
+          destinationPort: newDestinationPort.trim(),
         }),
       });
 

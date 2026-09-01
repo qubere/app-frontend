@@ -1,9 +1,12 @@
 import { db } from "@qubere/db";
 
 export interface ComputeEtaInput {
+  accountId: string;
   shipmentId: string;
   trackingEventId: string;
   newEstimatedArrival: Date;
+  observedAt?: Date;
+  provider: string;
   reasonCode?: string | null;
   confidence?: number | null;
 }
@@ -11,7 +14,7 @@ export interface ComputeEtaInput {
 export async function computeAndPersistEtaObservation(input: ComputeEtaInput) {
   // 1. Fetch previous EtaObservation if available
   const previousObservation = await db.etaObservation.findFirst({
-    where: { shipmentId: input.shipmentId },
+    where: { accountId: input.accountId, shipmentId: input.shipmentId },
     orderBy: { createdAt: "desc" },
   });
 
@@ -22,8 +25,8 @@ export async function computeAndPersistEtaObservation(input: ComputeEtaInput) {
     deltaMinutes = Math.round((newMs - prevMs) / (1000 * 60));
   }
 
-  const shipment = await db.shipment.findUnique({
-    where: { id: input.shipmentId },
+  const shipment = await db.shipment.findFirst({
+    where: { id: input.shipmentId, accountId: input.accountId },
     select: { accountId: true },
   });
 
@@ -36,11 +39,11 @@ export async function computeAndPersistEtaObservation(input: ComputeEtaInput) {
     data: {
       accountId: shipment.accountId,
       shipmentId: input.shipmentId,
-      estimatedAt: new Date(),
+      estimatedAt: input.observedAt ?? new Date(),
       eta: input.newEstimatedArrival,
       previousEta: previousObservation?.eta ?? null,
       deltaMinutes,
-      provider: "CARRIER",
+      provider: input.provider,
       reasonCode: input.reasonCode ?? "CARRIER_UPDATE",
       confidence: input.confidence ?? 90,
     },

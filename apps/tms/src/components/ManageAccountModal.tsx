@@ -36,7 +36,7 @@ const DEFAULT_ITEMS: ManageAccountPanelItem[] = [
   { id: "users", name: "User Management", icon: Users, description: "Dispatchers, drivers, finance & invitation grants" },
   { id: "roles", name: "Roles & Permissions", icon: ShieldCheck, description: "Role definitions & permission levels" },
   { id: "settings", name: "System Settings", icon: Settings2, description: "Configuration, dispatch rules & audit logs" },
-  { id: "integrations", name: "Integrations & APIs", icon: Plug, description: "ERPs, P44, Samsara, QuickBooks & Webhooks" },
+  { id: "integrations", name: "Integrations & APIs", icon: Plug, description: "Provider catalog, connections, webhooks, and health" },
   { id: "documentEmail", name: "Inbound Email Routing", icon: Mail, description: "Automated document ingestion email addresses" },
 ];
 
@@ -358,27 +358,15 @@ export function ManageAccountModal({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-ink">Carrier & System Integrations</h3>
-                    <p className="text-xs text-ink-muted">Connected Project44, Samsara, QuickBooks, and Carrier APIs</p>
+                    <p className="text-xs text-ink-muted">Manage real provider connections and operational health</p>
                   </div>
                   <a href="/admin/integrations" className="px-3 py-1.5 bg-brand text-white rounded-xl text-xs font-bold hover:bg-brand-hover">
                     Manage All Integrations →
                   </a>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl border border-border bg-white flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-xs text-ink">Project44 Real-Time Tracking</h4>
-                      <p className="text-[10px] text-ink-muted">Active ELD & GPS telemetry sync</p>
-                    </div>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  </div>
-                  <div className="p-4 rounded-xl border border-border bg-white flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-xs text-ink">Samsara Fleet ELD</h4>
-                      <p className="text-[10px] text-ink-muted">Live HOS & Driver status</p>
-                    </div>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  </div>
+                <div className="rounded-xl border border-dashed border-border bg-surface-muted/50 p-5">
+                  <p className="text-xs font-bold text-ink">Connection status comes from the integration database.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-ink-muted">Open the integrations workspace to view configured providers, tenant/client scope, callback URLs, secret references, freshness, and errors.</p>
                 </div>
               </div>
             )}

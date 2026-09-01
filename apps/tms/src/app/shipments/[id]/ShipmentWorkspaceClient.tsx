@@ -15,6 +15,7 @@ import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
 import { CustomsHandoffCard } from "@/components/CustomsHandoffCard";
 import { AgentExecutionsAuditLog } from "@/components/AgentExecutionsAuditLog";
+import { ShipmentTrackingExperience } from "./ShipmentTrackingExperience";
 
 const TMS_PIPELINE_STAGES = [
   { id: "document-intake", name: "1. Intake", surface: "document-intake", icon: FileText, agentName: "Document Intake Agent" },
@@ -61,7 +62,7 @@ export function ShipmentWorkspaceClient({
   financials: any;
   lifecycleStatus?: any;
 }) {
-  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "CUSTOMS" | "DOCUMENTS" | "CARGO" | "FINANCIALS" | "ACTIVITY">("OVERVIEW");
+  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "TRACKING" | "CUSTOMS" | "DOCUMENTS" | "CARGO" | "FINANCIALS" | "ACTIVITY">("OVERVIEW");
   const [_activityCategoryFilter, _setActivityCategoryFilter] = useState<string>("ALL");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -90,10 +91,12 @@ export function ShipmentWorkspaceClient({
   const docDestination = docExtractions.map((e: any) => e.destinationCountry || e.destinationName).find(Boolean);
 
   const latestOrder = shipment.transportationOrders?.[0];
+  const originStop = shipment.trackingStops?.find((stop: any) => stop.role === "ORIGIN") ?? shipment.trackingStops?.[0];
+  const destinationStop = shipment.trackingStops?.find((stop: any) => ["PORT_OF_DISCHARGE", "DESTINATION"].includes(stop.role)) ?? shipment.trackingStops?.at(-1);
   const route = {
-    origin: cleanFieldValue(shipment.countryOfExport, locationLabel(latestOrder?.origin), docOrigin),
-    portOfDischarge: cleanFieldValue(shipment.portOfEntry, locationLabel(latestOrder?.destination), docDischarge),
-    finalDestination: cleanFieldValue(shipment.destinationCountry, locationLabel(latestOrder?.destination), docDestination),
+    origin: cleanFieldValue(shipment.countryOfExport, originStop?.unlocode, originStop?.name, locationLabel(latestOrder?.origin), docOrigin),
+    portOfDischarge: cleanFieldValue(shipment.portOfEntry, destinationStop?.unlocode, destinationStop?.name, locationLabel(latestOrder?.destination), docDischarge),
+    finalDestination: cleanFieldValue(shipment.destinationCountry, destinationStop?.name, destinationStop?.unlocode, locationLabel(latestOrder?.destination), docDestination),
     modes: cleanFieldValue(shipment.transportMode, latestOrder?.mode, docMode),
   };
 
@@ -318,9 +321,10 @@ export function ShipmentWorkspaceClient({
           />
 
           {/* Navigation Tabs */}
-          <div className="flex bg-white p-1 rounded-2xl border border-border text-xs w-fit shadow-2xs">
+          <div className="flex max-w-full overflow-x-auto bg-white p-1 rounded-2xl border border-border text-xs w-fit shadow-2xs">
             {[
               { key: "OVERVIEW", label: "Overview" },
+              { key: "TRACKING", label: `Tracking (${shipment.trackingEvents?.length ?? 0})` },
               { key: "DOCUMENTS", label: `Documents (${shipment.documents?.length ?? 0})` },
               { key: "CARGO", label: `Cargo (${shipment.lineItems?.length ?? 0})` },
               { key: "FINANCIALS", label: `Financials ($${safeFinancials.totalSellAmount.toLocaleString()})` },
@@ -462,6 +466,11 @@ export function ShipmentWorkspaceClient({
                 </Card>
               </div>
             </div>
+          )}
+
+          {/* TAB: TRACKING */}
+          {activeTab === "TRACKING" && (
+            <ShipmentTrackingExperience shipment={shipment} />
           )}
 
           {/* TAB 2: CUSTOMS */}
