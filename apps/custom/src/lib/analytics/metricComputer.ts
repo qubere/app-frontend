@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { Decimal } from "../tariff/decimal";
+import { statusVariantsForStates } from "@/modules/decisions/decisionState";
 
 export interface ExceptionAgeBuckets {
   under24h: number;
@@ -16,8 +17,14 @@ export interface AnalyticsMetrics {
   /** Null when there are no open exceptions to average. */
   exceptionAgeAvgHours: number | null;
   exceptionAgeBuckets: ExceptionAgeBuckets;
-  /** Null when no extraction field exists yet to measure a touch rate from. */
+  /**
+   * Fraction (0–100) of decisions presented to a human that the human then
+   * modified. Null when nothing has been presented yet. See touchCounts for
+   * the raw numerator/denominator.
+   */
   touchRate: number | null;
+  /** Raw counts behind touchRate — the denominator is recorded at presentation. */
+  touchCounts: { presented: number; touched: number };
   /** Null when no terminal filing carries a duty amount yet. */
   dutyPerEntry: number | null;
   openExceptions: number;
@@ -112,18 +119,46 @@ export async function computeAnalyticsMetrics(
     }
   }
 
-  const fields = await db.extractionField.findMany({
-    where: {
-      document: {
+  // Touch rate (issue #202, 4.2.2). Denominator: decisions the pipeline
+  // *presented* to a human — i.e. written in a review-requiring state, or since
+  // acted on by a human. This is recorded at decision-creation time via
+  // triageState/status, never reconstructed. Auto-verified and still-blocked
+  // decisions were never put in front of a person, so they are excluded.
+  // Numerator: of those, the ones a human modified — rejected, or annotated
+  // with a note. Approving the AI's proposal as-is is deliberately "not
+  // touched": that is the AI getting it right.
+  const decisionShipmentFilter = clientId ? { shipment: { clientId } } : {};
+  const presentedStatuses = statusVariantsForStates(["NEEDS_REVIEW", "APPROVED", "REJECTED"]);
+  const touchedStatuses = statusVariantsForStates(["REJECTED"]);
+
+  const [presented, touched] = await Promise.all([
+    db.agentDecision.count({
+      where: {
         accountId,
-        shipmentId: { not: null },
-        ...(clientId ? { shipment: { clientId } } : {}),
+        autoApproved: false,
+        ...decisionShipmentFilter,
+        OR: [
+          { triageState: { in: ["NEEDS_REVIEW", "APPROVED", "REJECTED"] } },
+          { triageState: null, status: { in: presentedStatuses } },
+        ],
       },
-    },
-  });
-  const totalFields = fields.length;
-  const humanCorrected = fields.filter((f) => f.source === "HUMAN_CORRECTION").length;
-  const touchRate = totalFields > 0 ? Math.round((humanCorrected / totalFields) * 100) : null;
+    }),
+    db.agentDecision.count({
+      where: {
+        accountId,
+        autoApproved: false,
+        reviewedByUserId: { not: null },
+        ...decisionShipmentFilter,
+        OR: [
+          { triageState: { in: ["REJECTED"] } },
+          { triageState: null, status: { in: touchedStatuses } },
+          { humanNotes: { not: null } },
+        ],
+      },
+    }),
+  ]);
+  const touchRate = presented > 0 ? Math.round((touched / presented) * 100) : null;
+  const touchCounts = { presented, touched };
 
   const terminalFilingsWithValue = await db.customsFiling.findMany({
     where: { ...filingFilter, filingStatus: { in: terminalStatuses }, totalDuties: { not: null } },
@@ -148,6 +183,7 @@ export async function computeAnalyticsMetrics(
     exceptionAgeAvgHours,
     exceptionAgeBuckets,
     touchRate,
+    touchCounts,
     dutyPerEntry: dutyPerEntry === null ? null : Math.round(dutyPerEntry * 100) / 100,
     openExceptions,
     filedEntries,

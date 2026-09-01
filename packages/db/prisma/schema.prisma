@@ -1642,6 +1642,10 @@ model AgentDecision {
   rulesApplied        String[] // e.g. GRI 1, GRI 6
   evidenceItems       Json? // Array of supporting evidence objects
   humanNotes          String?
+  // Structured reason beside humanNotes on a REJECT — the code is analytics,
+  // the note is the story (issue #202, 1.3.4). Validated against the versioned
+  // picklist in src/modules/decisions/rejectionReasons.ts.
+  rejectionReasonCode String?
   reviewedByUserId    String?
   reviewedByUser      User?     @relation("DecisionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   assignedToUserId    String?
@@ -6052,6 +6056,12 @@ model WorkMetricSnapshot {
   firstPassRate        Float?
   exceptionAgeAvgHours Float?
   touchRate            Float?
+  // Raw counts behind touchRate (issue #202, 4.2.2): the denominator is the
+  // number of decisions the pipeline *presented* to a human (recorded at
+  // decision-creation time via triageState, not reconstructed), and the
+  // numerator is those a human then modified (rejected or annotated).
+  lineItemsPresented   Int?
+  lineItemsTouched     Int?
   dutyPerEntry         Decimal?
   openExceptions       Int
   filedEntries         Int

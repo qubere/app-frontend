@@ -20,6 +20,8 @@ export async function executeDailyWorkMetricSnapshot() {
           firstPassRate: metrics.firstPassRate,
           exceptionAgeAvgHours: metrics.exceptionAgeAvgHours,
           touchRate: metrics.touchRate,
+          lineItemsPresented: metrics.touchCounts.presented,
+          lineItemsTouched: metrics.touchCounts.touched,
           dutyPerEntry: metrics.dutyPerEntry,
           openExceptions: metrics.openExceptions,
           filedEntries: metrics.filedEntries,

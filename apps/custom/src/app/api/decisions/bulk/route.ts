@@ -7,6 +7,7 @@ import { FactAuditService } from "@/modules/audit/factAuditService";
 import { FactService } from "@/modules/shipment/factService";
 import { lineItemFactField } from "@/modules/shipment/lineItemReconciler";
 import { normalizeDecisionStatus } from "@/modules/decisions/decisionState";
+import { isValidRejectionReasonCode, REJECTION_REASONS } from "@/modules/decisions/rejectionReasons";
 import { deliverWebhookEvent } from "@/lib/webhooks/deliver";
 import {
   REVIEW_ACTIONS,
@@ -79,10 +80,11 @@ const REVIEWER_SELECT = {
 // Returns: { succeeded, failed, results }
 export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
-  const { decisionIds, action, humanNotes } = body as {
+  const { decisionIds, action, humanNotes, rejectionReasonCode } = body as {
     decisionIds: unknown;
     action: unknown;
     humanNotes?: unknown;
+    rejectionReasonCode?: unknown;
   };
 
   if (!Array.isArray(decisionIds) || decisionIds.length === 0) {
@@ -114,6 +116,18 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       { status: 400 }
     );
   }
+  if (action === "REJECT" && !isValidRejectionReasonCode(rejectionReasonCode)) {
+    return NextResponse.json(
+      {
+        error: "A rejection reason code is required to bulk-reject decisions",
+        code: "REJECTION_REASON_REQUIRED",
+        allowed: REJECTION_REASONS.map((r) => r.code),
+      },
+      { status: 400 }
+    );
+  }
+  const resolvedRejectionCode: string | null =
+    action === "REJECT" && isValidRejectionReasonCode(rejectionReasonCode) ? rejectionReasonCode : null;
 
   // Permission checked once upfront — any ID mismatch just shows up as a skip
   const baseCheck = checkReviewPermission(ctx, requiredPermissions(action));
@@ -198,6 +212,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
           status: newStatus,
           triageState: REVIEW_TRIAGE_STATES[action],
           humanNotes: rationale === "" ? decision.humanNotes : rationale,
+          rejectionReasonCode: resolvedRejectionCode,
           reviewedByUserId: ctx.userId,
         },
       });
@@ -242,6 +257,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
         metadata: {
           newStatus,
           humanNotes: rationale,
+          rejectionReasonCode: resolvedRejectionCode,
           bulkAction: true,
           reviewerCapacity: reviewer.capacity,
           brokerLicenseNumber: reviewer.licenseNumber,

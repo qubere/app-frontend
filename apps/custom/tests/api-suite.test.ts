@@ -332,6 +332,39 @@ describe("POST /api/decisions", () => {
     expect(dbMock.agentDecision.updateMany).not.toHaveBeenCalled();
   });
 
+  it("requires a structured reason code to reject, not just a note", async () => {
+    dbMock.agentDecision.findFirst.mockResolvedValue(decision);
+
+    const res = await decisions.POST(
+      post("http://t/api/decisions", { decisionId: "dec_1", action: "REJECT", humanNotes: "Looks wrong" })
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("REJECTION_REASON_REQUIRED");
+    expect(dbMock.agentDecision.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects with a valid reason code and records it on the row", async () => {
+    dbMock.agentDecision.findFirst.mockResolvedValue(decision);
+    dbMock.agentDecision.updateMany.mockResolvedValue({ count: 1 });
+
+    const res = await decisions.POST(
+      post("http://t/api/decisions", {
+        decisionId: "dec_1",
+        action: "REJECT",
+        humanNotes: "HTS 8537 does not fit a passive bracket",
+        rejectionReasonCode: "WRONG_CLASSIFICATION",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(dbMock.agentDecision.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ rejectionReasonCode: "WRONG_CLASSIFICATION" }),
+      })
+    );
+  });
+
   it("maps RE_EVALUATE back to In Progress", async () => {
     dbMock.agentDecision.findFirst.mockResolvedValue(decision);
     dbMock.agentDecision.updateMany.mockResolvedValue({ count: 1 });

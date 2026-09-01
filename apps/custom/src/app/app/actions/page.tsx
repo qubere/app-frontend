@@ -5,7 +5,7 @@ import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { groupDecisions } from "@/modules/decisions/groupDecisions";
 import { getAllReviewableDecisionWhereFilter } from "@/modules/decisions/decisionState";
 import { buildShipmentActionGroups } from "@/modules/actions/shipmentActions";
-import { buildWorkQueue, filterWorkQueue, parseWorkFilter } from "@/modules/work/workQueue";
+import { buildWorkQueue, filterWorkQueue, parseWorkFilter, explainRank } from "@/modules/work/workQueue";
 import { loadWorkQueueForAccountFromPrefetched } from "@/modules/work/workQueueLoader";
 import { RISK_ACCEPTANCE_PERMISSION, openStatusVariants } from "@/modules/exceptions/exceptionState";
 import { loadComplianceLane, loadBillingLane } from "@/modules/today/loadTodayLanes";
@@ -140,7 +140,7 @@ export default async function ActionsPage(props: {
             client: { select: { id: true, name: true } },
           },
         },
-        reviewedByUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        reviewedByUser: { select: { id: true, firstName: true, lastName: true, email: true, brokerLicenseNumber: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -236,6 +236,19 @@ export default async function ActionsPage(props: {
   const workQueue = buildWorkQueue(queueLoaderResult.input);
   const filteredQueue = filterWorkQueue(workQueue, workFilter);
 
+  // shipmentNumber → best B-1 score + the one-line "why now" a broker can defend.
+  // Built from the unfiltered queue so list order is stable across client filters.
+  const queueRankByShipment: Record<string, { score: number; reason: string }> = {};
+  for (const item of workQueue) {
+    if (!item.shipmentNumber) continue;
+    const existing = queueRankByShipment[item.shipmentNumber];
+    if (existing && existing.score >= item.score) continue;
+    queueRankByShipment[item.shipmentNumber] = {
+      score: item.score,
+      reason: explainRank(item),
+    };
+  }
+
   const firstName = context.firstName ?? null;
   const lastName = context.lastName ?? null;
   const userName = [firstName, lastName].filter(Boolean).join(" ") || context.email;
@@ -302,6 +315,7 @@ export default async function ActionsPage(props: {
       userName={userName}
       documents={documents}
       urgencyByShipment={urgencyByShipment}
+      queueRankByShipment={queueRankByShipment}
       teamMembers={teamMembers}
       scope={scope}
       operationsCount={operationsCount}

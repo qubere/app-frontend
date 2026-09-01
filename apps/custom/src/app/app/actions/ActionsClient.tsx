@@ -4,7 +4,7 @@ import { PgaHoldQueue } from "@/components/pga/PgaHoldQueue";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload, ChevronRight } from "lucide-react";
+import { Scale, TriangleAlert, Search, CheckCircle2, FileText, X, Upload, ChevronRight, Zap, Keyboard } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useDecisionActions } from "@/lib/decisions/useDecisionActions";
 import { ExceptionQuickActions } from "./ExceptionQuickActions";
@@ -21,6 +21,7 @@ import { Modal, ModalHeader, ModalBody } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor } from "@/modules/decisions/editableFields";
 import { triageDecision, type TriageCategory } from "@/modules/decisions/decisionState";
+import { REJECTION_REASONS } from "@/modules/decisions/rejectionReasons";
 import type { ShipmentActionGroup, ActionItem } from "@/modules/actions/shipmentActions";
 import type { WorkPriority } from "@/modules/work/workQueue";
 import type { TodayLane, TodayLaneSummary } from "@/modules/today/todayLanes";
@@ -61,6 +62,11 @@ interface ActionsClientProps {
   documents: DocSummary[];
   /** shipmentNumber → urgency context for countdown chips */
   urgencyByShipment?: Record<string, SerializedUrgency>;
+  /**
+   * shipmentNumber → B-1 queue rank (deadline × dollars × blocking) and the
+   * one-line explanation a broker can justify to their manager.
+   */
+  queueRankByShipment?: Record<string, { score: number; reason: string }>;
   teamMembers?: TeamMember[];
   /** Server-applied routed-queue scope (from ?scope=). */
   scope?: "mine" | "team" | "unassigned" | "all";
@@ -110,6 +116,7 @@ export function ActionsClient({
   userName,
   documents,
   urgencyByShipment = {},
+  queueRankByShipment = {},
   teamMembers = [],
   scope = "all",
   operationsCount,
@@ -176,6 +183,15 @@ export function ActionsClient({
   const [bulkConfirmInput, setBulkConfirmInput] = useState("");
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [bulkApproveLoading, setBulkApproveLoading] = useState(false);
+  // Rejecting a decision is a legal position: it needs a structured reason code
+  // AND a note before it can fire. Both the single-card and bulk Reject routes
+  // go through this dialog instead of mutating on the first click.
+  const [rejectDialog, setRejectDialog] = useState<
+    | { mode: "single"; decisionId: string }
+    | { mode: "bulk"; ids: string[]; overrideCount: number }
+    | null
+  >(null);
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   useEffect(() => {
     setLocalGroups(initialGroups);
@@ -251,6 +267,16 @@ export function ActionsClient({
     );
   });
 
+  // Order the shipment list by the B-1 queue score (deadline × dollars ×
+  // blocking) when the server supplied it — severity is an input to that score,
+  // not the sort key. Fall back to the server's priority+age order otherwise.
+  const rankOf = (shipmentNumber: string): number =>
+    queueRankByShipment[shipmentNumber]?.score ?? -1;
+  const haveRanks = Object.keys(queueRankByShipment).length > 0;
+  if (haveRanks) {
+    filteredGroups.sort((a, b) => rankOf(b.shipmentNumber) - rankOf(a.shipmentNumber));
+  }
+
   const initialGroup = initialShipmentId
     ? filteredGroups.find((g) => g.shipmentId === initialShipmentId) ?? filteredGroups[0]
     : filteredGroups[0];
@@ -284,16 +310,66 @@ export function ActionsClient({
     decisionId: string,
     action: "APPROVE" | "REJECT" | "RE_EVALUATE"
   ) => {
+    // Reject always routes through the dialog — it can't fire without a reason.
+    if (action === "REJECT") {
+      setRejectDialog({ mode: "single", decisionId });
+      return;
+    }
     const ok = await runDecisionAction(decisionId, action, notesByDecision[decisionId]);
     if (ok) {
       setActionSuccess(
         action === "APPROVE"
           ? "Approved & signed into audit log."
-          : action === "REJECT"
-            ? "Rejected."
-            : "Re-evaluation requested."
+          : "Re-evaluation requested."
       );
       router.refresh();
+    }
+  };
+
+  const submitReject = async (reasonCode: string, note: string) => {
+    if (!rejectDialog) return;
+    setRejectLoading(true);
+    try {
+      if (rejectDialog.mode === "single") {
+        const ok = await runDecisionAction(rejectDialog.decisionId, "REJECT", note, reasonCode);
+        if (ok) {
+          setActionSuccess("Rejected & signed into audit log.");
+          router.refresh();
+        }
+      } else {
+        const res = await fetch("/api/decisions/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            decisionIds: rejectDialog.ids,
+            action: "REJECT",
+            humanNotes: note,
+            rejectionReasonCode: reasonCode,
+          }),
+        });
+        const data = (await res.json()) as { succeeded?: number };
+        if (res.ok) {
+          const ids = rejectDialog.ids;
+          setLocalGroups((prev) =>
+            prev.map((g) => ({
+              ...g,
+              items: g.items.map((item) =>
+                item.kind === "decision" && ids.includes(item.id)
+                  ? { ...item, status: "REJECTED" }
+                  : item
+              ),
+            }))
+          );
+          setSelectedDecisionIds(new Set());
+          setActionSuccess(
+            `${data.succeeded ?? ids.length} decision${(data.succeeded ?? ids.length) !== 1 ? "s" : ""} rejected & signed into audit log.`
+          );
+          router.refresh();
+        }
+      }
+    } finally {
+      setRejectLoading(false);
+      setRejectDialog(null);
     }
   };
 
@@ -305,6 +381,10 @@ export function ActionsClient({
       }
       return false;
     }).length;
+    if (action === "REJECT") {
+      setRejectDialog({ mode: "bulk", ids, overrideCount });
+      return;
+    }
     setBulkConfirmDialog({ action, ids, overrideCount });
     setBulkConfirmInput("");
   };
@@ -374,6 +454,71 @@ export function ActionsClient({
     setActionSuccess("Exception closed and recorded in the audit log.");
   };
 
+  // ── Keyboard-first triage ────────────────────────────────────────────────
+  // A broker under filing pressure should be able to clear a queue without
+  // reaching for the mouse. j/k walk the shipment list; a/r/e act on the next
+  // unresolved decision in the open shipment; x toggles it into a bulk set.
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  const nextActionableDecisionId = (() => {
+    if (!selectedGroup) return null;
+    const d = selectedGroup.items.find(
+      (i) => i.kind === "decision" && categorize(i) !== "verified"
+    );
+    return d ? d.id : null;
+  })();
+
+  useEffect(() => {
+    if (activeLane !== "operations") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      // Don't steal keys while a modal owns the screen.
+      if (rejectDialog || bulkConfirmDialog || docModal || exceptionSlideOver) {
+        if (e.key === "Escape") {
+          setRejectDialog(null);
+          setBulkConfirmDialog(null);
+          setDocModal(null);
+          setExceptionSlideOver(null);
+        }
+        return;
+      }
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+        return;
+      }
+      if (e.key === "Escape") {
+        setShowShortcuts(false);
+        return;
+      }
+
+      const idx = filteredGroups.findIndex((g) => g.shipmentId === selectedShipmentId);
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = filteredGroups[Math.min(idx + 1, filteredGroups.length - 1)];
+        if (next) { setSelectedShipmentId(next.shipmentId); setActionSuccess(null); }
+        return;
+      }
+      if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const prev = filteredGroups[Math.max(idx - 1, 0)];
+        if (prev) { setSelectedShipmentId(prev.shipmentId); setActionSuccess(null); }
+        return;
+      }
+
+      if (!canWrite || !nextActionableDecisionId) return;
+      if (e.key === "a") { e.preventDefault(); handleDecisionAction(nextActionableDecisionId, "APPROVE"); }
+      else if (e.key === "r") { e.preventDefault(); handleDecisionAction(nextActionableDecisionId, "REJECT"); }
+      else if (e.key === "e") { e.preventDefault(); handleDecisionAction(nextActionableDecisionId, "RE_EVALUATE"); }
+      else if (e.key === "x") { e.preventDefault(); toggleDecisionSelection(nextActionableDecisionId); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
 
 
   return (
@@ -387,8 +532,18 @@ export function ActionsClient({
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-ink tracking-tight">Today</h1>
-            <p className="text-xs text-ink-muted">{localGroups.reduce((n, g) => n + g.items.length, 0)} open items across {localGroups.length} shipments</p>
+            <p className="text-xs text-ink-muted" aria-live="polite">{localGroups.reduce((n, g) => n + g.items.length, 0)} open items across {localGroups.length} shipments</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowShortcuts(true)}
+            title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
+            className="hidden md:flex items-center gap-1 ml-1 px-2 py-1 rounded-lg border border-border text-[10px] font-bold text-ink-muted hover:text-ink hover:border-brand/50 transition-colors cursor-pointer"
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+            <kbd className="font-mono">?</kbd>
+          </button>
         </div>
 
         {/* Filter bar: search + task/assignee/client filters */}
@@ -658,6 +813,13 @@ export function ActionsClient({
                       );
                     })()}
 
+                    {queueRankByShipment[g.shipmentNumber]?.reason && (
+                      <p className="text-[10px] font-semibold text-ink-muted flex items-center gap-1">
+                        <ChevronRight className="w-3 h-3 text-ink-muted/60 shrink-0" />
+                        <span className="truncate">{queueRankByShipment[g.shipmentNumber].reason}</span>
+                      </p>
+                    )}
+
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="flex items-center gap-1 text-[10px] text-ink-muted bg-white border border-border rounded-lg px-2 py-0.5 font-medium">
                         {g.items.length} item{g.items.length !== 1 ? "s" : ""}
@@ -738,6 +900,12 @@ export function ActionsClient({
                       </p>
                     );
                   })()}
+                  {queueRankByShipment[selectedGroup.shipmentNumber]?.reason && (
+                    <p className="text-[11px] font-semibold text-ink-muted mt-1 flex items-center gap-1">
+                      <span className="text-ink-muted/60">Why now:</span>
+                      {queueRankByShipment[selectedGroup.shipmentNumber].reason}
+                    </p>
+                  )}
                 </div>
                 <Link
                   href={`/app/shipments/${selectedGroup.shipmentId}`}
@@ -819,6 +987,7 @@ export function ActionsClient({
                             canWrite={canWrite}
                             verified={cat === "verified"}
                             selected={selectedDecisionIds.has(item.id)}
+                            keyboardTarget={item.id === nextActionableDecisionId}
                             onToggleSelect={() => toggleDecisionSelection(item.id)}
                             onDocClick={(docId, fileName, fieldName) => {
                               const doc = docLookup.get(docId);
@@ -863,11 +1032,20 @@ export function ActionsClient({
               </h3>
               <p className="text-xs text-ink-muted max-w-sm mx-auto">
                 {localGroups.length === 0 && scopeTab === "mine"
-                  ? "You currently have no actions assigned to you. Select Team queue, Unassigned, or All queue above to view other tasks."
+                  ? "Nothing is assigned to you right now. Switch to Team, Unassigned, or All above to pick up other work."
                   : localGroups.length === 0
-                    ? "Every AI decision has been reviewed and all exceptions are resolved. Check back after the next document processing run."
-                    : "Try adjusting your search query, priority filter, or category/status dropdowns to find what you're looking for."}
+                    ? "Every AI decision has been reviewed and every exception is resolved. Nice work — check back after the next document run."
+                    : "Try adjusting your search, priority filter, or the category / status dropdowns."}
               </p>
+              {localGroups.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowShortcuts(true)}
+                  className="text-[11px] font-semibold text-brand hover:underline inline-flex items-center gap-1"
+                >
+                  <Keyboard className="w-3.5 h-3.5" /> Learn the keyboard shortcuts
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -928,7 +1106,7 @@ export function ActionsClient({
         </div>
       )}
 
-      {/* Bulk confirmation dialog */}
+      {/* Bulk confirmation dialog (Approve only — Reject uses RejectDialog) */}
       {bulkConfirmDialog && (
         <BulkConfirmDialog
           action={bulkConfirmDialog.action}
@@ -940,6 +1118,59 @@ export function ActionsClient({
           onConfirm={executeBulkDecision}
           onCancel={() => setBulkConfirmDialog(null)}
         />
+      )}
+
+      {/* Reject dialog — reason code + note, for a single card or a bulk set */}
+      {rejectDialog && (
+        <RejectDialog
+          count={rejectDialog.mode === "bulk" ? rejectDialog.ids.length : 1}
+          overrideCount={rejectDialog.mode === "bulk" ? rejectDialog.overrideCount : 0}
+          loading={rejectLoading}
+          onConfirm={submitReject}
+          onCancel={() => setRejectDialog(null)}
+        />
+      )}
+
+      {/* Keyboard shortcuts help */}
+      {showShortcuts && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-border shadow-2xl p-6 w-full max-w-sm mx-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <Keyboard className="w-4 h-4 text-brand" />
+              <h3 className="text-base font-bold text-ink">Keyboard shortcuts</h3>
+            </div>
+            <dl className="space-y-1.5 text-xs">
+              {[
+                ["j  /  ↓", "Next shipment"],
+                ["k  /  ↑", "Previous shipment"],
+                ["a", "Approve next open decision"],
+                ["r", "Reject next open decision"],
+                ["e", "Re-evaluate next open decision"],
+                ["x", "Select it for a bulk action"],
+                ["?", "Toggle this help"],
+                ["Esc", "Close dialogs"],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <dd className="text-ink-muted">{desc}</dd>
+                  <dt>
+                    <kbd className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-surface-muted border border-border text-ink">
+                      {key}
+                    </kbd>
+                  </dt>
+                </div>
+              ))}
+            </dl>
+            <p className="text-[10px] text-ink-muted pt-1 border-t border-border">
+              a / r / e act on the top “Needs review” card of the open shipment.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Exception detail slide-over */}
@@ -1295,53 +1526,104 @@ function Row({ label, value, highlight = false }: { label: string; value: string
   );
 }
 
+/**
+ * The screenshot test (issue #202, Gap 8): on its face, every card must say who
+ * decided, when, on what evidence, and under what authority. A human sign-off
+ * and a machine verification must never be mistakable for each other.
+ */
 function ProvenanceFooter({ item }: { item: Extract<ActionItem, { kind: "decision" }> }) {
   const confidence = typeof item.raw.confidence === "number" ? item.raw.confidence : null;
   const reviewer = item.raw.reviewedByUser;
   const reviewerName = reviewer
     ? ([reviewer.firstName, reviewer.lastName].filter(Boolean).join(" ") || reviewer.email)
     : null;
+  const license = reviewer?.brokerLicenseNumber ?? null;
+  const category = categorize(item);
   const isAutoVerified =
-    item.status === "AUTO_VERIFIED" ||
-    item.status === "Auto-Approved" ||
-    item.status === "Verified" ||
-    item.triageState === "AUTO_VERIFIED" ||
-    Boolean(item.raw.autoApproved);
+    !reviewerName &&
+    (item.status === "AUTO_VERIFIED" ||
+      item.status === "Auto-Approved" ||
+      item.status === "Verified" ||
+      item.triageState === "AUTO_VERIFIED" ||
+      Boolean(item.raw.autoApproved));
 
-  const formattedDate = item.raw.updatedAt
-    ? new Date(item.raw.updatedAt).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
+  const when = item.raw.updatedAt ? new Date(item.raw.updatedAt) : null;
+  const formattedDate = when
+    ? when.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : null;
 
-  if (confidence === null && !reviewerName && !isAutoVerified) return null;
-
-  return (
-    <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-border/40">
-      {confidence !== null && (
-        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+  const confidenceChip =
+    confidence !== null ? (
+      <span
+        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border tabular-nums ${
           confidence >= 90
             ? "bg-emerald-50 border-emerald-200 text-emerald-700"
             : confidence >= 70
               ? "bg-amber-50 border-amber-200 text-amber-700"
               : "bg-red-50 border-red-200 text-red-700"
-        }`}>
-          {confidence}% confident
+        }`}
+        title="Model confidence in the proposed answer"
+      >
+        {confidence}% confident
+      </span>
+    ) : null;
+
+  // Human sign-off — the authority line an auditor is looking for.
+  if (reviewerName) {
+    const rejected = category === "blocked" && (item.status === "Rejected" || item.triageState === "REJECTED");
+    return (
+      <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+        <span
+          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+            rejected
+              ? "bg-red-50 border-red-200 text-red-700"
+              : "bg-emerald-50 border-emerald-200 text-emerald-700"
+          }`}
+        >
+          {rejected ? <X className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+          {rejected ? "Rejected" : "Approved"} by {reviewerName}
         </span>
-      )}
-      {reviewerName ? (
-        <span className="text-[10px] text-ink-muted font-medium">
-          Reviewed by <span className="font-semibold text-ink">{reviewerName}</span>
-          {(reviewer as any)?.brokerLicenseNumber ? ` (License #${(reviewer as any).brokerLicenseNumber})` : ""}
-          {formattedDate ? ` on ${formattedDate}` : ""}
+        {license && (
+          <span
+            className="text-[10px] font-semibold text-ink-muted tabular-nums"
+            title="Customs broker license of the reviewer"
+          >
+            License #{license}
+          </span>
+        )}
+        {formattedDate && <span className="text-[10px] text-ink-muted">{formattedDate}</span>}
+        {confidenceChip}
+      </div>
+    );
+  }
+
+  // Machine verification — deliberately distinct: not a human approval.
+  if (isAutoVerified) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-violet-50 border-violet-200 text-violet-700"
+          title={
+            "Verified automatically by the confidence policy — not a licensed human sign-off. " +
+            "Stays on the record for the next audit." +
+            (item.raw.autoApprovalPolicy ? ` Policy: ${item.raw.autoApprovalPolicy}.` : "")
+          }
+        >
+          <Zap className="w-3 h-3" />
+          Auto-verified
+          {item.raw.autoApprovalPolicy ? ` · ${item.raw.autoApprovalPolicy}` : ""}
         </span>
-      ) : isAutoVerified ? (
-        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-          not approved — auto-verified pending next audit {item.raw.autoApprovalPolicy ? `(policy ${item.raw.autoApprovalPolicy})` : ""}
-        </span>
-      ) : null}
+        {confidenceChip}
+        {formattedDate && <span className="text-[10px] text-ink-muted">{formattedDate}</span>}
+      </div>
+    );
+  }
+
+  if (!confidenceChip) return null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-border/40">
+      {confidenceChip}
+      <span className="text-[10px] text-ink-muted">Awaiting review</span>
     </div>
   );
 }
@@ -1355,6 +1637,7 @@ function AgentResultCard({
   canWrite,
   verified = false,
   selected = false,
+  keyboardTarget = false,
   onToggleSelect,
   onDocClick,
 }: {
@@ -1366,6 +1649,7 @@ function AgentResultCard({
   canWrite: boolean;
   verified?: boolean;
   selected?: boolean;
+  keyboardTarget?: boolean;
   onToggleSelect?: () => void;
   onDocClick: (docId: string, fileName: string, fieldName?: string) => void;
 }) {
@@ -1379,6 +1663,8 @@ function AgentResultCard({
     <div className={`border rounded-2xl p-4 space-y-3 transition-all ${
       selected
         ? "border-brand bg-blue-50/60 ring-2 ring-brand/20"
+        : keyboardTarget && !verified
+          ? "border-brand/60 bg-white ring-1 ring-brand/30"
         : verified
           ? "border-emerald-200 bg-emerald-50/40 opacity-80"
           : effectiveCategory === "blocked"
@@ -1461,11 +1747,11 @@ function AgentResultCard({
           )}
           {!isApproved && (
             <button
-              onClick={() => { setShowNote(true); onAction(item.id, "REJECT"); }}
+              onClick={() => onAction(item.id, "REJECT")}
               disabled={loading}
               className="px-3 py-1.5 rounded-xl border border-border text-xs font-semibold text-ink hover:border-red-400 hover:text-red-600 disabled:opacity-40 transition-colors"
             >
-              Reject
+              Reject…
             </button>
           )}
           <button
@@ -1831,6 +2117,106 @@ function BulkConfirmDialog({
             }`}
           >
             {loading ? "Processing…" : action === "APPROVE" ? "Approve" : "Reject"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A rejection is a legal position — the API requires both a structured reason
+ * code (analytics) and a free-text note (the story), so this dialog collects
+ * both before anything is written. Used for a single card and for bulk reject.
+ */
+function RejectDialog({
+  count,
+  overrideCount,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  count: number;
+  overrideCount: number;
+  loading: boolean;
+  onConfirm: (reasonCode: string, note: string) => void;
+  onCancel: () => void;
+}) {
+  const [reasonCode, setReasonCode] = useState("");
+  const [note, setNote] = useState("");
+  const selected = REJECTION_REASONS.find((r) => r.code === reasonCode) ?? null;
+  const canSubmit = reasonCode !== "" && note.trim().length > 0 && !loading;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl border border-border shadow-2xl p-6 w-full max-w-md mx-4 space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-bold text-ink">
+            Reject {count} decision{count !== 1 ? "s" : ""}
+          </h3>
+          <p className="text-xs text-ink-muted">
+            Both a reason and a note are recorded in the audit log.
+            {overrideCount > 0 && (
+              <span className="text-amber-700 font-semibold">
+                {" "}{overrideCount} {overrideCount === 1 ? "is" : "are"} low-confidence.
+              </span>
+            )}
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Reason</label>
+          <div className="grid gap-1.5 max-h-56 overflow-y-auto pr-1">
+            {REJECTION_REASONS.map((r) => (
+              <button
+                key={r.code}
+                type="button"
+                onClick={() => setReasonCode(r.code)}
+                className={`text-left px-3 py-2 rounded-xl border text-xs transition-all cursor-pointer ${
+                  reasonCode === r.code
+                    ? "border-brand bg-blue-50/70 ring-2 ring-brand/20"
+                    : "border-border hover:border-brand/50 hover:bg-surface-muted"
+                }`}
+              >
+                <span className="font-semibold text-ink">{r.label}</span>
+                {r.hint && <span className="block text-[10px] text-ink-muted mt-0.5">{r.hint}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+            Note <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            autoFocus
+            placeholder={
+              selected?.code === "OTHER"
+                ? "Explain why this is being rejected…"
+                : "What does the reviewer need to know? (audit log)"
+            }
+            className="w-full px-3 py-2 rounded-xl border border-border text-xs text-ink resize-none focus:outline-none focus:border-brand"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-ink hover:bg-surface-muted disabled:opacity-40 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(reasonCode, note.trim())}
+            disabled={!canSubmit}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 disabled:opacity-40 transition-colors"
+          >
+            {loading ? "Rejecting…" : `Reject ${count > 1 ? count : ""}`.trim()}
           </button>
         </div>
       </div>

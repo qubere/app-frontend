@@ -46,3 +46,20 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Plus Jakarta Sans", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/*
+ * Respect the OS "reduce motion" setting. The Actions queue leans on
+ * transitions and slide-in toasts; a broker who has this enabled should get
+ * an instant, non-animated UI rather than motion that can trigger vestibular
+ * discomfort. Near-zero (not 0) keeps transitionend/animationend handlers firing.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

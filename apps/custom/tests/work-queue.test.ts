@@ -15,6 +15,8 @@ import {
   parseWorkFilter,
   timePressure,
   truncatedSources,
+  explainRank,
+  formatValueAtRisk,
   type DeadlineRow,
   type WorkQueueInput,
 } from "@/modules/work/workQueue";
@@ -599,5 +601,59 @@ describe("deadline urgency and scoring", () => {
       })
     );
     expect(queue[0].urgency).toBeNull();
+  });
+});
+
+describe("explainRank", () => {
+  it("formats declared value compactly", () => {
+    expect(formatValueAtRisk(940)).toBe("$940");
+    expect(formatValueAtRisk(412_000)).toBe("$412k");
+    expect(formatValueAtRisk(1_240_000)).toBe("$1.2M");
+    expect(formatValueAtRisk(24_000_000)).toBe("$24M");
+  });
+
+  it("builds a one-line justification from deadline, dollars, and blocking", () => {
+    const reason = explainRank({
+      urgency: {
+        deadlineType: "ENTRY_FILING",
+        dueAt: new Date(Date.now() + 6 * 3_600_000),
+        msRemaining: 6 * 3_600_000,
+        breached: false,
+        estimated: false,
+        exposureUsd: null,
+      },
+      valueAtRisk: 412_000,
+      blocking: true,
+    });
+    expect(reason).toBe("Files in 6h · $412k declared · blocks filing");
+  });
+
+  it("says the filing is overdue when the deadline is breached", () => {
+    const reason = explainRank({
+      urgency: {
+        deadlineType: "ENTRY_FILING",
+        dueAt: new Date(Date.now() - 3_600_000),
+        msRemaining: -3_600_000,
+        breached: true,
+        estimated: false,
+        exposureUsd: null,
+      },
+      valueAtRisk: null,
+      blocking: false,
+    });
+    expect(reason).toBe("Filing overdue");
+  });
+
+  it("returns an empty string when there is no urgency signal to show", () => {
+    expect(explainRank({ valueAtRisk: null, blocking: false })).toBe("");
+  });
+
+  it("uses filingDeadline when no live urgency context is attached", () => {
+    const reason = explainRank({
+      filingDeadline: new Date(Date.now() + 2 * 24 * 3_600_000),
+      valueAtRisk: 5_000,
+      blocking: false,
+    });
+    expect(reason).toBe("Files in 2d · $5k declared");
   });
 });
