@@ -49,7 +49,7 @@ export const GET = withAuthenticatedRoute(
   async ({ ctx }: any) => {
     const [providers, connections, clients] = await Promise.all([
       listTrackingProviderDefinitions({ dbClient: db }),
-      (db as any).integrationConfig.findMany({
+      db.integrationConfig.findMany({
         where: { accountId: ctx.accountId, category: "SHIPMENT_TRACKING" },
         orderBy: [{ isDefault: "desc" }, { priority: "asc" }, { createdAt: "desc" }],
         include: {
