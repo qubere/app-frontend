@@ -20,8 +20,10 @@ export default function RootLayout({
     <ClerkProvider
       // Keep all auth UI on our own Qubere-branded routes instead of the
       // unstyled Clerk Account Portal at accounts.qubere.ai.
-      signInUrl="/sign-in"
-      signUpUrl="/sign-up"
+      // signInUrl/signUpUrl are intentionally omitted here — they are already
+      // set via NEXT_PUBLIC_CLERK_SIGN_IN_URL / NEXT_PUBLIC_CLERK_SIGN_UP_URL
+      // env vars. Passing relative paths as props triggers Clerk v7's absolute-
+      // URL validation in production/satellite mode and throws on sign-out.
       signInFallbackRedirectUrl="/app/dashboard"
       signUpFallbackRedirectUrl="/app/dashboard"
       afterSignOutUrl="/sign-in"
