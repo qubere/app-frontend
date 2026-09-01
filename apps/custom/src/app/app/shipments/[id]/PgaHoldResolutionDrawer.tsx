@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DrawerShell } from "@/components/ui/DrawerShell";
-import { workflowRequest } from "@/lib/brokerWorkflowClient";
+import { workflowRequest, WorkflowRequestError } from "@/lib/brokerWorkflowClient";
 import { validatePreparation, type HoldFormInput, type PreparationField } from "@/lib/pga/holdContracts";
 
 type Submission = { id: string; status: string; transmissionMode: string; externalReference: string; submittedAt: string; rejectionCode: string | null; rejectionReason: string | null; rejectedFields: string[] | null; messageSetText: string };
@@ -21,6 +21,7 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [conflict, setConflict] = useState<Detail | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [externalReference, setExternalReference] = useState("");
   const [messageText, setMessageText] = useState("");
@@ -61,7 +62,13 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
   const perform = async (fn: () => Promise<void>) => {
     if (busy) return;
     setBusy(true); setError("");
-    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : "Please retry."); } finally { setBusy(false); }
+    try { await fn(); } catch (e) {
+      setError(e instanceof Error ? e.message : "Please retry.");
+      if (e instanceof WorkflowRequestError && e.status === 409) {
+        const fresh = await workflowRequest<Detail>("/api/pga/holds/" + id).catch(() => null);
+        if (fresh) setConflict(fresh);
+      }
+    } finally { setBusy(false); }
   };
   const close = () => void perform(async () => { await save(); onClose(); });
   const errors = detail ? validatePreparation(detail.hold.agencyCode, form) : {};
@@ -82,6 +89,16 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
     </div>
   }>
     {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error} Your unsaved fields remain in this drawer.</p>}
+    {conflict && <section aria-label="Review changed hold" className="mb-4 space-y-3 rounded-lg border border-amber-300 p-3 text-sm">
+      <h3 className="font-semibold">Review the latest saved values</h3>
+      <p>The hold is now {conflict.hold.status}. Your preparation is still here.</p>
+      {(conflict.fields ?? []).filter(field => (conflict.formInput[field.id] ?? "") !== (form[field.id] ?? "")).map(field =>
+        <div key={field.id} className="break-words"><strong>{field.label}</strong><p>Saved: {conflict.formInput[field.id] || "—"}</p><p>Your draft: {form[field.id] || "—"}</p></div>)}
+      <div className="flex flex-wrap gap-3">
+        <button className="text-brand" onClick={() => { setDetail(conflict); setForm(conflict.formInput); formRef.current = conflict.formInput; versionRef.current = conflict.hold.version; dirtyRef.current = false; setStep(["Open", "Rejected"].includes(conflict.hold.status) ? 1 : 3); setConflict(null); setError(""); }}>Use latest saved values</button>
+        {conflict.permissions.canUpdate && ["Open", "Rejected"].includes(conflict.hold.status) && <button className="text-brand" onClick={() => { setDetail(conflict); versionRef.current = conflict.hold.version; dirtyRef.current = true; setConflict(null); setError(""); setNotice("Your draft is ready to save against the reviewed version."); }}>Keep my draft after review</button>}
+      </div>
+    </section>}
     {notice && <p role="status" className="mb-3 text-sm text-green-800">{notice}</p>}
     {!detail ? <p role="status">Loading hold…</p> : <>
       <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
