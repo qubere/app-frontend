@@ -57,7 +57,7 @@ test("an override requires a reason and confirmation leaves the ledger unchanged
   await page.goto("/?view=assists"); await page.getByText("1 active assists apply to this entry").click();
   await page.getByRole("button", { name: "Override", exact: true }).click();
   await expect(page.getByRole("button", { name: "Include", exact: true })).toBeDisabled();
-  await page.getByLabel(/Amount/).fill("15.00"); await page.getByLabel("Reason", { exact: true }).selectOption("broker_judgment");
+  await page.getByLabel(/Amount/).fill("15.00"); await page.getByLabel("Override reason", { exact: true }).selectOption("broker_judgment");
   await page.getByRole("button", { name: "Include", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("balance changes when the entry is submitted");
   await expect(page.getByText("Remaining USD 100.00", { exact: false })).toBeVisible();

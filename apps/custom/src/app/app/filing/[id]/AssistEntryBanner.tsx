@@ -42,7 +42,7 @@ export function AssistEntryBanner({filingId,revision}:{filingId:string;revision:
         </div>}
         {overrides[m.id]&&data.canOverride&&data.canUpdate&&!locked&&<div className="mt-3 flex flex-wrap gap-2">
           <label className="text-xs">Amount ({m.currency})<input className="ml-2 w-28 rounded-lg border border-border p-2" inputMode="decimal" value={overrides[m.id].amount} onChange={e=>setOverrides(v=>({...v,[m.id]:{...v[m.id],amount:e.target.value}}))}/></label>
-          <label className="text-xs">Reason<select className="ml-2 rounded-lg border border-border p-2" value={overrides[m.id].reason} onChange={e=>setOverrides(v=>({...v,[m.id]:{...v[m.id],reason:e.target.value}}))}><option value="">Choose a reason</option>{OVERRIDE_REASONS.map(r=><option key={r} value={r}>{r.replaceAll("_"," ")}</option>)}</select></label>
+          <label className="text-xs">Override reason<select aria-label="Override reason" className="ml-2 rounded-lg border border-border p-2" value={overrides[m.id].reason} onChange={e=>setOverrides(v=>({...v,[m.id]:{...v[m.id],reason:e.target.value}}))}><option value="">Choose a reason</option>{OVERRIDE_REASONS.map(r=><option key={r} value={r}>{r.replaceAll("_"," ")}</option>)}</select></label>
         </div>}
       </div>)}
       {data?.declarations.map(d=><p key={d.id} className="mt-3 text-sm">Declared: {d.currency} {d.amountDeclared} · recorded at submission</p>)}
