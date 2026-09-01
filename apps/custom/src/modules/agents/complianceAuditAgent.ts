@@ -27,6 +27,13 @@ import type { MilitaryEndUseScreeningResult } from "./compliance/militaryEndUse/
 import { runRestrictedPartyScreeningForShipment } from "./compliance/restrictedParty/shipmentScreening";
 import type { RestrictedPartyShipmentScreeningResult } from "./compliance/restrictedParty/shipmentScreening";
 
+/** Renders a screening module's `errors` array (always `{code, message}`, some also carry `kind`) into a short diagnostic suffix so a persisted "Completeness" finding is self-explanatory instead of just a count. */
+function summarizeScreeningErrors(errors: Array<{ code?: string; message?: string; kind?: string }>): string {
+  return errors
+    .map((e) => `${e.kind ? `${e.kind}/` : ""}${e.code ?? "UNKNOWN"}: ${e.message ?? "no message"}`)
+    .join("; ");
+}
+
 export interface AuditCheckResult {
   ruleId: string;
   ruleName: string;
@@ -447,7 +454,7 @@ export class ComplianceAuditAgent {
             category: "SCREENING_GAP",
             passed: false,
             severity: "MEDIUM",
-            details: `Country Embargo Screening encountered ${countryEmbargoScreening.errors.length} error(s) (e.g. unresolvable country) -- some checks did not complete.`,
+            details: `Country Embargo Screening encountered ${countryEmbargoScreening.errors.length} error(s) (e.g. unresolvable country) -- some checks did not complete. Detail: ${summarizeScreeningErrors(countryEmbargoScreening.errors)}`,
           });
         }
       }
@@ -502,7 +509,7 @@ export class ComplianceAuditAgent {
           category: "UFLPA",
           passed: false,
           severity: "MEDIUM",
-          details: `UFLPA / Forced Labor Screening encountered ${forcedLaborScreening.errors.length} error(s) -- some checks did not complete.`,
+          details: `UFLPA / Forced Labor Screening encountered ${forcedLaborScreening.errors.length} error(s) -- some checks did not complete. Detail: ${summarizeScreeningErrors(forcedLaborScreening.errors)}`,
         });
       }
     }
@@ -589,7 +596,7 @@ export class ComplianceAuditAgent {
           category: "END_USE_RESTRICTION",
           passed: false,
           severity: "MEDIUM",
-          details: `End-Use Screening encountered ${endUseScreening.errors.length} error(s) -- some checks did not complete.`,
+          details: `End-Use Screening encountered ${endUseScreening.errors.length} error(s) -- some checks did not complete. Detail: ${summarizeScreeningErrors(endUseScreening.errors)}`,
         });
       }
     }
@@ -626,7 +633,7 @@ export class ComplianceAuditAgent {
           category: "END_USER_RESTRICTION",
           passed: false,
           severity: "MEDIUM",
-          details: `End-User Screening encountered ${endUserScreening.errors.length} error(s) -- some checks did not complete.`,
+          details: `End-User Screening encountered ${endUserScreening.errors.length} error(s) -- some checks did not complete. Detail: ${summarizeScreeningErrors(endUserScreening.errors)}`,
         });
       }
     }
@@ -660,7 +667,7 @@ export class ComplianceAuditAgent {
           category: "ANTI_BOYCOTT",
           passed: false,
           severity: "MEDIUM",
-          details: `Anti-Boycott Screening encountered ${antiBoycottScreening.errors.length} error(s) -- some checks did not complete.`,
+          details: `Anti-Boycott Screening encountered ${antiBoycottScreening.errors.length} error(s) -- some checks did not complete. Detail: ${summarizeScreeningErrors(antiBoycottScreening.errors)}`,
         });
       }
     }
@@ -694,7 +701,7 @@ export class ComplianceAuditAgent {
           category: "MILITARY_END_USE",
           passed: false,
           severity: "MEDIUM",
-          details: `Military End-Use / End-User Screening encountered ${militaryEndUseScreening.errors.length} error(s) -- some checks did not complete.`,
+          details: `Military End-Use / End-User Screening encountered ${militaryEndUseScreening.errors.length} error(s) -- some checks did not complete. Detail: ${summarizeScreeningErrors(militaryEndUseScreening.errors)}`,
         });
       }
     }
@@ -738,7 +745,7 @@ export class ComplianceAuditAgent {
           category: "RESTRICTED_PARTY",
           passed: false,
           severity: "MEDIUM",
-          details: `Restricted Party Screening encountered ${restrictedPartyScreening.errors.length} error(s) -- some checks did not complete.`,
+          details: `Restricted Party Screening encountered ${restrictedPartyScreening.errors.length} error(s) -- some checks did not complete. Detail: ${summarizeScreeningErrors(restrictedPartyScreening.errors.map((e) => ({ kind: e.role, code: e.code, message: e.message })))}`,
         });
       }
       // Pre-approved reuse means the local matcher was SKIPPED for this party
