@@ -13,6 +13,7 @@ import { createAuditLog } from "@/lib/audit";
 import { storeDocumentBytes } from "@qubere/storage";
 import { getEsignProvider, validateSignerRole } from "@/lib/esign";
 import type { EsignProviderName } from "@/lib/esign";
+import { logger } from "@/lib/logging/logger";
 
 export interface PoaCreateInput {
   caseId: string;
@@ -225,6 +226,13 @@ export class PoaService {
       (process.env.ESIGN_PROVIDER as EsignProviderName | undefined) ?? "INTERNAL";
     const provider = getEsignProvider(providerName);
 
+    logger.info("esign:invoke", {
+      provider: providerName,
+      poaId,
+      signerName: poa.signerName,
+      signerEmail: (poa as unknown as { signerEmail?: string }).signerEmail ?? "(none)",
+    });
+
     const result = await provider.createEnvelope({
       accountId,
       poaId,
@@ -235,6 +243,14 @@ export class PoaService {
         role: poa.signerRole,
       },
       templateId: poa.templateId ?? undefined,
+    });
+
+    logger.info("esign:result", {
+      provider: providerName,
+      poaId,
+      providerEnvelopeId: result.providerEnvelopeId,
+      envelopeStatus: String(result.status),
+      hasSigningUrl: !!result.signingUrl,
     });
 
     const envelope = await db.poaEnvelope.create({
