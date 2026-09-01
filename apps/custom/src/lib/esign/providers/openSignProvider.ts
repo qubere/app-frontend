@@ -85,9 +85,9 @@ export class OpenSignProvider implements EsignProvider {
     const envelopeId = String(result.objectId ?? "");
     if (!envelopeId) throw new Error("OpenSign did not return a document objectId");
 
-    // signurl is an array of { signer_email, sign_url } objects
+    // signurl is an array of { email, url } objects (sandbox returns "url", not "sign_url")
     const signurls = result.signurl as Array<Record<string, string>> | undefined;
-    const signingUrl = signurls?.[0]?.sign_url ?? undefined;
+    const signingUrl = signurls?.[0]?.sign_url ?? signurls?.[0]?.url ?? undefined;
 
     return { providerEnvelopeId: envelopeId, status: "sent", signingUrl };
   }
