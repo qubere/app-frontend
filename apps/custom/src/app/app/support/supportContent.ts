@@ -1,3 +1,5 @@
+import generatedProductHelp from "./generatedProductHelp.json";
+
 export type SupportModuleId =
   | "start"
   | "shipments"
@@ -105,7 +107,7 @@ export const SUPPORT_MODULES: SupportModule[] = [
   },
 ];
 
-export const SUPPORT_ARTICLES: SupportArticle[] = [
+export const BASE_SUPPORT_ARTICLES: SupportArticle[] = [
   {
     id: "work-today",
     moduleId: "start",
@@ -950,6 +952,42 @@ export const SUPPORT_ARTICLES: SupportArticle[] = [
     tags: ["poa", "power of attorney", "authority", "importer", "grantor", "grantee", "expiry"],
   },
 ];
+
+type GeneratedProductHelp = {
+  version: number;
+  sourceCommit: string | null;
+  articles: SupportArticle[];
+  archivedArticleIds: string[];
+};
+
+const generated = generatedProductHelp as GeneratedProductHelp;
+export function mergeSupportArticles(
+  baseArticles: SupportArticle[],
+  generatedArticles: SupportArticle[],
+  archivedIds: string[]
+): SupportArticle[] {
+  const archivedArticleIds = new Set(archivedIds);
+  const articlesById = new Map<string, SupportArticle>();
+  for (const article of baseArticles) {
+    if (!archivedArticleIds.has(article.id)) articlesById.set(article.id, article);
+  }
+  for (const article of generatedArticles) {
+    if (!archivedArticleIds.has(article.id)) articlesById.set(article.id, article);
+  }
+  return [...articlesById.values()];
+}
+
+/**
+ * The reviewed product-help corpus. Hand-authored guides remain the baseline;
+ * release-generated guides form a reviewable overlay keyed by stable article
+ * id. An automated draft reaches this array only after its documentation PR is
+ * approved and merged.
+ */
+export const SUPPORT_ARTICLES: SupportArticle[] = mergeSupportArticles(
+  BASE_SUPPORT_ARTICLES,
+  generated.articles,
+  generated.archivedArticleIds
+);
 
 export function getSupportModule(moduleId: SupportModuleId): SupportModule {
   return SUPPORT_MODULES.find((supportModule) => supportModule.id === moduleId) ?? SUPPORT_MODULES[0];

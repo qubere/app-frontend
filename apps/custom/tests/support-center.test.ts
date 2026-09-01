@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
+  BASE_SUPPORT_ARTICLES,
   SUPPORT_ARTICLES,
   SUPPORT_MODULES,
+  mergeSupportArticles,
   searchSupportArticles,
 } from "@/app/app/support/supportContent";
 import { NAV_SECTIONS } from "@/lib/navigation";
 
 describe("support center content", () => {
+  it("keeps the reviewed corpus overlay deterministic", () => {
+    expect(BASE_SUPPORT_ARTICLES.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(SUPPORT_ARTICLES.map((article) => article.id)).size).toBe(SUPPORT_ARTICLES.length);
+  });
+
+  it("lets a reviewed generated overlay update, add, and archive guides by stable id", () => {
+    const baseline = BASE_SUPPORT_ARTICLES.slice(0, 2);
+    const replacement = { ...baseline[0], answer: "A reviewed replacement answer for this workflow." };
+    const addition = { ...baseline[1], id: "generated-guide" };
+    const merged = mergeSupportArticles(baseline, [replacement, addition], [baseline[1].id]);
+
+    expect(merged.find((article) => article.id === replacement.id)?.answer).toBe(replacement.answer);
+    expect(merged.map((article) => article.id)).toContain("generated-guide");
+    expect(merged.map((article) => article.id)).not.toContain(baseline[1].id);
+  });
+
   it("covers every support module with multiple task guides", () => {
     for (const supportModule of SUPPORT_MODULES) {
       const articles = SUPPORT_ARTICLES.filter((article) => article.moduleId === supportModule.id);

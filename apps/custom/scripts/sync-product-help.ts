@@ -22,8 +22,13 @@ const repositoryRootEnv = resolve(scriptDirectory, "../../../.env");
 dotenv.config({ path: repositoryRootEnv, override: true });
 
 import { SUPPORT_ARTICLES, SUPPORT_MODULES } from "@/app/app/support/supportContent";
+import generatedProductHelp from "@/app/app/support/generatedProductHelp.json";
 
-const SOURCE_PATH = "apps/custom/src/app/app/support/supportContent.ts";
+const BASE_SOURCE_PATH = "apps/custom/src/app/app/support/supportContent.ts";
+const GENERATED_SOURCE_PATH = "apps/custom/src/app/app/support/generatedProductHelp.json";
+const generatedArticleIds = new Set(
+  (generatedProductHelp.articles as Array<{ id: string }>).map((article) => article.id)
+);
 
 function articleSearchText(article: (typeof SUPPORT_ARTICLES)[number]): string {
   const supportModule = SUPPORT_MODULES.find((item) => item.id === article.moduleId);
@@ -84,7 +89,7 @@ async function main() {
     await ProductHelpRepository.upsert({
       article,
       aliases: article.tags,
-      sourcePath: SOURCE_PATH,
+      sourcePath: generatedArticleIds.has(article.id) ? GENERATED_SOURCE_PATH : BASE_SOURCE_PATH,
       contentHash,
       searchText,
       embedding,
