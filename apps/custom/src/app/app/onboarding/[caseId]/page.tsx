@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { computeReadiness } from "@/modules/onboarding/readiness";
 import { notFound } from "next/navigation";
 import { OnboardingWizardClient } from "@/components/onboarding/OnboardingWizardClient";
+import { logger } from "@/lib/logging/logger";
 
 interface Props {
   params: Promise<{ caseId: string }>;
@@ -24,7 +25,7 @@ export default async function OnboardingCasePage({ params, searchParams }: Props
         include: {
           legalEntity: true,
           importerOfRecord: true,
-          poa: true,
+          poa: { include: { envelope: true } },
           bond: {
             include: {
               verifications: { orderBy: { performedAt: "desc" }, take: 1 },
@@ -36,7 +37,14 @@ export default async function OnboardingCasePage({ params, searchParams }: Props
     },
   });
 
-  if (!c || c.accountId !== context.accountId) notFound();
+  if (!c) {
+    logger.warn("Onboarding case not found in DB", { caseId, accountId: context.accountId });
+    notFound();
+  }
+  if (c.accountId !== context.accountId) {
+    logger.warn("Onboarding case accountId mismatch", { caseId, caseAccountId: c.accountId, contextAccountId: context.accountId });
+    notFound();
+  }
 
   const readiness = computeReadiness(c as Parameters<typeof computeReadiness>[0]);
   const stepParam = step ? parseInt(step) : c.currentStep;
