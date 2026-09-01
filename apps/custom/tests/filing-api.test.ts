@@ -9,7 +9,12 @@ const dbMock = {
   customsFiling: {
     findFirst: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
+    findFirstOrThrow: vi.fn(),
   },
+  $transaction: vi.fn(),
+  assistDecision: { findMany: vi.fn() },
+  assistDeclaration: { findMany: vi.fn() },
   customsResponse: {
     create: vi.fn(),
   },
@@ -75,16 +80,24 @@ function filingRecord(lineItems: unknown[]) {
     shipmentId: "shp_1",
     entryNumber: "5901-26-004872",
     entryType: "01",
+    version: 0,
     filingStatus: "BrokerApproved",
     country: "US",
     procedureCode: "CBP_7501",
     transactionType: { code: "IMPORT" },
-    shipment: { id: "shp_1", destinationCountry: "US", lineItems, documents: [] },
+    shipment: { id: "shp_1", accountId: "acc_1", destinationCountry: "US", lineItems, documents: [] },
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dbMock.assistDecision.findMany.mockResolvedValue([]);
+  dbMock.assistDeclaration.findMany.mockResolvedValue([]);
+  dbMock.$transaction.mockImplementation(async (operation: (tx: typeof dbMock) => Promise<unknown>) => operation(dbMock));
+  dbMock.customsFiling.updateMany.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+    dbMock.customsFiling.findFirstOrThrow.mockResolvedValue({ id: "fil_1", ...data });
+    return { count: 1 };
+  });
   dbMock.htsRelease.findFirst.mockResolvedValue({ id: "rel_published" });
   dbMock.shipmentParty.findFirst.mockResolvedValue(null);
   dbMock.filingTransactionType.findUnique.mockResolvedValue({ id: "tx_import", code: "IMPORT", isActive: true });
@@ -124,7 +137,9 @@ describe("FilingService.transmitFiling: duty completeness", () => {
     await expect(FilingService.transmitFiling("acc_1", "user_1", "fil_1")).rejects.toThrow(
       /1 of 2 line\(s\) have no published duty rate/
     );
-    expect(dbMock.customsFiling.update).not.toHaveBeenCalled();
+    expect(dbMock.customsFiling.updateMany).not.toHaveBeenCalled();
+    expect(dbMock.filingSnapshot.upsert).not.toHaveBeenCalled();
+    expect(dbMock.filingMessage.create).not.toHaveBeenCalled();
     expect(dbMock.customsResponse.create).not.toHaveBeenCalled();
   });
 
@@ -165,7 +180,9 @@ describe("FilingService.transmitFiling: duty completeness", () => {
     dbMock.htsNode.findMany.mockResolvedValue([htsNode("2.8%")]);
 
     await expect(FilingService.transmitFiling("acc_1", "user_1", "fil_1")).rejects.toThrow();
-    expect(dbMock.customsFiling.update).not.toHaveBeenCalled();
+    expect(dbMock.customsFiling.updateMany).not.toHaveBeenCalled();
+    expect(dbMock.filingSnapshot.upsert).not.toHaveBeenCalled();
+    expect(dbMock.filingMessage.create).not.toHaveBeenCalled();
   });
 
   it("does not leak another account's filing", async () => {
