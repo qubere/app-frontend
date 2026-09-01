@@ -169,6 +169,7 @@ export class PoaService {
         signerName: input.signer.name,
         signerTitle: input.signer.title ?? null,
         signerRole: input.signer.role,
+        signerEmail: input.signer.email ?? null,
         executionMethod: input.executionMethod,
         templateId: input.templateId ?? null,
         expirationDate,
@@ -230,17 +231,17 @@ export class PoaService {
       provider: providerName,
       poaId,
       signerName: poa.signerName,
-      signerEmail: (poa as unknown as { signerEmail?: string }).signerEmail ?? "(none)",
+      signerEmail: poa.signerEmail ?? "(none)",
     });
 
     const result = await provider.createEnvelope({
       accountId,
       poaId,
       signer: {
-        name: poa.signerName,
-        email: (poa as unknown as { signerEmail?: string }).signerEmail ?? "",
+        name: poa.signerName ?? "",
+        email: poa.signerEmail ?? "",
         title: poa.signerTitle ?? undefined,
-        role: poa.signerRole,
+        role: poa.signerRole ?? "",
       },
       templateId: poa.templateId ?? undefined,
     });
@@ -261,8 +262,8 @@ export class PoaService {
         providerEnvelopeId: result.providerEnvelopeId,
         templateId: poa.templateId ?? null,
         status: result.status,
-        signerName: poa.signerName,
-        signerEmail: (poa as unknown as { signerEmail?: string }).signerEmail ?? "",
+        signerName: poa.signerName ?? "",
+        signerEmail: poa.signerEmail ?? "",
         signerTitle: poa.signerTitle ?? null,
         signerRole: poa.signerRole,
         sentAt: new Date(),

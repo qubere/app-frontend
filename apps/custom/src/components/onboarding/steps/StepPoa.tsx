@@ -72,7 +72,7 @@ function entityTypeLabel(et: string) {
 export default function StepPoa({ caseId, entities, onSaved }: Props) {
   const [templates, setTemplates] = useState<PoaTemplate[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState(entities[0]?.id ?? "");
-  const [executionMethod, setExecutionMethod] = useState<ExecutionMethod>("WET_INK");
+  const [executionMethod, setExecutionMethod] = useState<ExecutionMethod>("E_SIGN");
   const [templateId, setTemplateId] = useState("");
   const [signerName, setSignerName] = useState("");
   const [signerTitle, setSignerTitle] = useState("");

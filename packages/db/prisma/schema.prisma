@@ -2796,6 +2796,7 @@ model PowerOfAttorney {
   signerName          String?
   signerTitle         String?
   signerRole          String? // OFFICER | AUTHORIZED_EMPLOYEE | GENERAL_PARTNER | MANAGING_MEMBER | INDIVIDUAL
+  signerEmail         String?
   executionMethod     String? // E_SIGN | WET_INK | WET_INK_NOTARIZED
   executedDocumentUrl String?
   templateId          String?
