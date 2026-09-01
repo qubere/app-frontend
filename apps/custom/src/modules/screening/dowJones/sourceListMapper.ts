@@ -58,7 +58,8 @@ const EXPLICIT_MAP: Record<string, MappedReference> = {
   "OFAC - Non-SDN Menu Based Sanctions List": { authority: "OFAC", sourceList: "NS_MBS", category: "SANCTIONS" },
   "BIS Denied Persons List": { authority: "BIS", sourceList: "DPL", category: "EXPORT_CONTROL" },
   "BIS Entity List": { authority: "BIS", sourceList: "ENTITY_LIST", category: "EXPORT_CONTROL" },
-  "BIS Unverified List": { authority: "BIS", sourceList: "UNVERIFIED_LIST", category: "EXPORT_CONTROL" },
+  // Must be "UNVERIFIED" -- endUserRepository.ts queries ScreeningEntity by that exact sourceList.
+  "BIS Unverified List": { authority: "BIS", sourceList: "UNVERIFIED", category: "EXPORT_CONTROL" },
   // Must be "MEU_LIST" -- militaryEndUseRepository.ts queries ScreeningEntity by that exact sourceList.
   "BIS Military End User List": { authority: "BIS", sourceList: "MEU_LIST", category: "EXPORT_CONTROL" },
   "BIS Military Intelligence End User List": { authority: "BIS", sourceList: "MIEU", category: "EXPORT_CONTROL" },
