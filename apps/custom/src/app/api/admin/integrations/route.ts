@@ -34,7 +34,7 @@ const saveIntegrationSchema = z.object({
 
 export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
   const [configs, clients, trackingProviders] = await Promise.all([
-    (db as any).integrationConfig.findMany({
+    db.integrationConfig.findMany({
       where: { accountId: ctx.accountId },
       orderBy: { createdAt: "desc" },
       include: {
@@ -53,7 +53,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
     listTrackingProviderDefinitions({ dbClient: db }),
   ]);
 
-  const formattedConfigs = configs.map((c: any) => ({
+  const formattedConfigs = configs.map((c) => ({
     id: c.id,
     category: c.category,
     provider: c.provider,
@@ -202,7 +202,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const jsonInput = (configJson ?? {}) as Prisma.InputJsonValue;
 
   const config = existing
-    ? await (db as any).integrationConfig.update({
+    ? await db.integrationConfig.update({
         where: { id: existing.id },
         data: {
           category,
@@ -222,7 +222,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           webhookSecretRef: null,
         },
       })
-    : await (db as any).integrationConfig.create({
+    : await db.integrationConfig.create({
         data: {
           accountId: ctx.accountId,
           clientId: targetClientId,

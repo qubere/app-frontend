@@ -1,6 +1,7 @@
 import { db } from "@qubere/db";
 import type { AccountContext } from "@qubere/auth";
 import { mapProviderEvent, type TrackingEventMappingRule } from "@qubere/tracking";
+import { TrackingWebhookError } from "@qubere/tracking-platform";
 import { publishTransportationEvent } from "../../events/services/eventService";
 
 export interface IngestTrackingSignalInput {
@@ -17,7 +18,7 @@ export interface IngestTrackingSignalInput {
 }
 
 async function loadEventMapping(provider: string, connectionId: string, rawEventCode: string) {
-  const definition = await (db as any).trackingProviderDefinition.findUnique({
+  const definition = await db.trackingProviderDefinition.findUnique({
     where: { key: provider },
     select: {
       eventMappings: {
@@ -26,7 +27,11 @@ async function loadEventMapping(provider: string, connectionId: string, rawEvent
     },
   });
   if (!definition) {
-    throw new Error(`Tracking provider "${provider}" is not configured in the provider catalog.`);
+    throw new TrackingWebhookError(
+      "PROVIDER_UNAVAILABLE",
+      409,
+      `Tracking provider "${provider}" is not configured in the provider catalog.`
+    );
   }
   const mapped = mapProviderEvent(
     rawEventCode,
@@ -34,7 +39,11 @@ async function loadEventMapping(provider: string, connectionId: string, rawEvent
     definition.eventMappings as TrackingEventMappingRule[]
   );
   if (!mapped) {
-    throw new Error(`No active event mapping exists for provider "${provider}" code "${rawEventCode}".`);
+    throw new TrackingWebhookError(
+      "EVENT_MAPPING_MISSING",
+      422,
+      `No active event mapping exists for provider "${provider}" code "${rawEventCode}".`
+    );
   }
   return mapped;
 }

@@ -12,13 +12,13 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(
     const parsed = updateConnectionSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "INVALID_STATUS" }, { status: 400 });
 
-    const existing = await (db as any).integrationConfig.findFirst({
+    const existing = await db.integrationConfig.findFirst({
       where: { id, accountId: ctx.accountId, category: "SHIPMENT_TRACKING" },
       select: { id: true, status: true, provider: true },
     });
     if (!existing) return NextResponse.json({ error: "CONNECTION_NOT_FOUND" }, { status: 404 });
 
-    await (db as any).integrationConfig.updateMany({
+    await db.integrationConfig.updateMany({
       where: { id, accountId: ctx.accountId, category: "SHIPMENT_TRACKING" },
       data: { status: parsed.data.status },
     });
