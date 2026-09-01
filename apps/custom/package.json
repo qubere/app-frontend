@@ -15,6 +15,7 @@
     "backup:upload": "tsx scripts/upload-backup-to-gcs.ts",
     "openapi": "tsx scripts/generate-openapi.ts",
     "bench:actions": "tsx scripts/bench-actions.ts",
+    "presync:product-help": "npm --workspace @qubere/db run db:generate",
     "sync:product-help": "tsx scripts/sync-product-help.ts"
   },
   "dependencies": {
