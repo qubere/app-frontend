@@ -116,7 +116,12 @@ export async function recordAgencyResponse(accountId: string, userId: string, id
   const latest = hold.submissions[0];
   if (!latest || latest.id !== input.submissionId || !["Submitted", "Processing"].includes(hold.status)) throw new DomainError("Record a response for the latest pending submission.", "INVALID_HOLD_RESPONSE", 409);
   const responseAt = new Date(input.responseAt);
-  if (responseAt < latest.submittedAt || responseAt.getTime() > Date.now() + 300000) throw new DomainError("The response time must follow submission and cannot be in the future.", "INVALID_RESPONSE_TIME", 422);
+  // A manual filing may be recorded after the agency has already responded.
+  // Its database submittedAt is the recording time, not an asserted ACE send time.
+  const earliestResponse = latest.transmissionMode === "MANUAL"
+    ? Math.max(hold.issuedAt.getTime(), ...hold.submissions.filter(row => row.responseAt).map(row => row.responseAt!.getTime()))
+    : latest.submittedAt.getTime();
+  if (responseAt.getTime() < earliestResponse || responseAt.getTime() > Date.now() + 300000) throw new DomainError("The response cannot predate the hold or earlier agency evidence, or be in the future.", "INVALID_RESPONSE_TIME", 422);
   await db.$transaction(async tx => {
     const updated = await tx.pgaHold.updateMany({ where: { id, accountId, version: input.version, status: hold.status }, data: { status: input.status, closedAt: input.status === "Released" ? responseAt : null, version: { increment: 1 } } });
     if (updated.count !== 1) throw conflict();

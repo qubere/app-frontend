@@ -186,13 +186,13 @@ describe.skipIf(!enabled)("PGA and assist PostgreSQL workflows", () => {
     expect((await recordManualSubmission(accountId, userId, hold.id, key, input)).id).toBe(submitted.id);
     let detail = await getHoldDetail(accountId, hold.id);
     detail = await recordAgencyResponse(accountId, userId, hold.id, { version: detail.hold.version, submissionId: submitted.id, status: "Rejected",
-      responseCode: "SOURCE-REJECT", reason: "Correct product code", rawResponse: "Original rejection", rejectedFields: ["productCode"], responseAt: new Date().toISOString() });
+      responseCode: "SOURCE-REJECT", reason: "Correct product code", rawResponse: "Original rejection", rejectedFields: ["productCode"], responseAt: "2020-01-02T00:00:00Z" });
     expect(detail.hold.status).toBe("Rejected");
     expect(detail.hold.submissions[0].rejectedFields).toEqual(["productCode"]);
     const corrected = await recordManualSubmission(accountId, userId, hold.id, randomUUID(), { ...input, version: detail.hold.version, externalReference: "ACE-evidence-2", formInput: { productCode: "corrected" } });
     detail = await getHoldDetail(accountId, hold.id);
     detail = await recordAgencyResponse(accountId, userId, hold.id, { version: detail.hold.version, submissionId: corrected.id, status: "Released",
-      responseCode: "SOURCE-RELEASE", reason: "Agency release", rawResponse: "Original release", rejectedFields: [], responseAt: new Date().toISOString() });
+      responseCode: "SOURCE-RELEASE", reason: "Agency release", rawResponse: "Original release", rejectedFields: [], responseAt: "2020-01-03T00:00:00Z" });
     expect(detail.hold.status).toBe("Released");
     expect(detail.hold.submissions).toHaveLength(2);
     expect((await getHoldDetail(accountId, other.id)).hold.status).toBe("Open");
