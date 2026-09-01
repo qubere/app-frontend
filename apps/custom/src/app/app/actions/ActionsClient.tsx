@@ -449,6 +449,71 @@ export function ActionsClient({
     setActionSuccess("Exception closed and recorded in the audit log.");
   };
 
+  // ── Keyboard-first triage ────────────────────────────────────────────────
+  // A broker under filing pressure should be able to clear a queue without
+  // reaching for the mouse. j/k walk the shipment list; a/r/e act on the next
+  // unresolved decision in the open shipment; x toggles it into a bulk set.
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  const nextActionableDecisionId = (() => {
+    if (!selectedGroup) return null;
+    const d = selectedGroup.items.find(
+      (i) => i.kind === "decision" && categorize(i) !== "verified"
+    );
+    return d ? d.id : null;
+  })();
+
+  useEffect(() => {
+    if (activeLane !== "operations") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      // Don't steal keys while a modal owns the screen.
+      if (rejectDialog || bulkConfirmDialog || docModal || exceptionSlideOver) {
+        if (e.key === "Escape") {
+          setRejectDialog(null);
+          setBulkConfirmDialog(null);
+          setDocModal(null);
+          setExceptionSlideOver(null);
+        }
+        return;
+      }
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+        return;
+      }
+      if (e.key === "Escape") {
+        setShowShortcuts(false);
+        return;
+      }
+
+      const idx = filteredGroups.findIndex((g) => g.shipmentId === selectedShipmentId);
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = filteredGroups[Math.min(idx + 1, filteredGroups.length - 1)];
+        if (next) { setSelectedShipmentId(next.shipmentId); setActionSuccess(null); }
+        return;
+      }
+      if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const prev = filteredGroups[Math.max(idx - 1, 0)];
+        if (prev) { setSelectedShipmentId(prev.shipmentId); setActionSuccess(null); }
+        return;
+      }
+
+      if (!canWrite || !nextActionableDecisionId) return;
+      if (e.key === "a") { e.preventDefault(); handleDecisionAction(nextActionableDecisionId, "APPROVE"); }
+      else if (e.key === "r") { e.preventDefault(); handleDecisionAction(nextActionableDecisionId, "REJECT"); }
+      else if (e.key === "e") { e.preventDefault(); handleDecisionAction(nextActionableDecisionId, "RE_EVALUATE"); }
+      else if (e.key === "x") { e.preventDefault(); toggleDecisionSelection(nextActionableDecisionId); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
 
 
   return (
@@ -461,8 +526,18 @@ export function ActionsClient({
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-ink tracking-tight">Today</h1>
-            <p className="text-xs text-ink-muted">{localGroups.reduce((n, g) => n + g.items.length, 0)} open items across {localGroups.length} shipments</p>
+            <p className="text-xs text-ink-muted" aria-live="polite">{localGroups.reduce((n, g) => n + g.items.length, 0)} open items across {localGroups.length} shipments</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowShortcuts(true)}
+            title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
+            className="hidden md:flex items-center gap-1 ml-1 px-2 py-1 rounded-lg border border-border text-[10px] font-bold text-ink-muted hover:text-ink hover:border-brand/50 transition-colors cursor-pointer"
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+            <kbd className="font-mono">?</kbd>
+          </button>
         </div>
 
         {/* Filter bar: search + task/assignee/client filters */}
@@ -906,6 +981,7 @@ export function ActionsClient({
                             canWrite={canWrite}
                             verified={cat === "verified"}
                             selected={selectedDecisionIds.has(item.id)}
+                            keyboardTarget={item.id === nextActionableDecisionId}
                             onToggleSelect={() => toggleDecisionSelection(item.id)}
                             onDocClick={(docId, fileName, fieldName) => {
                               const doc = docLookup.get(docId);
@@ -1038,6 +1114,48 @@ export function ActionsClient({
           onConfirm={submitReject}
           onCancel={() => setRejectDialog(null)}
         />
+      )}
+
+      {/* Keyboard shortcuts help */}
+      {showShortcuts && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-border shadow-2xl p-6 w-full max-w-sm mx-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <Keyboard className="w-4 h-4 text-brand" />
+              <h3 className="text-base font-bold text-ink">Keyboard shortcuts</h3>
+            </div>
+            <dl className="space-y-1.5 text-xs">
+              {[
+                ["j  /  ↓", "Next shipment"],
+                ["k  /  ↑", "Previous shipment"],
+                ["a", "Approve next open decision"],
+                ["r", "Reject next open decision"],
+                ["e", "Re-evaluate next open decision"],
+                ["x", "Select it for a bulk action"],
+                ["?", "Toggle this help"],
+                ["Esc", "Close dialogs"],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <dd className="text-ink-muted">{desc}</dd>
+                  <dt>
+                    <kbd className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-surface-muted border border-border text-ink">
+                      {key}
+                    </kbd>
+                  </dt>
+                </div>
+              ))}
+            </dl>
+            <p className="text-[10px] text-ink-muted pt-1 border-t border-border">
+              a / r / e act on the top “Needs review” card of the open shipment.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Exception detail slide-over */}
@@ -1504,6 +1622,7 @@ function AgentResultCard({
   canWrite,
   verified = false,
   selected = false,
+  keyboardTarget = false,
   onToggleSelect,
   onDocClick,
 }: {
@@ -1515,6 +1634,7 @@ function AgentResultCard({
   canWrite: boolean;
   verified?: boolean;
   selected?: boolean;
+  keyboardTarget?: boolean;
   onToggleSelect?: () => void;
   onDocClick: (docId: string, fileName: string, fieldName?: string) => void;
 }) {
@@ -1528,6 +1648,8 @@ function AgentResultCard({
     <div className={`border rounded-2xl p-4 space-y-3 transition-all ${
       selected
         ? "border-brand bg-blue-50/60 ring-2 ring-brand/20"
+        : keyboardTarget && !verified
+          ? "border-brand/60 bg-white ring-1 ring-brand/30"
         : verified
           ? "border-emerald-200 bg-emerald-50/40 opacity-80"
           : effectiveCategory === "blocked"
