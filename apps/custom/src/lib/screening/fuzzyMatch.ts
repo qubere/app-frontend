@@ -23,7 +23,18 @@ export function scoreDpsMatch(target: string, entry: string): number {
   const cleanEntry = entry.trim().toLowerCase();
 
   if (cleanTarget === cleanEntry) return 100;
-  if (cleanTarget.includes(cleanEntry) || cleanEntry.includes(cleanTarget)) return 85;
+
+  // Containment is only strong evidence when the *contained* (shorter) side
+  // is itself a multi-word phrase. A caller-side name/alias that reduces to
+  // a single generic word after upstream common-word/legal-form stripping
+  // (e.g. an alias like "Global Trading Group" normalizing down to just
+  // "global") would otherwise be treated as a substring "contains" hit and
+  // score 85 -- outranking the word-overlap branch below, which correctly
+  // caps a genuine single-shared-word overlap at 30/75.
+  if (cleanTarget.includes(cleanEntry) || cleanEntry.includes(cleanTarget)) {
+    const contained = cleanTarget.includes(cleanEntry) ? cleanEntry : cleanTarget;
+    if (contained.includes(" ")) return 85;
+  }
 
   const words = cleanTarget.split(" ");
   const matched = words.filter((w) => w.length > 3 && cleanEntry.includes(w));
