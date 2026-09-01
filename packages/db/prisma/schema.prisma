@@ -6041,6 +6041,12 @@ model WorkMetricSnapshot {
   firstPassRate        Float?
   exceptionAgeAvgHours Float?
   touchRate            Float?
+  // Raw counts behind touchRate (issue #202, 4.2.2): the denominator is the
+  // number of decisions the pipeline *presented* to a human (recorded at
+  // decision-creation time via triageState, not reconstructed), and the
+  // numerator is those a human then modified (rejected or annotated).
+  lineItemsPresented   Int?
+  lineItemsTouched     Int?
   dutyPerEntry         Decimal?
   openExceptions       Int
   filedEntries         Int

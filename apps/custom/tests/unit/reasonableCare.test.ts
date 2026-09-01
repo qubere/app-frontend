@@ -24,6 +24,9 @@ vi.mock("../../src/lib/db", () => {
       extractionField: {
         findMany: vi.fn(),
       },
+      agentDecision: {
+        count: vi.fn(),
+      },
       postSummaryCorrection: {
         count: vi.fn(),
       },
@@ -127,21 +130,17 @@ describe("Capability B — Reasonable Care Package Assembly Tests", () => {
 });
 
 describe("Capability C — Audit Population Analytics Tests", () => {
-  it("computes touch rate correctly from extraction field modifications", async () => {
-    const mockFields = [
-      { id: "f1", source: "HUMAN_CORRECTION", document: { shipmentId: "ship_1" } },
-      { id: "f2", source: "OCR_AI_AGENT", document: { shipmentId: "ship_1" } },
-      { id: "f3", source: "OCR_AI_AGENT", document: { shipmentId: "ship_1" } },
-      { id: "f4", source: "OCR_AI_AGENT", document: { shipmentId: "ship_1" } },
-    ];
-
-    vi.mocked(db.extractionField.findMany).mockResolvedValue(mockFields as any);
+  it("computes touch rate from decisions presented to a human vs. those they modified", async () => {
     vi.mocked(db.customsFiling.findMany).mockResolvedValue([]);
     vi.mocked(db.exceptionItem.findMany).mockResolvedValue([]);
     vi.mocked(db.postSummaryCorrection.count).mockResolvedValue(0);
+    // 4 decisions presented for review, 1 modified by a human = 25%.
+    vi.mocked(db.agentDecision.count)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(1);
 
     const metrics = await computeAnalyticsMetrics("acc_1");
-    // 1 Human touch field out of 4 total fields = 25% touch rate
     expect(metrics.touchRate).toBe(25);
+    expect(metrics.touchCounts).toEqual({ presented: 4, touched: 1 });
   });
 });

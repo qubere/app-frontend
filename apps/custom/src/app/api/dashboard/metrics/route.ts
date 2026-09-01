@@ -40,6 +40,8 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       cyclTimeMedianHours: s.cyclTimeMedianHours,
       firstPassRate: s.firstPassRate,
       touchRate: s.touchRate,
+      lineItemsPresented: s.lineItemsPresented,
+      lineItemsTouched: s.lineItemsTouched,
       dutyPerEntry: s.dutyPerEntry !== null ? Number(s.dutyPerEntry) : null,
       openExceptions: s.openExceptions,
       filedEntries: s.filedEntries,
