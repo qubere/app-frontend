@@ -77,8 +77,8 @@ export function RestrictedPartyScreeningForm({ countries }: { countries: Country
   const [result, setResult] = useState<AdHocScreeningResponse | null>(null);
 
   const handleScreen = async () => {
-    if (!partyName.trim() || !ultimateDestination.trim()) {
-      setError("Party name and Ultimate Destination are required.");
+    if (!partyName.trim() || !ultimateDestination.trim() || !partyCountry.trim()) {
+      setError("Party name, Party Country, and Ultimate Destination are required.");
       return;
     }
     setBusy(true);
@@ -186,7 +186,7 @@ export function RestrictedPartyScreeningForm({ countries }: { countries: Country
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-ink-muted">Party Country</label>
+                <label className="text-xs font-semibold text-ink-muted">Party Country *</label>
                 <div className="mt-1">
                   <CountryCombobox countries={countries} value={partyCountry} onChange={setPartyCountry} allowClear placeholder="Search country..." />
                 </div>
@@ -230,7 +230,7 @@ export function RestrictedPartyScreeningForm({ countries }: { countries: Country
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-ink-muted">Match Threshold ({threshold})</label>
+              <label className="text-xs font-semibold text-ink-muted">Match Threshold ({threshold}) *</label>
               <select
                 value={threshold}
                 onChange={(e) => setThreshold(Number(e.target.value))}

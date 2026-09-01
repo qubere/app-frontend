@@ -39,13 +39,17 @@ type TriStateOption = "UNKNOWN" | "TRUE" | "FALSE";
 const CONDITION_LABELS = {
   governmentEndUser: "Foreign government end-user",
   militaryEndUser: "Military end-user",
+  usSubsidiary: "End-user is a U.S. subsidiary of the exporter",
+  endUserCertificateOnFile: "End-user certificate/letter of assurance on file",
+  customsFreeZone: "Destination is within a customs free zone",
+  internalUseOnly: "Product is for internal company use/product development only",
+  replacementPartsIndicator: "Item is intended as replacement parts",
+  encryptionItem: "Item is an encryption item",
+  encryptionSelfClassified: "Encryption self-classification on file",
+  militaryEndUseCountry: "Military end-use country involved",
   nuclearEndUse: "Nuclear end use",
   missileTechnologyEndUse: "Missile technology end use",
   chemicalBiologicalEndUse: "Chemical or biological weapons end use",
-  endUserCertificateOnFile: "End-user certificate/letter of assurance on file",
-  customsFreeZone: "Destination is within a customs free zone",
-  encryptionItem: "Item is an encryption item",
-  encryptionSelfClassified: "Encryption self-classification on file",
 } as const;
 
 const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral"> = {
@@ -113,13 +117,17 @@ export function LicenseManagementClient({
   const [detConditions, setDetConditions] = useState({
     governmentEndUser: "UNKNOWN" as TriStateOption,
     militaryEndUser: "UNKNOWN" as TriStateOption,
+    usSubsidiary: "UNKNOWN" as TriStateOption,
+    endUserCertificateOnFile: "UNKNOWN" as TriStateOption,
+    customsFreeZone: "UNKNOWN" as TriStateOption,
+    internalUseOnly: "UNKNOWN" as TriStateOption,
+    replacementPartsIndicator: "UNKNOWN" as TriStateOption,
+    encryptionItem: "UNKNOWN" as TriStateOption,
+    encryptionSelfClassified: "UNKNOWN" as TriStateOption,
+    militaryEndUseCountry: "UNKNOWN" as TriStateOption,
     nuclearEndUse: "UNKNOWN" as TriStateOption,
     missileTechnologyEndUse: "UNKNOWN" as TriStateOption,
     chemicalBiologicalEndUse: "UNKNOWN" as TriStateOption,
-    endUserCertificateOnFile: "UNKNOWN" as TriStateOption,
-    customsFreeZone: "UNKNOWN" as TriStateOption,
-    encryptionItem: "UNKNOWN" as TriStateOption,
-    encryptionSelfClassified: "UNKNOWN" as TriStateOption,
   });
   const [detReferenceNumbers, setDetReferenceNumbers] = useState({ zNumber: "", ccatsNumber: "" });
   const [detResult, setDetResult] = useState<DeterminationResult | null>(null);
@@ -306,7 +314,9 @@ export function LicenseManagementClient({
               </FormField>
             </div>
             <FormField>
-              <Label>Classification Value</Label>
+              <Label>
+                Classification Value <span className="text-red-600">*</span>
+              </Label>
               <Input
                 value={detForm.classificationValue}
                 onChange={(e) => setDetForm((f) => ({ ...f, classificationValue: e.target.value }))}
@@ -315,7 +325,9 @@ export function LicenseManagementClient({
             </FormField>
             {detForm.operationType === "EXPORT" ? (
               <FormField>
-                <Label>Destination Country</Label>
+                <Label>
+                  Destination Country <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   value={detForm.destinationCountry}
                   onChange={(e) => setDetForm((f) => ({ ...f, destinationCountry: e.target.value }))}
@@ -324,7 +336,9 @@ export function LicenseManagementClient({
               </FormField>
             ) : (
               <FormField>
-                <Label>Origin Country</Label>
+                <Label>
+                  Origin Country <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   value={detForm.originCountry}
                   onChange={(e) => setDetForm((f) => ({ ...f, originCountry: e.target.value }))}
