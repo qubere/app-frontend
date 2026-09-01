@@ -105,7 +105,8 @@ export function RestrictedPartyScreeningForm({ countries }: { countries: Country
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Screening failed.");
+        // The route error envelope is `{ error: { message, ... } }`, not a bare string.
+        setError(data.error?.message || "Screening failed.");
         setResult(null);
         return;
       }

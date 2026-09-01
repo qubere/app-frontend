@@ -307,6 +307,20 @@ export const BASE_SUPPORT_ARTICLES: SupportArticle[] = [
     actionLabel: "Open Documents",
     tags: ["detach", "wrong shipment", "reattach", "document", "audit"],
   },
+  {
+    id: "trade-repository-overview",
+    moduleId: "documents",
+    question: "What is the Trade Repository and what does it show?",
+    answer: "Trade Repository links documents to the shipments, parties, products, or licenses they support, so you can find every document tied to a given entity instead of searching shipment by shipment.",
+    steps: [
+      "Open Trade Repository from the main navigation.",
+      "Filter by entity type and id, or search across linked documents.",
+      "Open a linked document to review its extraction or attach it to another entity.",
+    ],
+    href: "/app/trade-repository",
+    actionLabel: "Open Trade Repository",
+    tags: ["trade repository", "linked document", "entity", "party", "product", "license"],
+  },
 
   {
     id: "create-filing",

@@ -339,16 +339,20 @@ export function LicenseManagementClient({
                 {Object.entries(CONDITION_LABELS).map(([key, label]) => (
                   <div key={key} className="flex items-center justify-between gap-3">
                     <span className="text-sm text-ink">{label}</span>
-                    <Select
-                      value={detConditions[key as keyof typeof detConditions]}
-                      onChange={(e) =>
-                        setDetConditions((c) => ({ ...c, [key]: e.target.value as TriStateOption }))
-                      }
-                    >
-                      <option value="UNKNOWN">Unknown</option>
-                      <option value="TRUE">Yes</option>
-                      <option value="FALSE">No</option>
-                    </Select>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {(["UNKNOWN", "TRUE", "FALSE"] as const).map((option) => (
+                        <label key={option} className="flex items-center gap-1.5 text-xs font-medium text-ink cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`condition-${key}`}
+                            checked={detConditions[key as keyof typeof detConditions] === option}
+                            onChange={() => setDetConditions((c) => ({ ...c, [key]: option }))}
+                            className="w-3.5 h-3.5 text-brand focus:ring-brand cursor-pointer"
+                          />
+                          {option === "UNKNOWN" ? "Unknown" : option === "TRUE" ? "Yes" : "No"}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
