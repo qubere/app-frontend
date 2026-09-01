@@ -107,13 +107,28 @@ honest (human sign-off vs. machine verification never ambiguous).
   countdown chips, a genuine "inbox zero" empty state, skeleton loaders,
   `prefers-reduced-motion` support, `aria-live` on the queue count.
 
-## Sequencing / commits
+## Sequencing / commits — DONE
 
-1. This doc + issue comment.
-2. Gap 1 (provenance select + type + card redesign).
-3. Gap 2 (rejection reason code: schema, module, API, UI).
-4. Gap 3 (touch-rate presentation counter).
-5. UX: explainable rank chip.
-6. UX: keyboard triage + help overlay.
-7. UX: empty state, skeletons, undo toast, motion polish.
-8. Tests + verification screenshots.
+| Commit | What shipped |
+|---|---|
+| `b41f67b3` | This verification doc |
+| `dcc2bdd5` | Real value-at-risk (`ShipmentLineItem.totalValue` sum per shipment) wired into `computeB1Score`; `explainRank()` + "why now" line on every row; shipment list ordered by the B-1 score; `ProvenanceFooter` selects `brokerLicenseNumber` and redesigned so human sign-off ≠ machine verification (Gap 1 / 4.1) |
+| `fa3aa41d` | `AgentDecision.rejectionReasonCode` + migration + `rejectionReasons.ts` picklist; `/api/decisions` and `/api/decisions/bulk` validate + persist + audit it; `RejectDialog` replaces the fire-on-first-click Reject bug (1.3.4) |
+| `0535cdd4` | Keyboard-first triage (`j/k`, `a/r/e`, `x`, `?`, `Esc`) + shortcut sheet; keyboard-target ring on the card; `aria-live` queue count |
+| `905d6361` | Touch-rate denominator recorded at presentation (decisions the pipeline flagged for review) not reconstructed from `ExtractionField`; raw counts on `WorkMetricSnapshot` + migration (4.2.2) |
+| `1a664f8f` | App-wide `prefers-reduced-motion`; warmer inbox-zero empty state |
+
+Full suite green: `vitest run` → 4540 passed / 2 skipped.
+
+### Not verified in-browser
+
+Visual verification of `/app/actions` was blocked by the Clerk sign-in wall in
+the automated browser (no dev session available). All changes are covered by
+`tsc --noEmit`, ESLint, and the 4540-test suite. A screenshot pass against a
+logged-in dev session is the one remaining check.
+
+### Left for a follow-up (not in #202's plan of record)
+
+- Surface `lineItemsPresented` / `lineItemsTouched` in the Command Center touch-rate tile.
+- Optimistic-with-undo toast for single approve (bulk already has a floating toolbar).
+- `pdf.js` viewer still needs the `n`/`p` field-traversal keys wired to the two-pane panel (the data layer already supports it via `nextReviewIndex`).
