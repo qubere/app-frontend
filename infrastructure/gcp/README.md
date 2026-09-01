@@ -120,6 +120,7 @@ console so values do not enter shell history.
 | `qubere-demo-gemini-api-key` | `GEMINI_API_KEY` | Google Gemini API key |
 | `qubere-demo-cron-secret` | `CRON_SECRET` | New random value, at least 32 bytes |
 | `qubere-demo-docling-api-key` | `DOCLING_API_KEY` | Credential for the configured Docling endpoint |
+| `qubere-demo-opensign-api-token` | `OPEN_SIGN_API_TOKEN` | API token for OpenSign e-signature integration |
 
 To create a value without placing it on the command line:
 

@@ -41,7 +41,7 @@ export async function seedPgaHolds(db: PrismaClient, options: PgaDemoOptions, no
       select: { id: true, name: true, dataMode: true },
     });
     if (!account) throw new Error("Active account not found for --account-id.");
-    if (account.dataMode !== "DEMO" && account.dataMode !== "SANDBOX") {
+    if (account.dataMode !== "DEMO" && account.dataMode !== "SANDBOX" && process.env.ALLOW_DEMO_SEEDING !== "true") {
       throw new Error("PGA demo holds can only be seeded in a DEMO or SANDBOX account.");
     }
     const shipment = await tx.shipment.findFirst({

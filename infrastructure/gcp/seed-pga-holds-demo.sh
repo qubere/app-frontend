@@ -55,7 +55,7 @@ gcloud builds submit --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" \
 # not inherit the web service's runtime, credentials or transmission settings.
 gcloud run jobs deploy "${PGA_SEED_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" \
   --image="${SEED_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" \
-  --set-env-vars="NODE_ENV=development,APP_ENV=demo,NEXT_PUBLIC_APP_ENV=demo" \
+  --set-env-vars="NODE_ENV=development,APP_ENV=demo,NEXT_PUBLIC_APP_ENV=demo,ALLOW_DEMO_SEEDING=true" \
   --set-secrets="DATABASE_URL=${DATABASE_URL_SECRET}:latest,DIRECT_URL=${DIRECT_URL_SECRET}:latest" \
   --args="${SEED_ARGS}" --tasks=1 --parallelism=1 --max-retries=0 --task-timeout=5m \
   --cpu=1 --memory=512Mi ${network_args[@]+"${network_args[@]}"}
