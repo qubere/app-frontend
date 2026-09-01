@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
-  Bot,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
@@ -16,14 +15,10 @@ import {
   FolderSearch2,
   Landmark,
   LifeBuoy,
-  MessageCircle,
   PackageSearch,
   ReceiptText,
-  Scale,
   Search,
-  Send,
   ShieldCheck,
-  Sparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -32,10 +27,11 @@ import {
   SUPPORT_ARTICLES,
   SUPPORT_MODULES,
   getSupportModule,
-  searchSupportArticles,
+  searchSupportArticleList,
   type SupportArticle,
   type SupportModuleId,
 } from "./supportContent";
+import { SupportAgent } from "./SupportAgent";
 
 const MODULE_ICONS: Record<(typeof SUPPORT_MODULES)[number]["icon"], LucideIcon> = {
   compass: Compass,
@@ -88,52 +84,33 @@ const QUICK_TASKS = [
   },
 ] as const;
 
-type ChatMessage = {
-  id: number;
-  role: "assistant" | "user";
-  text: string;
-};
-
-const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
-  {
-    id: 1,
-    role: "assistant",
-    text: "Hi — I’m the support chat preview. Ask how to complete a task and I’ll point you to the right Qubere workflow.",
-  },
-];
-
-function mockSupportReply(message: string): string {
-  const text = message.toLowerCase();
-  if (text.includes("document") || text.includes("invoice") || text.includes("attach")) {
-    return "Start in Documents. Open the file, confirm processing is complete, and select the correct shipment if it is unattached. Review extracted fields before using them in a filing.";
-  }
-  if (text.includes("7501") || text.includes("filing") || text.includes("transmit") || text.includes("entry")) {
-    return "Open the shipment’s Pre-filing Readiness first. Resolve every blocker, then open its filing to review the declaration, totals, filing snapshot, and available Form 7501 or transmission actions.";
-  }
-  if (text.includes("screen") || text.includes("party") || text.includes("compliance") || text.includes("hit")) {
-    return "Open Compliance and inspect the match evidence before dispositioning the result. Compare the name, country, address, identifiers, list source, and score — a similar name alone is not proof of identity.";
-  }
-  if (text.includes("billing") || text.includes("invoice") || text.includes("rate")) {
-    return "Open Billing Exceptions for a missing or zero-rated charge. Check the operational event, client scope, rate-card version, and rule mapping before resolving or waiving the exception.";
-  }
-  return "This preview uses scripted guidance, so it cannot inspect your account yet. Search the help center for the task, or browse the module that owns the record. The live support assistant will be connected separately.";
+interface SupportSuggestion {
+  id: string;
+  moduleId: SupportModuleId;
+  question: string;
+  href?: string;
 }
 
-export function SupportCenterClient() {
+export function SupportCenterClient({ initialArticles = SUPPORT_ARTICLES }: { initialArticles?: SupportArticle[] }) {
   const [query, setQuery] = useState("");
   const [selectedModule, setSelectedModule] = useState<SupportModuleId | "all">("all");
   const [openArticleId, setOpenArticleId] = useState<string | null>("work-today");
+  const [remoteArticles, setRemoteArticles] = useState<SupportArticle[] | null>(null);
+  const [suggestions, setSuggestions] = useState<SupportSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [searching, setSearching] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const guidesRef = useRef<HTMLDivElement>(null);
 
   const filteredArticles = useMemo(
-    () => searchSupportArticles(query, selectedModule),
-    [query, selectedModule]
+    () => searchSupportArticleList(initialArticles, query, selectedModule),
+    [initialArticles, query, selectedModule]
   );
   const isDiscovering = query.trim().length === 0 && selectedModule === "all";
-  const visibleArticles = isDiscovering
-    ? SUPPORT_ARTICLES.filter((article) => article.popular).slice(0, 8)
-    : filteredArticles;
+  const visibleArticles = remoteArticles ?? (isDiscovering
+    ? initialArticles.filter((article) => article.popular).slice(0, 8)
+    : filteredArticles);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -146,25 +123,75 @@ export function SupportCenterClient() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  function runSearch(nextQuery: string) {
+  useEffect(() => {
+    const clean = query.trim();
+    if (clean.length < 2) {
+      setSuggestions([]);
+      setSuggestionsOpen(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/support/suggestions?q=${encodeURIComponent(clean)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { suggestions?: SupportSuggestion[] };
+        setSuggestions(payload.suggestions ?? []);
+        setSuggestionsOpen((payload.suggestions?.length ?? 0) > 0);
+        setActiveSuggestion(-1);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setSuggestions([]);
+      }
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
+
+  async function runSearch(nextQuery: string) {
+    const clean = nextQuery.trim();
     setQuery(nextQuery);
     setSelectedModule("all");
     setOpenArticleId(null);
+    setSuggestionsOpen(false);
+    setSearching(Boolean(clean));
+    setRemoteArticles(null);
+    if (clean.length >= 2) {
+      try {
+        const response = await fetch(`/api/support/search?q=${encodeURIComponent(clean)}`);
+        if (response.ok) {
+          const payload = (await response.json()) as { articles?: SupportArticle[] };
+          setRemoteArticles(payload.articles ?? []);
+        }
+      } catch {
+        // The local, code-owned index remains visible when semantic search is unavailable.
+        setRemoteArticles(null);
+      } finally {
+        setSearching(false);
+      }
+    } else {
+      setSearching(false);
+    }
     requestAnimationFrame(() => guidesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   function selectModule(moduleId: SupportModuleId | "all") {
     setSelectedModule(moduleId);
     setQuery("");
+    setRemoteArticles(null);
     setOpenArticleId(null);
     requestAnimationFrame(() => guidesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   function openQuickTask(articleId: string) {
-    const article = SUPPORT_ARTICLES.find((item) => item.id === articleId);
+    const article = initialArticles.find((item) => item.id === articleId);
     if (!article) return;
     setSelectedModule(article.moduleId);
     setQuery("");
+    setRemoteArticles(null);
     setOpenArticleId(article.id);
     requestAnimationFrame(() => guidesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -195,20 +222,47 @@ export function SupportCenterClient() {
               <input
                 ref={searchInputRef}
                 type="search"
+                role="combobox"
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setSelectedModule("all");
                   setOpenArticleId(null);
+                  setRemoteArticles(null);
+                }}
+                onFocus={() => setSuggestionsOpen(suggestions.length > 0)}
+                onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && suggestionsOpen) {
+                    event.preventDefault();
+                    setActiveSuggestion((current) => Math.min(current + 1, suggestions.length - 1));
+                  } else if (event.key === "ArrowUp" && suggestionsOpen) {
+                    event.preventDefault();
+                    setActiveSuggestion((current) => Math.max(current - 1, 0));
+                  } else if (event.key === "Escape") {
+                    setSuggestionsOpen(false);
+                  } else if (event.key === "Enter") {
+                    event.preventDefault();
+                    const selected = suggestions[activeSuggestion];
+                    void runSearch(selected?.question ?? query);
+                  }
                 }}
                 placeholder="Search: How do I attach an invoice to a shipment?"
                 aria-label="Search Qubere help"
+                aria-autocomplete="list"
+                aria-expanded={suggestionsOpen}
+                aria-controls="support-search-suggestions"
+                aria-activedescendant={activeSuggestion >= 0 ? `support-suggestion-${suggestions[activeSuggestion]?.id}` : undefined}
                 className="h-15 w-full rounded-2xl border border-[#D2D2D7] bg-white pl-13 pr-20 text-sm text-ink shadow-[0_14px_40px_-20px_rgba(0,70,140,0.45)] outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10"
               />
               {query ? (
                 <button
                   type="button"
-                  onClick={() => setQuery("")}
+                  onClick={() => {
+                    setQuery("");
+                    setRemoteArticles(null);
+                    setSuggestions([]);
+                  }}
                   aria-label="Clear search"
                   className="absolute right-4 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink"
                 >
@@ -219,6 +273,38 @@ export function SupportCenterClient() {
                   ⌘ K
                 </kbd>
               )}
+              {suggestionsOpen && (
+                <div
+                  id="support-search-suggestions"
+                  role="listbox"
+                  className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-border bg-white p-1.5 shadow-xl"
+                >
+                  {suggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion.id}
+                      id={`support-suggestion-${suggestion.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeSuggestion}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveSuggestion(index)}
+                      onClick={() => void runSearch(suggestion.question)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-3 text-left",
+                        index === activeSuggestion ? "bg-blue-50 text-brand" : "text-ink hover:bg-surface-muted"
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-semibold">{suggestion.question}</span>
+                        <span className="mt-0.5 block text-[10px] text-ink-muted">
+                          {getSupportModule(suggestion.moduleId).shortName}
+                        </span>
+                      </span>
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -227,7 +313,7 @@ export function SupportCenterClient() {
                 <button
                   key={item}
                   type="button"
-                  onClick={() => runSearch(item)}
+                  onClick={() => void runSearch(item)}
                   className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-medium text-ink transition hover:border-brand/30 hover:bg-blue-50 hover:text-brand"
                 >
                   {item}
@@ -283,7 +369,7 @@ export function SupportCenterClient() {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {SUPPORT_MODULES.map((supportModule) => {
                   const Icon = MODULE_ICONS[supportModule.icon];
-                  const count = SUPPORT_ARTICLES.filter((article) => article.moduleId === supportModule.id).length;
+                  const count = initialArticles.filter((article) => article.moduleId === supportModule.id).length;
                   return (
                     <button
                       key={supportModule.id}
@@ -324,7 +410,7 @@ export function SupportCenterClient() {
                         : getSupportModule(selectedModule).name}
                   </h2>
                   <p className="mt-1 text-xs text-ink-muted" role="status">
-                    {visibleArticles.length} {visibleArticles.length === 1 ? "guide" : "guides"}
+                    {searching ? "Searching product help…" : `${visibleArticles.length} ${visibleArticles.length === 1 ? "guide" : "guides"}`}
                     {selectedModule !== "all" ? ` in ${getSupportModule(selectedModule).shortName}` : ""}
                   </p>
                 </div>
@@ -335,6 +421,7 @@ export function SupportCenterClient() {
                       setQuery("");
                       setSelectedModule("all");
                       setOpenArticleId("work-today");
+                      setRemoteArticles(null);
                     }}
                     className="rounded-lg px-3 py-2 text-xs font-semibold text-brand hover:bg-blue-50"
                   >
@@ -359,13 +446,14 @@ export function SupportCenterClient() {
                   <FolderSearch2 className="mx-auto h-9 w-9 text-ink-muted" />
                   <h3 className="mt-3 text-sm font-semibold text-ink">No exact guide found</h3>
                   <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-ink-muted">
-                    Try fewer words, search by the object you are working on, or ask the support chat preview for a starting point.
+                    Try fewer words, search by the object you are working on, or ask AI Support for a starting point.
                   </p>
                   <button
                     type="button"
                     onClick={() => {
                       setQuery("");
                       setSelectedModule("all");
+                      setRemoteArticles(null);
                     }}
                     className="mt-4 rounded-xl bg-brand px-4 py-2.5 text-xs font-semibold text-white hover:bg-brand-hover"
                   >
@@ -398,7 +486,7 @@ export function SupportCenterClient() {
             </section>
           </div>
 
-          <SupportChatMock />
+          <SupportAgent />
         </div>
       </div>
     </div>
@@ -462,147 +550,5 @@ function ArticleRow({
         </div>
       )}
     </article>
-  );
-}
-
-function SupportChatMock() {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
-  const [input, setInput] = useState("");
-  const nextIdRef = useRef(2);
-  const conversationRef = useRef<HTMLDivElement>(null);
-
-  function sendMessage(text: string) {
-    const cleanText = text.trim();
-    if (!cleanText) return;
-    const userId = nextIdRef.current++;
-    const assistantId = nextIdRef.current++;
-    setMessages((current) => [
-      ...current,
-      { id: userId, role: "user", text: cleanText },
-      { id: assistantId, role: "assistant", text: mockSupportReply(cleanText) },
-    ]);
-    setInput("");
-    requestAnimationFrame(() => {
-      conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
-    });
-  }
-
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    sendMessage(input);
-  }
-
-  return (
-    <aside className="xl:sticky xl:top-6" aria-label="Support chat preview">
-      <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-[0_18px_50px_-25px_rgba(0,45,90,0.35)]">
-        <div className="relative overflow-hidden border-b border-blue-100 bg-gradient-to-br from-[#F0F7FF] via-white to-[#F7F5FF] p-5">
-          <div className="absolute -right-8 -top-12 h-32 w-32 rounded-full bg-brand/10 blur-2xl" />
-          <div className="relative flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-brand text-white shadow-sm shadow-brand/20">
-                <Bot className="h-5 w-5" />
-                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-bold text-ink">Support chat</h2>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700">
-                    Mock
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-ink-muted">Workflow guidance preview</p>
-              </div>
-            </div>
-            <Sparkles className="h-4 w-4 text-brand" />
-          </div>
-        </div>
-
-        <div className="border-b border-amber-100 bg-amber-50/80 px-5 py-3">
-          <p className="text-[10px] leading-4 text-amber-800">
-            Design preview only. Messages are not sent to Qubere Support and replies are scripted.
-          </p>
-        </div>
-
-        <div ref={conversationRef} className="h-86 space-y-4 overflow-y-auto px-4 py-5" aria-live="polite">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
-            >
-              <div
-                className={cn(
-                  "max-w-[88%] rounded-2xl px-3.5 py-3 text-xs leading-5",
-                  message.role === "user"
-                    ? "rounded-br-md bg-brand text-white"
-                    : "rounded-bl-md border border-border bg-surface-muted text-ink"
-                )}
-              >
-                {message.text}
-              </div>
-            </div>
-          ))}
-
-          {messages.length === 1 && (
-            <div className="space-y-2 pt-1">
-              <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Try asking</p>
-              {["Why is my filing blocked?", "How do I attach an invoice?", "How do I review a party hit?"].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => sendMessage(prompt)}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5 text-left text-xs font-medium text-ink transition hover:border-brand/30 hover:bg-blue-50 hover:text-brand"
-                >
-                  {prompt}
-                  <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={onSubmit} className="border-t border-border p-3">
-          <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface-muted p-2 focus-within:border-brand focus-within:ring-3 focus-within:ring-brand/10">
-            <label htmlFor="support-chat-input" className="sr-only">Ask the support chat preview</label>
-            <textarea
-              id="support-chat-input"
-              rows={1}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  sendMessage(input);
-                }
-              }}
-              placeholder="Ask how to do something…"
-              className="max-h-24 min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-xs leading-5 text-ink outline-none placeholder:text-ink-muted"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              aria-label="Send mock support message"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-white transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Send className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <p className="mt-2 text-center text-[9px] text-ink-muted">Mock response • No account data is accessed</p>
-        </form>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-border bg-white p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-brand">
-            <Scale className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-semibold text-ink">Regulated decisions still need review</h3>
-            <p className="mt-1 text-[10px] leading-4 text-ink-muted">
-              Help content explains the workflow. It does not replace a licensed broker’s classification, valuation, origin, admissibility, or filing judgment.
-            </p>
-          </div>
-        </div>
-      </div>
-    </aside>
   );
 }
