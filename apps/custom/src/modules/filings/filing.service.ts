@@ -484,7 +484,7 @@ export class FilingService {
       await assertAssistPublicationContext(tx, accountId, filingId, preparedAssists);
       const claimed = await tx.customsFiling.updateMany({
         where: { id: filingId, accountId, version: filing.version, filingStatus: filing.filingStatus },
-        data: {{
+        data: {
         filingStatus: nextStatus,
         submittedAt: new Date(),
         version: { increment: 1 },
