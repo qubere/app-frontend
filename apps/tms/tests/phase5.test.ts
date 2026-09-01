@@ -27,6 +27,10 @@ const { dbMock } = vi.hoisted(() => ({
     shipment: {
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    trackingProviderDefinition: {
+      findUnique: vi.fn(),
     },
     agentDecision: {
       create: vi.fn(),
@@ -180,7 +184,22 @@ describe("Phase 5 — Execution Engine (Carrier Scoring, Tenders, Fallback Casca
   });
 
   it("ingests raw Project44 container discharge signal and standardizes into CONTAINER_DISCHARGED event", async () => {
-    dbMock.shipment.update.mockResolvedValueOnce({ id: "shp_500" });
+    dbMock.trackingProviderDefinition.findUnique.mockResolvedValueOnce({
+      eventMappings: [
+        {
+          id: "mapping_project44_discharge",
+          integrationConfigId: null,
+          matchType: "CONTAINS",
+          rawEventPattern: "DISCHARGE",
+          canonicalEventType: "CONTAINER_DISCHARGED",
+          classifier: "ACTUAL",
+          sourceType: "CARRIER",
+          priority: 10,
+          active: true,
+        },
+      ],
+    });
+    dbMock.shipment.updateMany.mockResolvedValueOnce({ count: 1 });
 
     const result = await ingestRawTrackingSignal(mockContext, {
       provider: "PROJECT44",

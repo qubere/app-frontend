@@ -270,7 +270,7 @@ export function ManageAccountModal({ isOpen, onClose, accountName, items, extern
       }
       case "integrations": {
         const data = entry.data as IntegrationsApiResponse;
-        return <IntegrationsPanel accountName={data.accountName} integrations={data.integrations} clients={data.clients} onSaved={onSaved} />;
+        return <IntegrationsPanel accountName={data.accountName} integrations={data.integrations} clients={data.clients} trackingProviders={data.trackingProviders} onSaved={onSaved} />;
       }
       default:
         return null;

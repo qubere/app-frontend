@@ -11,6 +11,7 @@ import {
   Route,
   Ship,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { ShipmentTrackingProjection, TrackingHealth } from "@/modules/tracking/shipmentTracking";
 
 interface ShipmentTrackingPanelProps {
@@ -46,6 +47,15 @@ const healthStyle: Record<TrackingHealth, string> = {
   STALE: "bg-slate-100 text-slate-700 border-slate-200",
   NOT_TRACKED: "bg-slate-100 text-slate-600 border-slate-200",
 };
+
+const sourceStyle = {
+  CONNECTED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  WAITING: "bg-blue-50 text-blue-700 border-blue-200",
+  STALE: "bg-amber-50 text-amber-700 border-amber-200",
+  ERROR: "bg-rose-50 text-rose-700 border-rose-200",
+  INACTIVE: "bg-slate-100 text-slate-700 border-slate-200",
+  NOT_CONFIGURED: "bg-slate-100 text-slate-600 border-slate-200",
+} as const;
 
 function formatDateTime(value: Date | null, timeZone?: string | null): string {
   if (!value) return "Not available";
@@ -130,6 +140,7 @@ function Rail({
 }
 
 export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps) {
+  const router = useRouter();
   if (!projection) return null;
 
   const isUnconfigured = projection.health?.reasonCodes?.includes("TRACKING_NOT_CONFIGURED") ?? true;
@@ -141,10 +152,17 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
       {projection.nextAction && (
         <div
           onClick={() => {
+            if (
+              projection.nextAction?.type === "CONFIGURE_TRACKING" ||
+              projection.nextAction?.type === "CHECK_TRACKING_SOURCE"
+            ) {
+              router.push("/app/admin/settings?section=integrations");
+              return;
+            }
             const targetId =
               projection.nextAction?.type === "RESOLVE_EXCEPTION"
                 ? "exceptions-panel"
-                : projection.nextAction?.type === "START_TRACKING" || projection.nextAction?.type === "CHECK_TRACKING_SOURCE"
+                : projection.nextAction?.type === "START_TRACKING"
                 ? "waterfall-view"
                 : "exceptions-panel";
 
@@ -185,7 +203,13 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
           </div>
 
           <div className="flex items-center gap-1 text-xs font-bold text-brand group-hover:translate-x-0.5 transition-transform shrink-0 pt-0.5">
-            <span>Resolve Action</span>
+            <span>
+              {projection.nextAction.type === "CONFIGURE_TRACKING"
+                ? "Connect source"
+                : projection.nextAction.type === "CHECK_TRACKING_SOURCE"
+                  ? "Review connection"
+                  : "Resolve action"}
+            </span>
             <ChevronRight className="w-4 h-4" />
           </div>
         </div>
@@ -227,14 +251,24 @@ export function ShipmentTrackingPanel({ projection }: ShipmentTrackingPanelProps
 
         <div className="apple-card rounded-3xl border border-border bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Control-tower health</p>
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Tracking source</p>
             <Radio className="w-4 h-4 text-brand" />
           </div>
-          <span className={`inline-flex mt-3 px-2.5 py-1 rounded-full border text-[10px] font-extrabold uppercase ${healthStyle[projection.health.status]}`}>
-            {titleCase(projection.health.status)}
+          <p className="text-sm font-extrabold text-ink mt-3 truncate">
+            {projection.source.providerDisplayName ?? projection.source.connectionName ?? "No source connected"}
+          </p>
+          <span className={`inline-flex mt-2 px-2.5 py-1 rounded-full border text-[10px] font-extrabold uppercase ${sourceStyle[projection.source.state]}`}>
+            {titleCase(projection.source.state)}
           </span>
           <p className="text-xs text-ink-muted mt-2">
-            Last synchronized: {formatDateTime(projection.movement.lastSynchronizedAt)}
+            {projection.source.scope ? `${titleCase(projection.source.scope)} scope · ` : ""}
+            Last sync {formatDateTime(projection.source.lastSyncAt)}
+          </p>
+          {projection.source.lastErrorMessage && (
+            <p className="text-[10px] text-rose-700 mt-1 line-clamp-2">{projection.source.lastErrorMessage}</p>
+          )}
+          <p className={`text-[10px] font-bold mt-2 ${healthStyle[projection.health.status].includes("rose") ? "text-rose-700" : "text-ink-muted"}`}>
+            Overall health: {titleCase(projection.health.status)}
           </p>
         </div>
       </div>

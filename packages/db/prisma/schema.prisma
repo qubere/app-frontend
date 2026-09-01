@@ -393,22 +393,22 @@ model Account {
   batchRecords                          BatchRecord[]
   batchArtifacts                        BatchArtifact[]
   complianceBatchColumnMappingTemplates ComplianceBatchColumnMappingTemplate[]
-  rdpsPartyOutcomes               RdpsPartyOutcome[]
-  reportDefinitions               ReportDefinition[]
-  reportRuns                      ReportRun[]
-  reportArtifacts                 ReportArtifact[]
-  reportSchedules                 ReportSchedule[]
-  licenseDeterminationResults     LicenseDeterminationResult[]
-  licenses                        License[]
-  licenseLines                    LicenseLine[]
-  licenseParties                  LicenseParty[]
-  licenseDocuments                LicenseDocument[]
-  licenseEvents                   LicenseEvent[]
-  licenseAdjustments              LicenseAdjustment[]
-  licenseNotes                    LicenseNote[]
-  licenseAllocations              LicenseAllocation[]
-  licenseConfig                   AccountLicenseConfig?
-  documentAssociations            DocumentAssociation[]
+  rdpsPartyOutcomes                     RdpsPartyOutcome[]
+  reportDefinitions                     ReportDefinition[]
+  reportRuns                            ReportRun[]
+  reportArtifacts                       ReportArtifact[]
+  reportSchedules                       ReportSchedule[]
+  licenseDeterminationResults           LicenseDeterminationResult[]
+  licenses                              License[]
+  licenseLines                          LicenseLine[]
+  licenseParties                        LicenseParty[]
+  licenseDocuments                      LicenseDocument[]
+  licenseEvents                         LicenseEvent[]
+  licenseAdjustments                    LicenseAdjustment[]
+  licenseNotes                          LicenseNote[]
+  licenseAllocations                    LicenseAllocation[]
+  licenseConfig                         AccountLicenseConfig?
+  documentAssociations                  DocumentAssociation[]
 
   onboardingCases         OnboardingCase[]
   onboardingEntities      OnboardingEntity[]
@@ -1182,28 +1182,31 @@ model EtaObservation {
 }
 
 model TrackingSubscription {
-  id                 String                     @id @default(cuid())
-  accountId          String
-  account            Account                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  shipmentId         String
-  shipment           Shipment                   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  provider           String
-  providerTrackingId String?
-  status             TrackingSubscriptionStatus @default(PENDING)
-  startedAt          DateTime?
-  endedAt            DateTime?
-  lastEventAt        DateTime?
-  lastSyncAt         DateTime?
-  lastErrorAt        DateTime?
-  lastErrorCode      String?
-  nextPollAt         DateTime?
-  retryCount         Int                        @default(0)
-  createdAt          DateTime                   @default(now())
-  updatedAt          DateTime                   @updatedAt
+  id                  String                     @id @default(cuid())
+  accountId           String
+  account             Account                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId          String
+  shipment            Shipment                   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  integrationConfigId String?
+  integrationConfig   IntegrationConfig?         @relation(fields: [integrationConfigId], references: [id], onDelete: SetNull)
+  provider            String
+  providerTrackingId  String?
+  status              TrackingSubscriptionStatus @default(PENDING)
+  startedAt           DateTime?
+  endedAt             DateTime?
+  lastEventAt         DateTime?
+  lastSyncAt          DateTime?
+  lastErrorAt         DateTime?
+  lastErrorCode       String?
+  nextPollAt          DateTime?
+  retryCount          Int                        @default(0)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
 
   @@unique([accountId, shipmentId, provider])
   @@index([status, nextPollAt])
   @@index([shipmentId])
+  @@index([integrationConfigId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1392,7 +1395,7 @@ model DocumentAssociation {
   /// history/activity views don't need a live join to a possibly-deleted entity.
   entityDisplayId String?
 
-  relationshipType DocumentRelationshipType @default(GENERAL)
+  relationshipType DocumentRelationshipType  @default(GENERAL)
   source           DocumentAssociationSource @default(USER)
 
   /// false once unlinked. Never physically deleted -- see module docs.
@@ -8990,24 +8993,107 @@ enum IntegrationStatus {
   ERROR
 }
 
+enum TrackingProviderStatus {
+  ACTIVE
+  PREVIEW
+  DEPRECATED
+  DISABLED
+}
+
+enum TrackingProviderAuthType {
+  NONE
+  API_KEY
+  BEARER
+  HMAC
+  OAUTH2
+  BASIC
+  CUSTOM
+}
+
+enum TrackingProviderMatchType {
+  EXACT
+  PREFIX
+  CONTAINS
+  FALLBACK
+}
+
+/// Platform-managed catalog of shipment-tracking providers. The executable
+/// adapter remains versioned code; this record selects/configures it without
+/// coupling shipment workflows or UI to a vendor name.
+model TrackingProviderDefinition {
+  id               String                   @id @default(cuid())
+  key              String                   @unique
+  displayName      String
+  adapterKey       String
+  status           TrackingProviderStatus   @default(PREVIEW)
+  authType         TrackingProviderAuthType @default(API_KEY)
+  supportedModes   String[]                 @default([])
+  capabilities     String[]                 @default([])
+  configSchema     Json?
+  documentationUrl String?
+  operationalNotes String?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  connections   IntegrationConfig[]
+  eventMappings TrackingProviderEventMapping[]
+
+  @@index([status])
+  @@index([adapterKey])
+}
+
+/// Data-driven provider-code normalization. Connection-specific mappings win
+/// over provider defaults, then lower numeric priority wins.
+model TrackingProviderEventMapping {
+  id                   String                     @id @default(cuid())
+  providerDefinitionId String
+  providerDefinition   TrackingProviderDefinition @relation(fields: [providerDefinitionId], references: [id], onDelete: Cascade)
+  integrationConfigId  String?
+  integrationConfig    IntegrationConfig?         @relation(fields: [integrationConfigId], references: [id], onDelete: Cascade)
+  matchType            TrackingProviderMatchType  @default(EXACT)
+  rawEventPattern      String
+  canonicalEventType   String
+  classifier           TrackingEventClassifier
+  sourceType           TrackingSourceType
+  description          String?
+  priority             Int                        @default(100)
+  active               Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  @@index([providerDefinitionId, active, priority])
+  @@index([integrationConfigId, active, priority])
+}
+
 model IntegrationConfig {
-  id               String              @id @default(cuid())
-  accountId        String
-  account          Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  clientId         String?
-  client           Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  category         IntegrationCategory
-  provider         String
-  name             String
-  status           IntegrationStatus   @default(ACTIVE)
-  apiKey           String?
-  apiSecret        String?
-  baseUrl          String?
-  environment      String              @default("PRODUCTION")
-  configJson       Json?
-  lastSyncAt       DateTime?
-  lastErrorAt      DateTime?
-  lastErrorMessage String?
+  id                           String                      @id @default(cuid())
+  accountId                    String
+  account                      Account                     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId                     String?
+  client                       Client?                     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  category                     IntegrationCategory
+  provider                     String
+  name                         String
+  status                       IntegrationStatus           @default(ACTIVE)
+  trackingProviderDefinitionId String?
+  trackingProviderDefinition   TrackingProviderDefinition? @relation(fields: [trackingProviderDefinitionId], references: [id], onDelete: SetNull)
+  /// Unguessable routing identifier for inbound callbacks. This is not a credential.
+  connectionKey                String?                     @unique @default(cuid())
+  /// Secret Manager references. Tracking integrations must not use apiKey/apiSecret.
+  credentialRef                String?
+  webhookSecretRef             String?
+  priority                     Int                         @default(100)
+  isDefault                    Boolean                     @default(false)
+  apiKey                       String?
+  apiSecret                    String?
+  baseUrl                      String?
+  environment                  String                      @default("PRODUCTION")
+  configJson                   Json?
+  lastSyncAt                   DateTime?
+  lastEventAt                  DateTime?
+  lastHealthCheckAt            DateTime?
+  lastErrorAt                  DateTime?
+  lastErrorMessage             String?
 
   // OAuth 2.0 connection state (QuickBooks Online and future OAuth providers).
   // Tokens are stored encrypted (AES-256-GCM) -- never plaintext.
@@ -9021,15 +9107,19 @@ model IntegrationConfig {
   connectedByUserId     String?
   connectedAt           DateTime?
 
-  createdAt  DateTime               @default(now())
-  updatedAt  DateTime               @updatedAt
-  payloads   IntegrationPayload[]
-  syncLogs   IntegrationSyncLog[]
-  entityMaps IntegrationEntityMap[]
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  payloads              IntegrationPayload[]
+  syncLogs              IntegrationSyncLog[]
+  entityMaps            IntegrationEntityMap[]
+  trackingEventMappings TrackingProviderEventMapping[]
+  trackingSubscriptions TrackingSubscription[]
 
   @@index([accountId, category])
   @@index([accountId, clientId])
   @@index([accountId, provider])
+  @@index([accountId, category, status, priority])
+  @@index([trackingProviderDefinitionId])
 }
 
 model IntegrationPayload {
