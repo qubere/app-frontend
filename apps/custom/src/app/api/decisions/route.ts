@@ -22,6 +22,7 @@ import {
   reviewerIdentity,
 } from "@/modules/decisions/reviewAuthority";
 import { buildEditUpdate, readEditableValue } from "@/modules/decisions/editableFields";
+import { isValidRejectionReasonCode, REJECTION_REASONS } from "@/modules/decisions/rejectionReasons";
 import { inngest } from "@/lib/inngest/client";
 import { ACCOUNT_MEMORY_EXTRACTION_EVENT } from "@/lib/inngest/functions/accountMemoryExtraction";
 import type { MemoryExtractionInput } from "@/modules/memory";
@@ -264,7 +265,7 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
-  const { decisionId, action, humanNotes, expectedVersion, processingDurationMs } = body;
+  const { decisionId, action, humanNotes, expectedVersion, processingDurationMs, rejectionReasonCode } = body;
 
   const headerSource = req.headers?.get?.("x-qubere-source");
   const auditSource: "CHAT" | "UI" =
@@ -329,6 +330,22 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
     );
   }
 
+  // The free-text note is the story; the code is the analytics (issue #202,
+  // 1.3.4). Both are required on a REJECT — a note nobody can aggregate and a
+  // code with no context are each half an answer.
+  if (action === "REJECT" && !isValidRejectionReasonCode(rejectionReasonCode)) {
+    return NextResponse.json(
+      {
+        error: "A rejection reason code is required to reject a decision",
+        code: "REJECTION_REASON_REQUIRED",
+        allowed: REJECTION_REASONS.map((r) => r.code),
+      },
+      { status: 400 }
+    );
+  }
+  const resolvedRejectionCode: string | null =
+    action === "REJECT" && isValidRejectionReasonCode(rejectionReasonCode) ? rejectionReasonCode : null;
+
   const decision = await db.agentDecision.findFirst({
     where: { id: decisionId, accountId: ctx.accountId },
   });
@@ -388,6 +405,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       status: newStatus,
       triageState: REVIEW_TRIAGE_STATES[action],
       humanNotes: rationale === "" ? decision.humanNotes : rationale,
+      rejectionReasonCode: resolvedRejectionCode,
       reviewedByUserId: ctx.userId,
     },
   });
@@ -459,6 +477,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
     metadata: {
       newStatus,
       humanNotes: rationale,
+      rejectionReasonCode: resolvedRejectionCode,
       classificationApplied,
       overridesClassification,
       reviewerCapacity: reviewer.capacity,

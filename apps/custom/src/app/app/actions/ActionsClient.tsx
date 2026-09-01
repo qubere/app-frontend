@@ -20,6 +20,7 @@ import { Modal, ModalHeader, ModalBody } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor } from "@/modules/decisions/editableFields";
 import { triageDecision, type TriageCategory } from "@/modules/decisions/decisionState";
+import { REJECTION_REASONS } from "@/modules/decisions/rejectionReasons";
 import type { ShipmentActionGroup, ActionItem } from "@/modules/actions/shipmentActions";
 import type { WorkPriority } from "@/modules/work/workQueue";
 import type { TodayLane, TodayLaneSummary } from "@/modules/today/todayLanes";
@@ -177,6 +178,15 @@ export function ActionsClient({
   const [bulkConfirmInput, setBulkConfirmInput] = useState("");
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [bulkApproveLoading, setBulkApproveLoading] = useState(false);
+  // Rejecting a decision is a legal position: it needs a structured reason code
+  // AND a note before it can fire. Both the single-card and bulk Reject routes
+  // go through this dialog instead of mutating on the first click.
+  const [rejectDialog, setRejectDialog] = useState<
+    | { mode: "single"; decisionId: string }
+    | { mode: "bulk"; ids: string[]; overrideCount: number }
+    | null
+  >(null);
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   useEffect(() => {
     setLocalGroups(initialGroups);
@@ -295,16 +305,66 @@ export function ActionsClient({
     decisionId: string,
     action: "APPROVE" | "REJECT" | "RE_EVALUATE"
   ) => {
+    // Reject always routes through the dialog — it can't fire without a reason.
+    if (action === "REJECT") {
+      setRejectDialog({ mode: "single", decisionId });
+      return;
+    }
     const ok = await runDecisionAction(decisionId, action, notesByDecision[decisionId]);
     if (ok) {
       setActionSuccess(
         action === "APPROVE"
           ? "Approved & signed into audit log."
-          : action === "REJECT"
-            ? "Rejected."
-            : "Re-evaluation requested."
+          : "Re-evaluation requested."
       );
       router.refresh();
+    }
+  };
+
+  const submitReject = async (reasonCode: string, note: string) => {
+    if (!rejectDialog) return;
+    setRejectLoading(true);
+    try {
+      if (rejectDialog.mode === "single") {
+        const ok = await runDecisionAction(rejectDialog.decisionId, "REJECT", note, reasonCode);
+        if (ok) {
+          setActionSuccess("Rejected & signed into audit log.");
+          router.refresh();
+        }
+      } else {
+        const res = await fetch("/api/decisions/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            decisionIds: rejectDialog.ids,
+            action: "REJECT",
+            humanNotes: note,
+            rejectionReasonCode: reasonCode,
+          }),
+        });
+        const data = (await res.json()) as { succeeded?: number };
+        if (res.ok) {
+          const ids = rejectDialog.ids;
+          setLocalGroups((prev) =>
+            prev.map((g) => ({
+              ...g,
+              items: g.items.map((item) =>
+                item.kind === "decision" && ids.includes(item.id)
+                  ? { ...item, status: "REJECTED" }
+                  : item
+              ),
+            }))
+          );
+          setSelectedDecisionIds(new Set());
+          setActionSuccess(
+            `${data.succeeded ?? ids.length} decision${(data.succeeded ?? ids.length) !== 1 ? "s" : ""} rejected & signed into audit log.`
+          );
+          router.refresh();
+        }
+      }
+    } finally {
+      setRejectLoading(false);
+      setRejectDialog(null);
     }
   };
 
@@ -316,6 +376,10 @@ export function ActionsClient({
       }
       return false;
     }).length;
+    if (action === "REJECT") {
+      setRejectDialog({ mode: "bulk", ids, overrideCount });
+      return;
+    }
     setBulkConfirmDialog({ action, ids, overrideCount });
     setBulkConfirmInput("");
   };
@@ -951,7 +1015,7 @@ export function ActionsClient({
         </div>
       )}
 
-      {/* Bulk confirmation dialog */}
+      {/* Bulk confirmation dialog (Approve only — Reject uses RejectDialog) */}
       {bulkConfirmDialog && (
         <BulkConfirmDialog
           action={bulkConfirmDialog.action}
@@ -962,6 +1026,17 @@ export function ActionsClient({
           loading={bulkApproveLoading}
           onConfirm={executeBulkDecision}
           onCancel={() => setBulkConfirmDialog(null)}
+        />
+      )}
+
+      {/* Reject dialog — reason code + note, for a single card or a bulk set */}
+      {rejectDialog && (
+        <RejectDialog
+          count={rejectDialog.mode === "bulk" ? rejectDialog.ids.length : 1}
+          overrideCount={rejectDialog.mode === "bulk" ? rejectDialog.overrideCount : 0}
+          loading={rejectLoading}
+          onConfirm={submitReject}
+          onCancel={() => setRejectDialog(null)}
         />
       )}
 
@@ -1535,11 +1610,11 @@ function AgentResultCard({
           )}
           {!isApproved && (
             <button
-              onClick={() => { setShowNote(true); onAction(item.id, "REJECT"); }}
+              onClick={() => onAction(item.id, "REJECT")}
               disabled={loading}
               className="px-3 py-1.5 rounded-xl border border-border text-xs font-semibold text-ink hover:border-red-400 hover:text-red-600 disabled:opacity-40 transition-colors"
             >
-              Reject
+              Reject…
             </button>
           )}
           <button
@@ -1905,6 +1980,106 @@ function BulkConfirmDialog({
             }`}
           >
             {loading ? "Processing…" : action === "APPROVE" ? "Approve" : "Reject"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A rejection is a legal position — the API requires both a structured reason
+ * code (analytics) and a free-text note (the story), so this dialog collects
+ * both before anything is written. Used for a single card and for bulk reject.
+ */
+function RejectDialog({
+  count,
+  overrideCount,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  count: number;
+  overrideCount: number;
+  loading: boolean;
+  onConfirm: (reasonCode: string, note: string) => void;
+  onCancel: () => void;
+}) {
+  const [reasonCode, setReasonCode] = useState("");
+  const [note, setNote] = useState("");
+  const selected = REJECTION_REASONS.find((r) => r.code === reasonCode) ?? null;
+  const canSubmit = reasonCode !== "" && note.trim().length > 0 && !loading;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl border border-border shadow-2xl p-6 w-full max-w-md mx-4 space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-bold text-ink">
+            Reject {count} decision{count !== 1 ? "s" : ""}
+          </h3>
+          <p className="text-xs text-ink-muted">
+            Both a reason and a note are recorded in the audit log.
+            {overrideCount > 0 && (
+              <span className="text-amber-700 font-semibold">
+                {" "}{overrideCount} {overrideCount === 1 ? "is" : "are"} low-confidence.
+              </span>
+            )}
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Reason</label>
+          <div className="grid gap-1.5 max-h-56 overflow-y-auto pr-1">
+            {REJECTION_REASONS.map((r) => (
+              <button
+                key={r.code}
+                type="button"
+                onClick={() => setReasonCode(r.code)}
+                className={`text-left px-3 py-2 rounded-xl border text-xs transition-all cursor-pointer ${
+                  reasonCode === r.code
+                    ? "border-brand bg-blue-50/70 ring-2 ring-brand/20"
+                    : "border-border hover:border-brand/50 hover:bg-surface-muted"
+                }`}
+              >
+                <span className="font-semibold text-ink">{r.label}</span>
+                {r.hint && <span className="block text-[10px] text-ink-muted mt-0.5">{r.hint}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+            Note <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            autoFocus
+            placeholder={
+              selected?.code === "OTHER"
+                ? "Explain why this is being rejected…"
+                : "What does the reviewer need to know? (audit log)"
+            }
+            className="w-full px-3 py-2 rounded-xl border border-border text-xs text-ink resize-none focus:outline-none focus:border-brand"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-ink hover:bg-surface-muted disabled:opacity-40 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(reasonCode, note.trim())}
+            disabled={!canSubmit}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 disabled:opacity-40 transition-colors"
+          >
+            {loading ? "Rejecting…" : `Reject ${count > 1 ? count : ""}`.trim()}
           </button>
         </div>
       </div>

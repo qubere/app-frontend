@@ -171,7 +171,7 @@ describe("POST /api/decisions — applying an approved classification", () => {
   });
 
   it("flags the line item for re-review on reject instead of leaving it untouched", async () => {
-    await post({ decisionId: "dec_1", action: "REJECT", humanNotes: "Wrong code." });
+    await post({ decisionId: "dec_1", action: "REJECT", humanNotes: "Wrong code.", rejectionReasonCode: "WRONG_CLASSIFICATION" });
 
     expect(dbMock.shipmentLineItem.updateMany).toHaveBeenCalledWith({
       where: { shipmentId: "shp_1", accountId: "acc_1", lineNumber: 1 },

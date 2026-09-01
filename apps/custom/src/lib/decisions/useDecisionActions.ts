@@ -18,7 +18,8 @@ export function useDecisionActions(
   const runDecisionAction = async (
     decisionId: string,
     action: DecisionAction,
-    humanNotes?: string
+    humanNotes?: string,
+    rejectionReasonCode?: string
   ): Promise<boolean> => {
     setActionLoadingId(decisionId);
     const newStatus =
@@ -32,6 +33,7 @@ export function useDecisionActions(
           decisionId,
           action,
           humanNotes,
+          rejectionReasonCode,
           processingDurationMs: Math.max(0, Date.now() - (reviewStartedAt.current.get(decisionId) ?? Date.now())),
         }),
       });

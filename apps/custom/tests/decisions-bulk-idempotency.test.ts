@@ -104,7 +104,7 @@ describe("POST /api/decisions/bulk — idempotency check", () => {
       },
     ]);
 
-    const res = await postBulk({ decisionIds: ["dec_2"], action: "REJECT", humanNotes: "Wrong code" });
+    const res = await postBulk({ decisionIds: ["dec_2"], action: "REJECT", humanNotes: "Wrong code", rejectionReasonCode: "WRONG_CLASSIFICATION" });
     const body = await res.json();
 
     expect(res.status).toBe(200);
