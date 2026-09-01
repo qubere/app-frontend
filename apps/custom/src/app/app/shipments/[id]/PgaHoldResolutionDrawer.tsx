@@ -6,7 +6,7 @@ import { validatePreparation, type HoldFormInput, type PreparationField } from "
 
 type Submission = { id: string; status: string; transmissionMode: string; externalReference: string; submittedAt: string; rejectionCode: string | null; rejectionReason: string | null; rejectedFields: string[] | null; messageSetText: string };
 type Detail = {
-  hold: { id: string; agencyCode: string; holdCode: string; status: string; issuedAt: string; rawNotice: string; version: number; submissions: Submission[] };
+  hold: { id: string; agencyCode: string; holdCode: string; status: string; issuedAt: string; rawNotice: string; version: number; shipment?: { shipmentNumber: string }; submissions: Submission[] };
   formInput: HoldFormInput; prefill: HoldFormInput; staleDraft: boolean; explanation: string; fields: PreparationField[] | null;
   permissions: { canUpdate: boolean; canApprove: boolean }; transport: { reason: string };
 };
@@ -102,6 +102,7 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
     {notice && <p role="status" className="mb-3 text-sm text-green-800">{notice}</p>}
     {!detail ? <p role="status">Loading hold…</p> : <>
       <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+        {detail.hold.shipment && <p className="mb-2 text-xs text-ink-muted">Shipment {detail.hold.shipment.shipmentNumber}</p>}
         <div className="flex items-center justify-between gap-3"><strong>{detail.hold.agencyCode} · {detail.hold.holdCode}</strong><span className="text-sm">{detail.hold.status}</span></div>
         <p className="mt-2 text-sm">{detail.explanation}</p><p className="mt-2 text-xs text-ink-muted">Issued {new Date(detail.hold.issuedAt).toLocaleString()}</p>
       </div>

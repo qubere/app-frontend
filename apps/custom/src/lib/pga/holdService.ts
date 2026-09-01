@@ -45,9 +45,9 @@ export async function getHoldDetail(accountId: string, id: string) {
       reason: "Live PGA transmission and approved agency mappings are not configured. File through your existing ACE channel, then record the reference here." },
   };
 }
-export async function listHolds(accountId: string, query: { shipmentId?: string; agency?: string; importer?: string; page: number; oldestFirst: boolean }) {
+export async function listHolds(accountId: string, query: { shipmentId?: string; agency?: string; importer?: string; page: number; oldestFirst: boolean; includeClosed?: boolean }) {
   const where: Prisma.PgaHoldWhereInput = {
-    accountId, status: { in: [...OPEN_HOLD_STATUSES] },
+    accountId, ...(!query.includeClosed ? { status: { in: [...OPEN_HOLD_STATUSES] } } : {}),
     ...(query.shipmentId ? { shipmentId: query.shipmentId } : {}),
     ...(query.agency ? { agencyCode: query.agency } : {}),
     shipment: { accountId, deletedAt: null, ...(query.importer ? { importerName: { contains: query.importer, mode: "insensitive" } } : {}) },
