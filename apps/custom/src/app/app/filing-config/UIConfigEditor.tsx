@@ -518,7 +518,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const apiMessage = errorData.message || errorData.error || `Failed to load schema (${response.status})`;
+        const apiMessage = errorData.message || errorData.error?.message || `Failed to load schema (${response.status})`;
         // Store structured details if the API returned them (SCHEMA_VERSION_NOT_FOUND)
         if (errorData.details) {
           setSchemaErrorDetails({
@@ -677,7 +677,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err.error || "Failed to save draft");
+      throw new Error(err.error?.message || "Failed to save draft");
     }
 
     const saved = await response.json();
@@ -757,7 +757,7 @@ export default function UIConfigEditor({ configId, onBack }: UIConfigEditorProps
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error || "Failed to publish");
+        throw new Error(err.error?.message || "Failed to publish");
       }
 
       setLifecycleStatus('published');

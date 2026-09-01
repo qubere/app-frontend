@@ -36,7 +36,7 @@ export function ShipmentTitleEditor({
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to rename shipment");
+        throw new Error(errData.error?.message ?? "Failed to rename shipment");
       }
 
       setIsEditing(false);

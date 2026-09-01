@@ -27,7 +27,7 @@ export function FilingCurrencyPanel({ filingId }: { filingId: string }) {
     fetch(`/api/filing/${filingId}/currency`, { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Failed to load filing currency");
+        if (!response.ok) throw new Error(payload.error?.message || "Failed to load filing currency");
         if (!cancelled) {
           setContext(payload.currencyContext);
           setCountry(payload.country || "US");
@@ -69,7 +69,7 @@ export function FilingCurrencyPanel({ filingId }: { filingId: string }) {
         }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Failed to save filing currency");
+      if (!response.ok) throw new Error(payload.error?.message || "Failed to save filing currency");
       setContext(payload.currencyContext);
       setCurrencyConflict(false);
       setMessage("Currency settings saved. They will be frozen into the filing snapshot at submission.");

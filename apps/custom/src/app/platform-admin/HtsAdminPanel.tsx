@@ -55,7 +55,7 @@ export function HtsAdminPanel({ data }: { data: HtsAdminData }) {
         setMessage({ type: "success", text: `Published "${releaseName}".` });
         router.refresh();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to publish release" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to publish release" });
       }
     } catch {
       setMessage({ type: "error", text: "Network error occurred." });

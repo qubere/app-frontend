@@ -195,7 +195,7 @@ export function ComplianceFindingsClient({ findings, recentAudits }: ComplianceF
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error ?? "Audit run failed.");
+        throw new Error(data?.error?.message ?? "Audit run failed.");
       }
       setAuditSuccess(
         `Audit complete — ${data.newFindingsCount ?? 0} new finding(s) detected. Overall result: ${data.auditRecord?.overallResult ?? "unknown"}.`
@@ -219,7 +219,7 @@ export function ComplianceFindingsClient({ findings, recentAudits }: ComplianceF
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error ?? "Export failed.");
+        throw new Error(data?.error?.message ?? "Export failed.");
       }
       setExportSuccessUrl(data.downloadUrl);
       window.open(data.downloadUrl, "_blank");

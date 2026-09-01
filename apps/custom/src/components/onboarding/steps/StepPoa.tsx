@@ -127,7 +127,7 @@ export default function StepPoa({ caseId, entities, onSaved }: Props) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? data.message ?? "Failed to create POA"); return; }
+      if (!res.ok) { setError(data.error?.message ?? data.message ?? "Failed to create POA"); return; }
       setEntitiesState((prev) => prev.map((e) => e.id === selectedEntityId ? { ...e, poa: data.poa } : e));
     } finally {
       setCreating(false);
@@ -141,7 +141,7 @@ export default function StepPoa({ caseId, entities, onSaved }: Props) {
     try {
       const res = await fetch(`/api/onboarding/poa/${poa.id}/send`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? data.message ?? "Failed to send"); return; }
+      if (!res.ok) { setError(data.error?.message ?? data.message ?? "Failed to send"); return; }
       if (data.signingUrl) setSigningUrl(data.signingUrl);
       setEntitiesState((prev) =>
         prev.map((e) =>
@@ -165,7 +165,7 @@ export default function StepPoa({ caseId, entities, onSaved }: Props) {
       fd.append("notarized", String(notarized));
       const res = await fetch(`/api/onboarding/poa/${poa.id}/upload`, { method: "POST", body: fd });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? data.message ?? "Upload failed"); return; }
+      if (!res.ok) { setError(data.error?.message ?? data.message ?? "Upload failed"); return; }
       setEntitiesState((prev) => prev.map((e) => e.id === selectedEntityId ? { ...e, poa: data.poa } : e));
       setUploadFile(null);
       setAttestationNote("");
@@ -185,7 +185,7 @@ export default function StepPoa({ caseId, entities, onSaved }: Props) {
         body: JSON.stringify({ reason: revokeReason.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? data.message ?? "Revoke failed"); return; }
+      if (!res.ok) { setError(data.error?.message ?? data.message ?? "Revoke failed"); return; }
       setEntitiesState((prev) => prev.map((e) => e.id === selectedEntityId ? { ...e, poa: data.poa } : e));
       setRevokeReason("");
     } finally {

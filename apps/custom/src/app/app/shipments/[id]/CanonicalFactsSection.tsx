@@ -41,7 +41,7 @@ export function CanonicalFactsSection({ shipmentId, facts, currentCountryOfOrigi
         router.refresh();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to update country of origin");
+        alert(data.error?.message ?? "Failed to update country of origin");
       }
     } catch (err) {
       console.error(err);

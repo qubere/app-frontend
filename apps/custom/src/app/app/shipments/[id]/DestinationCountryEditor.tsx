@@ -43,7 +43,7 @@ export function DestinationCountryEditor({
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to update destination country");
+        throw new Error(errData.error?.message ?? "Failed to update destination country");
       }
 
       setIsEditing(false);

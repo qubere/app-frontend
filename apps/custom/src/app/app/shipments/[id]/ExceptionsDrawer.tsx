@@ -105,7 +105,7 @@ export function ExceptionsDrawer({
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || data.message || `Save failed (${res.status})`);
+      throw new Error(data.error?.message ?? data.message ?? `Save failed (${res.status})`);
     }
     return true;
   };

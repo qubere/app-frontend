@@ -179,7 +179,7 @@ export function ExecutionHistoryPanel({ mayCreateFormalOverride }: { mayCreateFo
       });
       const json = await res.json();
       if (!res.ok) {
-        setOverrideError(json.error ?? "Failed to create override.");
+        setOverrideError(json.error?.message ?? "Failed to create override.");
         return;
       }
       setShowOverrideForm(false);

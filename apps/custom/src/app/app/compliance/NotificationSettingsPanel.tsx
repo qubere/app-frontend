@@ -59,7 +59,7 @@ export function NotificationSettingsPanel({ initialSettings, mayManage }: Notifi
         body: JSON.stringify(payload),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? "Failed to save notification settings");
+      if (!res.ok) throw new Error(body.error?.message ?? "Failed to save notification settings");
       setSettings(body.settings);
       setGeneralText(toLines(body.settings.rpsGeneralRecipients));
       setHitText(toLines(body.settings.rpsHitRecipients));

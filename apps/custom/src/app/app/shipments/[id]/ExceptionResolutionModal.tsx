@@ -148,7 +148,7 @@ export function ExceptionResolutionModal({
         );
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || data.message || "Failed to save the corrected value");
+          throw new Error(data.error?.message ?? data.message ?? "Failed to save the corrected value");
         }
         onClose();
         router.refresh();
@@ -185,7 +185,7 @@ export function ExceptionResolutionModal({
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || data.message || "Failed to waive exception");
+          throw new Error(data.error?.message ?? data.message ?? "Failed to waive exception");
         }
         onClose();
         router.refresh();
@@ -297,12 +297,12 @@ export function ExceptionResolutionModal({
 
       if (resMutation && !resMutation.ok) {
         const errData = await resMutation.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to update shipment data");
+        throw new Error(errData.error?.message ?? "Failed to update shipment data");
       }
 
       if (!resEx.ok) {
         const errData = await resEx.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to resolve database exception item");
+        throw new Error(errData.error?.message ?? "Failed to resolve database exception item");
       }
 
       onClose();

@@ -80,7 +80,7 @@ export function PlatformAdminConsole({
         router.push("/app/actions");
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to impersonate account");
+        alert(data.error?.message ?? "Failed to impersonate account");
       }
     } catch (err) {
       console.error(err);
@@ -104,7 +104,7 @@ export function PlatformAdminConsole({
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
-        setMessage({ type: "error", text: data.error || "Failed to deactivate account" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to deactivate account" });
       }
     } catch (err) {
       console.error("Error deactivating account", err);
@@ -135,7 +135,7 @@ export function PlatformAdminConsole({
         setOwnerEmail("");
         router.refresh();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to create Enterprise Account" });
+        setMessage({ type: "error", text: data.error?.message ?? "Failed to create Enterprise Account" });
       }
     } catch (err) {
       console.error(err);

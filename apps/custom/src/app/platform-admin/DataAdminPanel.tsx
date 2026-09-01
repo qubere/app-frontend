@@ -111,7 +111,7 @@ export function DataAdminPanel({ initialDatasets }: DataAdminPanelProps = {}) {
         // Reload to get real DB state
         await fetchDatasets();
       } else {
-        throw new Error(data.error || data.message || "Execution failed");
+        throw new Error(data.error?.message || data.message || "Execution failed");
       }
     } catch (err: any) {
       setStatusMessage({

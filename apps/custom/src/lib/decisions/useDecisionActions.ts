@@ -36,7 +36,7 @@ export function useDecisionActions(
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Action failed");
+      if (!res.ok) throw new Error(data.error?.message ?? "Action failed");
       onStatusChange(decisionId, newStatus);
       reviewStartedAt.current.delete(decisionId);
       return true;

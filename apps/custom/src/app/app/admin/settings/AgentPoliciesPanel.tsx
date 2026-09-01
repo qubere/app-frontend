@@ -81,7 +81,7 @@ export function AgentPoliciesPanel({ initialPolicies, history }: AgentPoliciesPa
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Save failed");
+        throw new Error(body.error?.message ?? "Save failed");
       }
       const data = await res.json();
       setPolicies((prev) => ({ ...prev, [agentKey]: data.policy }));

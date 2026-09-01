@@ -50,7 +50,7 @@ export function ExceptionQuickActions({
           throw new Error(
             res.status === 409
               ? data?.message || "This item is already at the maximum escalation level."
-              : data?.error || "Escalation failed."
+              : data?.error?.message || "Escalation failed."
           );
         }
         setMode(null);
@@ -135,7 +135,7 @@ export function ExceptionQuickActions({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "Failed to detach document.");
+        throw new Error(data?.error?.message || "Failed to detach document.");
       }
       onResolved();
       router.refresh();

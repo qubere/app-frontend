@@ -41,7 +41,7 @@ export default function SignPageClient({
       });
       const data = await res.json();
       if (!res.ok) {
-        setErrorMsg(data.error ?? "Signing failed — please try again.");
+        setErrorMsg(data.error?.message ?? "Signing failed — please try again.");
         setState("error");
         return;
       }

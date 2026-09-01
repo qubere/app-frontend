@@ -31,7 +31,7 @@ export function AddTransportLegButton({ shipmentId }: { shipmentId: string }) {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setError(body.error || `Request failed (${res.status})`);
+        setError(body.error?.message || `Request failed (${res.status})`);
         return;
       }
       setOpen(false);

@@ -124,7 +124,7 @@ export function BulkScreeningListClient({
       });
       const body = await res.json();
       if (!res.ok) {
-        setTemplateSaveError(body.error ?? "Failed to save template.");
+        setTemplateSaveError(body.error?.message ?? "Failed to save template.");
         return;
       }
       setNewTemplateName("");
@@ -200,7 +200,7 @@ export function BulkScreeningListClient({
       const res = await fetch("/api/compliance/batches", { method: "POST", body: form });
       const body = await res.json();
       if (!res.ok) {
-        setUploadError(body.error ?? "Upload failed.");
+        setUploadError(body.error?.message ?? "Upload failed.");
         return;
       }
       setUploadOpen(false);
@@ -226,7 +226,7 @@ export function BulkScreeningListClient({
       const res = await fetch("/api/compliance/batches/pre-approved-party-import", { method: "POST", body: form });
       const body = await res.json();
       if (!res.ok) {
-        setPalImportError(body.error ?? "Import failed.");
+        setPalImportError(body.error?.message ?? "Import failed.");
         return;
       }
       setPalImportOpen(false);

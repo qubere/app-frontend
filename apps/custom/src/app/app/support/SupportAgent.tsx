@@ -119,8 +119,9 @@ export function SupportAgent() {
         body: JSON.stringify({ message: cleanText, history, surface: "support" }),
       });
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(payload.error ?? `Request failed (${response.status})`);
+        const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } | string };
+        const errMsg = typeof payload.error === "string" ? payload.error : payload.error?.message;
+        throw new Error(errMsg ?? `Request failed (${response.status})`);
       }
       if (!response.body) throw new Error("No response body");
 

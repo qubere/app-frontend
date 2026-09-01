@@ -164,7 +164,7 @@ async function handleDispatch(requestId: string) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        const errorMsg = errData.error || errData.reason || `HTTP ${res.status}`;
+        const errorMsg = errData.error?.message || errData.reason || `HTTP ${res.status}`;
         await db.datasetRefreshLog.update({
           where: { id: log.id },
           data: { status: "FAILED", errorMessage: errorMsg, completedAt: new Date() },

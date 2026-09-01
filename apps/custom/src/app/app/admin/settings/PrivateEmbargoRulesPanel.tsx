@@ -49,7 +49,7 @@ export function PrivateEmbargoRulesPanel({ initialEnabled, initialRules }: Priva
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ privateEmbargoEnabled: next }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Failed to save");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error?.message ?? "Failed to save");
     } catch (e) {
       setEnabled(!next);
       setError(e instanceof Error ? e.message : "Failed to save");
@@ -75,7 +75,7 @@ export function PrivateEmbargoRulesPanel({ initialEnabled, initialRules }: Priva
         }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Failed to create rule");
+      if (!res.ok) throw new Error(body.error?.message ?? "Failed to create rule");
       setRules((prev) => [body.rule, ...prev]);
       setDraft(emptyDraft);
       setShowForm(false);
@@ -90,7 +90,7 @@ export function PrivateEmbargoRulesPanel({ initialEnabled, initialRules }: Priva
     setError(null);
     try {
       const res = await fetch(`/api/admin/settings/private-embargo-rules/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Failed to disable rule");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error?.message ?? "Failed to disable rule");
       setRules((prev) => prev.map((r) => (r.id === id ? { ...r, status: "DISABLED" } : r)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to disable rule");

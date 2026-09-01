@@ -296,7 +296,7 @@ function NewScreeningView({
       const json = await res.json();
 
       if (!res.ok) {
-        setError(json?.error ?? "The screening request failed.");
+        setError(json?.error?.message ?? "The screening request failed.");
         setInvalidRows(json?.invalidRows ?? []);
         if (json?.run) setRun(json.run);
         return;

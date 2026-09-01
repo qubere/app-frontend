@@ -110,7 +110,7 @@ export const POST = withAuthenticatedRoute<{ jobId: string }>(async ({ ctx, para
           },
         }).catch((err) => console.error("[cron/run] Log update error:", err));
       } else {
-        const errorMessage = data.error || data.message || `Endpoint returned HTTP ${res.status}`;
+        const errorMessage = data.error?.message || data.message || `Endpoint returned HTTP ${res.status}`;
         await db.datasetRefreshLog.update({
           where: { id: logRecordId },
           data: {

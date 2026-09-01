@@ -254,7 +254,7 @@ function AliasesTab({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setActionError(data.detail ?? data.error ?? "Could not create a canonical record.");
+        setActionError(data.detail ?? data.error?.message ?? "Could not create a canonical record.");
         return;
       }
       await load();

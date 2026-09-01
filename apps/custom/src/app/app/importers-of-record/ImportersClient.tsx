@@ -113,7 +113,7 @@ export function ImportersClient({
         setIrsEin("");
         fetchImporters();
       } else {
-        setFormError(data.error || "Failed to add Importer of Record.");
+        setFormError(data.error?.message ?? "Failed to add Importer of Record.");
       }
     } catch {
       setFormError("Network error while creating Importer of Record.");

@@ -399,7 +399,7 @@ const createShipment: AssistantTool = {
       })
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to create shipment" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to create shipment" };
     return {
       success: true,
       shipmentId: data.shipment.id,
@@ -1445,7 +1445,7 @@ const approveDecision: AssistantTool = {
       })
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to approve decision" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to approve decision" };
     return { success: true, decision: data.decision, classificationApplied: data.classificationApplied };
   },
 };
@@ -1479,7 +1479,7 @@ const rejectDecision: AssistantTool = {
       })
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to reject decision" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to reject decision" };
     return { success: true, decision: data.decision };
   },
 };
@@ -1530,7 +1530,7 @@ const resolveException: AssistantTool = {
       { params: Promise.resolve({ id: exceptionId }) }
     );
     const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error ?? "Failed to resolve exception" };
+    if (!res.ok) return { success: false, error: data.error?.message ?? "Failed to resolve exception" };
     return { success: true, exception: data.exception };
   },
 };
@@ -1575,7 +1575,7 @@ const classifyProduct: AssistantTool = {
     );
     const proposeData = await proposeRes.json();
     if (!proposeRes.ok) {
-      return { success: false, step: "propose", error: proposeData.error ?? "Failed to propose classification" };
+      return { success: false, step: "propose", error: proposeData.error?.message ?? "Failed to propose classification" };
     }
     const classificationId = proposeData.classification.id as string;
 
@@ -1589,7 +1589,7 @@ const classifyProduct: AssistantTool = {
     );
     const startReviewData = await startReviewRes.json();
     if (!startReviewRes.ok) {
-      return { success: false, step: "start_review", error: startReviewData.error ?? "Failed to start review" };
+      return { success: false, step: "start_review", error: startReviewData.error?.message ?? "Failed to start review" };
     }
 
     const approveRes = await classificationReviewPOST(
@@ -1602,7 +1602,7 @@ const classifyProduct: AssistantTool = {
     );
     const approveData = await approveRes.json();
     if (!approveRes.ok) {
-      return { success: false, step: "approve", error: approveData.error ?? "Failed to approve classification" };
+      return { success: false, step: "approve", error: approveData.error?.message ?? "Failed to approve classification" };
     }
     return { success: true, classification: approveData.classification };
   },

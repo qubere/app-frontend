@@ -63,7 +63,7 @@ export function DocumentFieldReviewModal({ isOpen, onClose, shipmentId, summary 
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save field review");
+        throw new Error(data.error?.message ?? "Failed to save field review");
       }
       // Record reviewer field correction audit event
       await fetch(`/api/documents/${summary.documentId}/extractions/fields`, {

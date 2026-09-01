@@ -203,7 +203,7 @@ export function ShipmentsWorkbenchClient({
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || "Failed to reassign shipment");
+        throw new Error(errData.error?.message ?? "Failed to reassign shipment");
       }
 
       // Update local state

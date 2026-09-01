@@ -166,7 +166,7 @@ function LaneRow({
       const res = await openAction.run(item, note.trim());
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error || `Request failed (${res.status})`);
+        throw new Error(body?.error?.message || `Request failed (${res.status})`);
       }
       onDone(item.id);
     } catch (e) {
