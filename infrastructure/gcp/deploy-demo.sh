@@ -47,18 +47,21 @@ fi
 gcloud builds submit --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --config=infrastructure/gcp/cloudbuild.demo.yaml \
   --substitutions="_REGION=${GCP_REGION},_REPOSITORY=${ARTIFACT_REPOSITORY},_IMAGE_TAG=${IMAGE_TAG},_CUSTOMS_APP_URL=${NEXT_PUBLIC_CUSTOMS_APP_URL},_TMS_APP_URL=${NEXT_PUBLIC_TMS_APP_URL},_NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" .
 
-gcloud run jobs deploy "${MIGRATION_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${DATABASE_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-secrets="${SECRET_BINDINGS}" --max-retries=0 --task-timeout=15m
+VPC_CONNECTOR="${VPC_CONNECTOR:-clamav-vpc-connector}"
+CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-qubere-demo-instance}"
+
+gcloud run jobs deploy "${MIGRATION_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${DATABASE_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUDSQL_INSTANCE}" --set-secrets="${SECRET_BINDINGS}" --max-retries=0 --task-timeout=15m
 gcloud run jobs execute "${MIGRATION_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --wait
 
-gcloud run jobs deploy "${DOCUMENT_PROCESSING_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${DOCUMENT_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --cpu=2 --memory=4Gi --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=15m --set-env-vars="${BASE_ENV},DOCUMENT_PROCESSING_EXECUTOR=in-process" --set-secrets="${SECRET_BINDINGS}"
+gcloud run jobs deploy "${DOCUMENT_PROCESSING_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${DOCUMENT_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUDSQL_INSTANCE}" --cpu=2 --memory=4Gi --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=15m --set-env-vars="${BASE_ENV},DOCUMENT_PROCESSING_EXECUTOR=in-process" --set-secrets="${SECRET_BINDINGS}"
 gcloud run jobs add-iam-policy-binding "${DOCUMENT_PROCESSING_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" --role=roles/run.invoker >/dev/null
 
-gcloud run jobs deploy "${BACKUP_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${BACKUP_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:qubere-demo-instance" --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=15m --set-env-vars="${BASE_ENV}" --set-secrets="${SECRET_BINDINGS}"
+gcloud run jobs deploy "${BACKUP_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${BACKUP_IMAGE}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --set-vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only --set-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUDSQL_INSTANCE}" --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=15m --set-env-vars="${BASE_ENV}" --set-secrets="${SECRET_BINDINGS}"
 gcloud run jobs add-iam-policy-binding "${BACKUP_JOB}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" --role=roles/run.invoker >/dev/null
 
 deploy_web() {
   local service="$1" image="$2" app_url="$3"
-  gcloud run deploy "${service}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${image}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --allow-unauthenticated --cpu=2 --memory=2Gi --min-instances=1 --max-instances=3 --concurrency=20 --timeout=300 --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:qubere-demo-instance" --set-env-vars="${JOB_TRIGGER_ENV},NEXT_PUBLIC_APP_URL=${app_url}" --set-secrets="${SECRET_BINDINGS}"
+  gcloud run deploy "${service}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${image}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --allow-unauthenticated --cpu=2 --memory=2Gi --min-instances=1 --max-instances=3 --concurrency=20 --timeout=300 --vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUDSQL_INSTANCE}" --set-env-vars="${JOB_TRIGGER_ENV},NEXT_PUBLIC_APP_URL=${app_url}" --set-secrets="${SECRET_BINDINGS}"
 }
 deploy_web "${CUSTOMS_WEB_SERVICE}" "${CUSTOMS_IMAGE}" "${NEXT_PUBLIC_CUSTOMS_APP_URL}"
 deploy_web "${TMS_WEB_SERVICE}" "${TMS_IMAGE}" "${NEXT_PUBLIC_TMS_APP_URL}"

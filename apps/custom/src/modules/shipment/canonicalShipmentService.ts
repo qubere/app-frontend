@@ -2,6 +2,24 @@ import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { getMissingDocuments } from "@/lib/requiredDocumentTypes";
 
+// Every stored spelling of a *closed* exception. A closed exception — resolved,
+// waived, or cancelled — is not part of the shipment's live state and must not
+// reach the workspace drawer or the blocker/warning metrics. The list covers
+// both the canonical UPPER_SNAKE states and the legacy PascalCase / suffixed
+// values still present in older rows.
+const CLOSED_EXCEPTION_STATUSES = [
+  "RESOLVED",
+  "Resolved",
+  "ResolvedManual",
+  "ResolvedAuto",
+  "WAIVED",
+  "Waived",
+  "CANCELLED",
+  "Cancelled",
+  "CLOSED",
+  "Closed",
+] as const;
+
 const canonicalInclude = {
   client: true,
   importerOfRecord: {
@@ -33,7 +51,7 @@ const canonicalInclude = {
     orderBy: { createdAt: "desc" },
   },
   exceptionItems: {
-    where: { status: { not: "Resolved" } },
+    where: { status: { notIn: [...CLOSED_EXCEPTION_STATUSES] } },
     orderBy: { createdAt: "desc" },
     omit: { resolutionReasonCode: true },
   },
