@@ -103,36 +103,33 @@ export async function persistComplianceScreeningFindings(
 
   if (candidates.length === 0) return;
 
-  const openFindings = await db.complianceScreeningFinding.findMany({
-    where: { accountId, shipmentId, status: "OPEN" },
-    select: { lineNumber: true, category: true, ruleId: true },
-  });
-  const openKey = (r: { lineNumber: number | null; category: string; ruleId: string }) =>
-    `${r.lineNumber ?? "null"}::${r.category}::${r.ruleId}`;
-  const openKeys = new Set(openFindings.map(openKey));
+  // The pipeline re-runs this on every invocation (upload, edit, reconcile,
+  // retry), and concurrent invocations for the same shipment (e.g. several
+  // documents uploaded together) each read openFindings before any of them
+  // commits its insert -- without serialization every one of them sees "no
+  // existing row" and inserts its own, producing N duplicate OPEN findings
+  // for the same (shipmentId, lineNumber, category, ruleId). Hold a
+  // transaction-scoped Postgres advisory lock keyed on shipmentId so
+  // concurrent calls for the same shipment run this read-then-write section
+  // one at a time.
+  const createdRows = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(0, hashtext(${shipmentId}))`;
 
-  const newCandidates = candidates.filter(
-    ({ result: r, category }) =>
-      !openKeys.has(openKey({ lineNumber: r.lineNumber ?? null, category, ruleId: r.ruleId }))
-  );
-  if (newCandidates.length === 0) return;
+    const openFindings = await tx.complianceScreeningFinding.findMany({
+      where: { accountId, shipmentId, status: "OPEN" },
+      select: { lineNumber: true, category: true, ruleId: true },
+    });
+    const openKey = (r: { lineNumber: number | null; category: string; ruleId: string }) =>
+      `${r.lineNumber ?? "null"}::${r.category}::${r.ruleId}`;
+    const openKeys = new Set(openFindings.map(openKey));
 
-  const createdRows = await db.complianceScreeningFinding.createManyAndReturn({
-    data: newCandidates.map(({ result: r, category }) => ({
-      accountId,
-      shipmentId,
-      lineNumber: r.lineNumber ?? null,
-      category,
-      ruleId: r.ruleId,
-      ruleName: r.ruleName,
-      severity: r.severity,
-      details: r.details,
-    })),
-  }).catch(async () => {
-    // createManyAndReturn requires Prisma 5.14+ / a supporting connector;
-    // fall back to plain createMany (no ids, no execution linking) if
-    // unavailable rather than failing finding persistence outright.
-    await db.complianceScreeningFinding.createMany({
+    const newCandidates = candidates.filter(
+      ({ result: r, category }) =>
+        !openKeys.has(openKey({ lineNumber: r.lineNumber ?? null, category, ruleId: r.ruleId }))
+    );
+    if (newCandidates.length === 0) return { rows: [], newCandidates };
+
+    const rows = await tx.complianceScreeningFinding.createManyAndReturn({
       data: newCandidates.map(({ result: r, category }) => ({
         accountId,
         shipmentId,
@@ -143,15 +140,35 @@ export async function persistComplianceScreeningFindings(
         severity: r.severity,
         details: r.details,
       })),
+    }).catch(async () => {
+      // createManyAndReturn requires Prisma 5.14+ / a supporting connector;
+      // fall back to plain createMany (no ids, no execution linking) if
+      // unavailable rather than failing finding persistence outright.
+      await tx.complianceScreeningFinding.createMany({
+        data: newCandidates.map(({ result: r, category }) => ({
+          accountId,
+          shipmentId,
+          lineNumber: r.lineNumber ?? null,
+          category,
+          ruleId: r.ruleId,
+          ruleName: r.ruleName,
+          severity: r.severity,
+          details: r.details,
+        })),
+      });
+      return [];
     });
-    return [];
+    return { rows, newCandidates };
   });
+
+  const { rows: createdRowsList, newCandidates } = createdRows;
+  if (newCandidates.length === 0) return;
 
   // Group the created finding ids by category so exactly one
   // ComplianceExecution is recorded per thin-finding domain present in this
   // batch (not one per finding row).
   const idsByCategory = new Map<ScreeningBucket, string[]>();
-  createdRows.forEach((row, i) => {
+  createdRowsList.forEach((row, i) => {
     const category = newCandidates[i]?.category;
     if (!category) return;
     const list = idsByCategory.get(category) ?? [];
