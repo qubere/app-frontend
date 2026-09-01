@@ -7,12 +7,19 @@
  */
 import * as dotenv from "dotenv";
 import { createHash } from "node:crypto";
-dotenv.config();
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { db } from "@qubere/db";
+// npm executes workspace scripts with apps/custom as the current directory,
+// while Prisma migrations are normally run from the repository root. Resolve
+// the root .env from this file so both commands target the same database.
+// Existing process-level variables still win (dotenv's default override=false),
+// which keeps deployed/CI environments authoritative.
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const repositoryRootEnv = resolve(scriptDirectory, "../../../.env");
+dotenv.config({ path: repositoryRootEnv });
+
 import { SUPPORT_ARTICLES, SUPPORT_MODULES } from "@/app/app/support/supportContent";
-import { HybridMemoryRetriever } from "@/modules/memory/memory.retriever";
-import { ProductHelpRepository } from "@/modules/support/productHelp";
 
 const SOURCE_PATH = "apps/custom/src/app/app/support/supportContent.ts";
 
@@ -29,6 +36,34 @@ function articleSearchText(article: (typeof SUPPORT_ARTICLES)[number]): string {
 }
 
 async function main() {
+  // Dynamic imports are intentional: ESM static imports execute before the
+  // dotenv call above, which can initialize Prisma/Gemini against stale or
+  // missing environment variables.
+  const [{ db }, { HybridMemoryRetriever }, { ProductHelpRepository }] = await Promise.all([
+    import("@qubere/db"),
+    import("@/modules/memory/memory.retriever"),
+    import("@/modules/support/productHelp"),
+  ]);
+  database = db;
+
+  const [databaseIdentity] = await db.$queryRaw<
+    Array<{ databaseName: string; schemaName: string; productHelpTableExists: boolean }>
+  >`
+    SELECT
+      current_database() AS "databaseName",
+      current_schema() AS "schemaName",
+      to_regclass('public."ProductHelpArticle"') IS NOT NULL AS "productHelpTableExists"
+  `;
+  if (!databaseIdentity?.productHelpTableExists) {
+    throw new Error(
+      `ProductHelpArticle is missing from ${databaseIdentity?.databaseName ?? "the selected database"}. ` +
+        "Run the migration against the same root .env/DATABASE_URL used by this sync."
+    );
+  }
+  console.log(
+    `Publishing product help to ${databaseIdentity.databaseName}.${databaseIdentity.schemaName}...`
+  );
+
   const activeIds: string[] = [];
   let published = 0;
 
@@ -60,11 +95,13 @@ async function main() {
   console.log(`Published ${published} product-help articles; archived ${archived} stale articles.`);
 }
 
+let database: { $disconnect(): Promise<void> } | null = null;
+
 main()
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
   })
   .finally(async () => {
-    await db.$disconnect();
+    if (database) await database.$disconnect();
   });
