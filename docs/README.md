@@ -24,6 +24,22 @@ docs/apps/
 | `future/` | Unimplemented or speculative features |
 | `bugs/` | Open gap analyses, perf issues, known deficiencies |
 
+## Backlog is in GitHub Issues
+
+The gap analyses, proposals, `future/` specs, and open-item lists that used to live in
+`bugs/`, `future/`, and `planning/` have been migrated to GitHub Issues so the build
+backlog is filterable in one place. Each issue carries three labels:
+
+- `area:*` — brokerage-os · compliance · post-entry · billing · cross-cutting · tms
+- `impact:*` — critical · high · medium · low (impact on the customer)
+- `effort:*` — high · medium · low (effort to get it done)
+
+Start at the [**backlog index issue**](https://github.com/qubere/app-frontend/issues) (label `backlog`),
+or filter, e.g. `label:backlog label:impact:critical`.
+
+Docs that remain here are **reference** material (data models, architecture, ADRs,
+customs-filing module docs, UI-config framework, sales decks, completed audit snapshots).
+
 ## Quick links
 
 ### Customs
@@ -32,13 +48,11 @@ docs/apps/
 - [ABI / CATAIR](apps/customs/feature/abi/)
 - [OpenAPI spec](apps/customs/data/openapi.yaml)
 - [ADRs](apps/customs/planning/adr/)
-- [Open items](apps/customs/planning/review/OPEN-ITEMS.md)
 - [Sales decks](apps/customs/sales/)
 
 ### TMS
 - [Modular agent architecture](apps/tms/feature/TMS-MODULAR-AGENT-ARCHITECTURE.md)
-- [Multi-leg shipments](apps/tms/feature/MULTI-LEG-SHIPMENTS.md)
-- [Open items](apps/tms/bugs/TMS-OPEN-ITEMS.md)
+- [Data model review](apps/tms/planning/TMS-DDL-REVIEW.md)
 - [Sales](apps/tms/sales/)
 
 ### WMS
