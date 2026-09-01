@@ -59,6 +59,11 @@ export async function checkIdempotency(
       };
     }
 
+    if (existing.statusCode === 102) {
+      return { idempotencyKey, requestHash, cachedResponse: null,
+        errorResponse: buildErrorResponse(409, "IDEMPOTENCY_IN_PROGRESS", "This request is still processing. Retry with the same key.", undefined, requestId) };
+    }
+
     // Return cached response for completed requests
     return {
       idempotencyKey,
