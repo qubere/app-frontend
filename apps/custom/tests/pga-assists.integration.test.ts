@@ -2,6 +2,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 
+const identity = vi.hoisted(() => ({ accountId: "", userId: "" }));
+vi.mock("@/lib/auth", () => ({
+  getAccountContext: vi.fn(async () => ({ ...identity, roleNames: ["BROKER"], dataMode: "PRODUCTION" })),
+  hasPermission: vi.fn(async () => true), hasProductEntitlement: vi.fn(async () => true),
+}));
+vi.mock("@/lib/logging/logger", () => ({ logApiRequest: vi.fn() }));
 vi.mock("@/lib/db", async () => {
   const { PrismaClient } = await import("@prisma/client");
   return { db: new PrismaClient(), runWithAccountId: (_: unknown, fn: () => unknown) => fn(), runWithDataMode: (_: unknown, fn: () => unknown) => fn() };
@@ -21,6 +27,7 @@ const { createAssist, updateAssist, getAssist } = await import("@/lib/valuation/
 const { assistInputSchema } = await import("@/lib/valuation/assistContracts");
 const { getAssistMatches } = await import("@/lib/valuation/assistMatchingService");
 const { saveAssistDecision } = await import("@/lib/valuation/assistDeclarationService");
+const { GET: entrySummary } = await import("@/app/api/filing/[id]/entry-summary/route");
 const { FilingService } = await import("@/modules/filings/filing.service");
 const { validateAgainstActiveSchema } = await import("@/lib/canonicalMessaging/schemaValidator");
 const { recordHold, getHoldDetail, saveHoldDraft, recordManualSubmission, recordAgencyResponse } = await import("@/lib/pga/holdService");
@@ -38,6 +45,7 @@ describe.skipIf(!enabled)("PGA and assist PostgreSQL workflows", () => {
     userId = user.id;
     const account = await db.account.create({ data: { name: "PGA integration", slug: "pga-" + suffix } });
     accountId = account.id;
+    identity.accountId = accountId; identity.userId = userId;
     foreignId = (await db.account.create({ data: { name: "Other tenant", slug: "other-" + suffix } })).id;
     await db.accountMembership.create({ data: { accountId, userId } });
   });
@@ -97,6 +105,11 @@ describe.skipIf(!enabled)("PGA and assist PostgreSQL workflows", () => {
     const declaration = await db.assistDeclaration.findFirstOrThrow({ where: { accountId, filingId: f.filing.id } });
     expect(declaration.amountDeclared.toString()).toBe("10");
     const message = await db.filingMessage.findUniqueOrThrow({ where: { messageId: result.messageId } });
+    const summaryResponse = await entrySummary(new Request("http://localhost/api/filing/" + f.filing.id + "/entry-summary"), { params: Promise.resolve({ id: f.filing.id }) });
+    expect(summaryResponse.status).toBe(200);
+    const summary = await summaryResponse.json();
+    expect(summary.entrySummary.totalCustomsValue).toBe(1010);
+    expect(summary.entrySummary.totalDutiesPaid).toBe(101);
     expect(message.envelope).toMatchObject({ data: { declaration: { lineItems: [{ totalValue: 1010 }], totals: { customsValue: 1010 } } } });
     expect(await db.valuationAssistsRecord.findUnique({ where: { filingId: f.filing.id } })).toMatchObject({ potentialAssists: [expect.objectContaining({ registryAssistId: f.assist.id, declared: true })] });
     await db.customsFiling.update({ where: { id: f.filing.id }, data: { filingStatus: "Rejected" } });
