@@ -59,10 +59,7 @@ export function Header({
     });
 
   const externalItems = isPlatformAdmin
-    ? [
-        { name: "Qubere Console", href: "/platform-admin", icon: Shield, description: "Cross-tenant platform administration" },
-        { name: "Filing Configuration", href: "/app/filing-config", icon: Settings2, description: "Platform-global customs filing rules" },
-      ]
+    ? [{ name: "Qubere Console", href: "/platform-admin", icon: Shield, description: "Cross-tenant platform administration" }]
     : [];
 
   const menuActions = [

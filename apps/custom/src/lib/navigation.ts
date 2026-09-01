@@ -136,6 +136,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord" },
       { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds" },
       { id: "poa", labelKey: "poa", href: "/app/poa", icon: "poa" },
+      { id: "filingConfig", labelKey: "filingConfiguration", href: "/app/filing-config", icon: "settings", platformAdminOnly: true },
     ],
   },
   {
@@ -213,13 +214,6 @@ export const NAV_SECTIONS: NavSection[] = [
         labelKey: "qubereConsole",
         href: "/platform-admin",
         icon: "platform",
-        platformAdminOnly: true,
-      },
-      {
-        id: "filingConfig",
-        labelKey: "filingConfiguration",
-        href: "/app/filing-config",
-        icon: "settings",
         platformAdminOnly: true,
       },
     ],
