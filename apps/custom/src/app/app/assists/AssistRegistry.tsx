@@ -16,7 +16,7 @@ const fresh=():AssistInput=>({type:"tooling",description:"",importerOfRecordId:n
 export function AssistRegistry({canUpdate,supplierId,manufacturerId}:{canUpdate:boolean;supplierId?:string;manufacturerId?:string}){
   const [data,setData]=useState<{assists:Assist[];total:number}>({assists:[],total:0}),[options,setOptions]=useState<Options>({importers:[],parties:[]});
   const [status,setStatus]=useState(""),[importer,setImporter]=useState(""),[page,setPage]=useState(0),[error,setError]=useState("");
-  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[editing,setEditing]=useState<Assist|null>(null),[open,setOpen]=useState(!!(supplierId||manufacturerId));
+  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[editing,setEditing]=useState<Assist|null>(null),[open,setOpen]=useState(canUpdate && !!(supplierId||manufacturerId));
   const [form,setForm]=useState<AssistInput>(()=>({...fresh(),suppliers:[...(supplierId?[{partyId:supplierId,role:"SUPPLIER" as const}]:[]),...(manufacturerId?[{partyId:manufacturerId,role:"MANUFACTURER" as const}]:[])]}));
   const [htsText,setHtsText]=useState(""),[partySearch,setPartySearch]=useState(""),[exampleValue,setExampleValue]=useState("1000"),[history,setHistory]=useState<History|null>(null);
   const load=useCallback(async()=>{
