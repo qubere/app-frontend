@@ -33,6 +33,7 @@ interface NotificationTypeMeta {
  * Add its type here so the bell can categorize and route it.
  */
 export const NOTIFICATION_TYPE_META: Record<string, NotificationTypeMeta> = {
+  ASSIST_AMORTIZATION_WARNING: { category: "COMPLIANCE", label: "Assist balance" },
   INBOUND_EMAIL_DOCUMENTS: { category: "DOCUMENTS", label: "Documents" },
   DOCUMENT_MATCH_CONFLICT: { category: "DOCUMENTS", label: "Needs a shipment" },
   DOCUMENT_QUARANTINED: { category: "DOCUMENTS", label: "Quarantined" },
@@ -64,6 +65,8 @@ export function notificationCategory(type: string): NotificationCategory {
 /** Deep link for a notification row, keyed on its entity then its category. */
 export function resolveNotificationHref(n: NotificationLike): string {
   switch (n.entityType) {
+    case "Assist":
+      return "/app/assists";
     case "AgentDecision":
       return n.entityId ? `/app/actions?decisionId=${encodeURIComponent(n.entityId)}` : "/app/actions";
     case "ExceptionItem":

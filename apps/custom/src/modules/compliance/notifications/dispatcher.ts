@@ -1,3 +1,4 @@
+import { renderAssistAlertEmail } from "@/modules/notifications/assistAlertNotifications";
 // Asynchronous delivery of queued ComplianceNotification rows. Mirrors
 // ShipmentEventConsumer.dispatchOutboxEvents: optimistic claim via updateMany
 // (guarded on attemptCount so two concurrent workers can't both send the
@@ -118,6 +119,8 @@ export class ComplianceNotificationDispatcher {
             },
           });
           format = accountConfig?.rpsEmailFormat ?? "HTML";
+        } else if (notification.notificationType === "ASSIST_AMORTIZATION_ALERT") {
+          rendered = renderAssistAlertEmail(notification.payload, config.appBaseUrl);
         } else if (notification.notificationType === "LICENSE_ALERT") {
           const payload = notification.payload as unknown as LicenseAlertPayload | null;
           if (!payload?.alerts) throw new Error("LICENSE_ALERT notification has no payload to render.");
@@ -139,9 +142,9 @@ export class ComplianceNotificationDispatcher {
         if (recipients.length === 0) throw new Error("Notification has no resolved recipients.");
 
         const isRpsType = RPS_NOTIFICATION_TYPES.has(notification.notificationType);
-        const sentAction = isRpsType ? AuditAction.RPS_NOTIFICATION_SENT : AuditAction.LICENSE_NOTIFICATION_SENT;
-        const retryAction = isRpsType ? AuditAction.RPS_NOTIFICATION_RETRY : AuditAction.LICENSE_NOTIFICATION_RETRY;
-        const failedAction = isRpsType ? AuditAction.RPS_NOTIFICATION_FAILED : AuditAction.LICENSE_NOTIFICATION_FAILED;
+        const sentAction = isRpsType ? AuditAction.RPS_NOTIFICATION_SENT : notification.notificationType === "ASSIST_AMORTIZATION_ALERT" ? AuditAction.ASSIST_NOTIFICATION_SENT : AuditAction.LICENSE_NOTIFICATION_SENT;
+        const retryAction = isRpsType ? AuditAction.RPS_NOTIFICATION_RETRY : notification.notificationType === "ASSIST_AMORTIZATION_ALERT" ? AuditAction.ASSIST_NOTIFICATION_RETRY : AuditAction.LICENSE_NOTIFICATION_RETRY;
+        const failedAction = isRpsType ? AuditAction.RPS_NOTIFICATION_FAILED : notification.notificationType === "ASSIST_AMORTIZATION_ALERT" ? AuditAction.ASSIST_NOTIFICATION_FAILED : AuditAction.LICENSE_NOTIFICATION_FAILED;
 
         const provider = getEmailProvider();
         const sendResult = await provider.send({

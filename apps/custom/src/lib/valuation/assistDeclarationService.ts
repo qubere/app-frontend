@@ -1,3 +1,4 @@
+import { queueAssistAlert } from "@/modules/notifications/assistAlertNotifications";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { DomainError } from "@/lib/api/error";
@@ -90,6 +91,7 @@ export async function commitAssistDeclarations(tx:Prisma.TransactionClient,accou
       exchangeRate:item.exchangeRate,lineAmounts:item.lineAmounts,wasOverride:item.wasOverride,overrideReasonCode:item.overrideReasonCode,operatorUserId:item.operatorUserId,
     }});
     created.push(declaration);
+    await queueAssistAlert(tx, assist, remaining.toFixed(2), filingId, item.operatorUserId);
     await tx.auditLog.create({data:{accountId,userId:item.operatorUserId,action:AuditAction.ASSIST_DECLARED,entity:"CustomsFiling",entityId:filingId,source:"UI",
       metadata:{assistId:item.assistId,declarationId:declaration.id,amount:item.amount,customsAmount:item.customsAmount,overrideReasonCode:item.overrideReasonCode}}});
     if(remaining.isZero()) await tx.auditLog.create({data:{accountId,action:AuditAction.ASSIST_AMORTIZED,entity:"Assist",entityId:item.assistId,source:"SYSTEM"}});

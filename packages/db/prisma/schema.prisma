@@ -7296,6 +7296,7 @@ enum RpsEmailFormat {
 /// LICENSE_DETERMINATION_REVIEW_REQUIRED is queued for one
 /// LicenseDeterminationResult whose status is REVIEW_REQUIRED/BLOCKED.
 enum ComplianceNotificationType {
+  ASSIST_AMORTIZATION_ALERT
   RPS_HIT
   RPS_REVIEW_REQUIRED
   PAL_RESCREEN_HIT
@@ -7327,6 +7328,8 @@ enum NotificationDeliveryStatus {
 /// same result/type collide on it (caught as already-queued) instead of
 /// needing a separate idempotency key.
 model ComplianceNotification {
+  assistAlertKey String? @unique
+  bellDeliveredAt DateTime?
   id        String  @id @default(cuid())
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
