@@ -1026,11 +1026,20 @@ export function ActionsClient({
               </h3>
               <p className="text-xs text-ink-muted max-w-sm mx-auto">
                 {localGroups.length === 0 && scopeTab === "mine"
-                  ? "You currently have no actions assigned to you. Select Team queue, Unassigned, or All queue above to view other tasks."
+                  ? "Nothing is assigned to you right now. Switch to Team, Unassigned, or All above to pick up other work."
                   : localGroups.length === 0
-                    ? "Every AI decision has been reviewed and all exceptions are resolved. Check back after the next document processing run."
-                    : "Try adjusting your search query, priority filter, or category/status dropdowns to find what you're looking for."}
+                    ? "Every AI decision has been reviewed and every exception is resolved. Nice work — check back after the next document run."
+                    : "Try adjusting your search, priority filter, or the category / status dropdowns."}
               </p>
+              {localGroups.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowShortcuts(true)}
+                  className="text-[11px] font-semibold text-brand hover:underline inline-flex items-center gap-1"
+                >
+                  <Keyboard className="w-3.5 h-3.5" /> Learn the keyboard shortcuts
+                </button>
+              )}
             </div>
           )}
         </div>
