@@ -708,6 +708,247 @@ export const SUPPORT_ARTICLES: SupportArticle[] = [
     actionLabel: "Open Settings",
     tags: ["settings", "integration", "quickbooks", "api key", "webhook", "stage gate", "escalation", "agent policy"],
   },
+  {
+    id: "notification-center",
+    moduleId: "start",
+    question: "How do I use notifications without losing my place?",
+    answer: "The notification bell collects assignment, SLA, filing, document, license, regulatory, and workflow alerts. Each notification links to the record or queue that raised it; Today remains the complete prioritized work list.",
+    steps: [
+      "Open the bell beside Help and scan unread items by category and timestamp.",
+      "Select a notification to open its shipment, filing, compliance, license, billing, or Today destination.",
+      "Complete or route the underlying work in that destination.",
+      "Return to Today to verify there are no related blockers or SLA items still open.",
+    ],
+    href: "/app/actions",
+    actionLabel: "Open Today",
+    tags: ["notification", "bell", "alert", "unread", "sla", "assignment", "deadline"],
+  },
+  {
+    id: "manage-clients-importers",
+    moduleId: "trade-data",
+    question: "How do I add a client or importer of record?",
+    answer: "Clients represent the brokerage relationship and billing scope; importers of record represent the legal importing entity used by customs workflows. Create the client first, then add or associate the importer and verify identifiers before using it on shipments.",
+    steps: [
+      "Open Clients & Legal Entities and create or select the brokerage client.",
+      "Open Importers of Record and add the legal name, identifiers, address, contacts, and client relationship.",
+      "Review bonds and powers of attorney for the importing entity.",
+      "Create a controlled shipment and confirm the correct client and importer are available for selection.",
+    ],
+    href: "/app/clients",
+    actionLabel: "Open Clients",
+    tags: ["client", "legal entity", "importer", "ior", "customer", "ein", "relationship"],
+  },
+  {
+    id: "product-record-evidence",
+    moduleId: "trade-data",
+    question: "How do I review or update a Product Master record?",
+    answer: "The Product Master keeps reusable commercial facts separate from governed customs decisions. Review descriptions, part numbers, manufacturer and evidence, then use the dedicated classification and origin workflows for legal determinations.",
+    steps: [
+      "Open Trade Data, then Products, and search by part number, SKU, or description.",
+      "Open the product and review commercial attributes, history, evidence, and linked parties.",
+      "Use the classification or origin workflow for a customs decision; do not overwrite a governed decision with a commercial attribute.",
+      "Save the change with supporting evidence and verify the audit history.",
+    ],
+    href: "/app/products",
+    actionLabel: "Open Products",
+    tags: ["product master", "sku", "part number", "manufacturer", "evidence", "history", "origin"],
+  },
+  {
+    id: "party-preapproval",
+    moduleId: "compliance",
+    question: "How do I pre-approve a known party safely?",
+    answer: "Pre-approval records a reviewed party identity so screening can recognize the same verified entity later. It is not a blanket sanctions waiver: changes to identity or worsening reference data can still require review.",
+    steps: [
+      "Open the party in Trade Data and review its active name, address, country, identifiers, and screening evidence.",
+      "Confirm the match belongs to the intended legal entity and that your role permits pre-approval.",
+      "Create the pre-approval with a clear reason and supporting evidence.",
+      "Revoke it when the identity changes or the approval is no longer justified, and review the audit trail.",
+    ],
+    href: "/app/parties",
+    actionLabel: "Open Parties",
+    tags: ["party", "preapprove", "pre-approved", "pal", "allowlist", "screening", "identity"],
+  },
+  {
+    id: "community-screening",
+    moduleId: "compliance",
+    question: "How do I review a community screening run?",
+    answer: "Community Screening runs restricted-party and embargo checks across a group of parties and preserves per-party outcomes. Review failed or incomplete parties individually; a completed batch is not the same as every party being clear.",
+    steps: [
+      "Open Compliance and choose Community or Bulk Screening.",
+      "Open the run and compare completed, hit, review-required, skipped, and failed outcomes.",
+      "Open each non-clear party to inspect the match evidence or missing input.",
+      "Correct the source party data and re-screen only the affected records, then export the run when needed.",
+    ],
+    href: "/app/compliance",
+    actionLabel: "Open Compliance",
+    tags: ["community screening", "batch", "bulk", "party", "failed", "rescreen", "export"],
+  },
+  {
+    id: "embargo-screening",
+    moduleId: "compliance",
+    question: "How do I run and interpret an embargo screening?",
+    answer: "Embargo screening evaluates the configured country movement and records CLEAR, HIT, SKIPPED, or ERROR. Only CLEAR is clear; the result does not replace party, goods, classification, end-use, license, or other admissibility checks.",
+    steps: [
+      "Open the shipment and find Compliance Checks beneath filing readiness.",
+      "Run or re-run Embargo screening when the origin or destination context is complete.",
+      "Read the exact status and rule evidence; investigate HIT, SKIPPED, and ERROR rather than treating them as clear.",
+      "Continue with restricted-party, product, PGA, license, and filing-readiness checks separately.",
+    ],
+    href: "/app/shipments",
+    actionLabel: "Open Shipments",
+    tags: ["embargo", "country", "clear", "hit", "skipped", "error", "screening"],
+  },
+  {
+    id: "compliance-reports-audit",
+    moduleId: "compliance",
+    question: "Where do I find compliance reports and audit history?",
+    answer: "The Reports tab in Compliance brings together screening, license, override, execution, service-usage, and audit views available to your role. Use record-level history when you need the evidence behind one decision.",
+    steps: [
+      "Open Compliance and choose Reports.",
+      "Select the report type, date range, client, status, or other available scope.",
+      "Open underlying executions or findings before relying on an aggregate count.",
+      "Export only when your permission and data-handling policy allow it.",
+    ],
+    href: "/app/compliance?tab=reports",
+    actionLabel: "Open Compliance Reports",
+    tags: ["compliance report", "audit", "history", "execution", "override", "usage", "export"],
+  },
+  {
+    id: "trade-intelligence",
+    moduleId: "trade-data",
+    question: "How do I use Trade Intelligence?",
+    answer: "Trade Intelligence combines HTS benchmarks, broker scorecards, and supplier-risk views. Use it to find patterns and records worth reviewing, not as a replacement for the governed classification, valuation, origin, or screening workflow.",
+    steps: [
+      "Open Trade Intelligence from Data & Intelligence.",
+      "Choose HTS Benchmarks, Broker Scorecard, or Supplier Risk for the question you are investigating.",
+      "Use the available filters and compare the metric with its underlying volume and time period.",
+      "Open the relevant product, broker work, supplier, or shipment workflow before making a regulated decision.",
+    ],
+    href: "/app/intelligence",
+    actionLabel: "Open Trade Intelligence",
+    tags: ["trade intelligence", "benchmark", "broker scorecard", "supplier risk", "accuracy", "override"],
+  },
+  {
+    id: "billing-workspace",
+    moduleId: "billing-admin",
+    question: "What can I do in the Billing Workspace?",
+    answer: "Billing connects operational usage to client charges, internal costs, margin, invoices, exceptions, and reports. Start with exceptions for broken mappings, then use the workspace tabs for clients, rate cards, usage, economics, invoices, and settings.",
+    steps: [
+      "Open Billing and review the overview for unbilled work, margin, invoice, and exception signals.",
+      "Open Exceptions first when a charge is missing, zero-rated, duplicated, or unexpectedly negative-margin.",
+      "Use Usage and shipment economics to trace an operational event through its rate rule, cost, and charge.",
+      "Generate invoices only after the underlying charges and client scope are correct.",
+    ],
+    href: "/app/billing",
+    actionLabel: "Open Billing",
+    tags: ["billing", "overview", "usage", "economics", "cost", "margin", "charge", "workspace"],
+    popular: true,
+  },
+  {
+    id: "record-invoice-payment",
+    moduleId: "billing-admin",
+    question: "How do I record a client invoice payment?",
+    answer: "Record payments from the invoice so Qubere can preserve the invoice lifecycle and remaining balance. Partial payments are supported; the payment cannot exceed the outstanding amount.",
+    steps: [
+      "Open Billing, choose Invoices, and open the sent invoice.",
+      "Verify the client, currency, total, existing payments, and outstanding balance.",
+      "Record the payment amount, date, method, and reference.",
+      "Confirm the invoice moves to Partially Paid or Paid and that the audit history names the actor.",
+    ],
+    href: "/app/billing/invoices",
+    actionLabel: "Open Invoices",
+    tags: ["invoice", "payment", "partial", "paid", "balance", "accounts receivable"],
+  },
+  {
+    id: "rate-simulation",
+    moduleId: "billing-admin",
+    question: "How do I test a rate-card change before activating it?",
+    answer: "Rate simulation applies a draft rate-card version to historical usage so you can compare revenue and margin before making the version active. It does not rewrite existing charges.",
+    steps: [
+      "Open Billing, choose Rate Cards, and open the draft version.",
+      "Choose Simulate and set the historical period and available scope.",
+      "Compare current and proposed revenue, cost, margin, and exceptions.",
+      "Resolve mapping gaps and complete the maker-checker review before activation.",
+    ],
+    href: "/app/billing/rate-cards",
+    actionLabel: "Open Rate Cards",
+    tags: ["rate simulation", "rate card", "draft", "historical", "margin", "activate"],
+  },
+  {
+    id: "onboarding-import-review",
+    moduleId: "trade-data",
+    question: "How do I review an onboarding import or ERP data mapping?",
+    answer: "Customer Onboarding stages imported clients, importers, products, parties, and related records for review before activation. Resolve mapping, duplicate, and validation issues in the case instead of silently accepting incomplete source data.",
+    steps: [
+      "Open Customer Onboarding and select the case or start an authorized import.",
+      "Review source columns, proposed mappings, validation results, duplicates, and unresolved relationships.",
+      "Correct the mapping or source record and re-run validation.",
+      "Activate only when the case summary and reviewer checks show the intended records are ready.",
+    ],
+    href: "/app/onboarding",
+    actionLabel: "Open Customer Onboarding",
+    tags: ["onboarding", "import", "erp", "mapping", "duplicate", "validation", "activate"],
+  },
+  {
+    id: "admin-audit-governance",
+    moduleId: "billing-admin",
+    question: "How do administrators review governance and audit activity?",
+    answer: "Manage Account exposes account profile, members, roles, settings, integrations, and audit history according to permission. Platform-wide configuration remains separate and is visible only to platform administrators.",
+    steps: [
+      "Open the profile menu and choose Manage Account.",
+      "Choose the account, user, role, setting, integration, or audit area you need to review.",
+      "Filter history by actor, action, record, and date where available, then open the underlying record.",
+      "Make changes with the least privilege required and confirm the resulting audit entry.",
+    ],
+    href: "/app/admin",
+    actionLabel: "Manage Account",
+    tags: ["admin", "audit", "governance", "account", "role", "history", "platform admin"],
+  },
+  {
+    id: "trade-data-hub",
+    moduleId: "trade-data",
+    question: "Where should I start when maintaining product and party data?",
+    answer: "Trade Data is the front door to the Product and Party masters. Start there when you need to search, import, create, or review reusable commercial and identity data before it enters a shipment or compliance workflow.",
+    steps: [
+      "Open Trade Data and choose Products or Parties.",
+      "Search for an existing record before creating one to avoid duplicates.",
+      "Review evidence and change history before editing a governed or reused field.",
+      "Return to the shipment, classification, origin, or compliance workflow that needs the data.",
+    ],
+    href: "/app/trade-data",
+    actionLabel: "Open Trade Data",
+    tags: ["trade data", "product", "party", "master data", "search", "duplicate"],
+  },
+  {
+    id: "importer-record",
+    moduleId: "trade-data",
+    question: "How do I maintain an importer-of-record profile?",
+    answer: "The importer profile holds the legal entity details and relationships used by shipment, bond, POA, filing, and billing workflows. Keep legal identifiers and addresses distinct from the brokerage client record.",
+    steps: [
+      "Open Importers of Record and search by legal name or identifier.",
+      "Create or open the profile and verify its client relationship, identifiers, addresses, and contacts.",
+      "Review active bonds and powers of attorney before using the importer in filing work.",
+      "Save the change and confirm it appears on the intended shipment or onboarding case.",
+    ],
+    href: "/app/importers-of-record",
+    actionLabel: "Open Importers of Record",
+    tags: ["importer of record", "ior", "legal entity", "identifier", "address", "client"],
+  },
+  {
+    id: "power-of-attorney",
+    moduleId: "trade-data",
+    question: "How do I review a power of attorney?",
+    answer: "Use Powers of Attorney to confirm that the brokerage has current authority for the importer and covered activities. A stored POA still needs the correct entity, dates, scope, and supporting document.",
+    steps: [
+      "Open Powers of Attorney and find the importer or client.",
+      "Verify the legal names, grantor and grantee, effective dates, status, scope, and attached document.",
+      "Correct or replace an expired, revoked, mismatched, or incomplete authority record according to your process.",
+      "Return to the shipment or filing and verify the authority check reflects the current record.",
+    ],
+    href: "/app/poa",
+    actionLabel: "Open Powers of Attorney",
+    tags: ["poa", "power of attorney", "authority", "importer", "grantor", "grantee", "expiry"],
+  },
 ];
 
 export function getSupportModule(moduleId: SupportModuleId): SupportModule {
@@ -735,14 +976,15 @@ function articleScore(article: SupportArticle, tokens: string[]): number {
   }, 0);
 }
 
-export function searchSupportArticles(
+export function searchSupportArticleList(
+  articles: SupportArticle[],
   query: string,
   moduleId: SupportModuleId | "all" = "all"
 ): SupportArticle[] {
   const normalizedQuery = normalizeSearch(query);
   const tokens = normalizedQuery ? normalizedQuery.split(/\s+/).filter(Boolean) : [];
 
-  return SUPPORT_ARTICLES.filter((article) => moduleId === "all" || article.moduleId === moduleId)
+  return articles.filter((article) => moduleId === "all" || article.moduleId === moduleId)
     .filter((article) => {
       if (tokens.length === 0) return true;
       const haystack = normalizeSearch(
@@ -761,4 +1003,11 @@ export function searchSupportArticles(
       if (a.popular !== b.popular) return a.popular ? -1 : 1;
       return a.question.localeCompare(b.question);
     });
+}
+
+export function searchSupportArticles(
+  query: string,
+  moduleId: SupportModuleId | "all" = "all"
+): SupportArticle[] {
+  return searchSupportArticleList(SUPPORT_ARTICLES, query, moduleId);
 }

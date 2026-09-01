@@ -4,6 +4,7 @@ import {
   SUPPORT_MODULES,
   searchSupportArticles,
 } from "@/app/app/support/supportContent";
+import { NAV_SECTIONS } from "@/lib/navigation";
 
 describe("support center content", () => {
   it("covers every support module with multiple task guides", () => {
@@ -20,6 +21,21 @@ describe("support center content", () => {
       if (article.href) {
         expect(article.href.startsWith("/app/") || article.href === "/chat").toBe(true);
       }
+    }
+  });
+
+  it("keeps every customer-facing navigation module covered by a guide", () => {
+    const customerRoutes = NAV_SECTIONS.filter((section) => !section.hiddenFromSidebar)
+      .flatMap((section) => section.items)
+      .map((item) => item.href);
+
+    for (const href of customerRoutes) {
+      expect(
+        SUPPORT_ARTICLES.some((article) =>
+          article.href === href || article.href?.startsWith(`${href}/`) || article.href?.startsWith(`${href}?`)
+        ),
+        `${href} needs at least one product-help guide`
+      ).toBe(true);
     }
   });
 });

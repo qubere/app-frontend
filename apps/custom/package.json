@@ -14,7 +14,8 @@
     "worker:documents:job": "tsx src/worker/documentJob.ts",
     "backup:upload": "tsx scripts/upload-backup-to-gcs.ts",
     "openapi": "tsx scripts/generate-openapi.ts",
-    "bench:actions": "tsx scripts/bench-actions.ts"
+    "bench:actions": "tsx scripts/bench-actions.ts",
+    "sync:product-help": "tsx scripts/sync-product-help.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
