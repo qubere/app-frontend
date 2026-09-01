@@ -293,6 +293,8 @@ export default async function ActionsPage(props: {
   return (
     <ActionsClient
       groups={groups}
+      canReadPga={await hasPermission("pga.read")}
+      canReviewPga={await hasPermission("pga.review")}
       canWrite={writable}
       canWaive={mayWaive}
       initialShipmentId={shipmentId}
