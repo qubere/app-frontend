@@ -119,8 +119,23 @@ async function handleDispatch(requestId: string) {
       where: { datasetId: dataset.id, status: "RUNNING" },
     });
     if (alreadyRunning) {
-      skipped.push(dataset.id);
-      continue;
+      // A RUNNING row older than any ingestion route's execution ceiling
+      // (max 300s + buffer) means that invocation was killed before it could
+      // update its own log, so it would otherwise skip this dataset forever.
+      const staleCutoffMs = 15 * 60 * 1000;
+      const isStale = now.getTime() - alreadyRunning.startedAt.getTime() > staleCutoffMs;
+      if (!isStale) {
+        skipped.push(dataset.id);
+        continue;
+      }
+      await db.datasetRefreshLog.update({
+        where: { id: alreadyRunning.id },
+        data: {
+          status: "FAILED",
+          errorMessage: "Run superseded: exceeded execution ceiling without completing (stale RUNNING row reclaimed).",
+          completedAt: new Date(),
+        },
+      });
     }
 
     // Create a RUNNING log row before calling the endpoint
