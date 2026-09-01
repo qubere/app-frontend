@@ -163,7 +163,7 @@ export function Header({
                 <button
                   onClick={() => {
                     setIsMenuOpen(false);
-                    signOut(() => router.push("/"));
+                    signOut({ redirectUrl: "/sign-in" });
                   }}
                   className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-left text-sm font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                 >
