@@ -68,3 +68,26 @@ test("read-only reviewers cannot change entry assists", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Include", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Override", exact: true })).toHaveCount(0);
 });
+
+test("registers a draft before activation and previews allocation immediately", async ({ page }) => {
+  const rows: any[] = [];
+  await page.route("**/api/assists**", async route => {
+    if (route.request().url().includes("/options")) return route.fulfill({ json: { importers: [], parties: [] } });
+    if (route.request().method() === "POST") {
+      const input = route.request().postDataJSON();
+      rows.push({ ...input, id: "draft", version: 0, status: "Draft", remainingValue: input.totalValue, importerOfRecord: null });
+      return route.fulfill({ status: 201, json: { assist: rows[0] } });
+    }
+    return route.fulfill({ json: { assists: rows, total: rows.length } });
+  });
+  await page.goto("/?view=registry");
+  await page.getByRole("button", { name: "+ Add assist", exact: true }).click();
+  await page.getByLabel("Description", { exact: true }).fill("Buyer tooling");
+  await page.getByLabel("Total value", { exact: true }).fill("1200");
+  await expect(page.getByRole("dialog").getByRole("status")).toContainText("1,200");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("article")).toContainText("Draft");
+  await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeVisible();
+  expect(rows[0].remainingValue).toBe("1200");
+});
