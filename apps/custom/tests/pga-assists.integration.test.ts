@@ -44,6 +44,7 @@ describe.skipIf(!enabled)("PGA and assist PostgreSQL workflows", () => {
   afterAll(async () => {
     if (accountId) {
       await db.assistDeclaration.deleteMany({ where: { accountId } });
+      await db.assistDecision.deleteMany({ where: { accountId } });
       await db.assist.deleteMany({ where: { accountId } });
       await db.account.deleteMany({ where: { id: { in: [accountId, foreignId] } } });
     }
