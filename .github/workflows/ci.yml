@@ -105,6 +105,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+      - name: PGA and assist PostgreSQL integration
+        env:
+          PGA_ASSIST_INTEGRATION: "1"
+        run: npm --workspace @qubere/custom run test -- tests/pga-assists.integration.test.ts
+
       - name: OpenAPI generation must not error
         run: npm run openapi
 

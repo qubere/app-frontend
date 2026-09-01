@@ -1,6 +1,6 @@
 import { extractedCurrencies } from "@/modules/documents/extractedCurrency";
 import { ExchangeRateService } from "@/modules/fx/exchangeRateService";
-import { getCustomsValuationCurrency, normalizeCurrencyCode, resolveFilingCurrencyContext } from "./currencyContext";
+import { getCustomsValuationCurrency, normalizeCurrencyCode, resolveFilingCurrencyContext, type FilingCurrencyContext } from "./currencyContext";
 
 /** One source of truth for the entry preview and immutable filing snapshot. */
 export async function resolveSubmissionCurrency(country: string, dutyBreakdown: unknown, shipment: {
@@ -18,7 +18,7 @@ export async function resolveSubmissionCurrency(country: string, dutyBreakdown: 
   }
   const customsCurrency = normalizeCurrencyCode(configured.customsCurrency ?? getCustomsValuationCurrency(country));
   const commercialCurrency = normalizeCurrencyCode(configured.commercialCurrency ?? detected[0] ?? shipment.invoiceCurrency ?? customsCurrency);
-  let context = { ...configured, customsCurrency, commercialCurrency };
+  let context: Partial<FilingCurrencyContext> = { ...configured, customsCurrency, commercialCurrency };
   if (!configured.exchangeRate && commercialCurrency !== customsCurrency) {
     if (customsCurrency !== "USD") throw new Error("Set a documented exchange rate for this customs currency before submission.");
     const asOf = shipment.ladingDate ?? new Date();
