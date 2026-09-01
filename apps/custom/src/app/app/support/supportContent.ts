@@ -108,6 +108,76 @@ export const SUPPORT_MODULES: SupportModule[] = [
 ];
 
 export const BASE_SUPPORT_ARTICLES: SupportArticle[] = [
+{
+  "id": "register-valuation-assist",
+  "moduleId": "compliance",
+  "question": "How do I register and activate an assist?",
+  "answer": "Open Assists under Compliance, or use Add assist on the supplier or manufacturer profile. Save a draft first. Activation makes it eligible for matching entries; saving a draft does not change entry values.",
+  "steps": [
+    "Enter a description, total value, and currency, then save the draft.",
+    "Before activation, select the importer, supplier or manufacturer, and HTS prefixes or SKU scope.",
+    "Choose lump sum, equal allocation by entries or units, or value proportional; review the live preview.",
+    "Activate when the scope and allocation are correct. Suspend before editing an active assist."
+  ],
+  "href": "/app/assists",
+  "actionLabel": "Open Assists",
+  "tags": [
+    "assists",
+    "tooling",
+    "valuation",
+    "supplier",
+    "manufacturer",
+    "activate",
+    "allocation"
+  ]
+},
+{
+  "id": "confirm-entry-assist",
+  "moduleId": "filing",
+  "question": "When does including an assist change its balance?",
+  "answer": "Including or overriding an assist stages the amount for the next entry submission. Its balance changes only when that submission is successfully recorded. Unconfirmed assists are excluded and that decision is logged.",
+  "steps": [
+    "Expand the active assists banner on the filing and review the amount, affected lines, and remaining balance.",
+    "Choose Include, or Override with an amount and reason if you have permission.",
+    "If the entry or balance changed, refresh and review the new suggestion before confirming again.",
+    "Submit through the existing filing action. The registry history records the declared amount, and resubmission does not charge it again."
+  ],
+  "href": "/app/assists",
+  "actionLabel": "Review assist balances",
+  "tags": [
+    "assist",
+    "include",
+    "override",
+    "balance",
+    "conflict",
+    "resubmit",
+    "amortization"
+  ]
+},
+{
+  "id": "resolve-pga-hold",
+  "moduleId": "compliance",
+  "question": "How do I prepare and track a PGA hold response?",
+  "answer": "Open the agency hold from Today or its shipment. The drawer keeps the original notice, preparation, and filing evidence together. Live agency transmission is not configured: file through your existing ACE channel and record the evidence here.",
+  "steps": [
+    "Read the agency notice and review the preparation fields copied from the entry.",
+    "Save and close to keep your draft for 24 hours. If another broker changed it, compare the saved values with your draft before choosing which to keep.",
+    "After filing in your ACE channel, record its reference and exact message. This does not confirm agency acceptance.",
+    "Record the agency response and select fields requiring correction after a rejection. A recorded release closes only that hold."
+  ],
+  "href": "/app/actions",
+  "actionLabel": "Open Today",
+  "tags": [
+    "pga",
+    "agency",
+    "hold",
+    "FDA",
+    "rejection",
+    "draft",
+    "release",
+    "ACE"
+  ]
+},
   {
     id: "work-today",
     moduleId: "start",
