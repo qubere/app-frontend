@@ -7,6 +7,7 @@ import { checkAiQuota } from "@/lib/ai/aiQuota";
 interface ChatRequestBody {
   message?: string;
   history?: Content[];
+  surface?: "copilot" | "support";
 }
 
 // Flat { error: string, requestId } — matches the 400 branch below and what
@@ -55,6 +56,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           message: body.message!,
           history: Array.isArray(body.history) ? body.history : [],
           requestId,
+          surface: body.surface === "support" ? "support" : "copilot",
         })) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         }

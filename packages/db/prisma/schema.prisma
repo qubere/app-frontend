@@ -339,45 +339,45 @@ model Account {
   embargoUsageLines   EmbargoUsageLine[]
   privateEmbargoRules PrivateEmbargoRule[]
 
-  restrictedPartyScreeningResults RestrictedPartyScreeningResult[]
-  restrictedPartyDispositions     RestrictedPartyDisposition[]
-  partyScreeningSummaries         PartyScreeningSummary[]
-  partyScreeningApprovals         PartyScreeningApproval[]
-  complianceScreeningFindings     ComplianceScreeningFinding[]
-  restrictedPartyScreeningConfig  AccountScreeningConfig?
-  complianceExecutions            ComplianceExecution[]
-  complianceFormalOverrides       ComplianceFormalOverride[]
-  complianceNotifications         ComplianceNotification[]
-  communityScreeningRuns          CommunityScreeningRun[]
-  communityScreeningPartyResults  CommunityScreeningPartyResult[]
-  complianceBatches               ComplianceBatch[]
-  batchRecords                    BatchRecord[]
-  batchArtifacts                  BatchArtifact[]
+  restrictedPartyScreeningResults       RestrictedPartyScreeningResult[]
+  restrictedPartyDispositions           RestrictedPartyDisposition[]
+  partyScreeningSummaries               PartyScreeningSummary[]
+  partyScreeningApprovals               PartyScreeningApproval[]
+  complianceScreeningFindings           ComplianceScreeningFinding[]
+  restrictedPartyScreeningConfig        AccountScreeningConfig?
+  complianceExecutions                  ComplianceExecution[]
+  complianceFormalOverrides             ComplianceFormalOverride[]
+  complianceNotifications               ComplianceNotification[]
+  communityScreeningRuns                CommunityScreeningRun[]
+  communityScreeningPartyResults        CommunityScreeningPartyResult[]
+  complianceBatches                     ComplianceBatch[]
+  batchRecords                          BatchRecord[]
+  batchArtifacts                        BatchArtifact[]
   complianceBatchColumnMappingTemplates ComplianceBatchColumnMappingTemplate[]
-  rdpsPartyOutcomes               RdpsPartyOutcome[]
-  reportDefinitions               ReportDefinition[]
-  reportRuns                      ReportRun[]
-  reportArtifacts                 ReportArtifact[]
-  reportSchedules                 ReportSchedule[]
-  licenseDeterminationResults     LicenseDeterminationResult[]
-  licenses                        License[]
-  licenseLines                    LicenseLine[]
-  licenseParties                  LicenseParty[]
-  licenseDocuments                LicenseDocument[]
-  licenseEvents                   LicenseEvent[]
-  licenseAdjustments              LicenseAdjustment[]
-  licenseNotes                    LicenseNote[]
-  licenseAllocations              LicenseAllocation[]
-  licenseConfig                   AccountLicenseConfig?
+  rdpsPartyOutcomes                     RdpsPartyOutcome[]
+  reportDefinitions                     ReportDefinition[]
+  reportRuns                            ReportRun[]
+  reportArtifacts                       ReportArtifact[]
+  reportSchedules                       ReportSchedule[]
+  licenseDeterminationResults           LicenseDeterminationResult[]
+  licenses                              License[]
+  licenseLines                          LicenseLine[]
+  licenseParties                        LicenseParty[]
+  licenseDocuments                      LicenseDocument[]
+  licenseEvents                         LicenseEvent[]
+  licenseAdjustments                    LicenseAdjustment[]
+  licenseNotes                          LicenseNote[]
+  licenseAllocations                    LicenseAllocation[]
+  licenseConfig                         AccountLicenseConfig?
 
-  onboardingCases          OnboardingCase[]
-  onboardingEntities       OnboardingEntity[]
-  onboardingEvents         OnboardingEvent[]
-  fiveOhSixRecords         FiveOhSixRecord[]
-  bondVerifications        BondVerification[]
-  poaTemplates             PoaTemplate[]
-  poaEnvelopes             PoaEnvelope[]
-  brokerComplianceProfile  BrokerComplianceProfile?
+  onboardingCases         OnboardingCase[]
+  onboardingEntities      OnboardingEntity[]
+  onboardingEvents        OnboardingEvent[]
+  fiveOhSixRecords        FiveOhSixRecord[]
+  bondVerifications       BondVerification[]
+  poaTemplates            PoaTemplate[]
+  poaEnvelopes            PoaEnvelope[]
+  brokerComplianceProfile BrokerComplianceProfile?
 
   @@index([type])
   @@index([slug])
@@ -2509,22 +2509,22 @@ model ComplianceAuditRecord {
 }
 
 model ImporterOfRecord {
-  id                   String   @id @default(cuid())
-  accountId            String
-  account              Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name                 String
-  irsEin               String
-  cbpImporterNumber    String?  @unique // nullable during the pre-CBP-assigned window (S2)
-  registrationStatus   String   @default("unregistered") // unregistered | pending_5106 | registered
-  address              Json
-  bondId               String?
-  bond                 Bond?    @relation(fields: [bondId], references: [id], onDelete: SetNull)
+  id                 String   @id @default(cuid())
+  accountId          String
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name               String
+  irsEin             String
+  cbpImporterNumber  String?  @unique // nullable during the pre-CBP-assigned window (S2)
+  registrationStatus String   @default("unregistered") // unregistered | pending_5106 | registered
+  address            Json
+  bondId             String?
+  bond               Bond?    @relation(fields: [bondId], references: [id], onDelete: SetNull)
   // A Client (forwarder's customer) can have multiple legal importer
   // entities on file -- e.g. separate CBP importer numbers per subsidiary.
-  clientId             String?
-  client               Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  clientId           String?
+  client             Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   shipments          Shipment[]
   customsFilings     CustomsFiling[]
@@ -2663,22 +2663,22 @@ model ImpersonationSession {
 }
 
 model Bond {
-  id             String    @id @default(cuid())
-  accountId      String
-  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  bondType       String    @default("continuous") // continuous | single_transaction
-  suretyName     String    @default("Roanoke Insurance Group")
-  suretyCode     String?
-  bondNumber     String    @unique
-  bondAmount     Decimal   @default(50000.0)
-  activityCode   String?   // CBPF 301 activity code A–T
-  effectiveDate  DateTime  @default(now())
-  expirationDate DateTime?
-  status         String    @default("unverified") // unverified | verifying | verified | insufficient | verification_failed | attested | expired | revoked
-  continuousBondFormulaAmount Decimal? @db.Decimal(16, 2)
-  lastVerifiedAt DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                          String    @id @default(cuid())
+  accountId                   String
+  account                     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bondType                    String    @default("continuous") // continuous | single_transaction
+  suretyName                  String    @default("Roanoke Insurance Group")
+  suretyCode                  String?
+  bondNumber                  String    @unique
+  bondAmount                  Decimal   @default(50000.0)
+  activityCode                String? // CBPF 301 activity code A–T
+  effectiveDate               DateTime  @default(now())
+  expirationDate              DateTime?
+  status                      String    @default("unverified") // unverified | verifying | verified | insufficient | verification_failed | attested | expired | revoked
+  continuousBondFormulaAmount Decimal?  @db.Decimal(16, 2)
+  lastVerifiedAt              DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   importersOfRecord  ImporterOfRecord[]
   customsFilings     CustomsFiling[]
@@ -2690,27 +2690,27 @@ model Bond {
 }
 
 model PowerOfAttorney {
-  id                 String           @id @default(cuid())
-  accountId          String
-  account            Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  importerOfRecordId String
-  importerOfRecord   ImporterOfRecord @relation(fields: [importerOfRecordId], references: [id], onDelete: Cascade)
-  grantedByEntity    String
-  signedDate         DateTime         @default(now())
-  expirationDate     DateTime?
-  documentUrl        String?
+  id                  String           @id @default(cuid())
+  accountId           String
+  account             Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importerOfRecordId  String
+  importerOfRecord    ImporterOfRecord @relation(fields: [importerOfRecordId], references: [id], onDelete: Cascade)
+  grantedByEntity     String
+  signedDate          DateTime         @default(now())
+  expirationDate      DateTime?
+  documentUrl         String?
   // New fields — signer identity and execution method
-  signerName         String?
-  signerTitle        String?
-  signerRole         String?          // OFFICER | AUTHORIZED_EMPLOYEE | GENERAL_PARTNER | MANAGING_MEMBER | INDIVIDUAL
-  executionMethod    String?          // E_SIGN | WET_INK | WET_INK_NOTARIZED
+  signerName          String?
+  signerTitle         String?
+  signerRole          String? // OFFICER | AUTHORIZED_EMPLOYEE | GENERAL_PARTNER | MANAGING_MEMBER | INDIVIDUAL
+  executionMethod     String? // E_SIGN | WET_INK | WET_INK_NOTARIZED
   executedDocumentUrl String?
-  templateId         String?
-  revokedAt          DateTime?
-  revokedReason      String?
-  status             String           @default("draft") // draft | out_for_signature | executed | declined | expired | revoked
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  templateId          String?
+  revokedAt           DateTime?
+  revokedReason       String?
+  status              String           @default("draft") // draft | out_for_signature | executed | declined | expired | revoked
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   envelope           PoaEnvelope?
   onboardingEntities OnboardingEntity[]
@@ -4565,20 +4565,20 @@ model Product {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  identifiers          ProductIdentifier[]
-  attributes           ProductAttribute[]
-  compositions         ProductComposition[]
-  parties              ProductParty[]
-  countryFacts         ProductCountryFact[]
-  classifications      ProductClassification[]
-  evidence             ProductEvidence[]
-  changeEvents         ProductChangeEvent[]
-  revalidationFlags    ProductRevalidationFlag[]
-  shipmentLineItems    ShipmentLineItem[]
-  canonicalProducts    CanonicalProduct[]
-  complianceExecutions ComplianceExecution[]
+  identifiers                 ProductIdentifier[]
+  attributes                  ProductAttribute[]
+  compositions                ProductComposition[]
+  parties                     ProductParty[]
+  countryFacts                ProductCountryFact[]
+  classifications             ProductClassification[]
+  evidence                    ProductEvidence[]
+  changeEvents                ProductChangeEvent[]
+  revalidationFlags           ProductRevalidationFlag[]
+  shipmentLineItems           ShipmentLineItem[]
+  canonicalProducts           CanonicalProduct[]
+  complianceExecutions        ComplianceExecution[]
   licenseDeterminationResults LicenseDeterminationResult[]
-  licenseLines LicenseLine[]
+  licenseLines                LicenseLine[]
 
   /// Postgres treats NULLs as distinct, so any number of products may have no
   /// internal SKU while no two may share one.
@@ -6769,7 +6769,7 @@ model BatchRecord {
   normalizedInput Json
   inputHash       String
 
-  rpsResultId                   String?
+  rpsResultId                  String?
   licenseDeterminationResultId String?
 
   /// Embargo screening has no persisted per-check result row (mirrors
@@ -6786,8 +6786,8 @@ model BatchRecord {
   /// here). agentDecisionId is populated only when classifyProduct itself
   /// created one, which it only does when handed a shipmentId (never true
   /// for a standalone batch row).
-  classificationStatus       String?
-  classificationHtsCode      String?
+  classificationStatus          String?
+  classificationHtsCode         String?
   classificationAgentDecisionId String?
 
   /// Links to the unified ComplianceExecution audit envelope (prompt §25) for
@@ -6795,9 +6795,9 @@ model BatchRecord {
   /// not one -- a single record can run RPS, License Determination, Embargo,
   /// and Product Classification independently and each produces its own
   /// ComplianceExecution row.
-  rpsComplianceExecutionId     String?
-  licenseComplianceExecutionId String?
-  embargoComplianceExecutionId String?
+  rpsComplianceExecutionId            String?
+  licenseComplianceExecutionId        String?
+  embargoComplianceExecutionId        String?
   classificationComplianceExecutionId String?
 
   errorCode    String?
@@ -7261,7 +7261,7 @@ model ComplianceNotification {
   /// Set only for LICENSE_ALERT digests -- which license the alert-triggering
   /// portfolio belongs to when the digest concerns a single account (always
   /// null today, reserved for a future per-license digest granularity).
-  licenseId String?
+  licenseId                    String?
 
   /// Resolved recipient addresses at queue time -- a later change to account
   /// preferences must never alter what an already-queued notification sends to.
@@ -7740,7 +7740,7 @@ model LicenseDeterminationResult {
   status LicenseDeterminationStatus
 
   /// The original, unedited automated determination. Never overwritten.
-  baseDecision String?
+  baseDecision  String?
   /// The decision after any applicable license exception or reviewer
   /// override is applied. Equal to baseDecision when neither applies.
   finalDecision String?
@@ -7831,14 +7831,14 @@ model License {
 /// ledger totals. Authoritative movement history lives in LicenseEvent
 /// (event-sourced) -- these totals are derived/cached, never the sole record.
 model LicenseLine {
-  id        String  @id @default(cuid())
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  licenseId String
-  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  id         String  @id @default(cuid())
+  accountId  String
+  account    Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  licenseId  String
+  license    License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
   lineNumber Int
 
-  productId           String?
+  productId            String?
   product              Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   productDescription   String?
   classificationType   String? // ECCN | USML | HTS | SCHEDULE_B | ICN
@@ -7979,11 +7979,11 @@ model LicenseEvent {
 /// (e.g. opening-balance migration entry, manual correction). Never a
 /// silent counter edit.
 model LicenseAdjustment {
-  id            String       @id @default(cuid())
+  id            String      @id @default(cuid())
   accountId     String
-  account       Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   licenseLineId String
-  licenseLine   LicenseLine  @relation(fields: [licenseLineId], references: [id], onDelete: Cascade)
+  licenseLine   LicenseLine @relation(fields: [licenseLineId], references: [id], onDelete: Cascade)
 
   adjustmentType String // INCREASE | DECREASE | CORRECTION | OPENING_BALANCE
   quantityDelta  Decimal @default(0) @db.Decimal(18, 4)
@@ -8057,10 +8057,10 @@ model AccountLicenseConfig {
   accountId String  @unique
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  licenseDeterminationEnabled               Boolean @default(true)
-  importControlDeterminationEnabled         Boolean @default(false)
-  genericExportLicenseDeterminationEnabled  Boolean @default(true)
-  licenseManagementEnabled                  Boolean @default(true)
+  licenseDeterminationEnabled              Boolean @default(true)
+  importControlDeterminationEnabled        Boolean @default(false)
+  genericExportLicenseDeterminationEnabled Boolean @default(true)
+  licenseManagementEnabled                 Boolean @default(true)
 
   licenseExpiryLeadDays                     Int @default(90)
   remainingQuantityThresholdPct             Int @default(20)
@@ -8840,6 +8840,38 @@ model MemoryEvidence {
   @@index([memoryId])
 }
 
+/// Shared, product-versioned help content. This is deliberately global rather
+/// than account-scoped: tenant-specific operational memory belongs in
+/// AccountMemory and must never be mixed with Qubere product documentation.
+model ProductHelpArticle {
+  id              String                      @id
+  moduleId        String
+  question        String
+  answer          String                      @db.Text
+  steps           Json
+  href            String?
+  actionLabel     String?
+  tags            String[]                    @default([])
+  aliases         String[]                    @default([])
+  popular         Boolean                     @default(false)
+  status          String                      @default("PUBLISHED")
+  sourcePath      String?
+  contentHash     String
+  searchText      String                      @db.Text
+  /// Plain-array copy retained for exports and environments where vector
+  /// inspection is useful. Live similarity search uses embeddingVector.
+  embedding       Float[]                     @default([])
+  embeddingVector Unsupported("vector(768)")?
+  contentTsv      Unsupported("tsvector")?    @default(dbgenerated("to_tsvector('simple'::regconfig, \"searchText\")"))
+  publishedAt     DateTime                    @default(now())
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@index([moduleId, status])
+  @@index([status, publishedAt])
+  @@index([contentTsv], type: Gin, map: "ProductHelpArticle_contentTsv_gin_idx")
+}
+
 // ---------------------------------------------------------------------------
 // INTEGRATIONS MANAGEMENT
 // ---------------------------------------------------------------------------
@@ -8858,19 +8890,19 @@ enum IntegrationStatus {
 }
 
 model IntegrationConfig {
-  id               String               @id @default(cuid())
+  id               String              @id @default(cuid())
   accountId        String
-  account          Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account          Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   clientId         String?
-  client           Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client           Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
   category         IntegrationCategory
   provider         String
   name             String
-  status           IntegrationStatus    @default(ACTIVE)
+  status           IntegrationStatus   @default(ACTIVE)
   apiKey           String?
   apiSecret        String?
   baseUrl          String?
-  environment      String               @default("PRODUCTION")
+  environment      String              @default("PRODUCTION")
   configJson       Json?
   lastSyncAt       DateTime?
   lastErrorAt      DateTime?
@@ -8888,11 +8920,11 @@ model IntegrationConfig {
   connectedByUserId     String?
   connectedAt           DateTime?
 
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  payloads    IntegrationPayload[]
-  syncLogs    IntegrationSyncLog[]
-  entityMaps  IntegrationEntityMap[]
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  payloads   IntegrationPayload[]
+  syncLogs   IntegrationSyncLog[]
+  entityMaps IntegrationEntityMap[]
 
   @@index([accountId, category])
   @@index([accountId, clientId])
@@ -9791,28 +9823,28 @@ model EscalationEvent {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model OnboardingCase {
-  id                          String   @id @default(cuid())
-  accountId                   String
-  account                     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  clientId                    String?
-  client                      Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  primaryImporterId           String?
-  primaryImporter             ImporterOfRecord? @relation(fields: [primaryImporterId], references: [id], onDelete: SetNull)
+  id                String            @id @default(cuid())
+  accountId         String
+  account           Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId          String?
+  client            Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  primaryImporterId String?
+  primaryImporter   ImporterOfRecord? @relation(fields: [primaryImporterId], references: [id], onDelete: SetNull)
 
-  path               String   // STANDARD | SWITCHING | NON_RESIDENT | BULK | ERP
-  status             String   @default("draft")
-  currentStep        Int      @default(1)
-  stepStatus         Json     @default("{}")
-  blockers           Json     @default("[]")
-  projectedAnnualDutyTaxFee Decimal? @db.Decimal(16, 2)
-  activatedAt        DateTime?
-  activatedByUserId  String?
-  withdrawnReason    String?
-  assignedUserId     String?
-  source             String   @default("UI") // UI | PORTAL | BULK_IMPORT | ERP
+  path                      String // STANDARD | SWITCHING | NON_RESIDENT | BULK | ERP
+  status                    String    @default("draft")
+  currentStep               Int       @default(1)
+  stepStatus                Json      @default("{}")
+  blockers                  Json      @default("[]")
+  projectedAnnualDutyTaxFee Decimal?  @db.Decimal(16, 2)
+  activatedAt               DateTime?
+  activatedByUserId         String?
+  withdrawnReason           String?
+  assignedUserId            String?
+  source                    String    @default("UI") // UI | PORTAL | BULK_IMPORT | ERP
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   entities         OnboardingEntity[]
   fiveOhSixRecords FiveOhSixRecord[]
@@ -9824,76 +9856,76 @@ model OnboardingCase {
 }
 
 model OnboardingEntity {
-  id                 String   @id @default(cuid())
+  id                 String            @id @default(cuid())
   accountId          String
-  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account            Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   caseId             String
-  case               OnboardingCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case               OnboardingCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   legalEntityId      String?
-  legalEntity        LegalEntity?     @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  legalEntity        LegalEntity?      @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   importerOfRecordId String?
   importerOfRecord   ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: SetNull)
 
-  importerNumberType String   @default("EIN") // EIN | SSN | CBP_ASSIGNED
-  importerNumber     String?
-  residentAgent      Json?
-  officers           Json     @default("[]")
-  poaId              String?
-  poa                PowerOfAttorney? @relation(fields: [poaId], references: [id], onDelete: SetNull)
-  bondId             String?
-  bond               Bond?    @relation(fields: [bondId], references: [id], onDelete: SetNull)
-  bondCoverage       String   @default("own") // own | broker_bond | single_transaction | none
-  screeningStatus    String   @default("pending") // pending | passed | flagged | blocked | overridden
+  importerNumberType   String           @default("EIN") // EIN | SSN | CBP_ASSIGNED
+  importerNumber       String?
+  residentAgent        Json?
+  officers             Json             @default("[]")
+  poaId                String?
+  poa                  PowerOfAttorney? @relation(fields: [poaId], references: [id], onDelete: SetNull)
+  bondId               String?
+  bond                 Bond?            @relation(fields: [bondId], references: [id], onDelete: SetNull)
+  bondCoverage         String           @default("own") // own | broker_bond | single_transaction | none
+  screeningStatus      String           @default("pending") // pending | passed | flagged | blocked | overridden
   screeningDisposition Json?
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([accountId])
   @@index([caseId])
 }
 
 model FiveOhSixRecord {
-  id                 String   @id @default(cuid())
+  id                 String          @id @default(cuid())
   accountId          String
-  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account            Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
   caseId             String?
   case               OnboardingCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
   onboardingEntityId String?
   legalEntityId      String?
 
-  action             String   // CREATE | UPDATE
-  importerNumberType String   // EIN | SSN | CBP_ASSIGNED
+  action             String // CREATE | UPDATE
+  importerNumberType String // EIN | SSN | CBP_ASSIGNED
   importerNumber     String?
-  payload            Json     @default("{}")
-  provenance         Json     @default("{}")
+  payload            Json    @default("{}")
+  provenance         Json    @default("{}")
 
-  status             String   @default("draft") // draft|generated|submitted|accepted|rejected|superseded
-  deliveryMethod     String?  // ABI | ACE_PORTAL | PAPER
-  pdfDocumentUrl     String?
-  transmissionRef    String?
-  cbpResponseRaw     String?
-  cbpAssignedNumber  String?
-  rejectionReasons   Json?
+  status            String  @default("draft") // draft|generated|submitted|accepted|rejected|superseded
+  deliveryMethod    String? // ABI | ACE_PORTAL | PAPER
+  pdfDocumentUrl    String?
+  transmissionRef   String?
+  cbpResponseRaw    String?
+  cbpAssignedNumber String?
+  rejectionReasons  Json?
 
-  submittedAt        DateTime?
-  acceptedAt         DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  submittedAt DateTime?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([accountId, status])
   @@index([caseId])
 }
 
 model BondVerification {
-  id                    String   @id @default(cuid())
-  accountId             String
-  account               Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  bondId                String
-  bond                  Bond     @relation(fields: [bondId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bondId    String
+  bond      Bond    @relation(fields: [bondId], references: [id], onDelete: Cascade)
 
-  method                String   // CBP_IMPORTER_BOND_QUERY | SURETY_CODE_LOOKUP | MANUAL_ATTESTATION
-  result                String   // match | no_bond_on_file | mismatch | lapsed | surety_unconfirmed | error
+  method                String // CBP_IMPORTER_BOND_QUERY | SURETY_CODE_LOOKUP | MANUAL_ATTESTATION
+  result                String // match | no_bond_on_file | mismatch | lapsed | surety_unconfirmed | error
   queriedImporterNumber String?
   requestRaw            String?
   responseRaw           String?
@@ -9903,8 +9935,8 @@ model BondVerification {
   attestedByUserId      String?
   attestationNote       String?
 
-  performedAt           DateTime @default(now())
-  createdAt             DateTime @default(now())
+  performedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   @@index([accountId])
   @@index([bondId, performedAt])
@@ -9930,16 +9962,16 @@ model PoaTemplate {
 }
 
 model PoaEnvelope {
-  id                  String   @id @default(cuid())
-  accountId           String
-  account             Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  powerOfAttorneyId   String   @unique
-  powerOfAttorney     PowerOfAttorney @relation(fields: [powerOfAttorneyId], references: [id], onDelete: Cascade)
+  id                String          @id @default(cuid())
+  accountId         String
+  account           Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  powerOfAttorneyId String          @unique
+  powerOfAttorney   PowerOfAttorney @relation(fields: [powerOfAttorneyId], references: [id], onDelete: Cascade)
 
-  provider            String   // DOCUSIGN | DROPBOX_SIGN | INTERNAL | MANUAL_UPLOAD
+  provider            String // DOCUSIGN | DROPBOX_SIGN | INTERNAL | MANUAL_UPLOAD
   providerEnvelopeId  String?
   templateId          String?
-  status              String   // created | sent | delivered | signed | completed | declined | voided | error
+  status              String // created | sent | delivered | signed | completed | declined | voided | error
   signerName          String
   signerEmail         String
   signerTitle         String?
@@ -9948,33 +9980,33 @@ model PoaEnvelope {
   completedAt         DateTime?
   executedDocumentUrl String?
   auditTrailUrl       String?
-  webhookEventsRaw    Json     @default("[]")
+  webhookEventsRaw    Json      @default("[]")
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([accountId])
   @@index([status])
 }
 
 model BrokerComplianceProfile {
-  id                                       String   @id @default(cuid())
-  accountId                                String   @unique
-  account                                  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  licenseType                              String   @default("CORPORATE") // INDIVIDUAL | CORPORATE | PARTNERSHIP
-  brokerLicenseNumber                      String?
-  licenseIssueDate                         DateTime?
-  nationalPermitNumber                     String?
-  nationalPermitStatus                     String   @default("none") // none | pending | active | suspended | revoked
-  filerCode                                String?
-  triennialStatusReportDueOn              DateTime?
-  responsibleSupervisionAttestedByUserId  String?
-  responsibleSupervisionAttestedAt        DateTime?
+  licenseType                            String    @default("CORPORATE") // INDIVIDUAL | CORPORATE | PARTNERSHIP
+  brokerLicenseNumber                    String?
+  licenseIssueDate                       DateTime?
+  nationalPermitNumber                   String?
+  nationalPermitStatus                   String    @default("none") // none | pending | active | suspended | revoked
+  filerCode                              String?
+  triennialStatusReportDueOn             DateTime?
+  responsibleSupervisionAttestedByUserId String?
+  responsibleSupervisionAttestedAt       DateTime?
 
-  status                                   String   @default("incomplete") // incomplete | ready | restricted
-  createdAt                                DateTime @default(now())
-  updatedAt                                DateTime @updatedAt
+  status    String   @default("incomplete") // incomplete | ready | restricted
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   permitQualifyingOfficers BrokerPQO[]
   districtPermits          BrokerDistrictPermit[]

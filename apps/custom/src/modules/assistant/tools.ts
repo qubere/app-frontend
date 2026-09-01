@@ -88,6 +88,7 @@ import {
 } from "@/modules/compliance/rdps/rdpsQueryService";
 import { recordRdpsOutcome } from "@/modules/compliance/rdps/outcomeRecorder";
 import { createAuditLog, AuditAction } from "@/lib/audit";
+import { ProductHelpRepository } from "@/modules/support/productHelp";
 
 /**
  * Helper to convert Zod Object Schema into Gemini-compatible Schema object
@@ -141,6 +142,8 @@ export interface AssistantTool {
   access?: CopilotToolAccess;
   execute: (ctx: AccountContext, args: Record<string, unknown>) => Promise<unknown>;
 }
+
+export type AssistantSurface = "copilot" | "support";
 
 // ---- shared shipment fetch (backs list_shipments and get_value_at_risk) ----
 
@@ -4084,7 +4087,42 @@ const getComplianceDailyBrief: AssistantTool = {
   },
 };
 
+const searchProductHelpSchema = z.object({
+  query: z.string().min(2).describe("The user's product workflow or how-to question"),
+  moduleId: z.string().optional().describe("Optional help module id when the user named a module"),
+});
+
+const searchProductHelp: AssistantTool = {
+  declaration: {
+    name: "search_product_help",
+    description:
+      "Search the reviewed Qubere product-help corpus for current, step-by-step workflow guidance. Use this for every question about how to use Qubere.",
+    parameters: zodToGeminiSchema(searchProductHelpSchema),
+  },
+  schema: searchProductHelpSchema,
+  execute: async (_ctx, rawArgs) => {
+    const args = searchProductHelpSchema.parse(rawArgs);
+    const guides = await ProductHelpRepository.searchInteractive(args.query, {
+      moduleId: args.moduleId,
+      limit: 6,
+    });
+    return {
+      query: args.query,
+      guides: guides.map((guide) => ({
+        id: guide.id,
+        moduleId: guide.moduleId,
+        question: guide.question,
+        answer: guide.answer,
+        steps: guide.steps,
+        href: guide.href ?? null,
+        actionLabel: guide.actionLabel ?? null,
+      })),
+    };
+  },
+};
+
 export const ASSISTANT_TOOLS: AssistantTool[] = [
+  searchProductHelp,
   listShipments,
   getValueAtRisk,
   getTeamMembers,
@@ -4173,6 +4211,15 @@ export function getToolByName(name: string): AssistantTool | undefined {
   return TOOLS_BY_NAME.get(name);
 }
 
-export function availableAssistantTools(ctx: AccountContext): AssistantTool[] {
-  return ASSISTANT_TOOLS.filter((tool) => canUseTool(ctx, tool.access));
+const SUPPORT_TOOL_NAMES = new Set(["search_product_help"]);
+
+export function availableAssistantTools(
+  ctx: AccountContext,
+  surface: AssistantSurface = "copilot"
+): AssistantTool[] {
+  return ASSISTANT_TOOLS.filter(
+    (tool) =>
+      canUseTool(ctx, tool.access) &&
+      (surface !== "support" || SUPPORT_TOOL_NAMES.has(tool.declaration.name ?? ""))
+  );
 }
