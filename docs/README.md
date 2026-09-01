@@ -15,20 +15,24 @@ docs/apps/
 
 | Folder | Contents |
 |--------|----------|
-| `feature/` | Feature specs + architecture reference for shipped/in-progress features |
+| `feature/customs-filing/` | Customs Filing module documentation package (`00`–`06`) |
+| `feature/ui-config/` | UI-configuration framework reference |
+| `feature/abi/` | CATAIR source PDFs + the field→DB coverage table |
 | `data/` | Data models, schemas, field dictionaries, API spec |
 | `ops/` | Runbooks, infra, email/domain setup |
 | `support/` | Help center and broker support docs |
 | `sales/` | Sales decks, demo playbooks, pitch docs |
-| `planning/adr/` | Architecture Decision Records (the only thing left under `planning/`) |
+| `planning/adr/` | Architecture Decision Records |
 
 ## The backlog lives in GitHub Issues
 
-Every gap analysis, proposal, `future/` spec, feature spec, open-item list, roadmap,
-and audit snapshot that used to live in `bugs/`, `future/`, `planning/`, and
-`planning/features/` has been migrated to GitHub Issues so the build backlog is
-filterable in one place. `bugs/` and `future/` no longer exist; `planning/` is now
-just `adr/`.
+Every gap analysis, proposal, `future/` spec, feature spec, feature explainer,
+open-item list, roadmap, and audit snapshot that used to live in `bugs/`,
+`future/`, `planning/`, `planning/features/`, and loose under `feature/` has been
+migrated to GitHub Issues so the build backlog is filterable in one place.
+`bugs/` and `future/` no longer exist; `planning/` is now just `adr/`. `feature/`
+keeps only the `customs-filing/`, `ui-config/`, and `abi/` reference sets (plus
+the F16 onboarding spec, which is too large for an issue body — see #288).
 
 Each backlog issue carries four labels and opens with an `<Area><impact><effort>` tag:
 

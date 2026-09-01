@@ -1,7 +1,7 @@
 # Validation — what was converted, what was kept
 
-Baseline: `docs/` at session start (commit `2d8839a1`) had **176 `.md` files**.
-**73 converted to issues + removed** · **103 kept as reference** (excl. `docs/README.md`).
+Baseline: `docs/` at session start (commit `2d8839a1`) had **177 `.md` files**.
+**73 converted to issues + removed** · **104 kept as reference** (excl. `docs/README.md`).
 
 ## Converted → issue (file removed from repo)
 
@@ -84,6 +84,15 @@ Baseline: `docs/` at session start (commit `2d8839a1`) had **176 `.md` files**.
 Plus the 50 Readiness-Teardown capability issues **#148–#197** (no source file — parsed from the artifact) and the earlier **#147**. Index: **#226**.
 
 ## Kept in `docs/` as reference (NOT converted)
+
+### `docs/BACKLOG-MIGRATION.md/` (1)
+reference
+
+<details><summary>files</summary>
+
+- BACKLOG-MIGRATION.md
+
+</details>
 
 ### `docs/apps/customs/data/` (11)
 Data models, field mappings, dataset master docs — reference
