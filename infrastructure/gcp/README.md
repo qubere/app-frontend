@@ -35,10 +35,10 @@ Authenticate `gcloud`, select a billed project, and set these shell variables:
 gcloud auth login
 gcloud auth application-default login
 
-export GCP_PROJECT_ID="your-project-id"
+export GCP_PROJECT_ID="qubere-demo"
 export GCP_REGION="us-west1"
-export GCS_BUCKET="${GCP_PROJECT_ID}-qubere-demo-documents"
-export RUNTIME_SERVICE_ACCOUNT="qubere-demo-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+export GCS_BUCKET="qubere-demo-uploaded-documents"
+export RUNTIME_SERVICE_ACCOUNT="demo-app-runner@qubere-demo.iam.gserviceaccount.com"
 
 gcloud config set project "${GCP_PROJECT_ID}"
 ```
@@ -168,17 +168,22 @@ Cloud Run service and worker must be able to reach it.
 From the repository root on this branch:
 
 ```bash
-export GCP_PROJECT_ID="your-project-id"
+export GCP_PROJECT_ID="qubere-demo"
 export GCP_REGION="us-west1"
-export GCS_BUCKET="${GCP_PROJECT_ID}-qubere-demo-documents"
-export RUNTIME_SERVICE_ACCOUNT="qubere-demo-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
-export NEXT_PUBLIC_CUSTOMS_APP_URL="https://customs-gcp.example.com"
-export NEXT_PUBLIC_TMS_APP_URL="https://tms-gcp.example.com"
-export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_or_live_value"
-export DOCLING_API_BASE_URL="https://your-docling-service.example.com"
+export GCS_BUCKET="qubere-demo-uploaded-documents"
+export RUNTIME_SERVICE_ACCOUNT="demo-app-runner@qubere-demo.iam.gserviceaccount.com"
+export NEXT_PUBLIC_CUSTOMS_APP_URL="https://demo-clear.qubere.ai"
+export NEXT_PUBLIC_TMS_APP_URL="https://demo-tms.qubere.ai"
+export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_Y2xlcmsucXViZXJlLmFpJA"
+export DOCLING_API_BASE_URL="https://api.aws-c1.dcls.saas.ibm.com/20260811-0343-1366-403f-b83be199fb33"
 
 ./infrastructure/gcp/deploy-demo.sh
 ```
+
+> **Note on Database Migrations**: `deploy-demo.sh` automatically runs `prisma migrate deploy` as step `run-migrations` via the Cloud Run job `qubere-migrate-demo`. If you only want to execute pending database migrations without a full deployment, run:
+> ```bash
+> gcloud run jobs execute qubere-migrate-demo --project=qubere-demo --region=us-west1 --wait
+> ```
 
 The public Clerk key and app URL are build arguments because Next.js embeds
 `NEXT_PUBLIC_*` variables into the browser bundle. Changing either requires a

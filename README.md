@@ -755,6 +755,12 @@ To provision all 10 test users into your Clerk instance via the Clerk API:
 npx tsx scripts/seed-clerk-users.ts
 ```
 
+#### PGA holds demo (localhost and GCP)
+
+Use `npm --workspace @qubere/custom run seed:pga-holds -- --account-id <id> --shipment-id <id>` to add synthetic Open, Rejected, Submitted and Released holds to an existing DEMO/SANDBOX shipment. Reruns preserve broker edits. Add `--dry-run` to preview.
+
+For the complete setup, GCP Cloud Run seed job, permissions, verification and prospect walkthrough, see [PGA holds demo seed](docs/apps/customs/feature/PGA-HOLDS-DEMO-SEED.md). GCP runner: `bash infrastructure/gcp/seed-pga-holds-demo.sh` after setting the documented account, shipment, project and service-account variables.
+
 #### Manual seed scripts
 
 Some data is not seeded by `prisma db seed` and must be run explicitly:

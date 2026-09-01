@@ -10,16 +10,19 @@ async function main() {
   const { values } = parseArgs({ options: {
     "account-id": { type: "string" }, "shipment-id": { type: "string" },
     "user-id": { type: "string" }, "dry-run": { type: "boolean" },
+    "app-url": { type: "string", default: "http://localhost:3000" },
     help: { type: "boolean" },
   } });
   if (values.help) {
-    console.log("npm --workspace @qubere/custom run seed:pga-holds -- --account-id <id> --shipment-id <id> [--user-id <active-member-id>] [--dry-run]");
+    console.log("npm --workspace @qubere/custom run seed:pga-holds -- --account-id <id> --shipment-id <id> [--user-id <active-member-id>] [--app-url <origin>] [--dry-run]");
     console.log("Creates four synthetic holds in a DEMO/SANDBOX account. Existing demo records and broker edits are preserved.");
     return;
   }
   if (!values["account-id"]?.trim() || !values["shipment-id"]?.trim()) {
     throw new Error("Supply both --account-id and --shipment-id. Use --help for the command.");
   }
+  const appUrl = new URL(values["app-url"]!);
+  if (!["http:", "https:"].includes(appUrl.protocol)) throw new Error("--app-url must use http or https.");
   const appDirectory = resolve(__dirname, "..");
   const appRequire = createRequire(resolve(appDirectory, "package.json"));
   // Use the installed Next version's own environment loader, with the same
@@ -39,9 +42,9 @@ async function main() {
     });
     console.log(`${values["dry-run"] ? "Preview" : "Seed complete"}: ${result.account.name} / ${result.shipment.shipmentNumber}`);
     console.table(result.rows);
-    console.log("Today: http://localhost:3000/app/actions");
-    console.log(`Shipment: http://localhost:3000/app/shipments/${result.shipment.id}`);
-    console.log(`API: http://localhost:3000/api/pga/holds?shipmentId=${result.shipment.id}`);
+    console.log(`Today: ${appUrl.origin}/app/actions`);
+    console.log(`Shipment: ${appUrl.origin}/app/shipments/${result.shipment.id}`);
+    console.log(`API: ${appUrl.origin}/api/pga/holds?shipmentId=${result.shipment.id}`);
     console.log("The released hold is visible with 'Include released holds'. All evidence is synthetic; nothing was transmitted.");
   } finally {
     await db.$disconnect();

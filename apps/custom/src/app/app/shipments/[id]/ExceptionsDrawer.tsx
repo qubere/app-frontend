@@ -10,6 +10,7 @@ import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 import { Modal } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { canonicalizeFieldKey } from "@/lib/documents/fieldDictionary";
+import { normalizeExceptionStatus, isTerminalExceptionState } from "@/modules/exceptions/exceptionState";
 import {
   isResolvableException,
   type DbExceptionItem,
@@ -197,16 +198,17 @@ export function ExceptionsDrawer({
     }
   };
 
-  // Filter out exceptions that have been resolved. Cross-document conflicts
-  // (`CONFLICT:*`) are rendered from the ReconciliationIssue rows below, so the
-  // paired ExceptionItem the engine also writes is dropped here to avoid the
-  // same conflict showing up twice.
-  const openExceptions = exceptionItems.filter(
-    (ex) =>
-      ex.status !== "RESOLVED" &&
-      ex.status !== "Resolved" &&
-      !(ex.code || "").startsWith("CONFLICT:")
-  );
+  // Filter out exceptions that have reached a terminal state — resolved, waived,
+  // or cancelled. Without the waived/cancelled cases a card stayed on screen
+  // unchanged after the user waived it, reading as "nothing happened". Cross-
+  // document conflicts (`CONFLICT:*`) are rendered from the ReconciliationIssue
+  // rows below, so the paired ExceptionItem the engine also writes is dropped
+  // here to avoid the same conflict showing up twice.
+  const openExceptions = exceptionItems.filter((ex) => {
+    const normalized = normalizeExceptionStatus(ex.status);
+    if (normalized && isTerminalExceptionState(normalized)) return false;
+    return !(ex.code || "").startsWith("CONFLICT:");
+  });
 
   const docNameById = new Map(documentFieldSummaries.map((d) => [d.documentId, d.fileName]));
 

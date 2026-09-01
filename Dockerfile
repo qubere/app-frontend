@@ -7,6 +7,12 @@ ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm ci
 RUN npx prisma generate --schema=packages/db/prisma/schema.prisma
 
+# One-off administrative seed; production web/database targets keep their own runtime.
+FROM source AS pga-demo-seed
+ENV NODE_ENV=development APP_ENV=demo NEXT_PUBLIC_APP_ENV=demo
+USER node
+ENTRYPOINT ["npm", "run", "seed:pga-holds", "--workspace=apps/custom", "--"]
+
 FROM source AS customs-builder
 ARG CUSTOMS_APP_URL
 ARG NEXT_PUBLIC_APP_ENV=demo
