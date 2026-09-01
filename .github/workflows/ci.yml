@@ -91,6 +91,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: PGA and assist PostgreSQL integration
+        env:
+          PGA_ASSIST_INTEGRATION: "1"
+        run: npm --workspace @qubere/custom run test -- tests/pga-assists.integration.test.ts
+
       - name: Unit tests
         run: |
           set -o pipefail
@@ -104,11 +109,6 @@ jobs:
           path: test-output.log
           if-no-files-found: ignore
           retention-days: 3
-
-      - name: PGA and assist PostgreSQL integration
-        env:
-          PGA_ASSIST_INTEGRATION: "1"
-        run: npm --workspace @qubere/custom run test -- tests/pga-assists.integration.test.ts
 
       - name: Install Chromium for broker workflow checks
         run: npm --workspace @qubere/custom exec -- playwright install --with-deps chromium
