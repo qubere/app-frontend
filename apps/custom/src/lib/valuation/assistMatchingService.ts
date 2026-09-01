@@ -67,7 +67,7 @@ export async function getAssistMatches(accountId: string, filingId: string, clie
     })());
     return rateCache.get(code)!;
   };
-  const matches = [];
+  const matches: AssistMatch[] = [];
   for (const assist of assists) {
     if (declarations.some(d => d.assistId === assist.id)) continue;
     const lines = shipment.lineItems.filter(line => {
@@ -98,4 +98,9 @@ export async function getAssistMatches(accountId: string, filingId: string, clie
   }
   return { matches, staleDecisions:decisions.filter(d=>d.decision !== "Dismiss" && !matches.some(m=>m.id === d.assistId) && !declarations.some(x=>x.assistId === d.assistId)), declarations, filing };
 }
-export type AssistMatch = Awaited<ReturnType<typeof getAssistMatches>>["matches"][number];
+export interface AssistMatch {
+  id: string; description: string; currency: string; remainingValue: string; allocationMethod: string;
+  amount: string | null; exchangeRate: string | null; blockedReason: string | null; basisHash: string; assistVersion: number;
+  lines: { id: string; lineNumber: number; description: string; quantity: number; totalValue: string; htsCode: string; updatedAt: string }[];
+  decision: { kind: string; amount: string; current: boolean; overrideReasonCode: string | null } | null;
+}
