@@ -444,7 +444,7 @@ export class FilingService {
       },
       });
       if (claimed.count !== 1) throw new DomainError("This filing changed. Review it before submitting again.", "FILING_CONFLICT", 409);
-      await commitAssistDeclarations(tx, accountId, filingId, preparedAssists);
+      await commitAssistDeclarations(tx, accountId, filingId, preparedAssists, userId);
       if (snapshotData && snapshotMeta) {
         await tx.filingSnapshot.upsert({
           where: { filingId },

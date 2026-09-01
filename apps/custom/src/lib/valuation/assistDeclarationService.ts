@@ -73,8 +73,13 @@ export function applyAssistAmountsToTariffLines<T extends TariffLineInput & {id?
   });
 }
 /** Runs in the SAME transaction as FilingMessage, filing state, and snapshot. */
-export async function commitAssistDeclarations(tx:Prisma.TransactionClient,accountId:string,filingId:string,prepared:PreparedAssists) {
+export async function commitAssistDeclarations(tx:Prisma.TransactionClient,accountId:string,filingId:string,prepared:PreparedAssists,operatorUserId?:string) {
   const created=[];
+  for (const match of prepared.matches.filter(m => !m.decision)) {
+    await tx.auditLog.create({ data: { accountId, userId: operatorUserId, action: AuditAction.ASSIST_DISMISSED,
+      entity: "CustomsFiling", entityId: filingId, source: "UI",
+      metadata: { assistId: match.id, implicit: true, reason: "ENTRY_SUBMITTED_WITHOUT_CONFIRMATION", suggestedAmount: match.amount } } });
+  }
   for(const item of prepared.pending){
     const existing=await tx.assistDeclaration.findFirst({where:{accountId,assistId:item.assistId,filingId}});
     if(existing) continue;

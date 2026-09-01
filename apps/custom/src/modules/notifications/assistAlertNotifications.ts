@@ -1,3 +1,4 @@
+import { expireAssists } from "@/lib/valuation/assistRegistryService";
 import type { Prisma, Assist } from "@prisma/client";
 import { db, runWithAccountId, runWithDataMode } from "@/lib/db";
 import { Decimal } from "@/lib/tariff/decimal";
@@ -48,6 +49,8 @@ export async function notifyAssistAlerts(accountId:string) {
 }
 export async function dispatchAssistBells() {
   return runWithDataMode(null,()=>runWithAccountId(null,async()=>{
+    const expiredAccounts = await db.assist.findMany({ where: { status: "Active", effectiveTo: { lt: new Date() } }, select: { accountId: true }, distinct: ["accountId"], take: 100 });
+    for (const row of expiredAccounts) await runWithAccountId(row.accountId, () => expireAssists(row.accountId));
     const rows=await db.complianceNotification.findMany({where:{notificationType:"ASSIST_AMORTIZATION_ALERT",bellDeliveredAt:null},select:{accountId:true},distinct:["accountId"],take:100});
     for(const row of rows)await runWithAccountId(row.accountId,()=>notifyAssistAlerts(row.accountId));
   }));
