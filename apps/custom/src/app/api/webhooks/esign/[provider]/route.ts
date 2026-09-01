@@ -7,7 +7,7 @@
 //           mandatory handshake response.
 
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, runWithAccountId } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { getEsignProvider } from "@/lib/esign";
 import type { EsignProviderName } from "@/lib/esign";
@@ -54,82 +54,84 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
 
   const completedAt = event.completedAt ?? new Date();
 
-  if (event.eventType === "completed") {
-    const poa = envelope.powerOfAttorney;
-    let expirationDate = poa.expirationDate;
-    if (!expirationDate && poa.templateId) {
-      const tpl = await db.poaTemplate.findUnique({ where: { id: poa.templateId } });
-      if (tpl?.termMonths) {
-        expirationDate = new Date();
-        expirationDate.setMonth(expirationDate.getMonth() + tpl.termMonths);
+  await runWithAccountId(envelope.powerOfAttorney.accountId, async () => {
+    if (event.eventType === "completed") {
+      const poa = envelope.powerOfAttorney;
+      let expirationDate = poa.expirationDate;
+      if (!expirationDate && poa.templateId) {
+        const tpl = await db.poaTemplate.findUnique({ where: { id: poa.templateId } });
+        if (tpl?.termMonths) {
+          expirationDate = new Date();
+          expirationDate.setMonth(expirationDate.getMonth() + tpl.termMonths);
+        }
       }
+
+      await db.$transaction([
+        db.poaEnvelope.update({
+          where: { id: envelope.id },
+          data: {
+            status: "completed",
+            completedAt,
+            webhookEventsRaw: [
+              ...(envelope.webhookEventsRaw as unknown[]),
+              { eventType: "completed", raw: event.rawPayload, receivedAt: new Date().toISOString() },
+            ] as object,
+            updatedAt: new Date(),
+          },
+        }),
+        db.powerOfAttorney.update({
+          where: { id: poa.id },
+          data: {
+            status: "executed",
+            signedDate: completedAt,
+            expirationDate: expirationDate ?? null,
+            updatedAt: new Date(),
+          },
+        }),
+      ]);
+
+      await createAuditLog({
+        accountId: poa.accountId,
+        userId: null,
+        action: "POA_EXECUTED",
+        entity: "PowerOfAttorney",
+        entityId: poa.id,
+        source: "WEBHOOK",
+        metadata: { provider: providerName, eventType: "completed" },
+      });
+    } else if (event.eventType === "declined") {
+      await db.$transaction([
+        db.poaEnvelope.update({
+          where: { id: envelope.id },
+          data: {
+            status: "declined",
+            webhookEventsRaw: [
+              ...(envelope.webhookEventsRaw as unknown[]),
+              { eventType: "declined", raw: event.rawPayload, receivedAt: new Date().toISOString() },
+            ] as object,
+            updatedAt: new Date(),
+          },
+        }),
+        db.powerOfAttorney.update({
+          where: { id: envelope.powerOfAttorneyId },
+          data: { status: "declined", updatedAt: new Date() },
+        }),
+      ]);
+    } else {
+      // sent / signed / other — update envelope status only
+      await db.poaEnvelope.update({
+        where: { id: envelope.id },
+        data: {
+          status: event.eventType,
+          webhookEventsRaw: [
+            ...(envelope.webhookEventsRaw as unknown[]),
+            { eventType: event.eventType, receivedAt: new Date().toISOString() },
+          ] as object,
+          updatedAt: new Date(),
+        },
+      });
     }
-
-    await db.$transaction([
-      db.poaEnvelope.update({
-        where: { id: envelope.id },
-        data: {
-          status: "completed",
-          completedAt,
-          webhookEventsRaw: [
-            ...(envelope.webhookEventsRaw as unknown[]),
-            { eventType: "completed", raw: event.rawPayload, receivedAt: new Date().toISOString() },
-          ] as object,
-          updatedAt: new Date(),
-        },
-      }),
-      db.powerOfAttorney.update({
-        where: { id: poa.id },
-        data: {
-          status: "executed",
-          signedDate: completedAt,
-          expirationDate: expirationDate ?? null,
-          updatedAt: new Date(),
-        },
-      }),
-    ]);
-
-    await createAuditLog({
-      accountId: poa.accountId,
-      userId: null,
-      action: "POA_EXECUTED",
-      entity: "PowerOfAttorney",
-      entityId: poa.id,
-      source: "WEBHOOK",
-      metadata: { provider: providerName, eventType: "completed" },
-    });
-  } else if (event.eventType === "declined") {
-    await db.$transaction([
-      db.poaEnvelope.update({
-        where: { id: envelope.id },
-        data: {
-          status: "declined",
-          webhookEventsRaw: [
-            ...(envelope.webhookEventsRaw as unknown[]),
-            { eventType: "declined", raw: event.rawPayload, receivedAt: new Date().toISOString() },
-          ] as object,
-          updatedAt: new Date(),
-        },
-      }),
-      db.powerOfAttorney.update({
-        where: { id: envelope.powerOfAttorneyId },
-        data: { status: "declined", updatedAt: new Date() },
-      }),
-    ]);
-  } else {
-    // sent / signed / other — update envelope status only
-    await db.poaEnvelope.update({
-      where: { id: envelope.id },
-      data: {
-        status: event.eventType,
-        webhookEventsRaw: [
-          ...(envelope.webhookEventsRaw as unknown[]),
-          { eventType: event.eventType, receivedAt: new Date().toISOString() },
-        ] as object,
-        updatedAt: new Date(),
-      },
-    });
-  }
+  });
 
   if (dropboxHandshake) return new NextResponse("Hello API Event Received", { status: 200 });
   return NextResponse.json({ ok: true });

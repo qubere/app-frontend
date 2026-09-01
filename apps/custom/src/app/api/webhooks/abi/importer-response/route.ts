@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, runWithAccountId } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 
 // CBP accept/reject webhook for 5106 importer-create/update transmissions.
@@ -73,58 +73,60 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "already processed", id: record.id });
   }
 
-  await db.$transaction(async (tx) => {
-    await tx.fiveOhSixRecord.update({
-      where: { id: record.id },
-      data: {
-        status: result,
-        cbpAssignedNumber: result === "accepted" && cbpAssignedNumber ? String(cbpAssignedNumber) : undefined,
-        rejectionReasons: result === "rejected" && rejectionReasons ? rejectionReasons : undefined,
-        acceptedAt: result === "accepted" ? new Date() : undefined,
-      },
-    });
-
-    if (result === "accepted" && record.onboardingEntityId) {
-      const entity = await tx.onboardingEntity.findUnique({
-        where: { id: record.onboardingEntityId },
-        select: { importerOfRecordId: true },
+  await runWithAccountId(record.accountId, async () => {
+    await db.$transaction(async (tx) => {
+      await tx.fiveOhSixRecord.update({
+        where: { id: record.id },
+        data: {
+          status: result,
+          cbpAssignedNumber: result === "accepted" && cbpAssignedNumber ? String(cbpAssignedNumber) : undefined,
+          rejectionReasons: result === "rejected" && rejectionReasons ? rejectionReasons : undefined,
+          acceptedAt: result === "accepted" ? new Date() : undefined,
+        },
       });
-      if (entity?.importerOfRecordId) {
-        await tx.importerOfRecord.update({
-          where: { id: entity.importerOfRecordId },
+
+      if (result === "accepted" && record.onboardingEntityId) {
+        const entity = await tx.onboardingEntity.findUnique({
+          where: { id: record.onboardingEntityId },
+          select: { importerOfRecordId: true },
+        });
+        if (entity?.importerOfRecordId) {
+          await tx.importerOfRecord.update({
+            where: { id: entity.importerOfRecordId },
+            data: {
+              registrationStatus: "registered",
+              ...(cbpAssignedNumber && record.importerNumberType === "CBP_ASSIGNED"
+                ? { cbpImporterNumber: String(cbpAssignedNumber) }
+                : {}),
+            },
+          });
+        }
+      }
+
+      if (record.caseId) {
+        await tx.onboardingEvent.create({
           data: {
-            registrationStatus: "registered",
-            ...(cbpAssignedNumber && record.importerNumberType === "CBP_ASSIGNED"
-              ? { cbpImporterNumber: String(cbpAssignedNumber) }
-              : {}),
+            accountId: record.accountId,
+            caseId: record.caseId,
+            type: result === "accepted" ? "5106_ACCEPTED" : "5106_REJECTED",
+            actorType: "SYSTEM",
+            detail: {
+              transmissionRef,
+              cbpAssignedNumber: cbpAssignedNumber ?? null,
+              rejectionReasons: rejectionReasons ?? [],
+            },
           },
         });
       }
-    }
+    });
 
-    if (record.caseId) {
-      await tx.onboardingEvent.create({
-        data: {
-          accountId: record.accountId,
-          caseId: record.caseId,
-          type: result === "accepted" ? "5106_ACCEPTED" : "5106_REJECTED",
-          actorType: "SYSTEM",
-          detail: {
-            transmissionRef,
-            cbpAssignedNumber: cbpAssignedNumber ?? null,
-            rejectionReasons: rejectionReasons ?? [],
-          },
-        },
-      });
-    }
-  });
-
-  await createAuditLog({
-    accountId: record.accountId,
-    action: result === "accepted" ? "FIVE_OH_SIX_ACCEPTED" : "FIVE_OH_SIX_REJECTED",
-    entity: "FiveOhSixRecord",
-    entityId: record.id,
-    metadata: { transmissionRef, cbpAssignedNumber, rejectionReasons },
+    await createAuditLog({
+      accountId: record.accountId,
+      action: result === "accepted" ? "FIVE_OH_SIX_ACCEPTED" : "FIVE_OH_SIX_REJECTED",
+      entity: "FiveOhSixRecord",
+      entityId: record.id,
+      metadata: { transmissionRef, cbpAssignedNumber, rejectionReasons },
+    });
   });
 
   return NextResponse.json({ message: "ok", id: record.id, result });
