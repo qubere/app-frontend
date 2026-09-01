@@ -51,6 +51,7 @@ export const en = {
     billing: "Billing",
     complianceReports: "Compliance Reports",
     licenseManagement: "License Management",
+    assists: "Assists",
     accountAdmin: "Account Admin",
     platformAdmin: "Platform Admin",
     qubereConsole: "Qubere Console",

@@ -96,6 +96,8 @@ export default async function PartyDetailPage(props: {
         )}
       </div>
 
+      {writable && holdsPermission(context, "valuation.update") && <Link className="inline-flex rounded-lg border border-border px-3 py-2 text-sm font-medium text-brand" href={"/app/assists?supplierId=" + encodeURIComponent(id)}>+ Add assist for this supplier</Link>}
+
       {openFlags.length > 0 && (
         <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-5 space-y-4">
           <div>

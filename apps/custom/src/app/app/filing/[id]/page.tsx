@@ -1,4 +1,4 @@
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasPermission } from "@/lib/auth";
 import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { resolveAllowUpdates } from "@/lib/canonicalMessaging/filingActionRules";
@@ -168,6 +168,7 @@ export default async function CustomsFilingDetailPage(props: { params: Promise<{
     <div className="space-y-6">
       <FilingDetailClient
         filing={filingProps}
+        canReadAssists={await hasPermission("valuation.read")}
         shipment={shipmentProps}
         lineItems={lineItemProps}
         documents={documentProps}

@@ -50,6 +50,7 @@ export const es: TranslationKeys = {
     tariffsAndRegulations: "Aranceles y Regs",
     complianceReports: "Informes de Cumplimiento",
     licenseManagement: "Gestión de Licencias",
+    assists: "Asistencias de valoración",
     billing: "Facturación",
     mainOperations: "Operaciones Principales",
     complianceAndLicensing: "Cumplimiento y Licencias",

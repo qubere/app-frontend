@@ -102,6 +102,7 @@ export const NAV_SECTIONS: NavSection[] = [
     collapsible: true,
     items: [
       { id: "compliance", labelKey: "complianceMonitoring", href: "/app/compliance", icon: "compliance" },
+      { id: "assists", labelKey: "assists", href: "/app/assists", icon: "billing", permission: "valuation.read" },
       { id: "license-management", labelKey: "licenseManagement", href: "/app/license-management", icon: "licenses", permission: "licenses.view" },
       { id: "regulatory", labelKey: "regulatoryUpdates", href: "/app/regulatory", icon: "regulatory" },
     ],

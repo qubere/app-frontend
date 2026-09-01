@@ -1,4 +1,5 @@
 "use client";
+import { AssistEntryBanner } from "./AssistEntryBanner";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -118,6 +119,7 @@ interface AuditLogProps {
 }
 
 interface FilingDetailClientProps {
+  canReadAssists?: boolean;
   filing: FilingProps;
   shipment: ShipmentProps | null; // Now nullable for standalone filings
   lineItems: LineItemProps[];
@@ -480,6 +482,7 @@ function errorFromResponse(data: unknown, fallback: string): string {
 }
 
 export function FilingDetailClient({
+  canReadAssists = false,
   filing,
   shipment,
   lineItems,
@@ -1037,6 +1040,7 @@ export function FilingDetailClient({
         </p>
       )}
 
+      {canReadAssists && <AssistEntryBanner filingId={filing.id} revision={filing.updatedAt} />}
       {validationBlockers.length > 0 && (
         <div role="alert" className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-2">
           <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Filing blocked — resolve before transmitting</p>
