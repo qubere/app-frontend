@@ -1,5 +1,5 @@
 import { getAccountContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, runWithDataMode, type DataMode } from "@/lib/db";
 import { computeReadiness } from "@/modules/onboarding/readiness";
 import { notFound } from "next/navigation";
 import { OnboardingWizardClient } from "@/components/onboarding/OnboardingWizardClient";
@@ -16,26 +16,28 @@ export default async function OnboardingCasePage({ params, searchParams }: Props
   const context = await getAccountContext();
   if (!context) return null;
 
-  const c = await db.onboardingCase.findUnique({
-    where: { id: caseId },
-    include: {
-      client: true,
-      primaryImporter: true,
-      entities: {
-        include: {
-          legalEntity: true,
-          importerOfRecord: true,
-          poa: { include: { envelope: true } },
-          bond: {
-            include: {
-              verifications: { orderBy: { performedAt: "desc" }, take: 1 },
+  const c = await runWithDataMode(context.dataMode as DataMode, () =>
+    db.onboardingCase.findUnique({
+      where: { id: caseId },
+      include: {
+        client: true,
+        primaryImporter: true,
+        entities: {
+          include: {
+            legalEntity: true,
+            importerOfRecord: true,
+            poa: { include: { envelope: true } },
+            bond: {
+              include: {
+                verifications: { orderBy: { performedAt: "desc" }, take: 1 },
+              },
             },
           },
         },
+        fiveOhSixRecords: { orderBy: { createdAt: "desc" } },
       },
-      fiveOhSixRecords: { orderBy: { createdAt: "desc" } },
-    },
-  });
+    })
+  );
 
   if (!c) {
     logger.warn("Onboarding case not found in DB", { caseId, accountId: context.accountId });
