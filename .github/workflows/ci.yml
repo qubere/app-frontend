@@ -96,7 +96,7 @@ jobs:
       - name: PGA and assist PostgreSQL integration
         env:
           PGA_ASSIST_INTEGRATION: "1"
-        run: npm --workspace @qubere/custom run test -- tests/pga-assists.integration.test.ts
+        run: npm --workspace @qubere/custom run test -- tests/pga-assists.integration.test.ts tests/pga-holds-demo-seed.integration.test.ts
 
       - name: Unit tests
         if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
