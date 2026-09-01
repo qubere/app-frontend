@@ -10,7 +10,7 @@
 
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
-import { storeDocumentBytes } from "@qubere/storage";
+import { storeDocumentBytes, readStoredObject } from "@qubere/storage";
 import { getEsignProvider, validateSignerRole } from "@/lib/esign";
 import type { EsignProviderName } from "@/lib/esign";
 import { logger } from "@/lib/logging/logger";
@@ -227,16 +227,49 @@ export class PoaService {
       (process.env.ESIGN_PROVIDER as EsignProviderName | undefined) ?? "INTERNAL";
     const provider = getEsignProvider(providerName);
 
+    // Load the template PDF if one is attached; fall back to a minimal stub so
+    // the e-sign flow works even when no template has been uploaded yet.
+    let documentBuffer: Buffer | undefined;
+    let documentName = "Power of Attorney";
+    if (poa.templateId) {
+      const tpl = await db.poaTemplate.findUnique({ where: { id: poa.templateId } });
+      if (tpl?.bodyStorageUrl) {
+        try {
+          const stored = await readStoredObject(tpl.bodyStorageUrl);
+          documentBuffer = stored.body as Buffer;
+          documentName = tpl.name;
+        } catch (err) {
+          logger.warn("esign: failed to load template PDF, using stub", { templateId: poa.templateId });
+        }
+      }
+    }
+    if (!documentBuffer) {
+      // Minimal valid single-page PDF stub for demos / when no template is set.
+      documentBuffer = Buffer.from(
+        "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj " +
+        "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj " +
+        "3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj " +
+        "4 0 obj<</Length 44>>stream\nBT /F1 12 Tf 72 720 Td (Power of Attorney) Tj ET\nendstream endobj " +
+        "5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj " +
+        "xref\n0 6\n0000000000 65535 f\n" +
+        "trailer<</Size 6/Root 1 0 R>>\nstartxref\n0\n%%EOF"
+      );
+    }
+
     logger.info("esign:invoke", {
       provider: providerName,
       poaId,
       signerName: poa.signerName,
       signerEmail: poa.signerEmail ?? "(none)",
+      hasTemplate: !!poa.templateId,
+      documentBufferBytes: documentBuffer.length,
     });
 
     const result = await provider.createEnvelope({
       accountId,
       poaId,
+      documentBuffer,
+      documentName,
       signer: {
         name: poa.signerName ?? "",
         email: poa.signerEmail ?? "",
