@@ -9,7 +9,6 @@ import type {
   EsignEnvelopeState,
   EsignWebhookEvent,
 } from "../types";
-import { logger } from "@/lib/logging/logger";
 
 const BASE_URL = (process.env.OPEN_SIGN_BASE_URL ?? "https://sandbox.opensignlabs.com").replace(/\/$/, "");
 const API_TOKEN = process.env.OPEN_SIGN_API_TOKEN ?? "";
@@ -30,7 +29,7 @@ function jsonHeaders(): Record<string, string> {
 
 async function apiFetch(path: string, init?: RequestInit): Promise<unknown> {
   const url = `${BASE_URL}/api/v1.2${path}`;
-  logger.info("opensign:request", { method: init?.method ?? "GET", url, tokenPresent: !!API_TOKEN.trim() });
+  console.log("[opensign:request]", init?.method ?? "GET", url, "tokenPresent:", !!API_TOKEN.trim());
   const res = await fetch(url, {
     ...init,
     headers: { ...jsonHeaders(), ...(init?.headers as Record<string, string> | undefined) },
@@ -38,7 +37,7 @@ async function apiFetch(path: string, init?: RequestInit): Promise<unknown> {
   const text = await res.text();
   let body: unknown;
   try { body = JSON.parse(text); } catch { body = text; }
-  logger.info("opensign:response", { url, status: res.status, body: typeof body === "object" ? JSON.stringify(body).slice(0, 500) : String(body).slice(0, 500) });
+  console.log("[opensign:response]", res.status, typeof body === "object" ? JSON.stringify(body).slice(0, 500) : String(body).slice(0, 500));
   if (!res.ok) {
     const msg = typeof body === "object" && body !== null && "error" in body
       ? String((body as Record<string, unknown>).error)
