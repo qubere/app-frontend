@@ -2,7 +2,7 @@ import { getGeminiClient } from "@/lib/ai/geminiClient";
 import type { Content, Part } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AccountContext } from "@/lib/auth";
-import { availableAssistantTools } from "./tools";
+import { availableAssistantTools, type AssistantSurface } from "./tools";
 import { aiModel } from "@/lib/ai/aiModel";
 import { meterGeminiCall } from "@/lib/ai/aiMeter";
 import {
@@ -25,6 +25,7 @@ export interface ChatTurnInput {
   message: string;
   history: Content[];
   requestId: string;
+  surface?: AssistantSurface;
 }
 
 export type AssistantStreamEvent =
@@ -84,13 +85,14 @@ export async function* runAssistantTurn(
 
   if (input.history.length === 0) {
     await auditConversationStarted(subject, {
-      pageContext: "CHAT",
+      pageContext: input.surface === "support" ? "SUPPORT" : "CHAT",
       entityType: null,
       entityId: null,
     });
   }
 
-  const tools = availableAssistantTools(ctx);
+  const surface = input.surface ?? "copilot";
+  const tools = availableAssistantTools(ctx, surface);
   const toolsByName = new Map(tools.map((t) => [t.declaration.name, t]));
   let toolCallsMade = 0;
   let modelCalls = 0;
@@ -100,7 +102,12 @@ export async function* runAssistantTurn(
   let fullText = "";
 
   const today = new Date().toISOString().split("T")[0];
-  const systemPrompt = buildCopilotSystemPrompt({ resolvedContext: null, today, mode: "stream" });
+  const systemPrompt = buildCopilotSystemPrompt({
+    resolvedContext: null,
+    today,
+    mode: "stream",
+    surface,
+  });
 
   // Gemini is the primary provider for this surface (aiModel("copilot")). The
   // Anthropic branch below is a configured-key fallback only; its default model

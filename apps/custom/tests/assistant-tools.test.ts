@@ -56,6 +56,14 @@ describe("Assistant Tool Registry & Permission Unit Tests", () => {
     expect(restrictedTools).not.toContain("run_impact_analysis");
   });
 
+  it("code-enforces a read-only product-help allowlist on the support surface", () => {
+    const supportTools = availableAssistantTools(fullCtx, "support").map((tool) => tool.declaration.name);
+    expect(supportTools).toEqual(["search_product_help"]);
+    expect(supportTools).not.toContain("approve_decision");
+    expect(supportTools).not.toContain("resolve_exception");
+    expect(supportTools).not.toContain("create_shipment");
+  });
+
   it("matches reject_decision tool access permission with decisions.reject", () => {
     const rejectTool = getToolByName("reject_decision");
     expect(rejectTool).toBeDefined();

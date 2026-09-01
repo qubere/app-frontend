@@ -211,6 +211,7 @@ describe("navigation coverage -- nothing broker-critical is orphaned", () => {
     "/app/parties",
     "/app/reconciliation",
     "/app/vault",
+    "/app/support",
     "/app/filing-config",
   ];
 

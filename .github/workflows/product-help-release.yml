@@ -1,0 +1,126 @@
+name: Product help release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: product-help-release
+  cancel-in-progress: false
+
+jobs:
+  draft-documentation:
+    name: Scan merged changes and draft help
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PRODUCT_HELP_GENERATION_MODEL: ${{ vars.PRODUCT_HELP_GENERATION_MODEL }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve merged range
+        id: range
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            BEFORE_SHA="$(git rev-parse HEAD^)"
+          fi
+          echo "base=$BEFORE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Generate reviewable documentation changes
+        run: >-
+          npm run product-help:generate --
+          --base "${{ steps.range.outputs.base }}"
+          --head "${{ github.sha }}"
+          --write
+
+      - name: Validate product-help corpus
+        run: |
+          npm --workspace @qubere/custom run typecheck:product-help
+          npm run product-help:validate
+
+      - name: Open or update documentation PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if git diff --quiet && [[ -z "$(git status --porcelain)" ]]; then
+            echo "No documentation changes were drafted."
+            exit 0
+          fi
+
+          SHORT_SHA="${HEAD_SHA:0:12}"
+          BRANCH="automation/product-help-$SHORT_SHA"
+          git config user.name "qubere-docs-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add apps/custom/src/app/app/support/generatedProductHelp.json docs/product-help/releases
+          git commit -m "docs(product-help): update for $SHORT_SHA [product-help]"
+          git push --force-with-lease origin "$BRANCH"
+
+          EXISTING_PR="$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$EXISTING_PR" ]]; then
+            gh pr edit "$EXISTING_PR" --body-file docs/product-help/PULL_REQUEST_BODY.md
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "Product help update for $SHORT_SHA" \
+              --body-file docs/product-help/PULL_REQUEST_BODY.md
+          fi
+
+  publish-approved-corpus:
+    name: Publish approved help to pgvector
+    needs: draft-documentation
+    runs-on: ubuntu-latest
+    environment: demo
+    env:
+      DATABASE_URL: ${{ secrets.PRODUCT_HELP_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.PRODUCT_HELP_DIRECT_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release configuration
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo "PRODUCT_HELP_DATABASE_URL is not configured in the demo environment." >&2
+            exit 1
+          fi
+          if [[ -z "$GEMINI_API_KEY" ]]; then
+            echo "GEMINI_API_KEY is not configured in the demo environment." >&2
+            exit 1
+          fi
+
+      - name: Validate product-help corpus
+        run: |
+          npm --workspace @qubere/custom run typecheck:product-help
+          npm run product-help:validate
+
+      - name: Publish approved corpus and embeddings
+        run: npm run product-help:sync

@@ -14,7 +14,13 @@
     "worker:documents:job": "tsx src/worker/documentJob.ts",
     "backup:upload": "tsx scripts/upload-backup-to-gcs.ts",
     "openapi": "tsx scripts/generate-openapi.ts",
-    "bench:actions": "tsx scripts/bench-actions.ts"
+    "bench:actions": "tsx scripts/bench-actions.ts",
+    "generate:product-help": "tsx scripts/generate-product-help.ts",
+    "generate:product-help:report": "tsx scripts/generate-product-help.ts --report-only",
+    "typecheck:product-help": "tsc --noEmit -p tsconfig.product-help.json",
+    "validate:product-help": "tsx scripts/validate-product-help.ts",
+    "presync:product-help": "npm --workspace @qubere/db run db:generate",
+    "sync:product-help": "tsx scripts/sync-product-help.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

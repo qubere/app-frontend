@@ -182,3 +182,17 @@ describe("the system prompt carries the origin rules", () => {
     expect(COPILOT_PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 });
+
+describe("the support-surface system prompt", () => {
+  const prompt = buildCopilotSystemPrompt({
+    resolvedContext: null,
+    today: "2026-09-01",
+    surface: "support",
+  });
+
+  it("requires product-help grounding and forbids embedded mutations", () => {
+    expect(prompt).toContain("call search_product_help");
+    expect(prompt).toContain("read-only by construction");
+    expect(prompt).toContain("cannot create, approve, reject, resolve");
+  });
+});
