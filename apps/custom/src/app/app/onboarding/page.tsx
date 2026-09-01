@@ -1,15 +1,14 @@
 import { getAccountContext } from "@/lib/auth";
 import { CaseListClient } from "./CaseListClient";
-import { db, runWithDataMode, type DataMode } from "@/lib/db";
+import { db, type DataMode } from "@/lib/db";
 
 export default async function OnboardingPage() {
   const context = await getAccountContext();
   if (!context) return null;
 
-  const [cases, brokerProfile] = await runWithDataMode(context.dataMode as DataMode, () =>
-    Promise.all([
+  const [cases, brokerProfile] = await Promise.all([
       db.onboardingCase.findMany({
-        where: { accountId: context.accountId },
+        where: { accountId: context.accountId, account: { dataMode: context.dataMode as DataMode } },
         include: {
           client: { select: { id: true, name: true } },
           primaryImporter: { select: { id: true, name: true } },
@@ -22,8 +21,7 @@ export default async function OnboardingPage() {
         where: { accountId: context.accountId },
         select: { status: true },
       }),
-    ])
-  );
+  ]);
 
   return (
     <CaseListClient

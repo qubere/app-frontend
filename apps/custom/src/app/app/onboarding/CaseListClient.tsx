@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ClipboardList, Plus, AlertTriangle, ArrowRight } from "lucide-react";
+import { ClipboardList, Plus, AlertTriangle, ArrowRight, Trash2 } from "lucide-react";
 import { PanelHeading } from "@/components/PanelHeading";
 import { Button, Input, Badge } from "@/components/ui";
 import { NewCaseModal } from "@/components/onboarding/NewCaseModal";
@@ -67,6 +67,23 @@ export function CaseListClient({ cases, brokerProfileStatus }: Props) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
+
+  async function handleWithdraw(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm("Withdraw this onboarding case? This marks it as withdrawn but keeps the record.")) return;
+    setWithdrawing(id);
+    try {
+      await fetch(`/api/onboarding/cases/${id}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Withdrawn by broker" }),
+      });
+      router.refresh();
+    } finally {
+      setWithdrawing(null);
+    }
+  }
 
   const filtered = cases.filter((c) => {
     if (!q) return true;
@@ -149,14 +166,14 @@ export function CaseListClient({ cases, brokerProfileStatus }: Props) {
       {inFlight.length > 0 && (
         <section>
           <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-3">In progress</h2>
-          <CaseTable rows={inFlight} onOpen={(id) => router.push(`/app/onboarding/${id}`)} />
+          <CaseTable rows={inFlight} onOpen={(id) => router.push(`/app/onboarding/${id}`)} onWithdraw={handleWithdraw} withdrawingId={withdrawing} />
         </section>
       )}
 
       {active.length > 0 && (
         <section>
           <h2 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-3">Activated</h2>
-          <CaseTable rows={active} onOpen={(id) => router.push(`/app/onboarding/${id}`)} />
+          <CaseTable rows={active} onOpen={(id) => router.push(`/app/onboarding/${id}`)} onWithdraw={handleWithdraw} withdrawingId={withdrawing} />
         </section>
       )}
 
@@ -172,7 +189,17 @@ export function CaseListClient({ cases, brokerProfileStatus }: Props) {
   );
 }
 
-function CaseTable({ rows, onOpen }: { rows: CaseItem[]; onOpen: (id: string) => void }) {
+function CaseTable({
+  rows,
+  onOpen,
+  onWithdraw,
+  withdrawingId,
+}: {
+  rows: CaseItem[];
+  onOpen: (id: string) => void;
+  onWithdraw?: (id: string, e: React.MouseEvent) => void;
+  withdrawingId?: string | null;
+}) {
   return (
     <div className="rounded-xl border divide-y text-sm">
       {rows.map((c) => {
@@ -203,6 +230,16 @@ function CaseTable({ rows, onOpen }: { rows: CaseItem[]; onOpen: (id: string) =>
             <Badge variant={STATUS_VARIANTS[c.status] ?? "neutral"} className="shrink-0">
               {c.status.replace(/_/g, " ")}
             </Badge>
+            {onWithdraw && (
+              <button
+                onClick={(e) => onWithdraw(c.id, e)}
+                disabled={withdrawingId === c.id}
+                className="p-1 rounded text-ink-muted hover:text-red-600 hover:bg-red-50 shrink-0 disabled:opacity-40"
+                title="Withdraw case"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
             <ArrowRight className="h-4 w-4 text-ink-muted shrink-0" />
           </div>
         );
