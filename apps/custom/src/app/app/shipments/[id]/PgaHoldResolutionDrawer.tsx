@@ -7,6 +7,7 @@ import { validatePreparation, type HoldFormInput, type PreparationField } from "
 type Submission = { id: string; status: string; transmissionMode: string; externalReference: string; submittedAt: string; rejectionCode: string | null; rejectionReason: string | null; rejectedFields: string[] | null; messageSetText: string };
 type Detail = {
   hold: { id: string; agencyCode: string; holdCode: string; status: string; issuedAt: string; rawNotice: string; version: number; shipment?: { shipmentNumber: string }; submissions: Submission[] };
+  submissionTotal: number;
   formInput: HoldFormInput; prefill: HoldFormInput; staleDraft: boolean; explanation: string; fields: PreparationField[] | null;
   permissions: { canUpdate: boolean; canApprove: boolean }; transport: { reason: string };
 };
@@ -18,6 +19,8 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
   const versionRef = useRef(0);
   const dirtyRef = useRef(false);
   const [step, setStep] = useState(0);
+  const [olderSubmissions, setOlderSubmissions] = useState<Submission[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -30,6 +33,7 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
   const [response, setResponse] = useState({ status: "Processing", responseCode: "", reason: "", rawResponse: "", rejectedFields: "", responseAt: "" });
   const load = useCallback(async () => {
     const result = await workflowRequest<Detail>("/api/pga/holds/" + id);
+    setOlderSubmissions([]); setHistoryPage(1);
     setDetail(result); setForm(result.formInput); formRef.current = result.formInput;
     versionRef.current = result.hold.version; dirtyRef.current = false;
     return result;
@@ -161,7 +165,12 @@ export function PgaHoldResolutionDrawer({ id, onClose, onChanged }: { id: string
           </details>}
           <h3 className="font-semibold">Submission history</h3>
           {!detail.hold.submissions.length && <p className="text-sm text-ink-muted">No filing has been recorded.</p>}
-          {detail.hold.submissions.map(s => <details key={s.id} className="rounded-lg border border-border p-3 text-sm"><summary className="cursor-pointer">Manual · {s.externalReference} · {s.status} · {new Date(s.submittedAt).toLocaleString()}</summary><pre className="mt-3 overflow-auto whitespace-pre text-xs">{s.messageSetText}</pre>{s.rejectionReason && <p className="mt-2 text-amber-800">{s.rejectionCode}: {s.rejectionReason}</p>}</details>)}
+          {[...detail.hold.submissions, ...olderSubmissions].map(s => <details key={s.id} className="rounded-lg border border-border p-3 text-sm"><summary className="cursor-pointer">Manual · {s.externalReference} · {s.status} · {new Date(s.submittedAt).toLocaleString()}</summary><pre className="mt-3 overflow-auto whitespace-pre text-xs">{s.messageSetText}</pre>{s.rejectionReason && <p className="mt-2 text-amber-800">{s.rejectionCode}: {s.rejectionReason}</p>}</details>)}
+          {detail.submissionTotal > detail.hold.submissions.length + olderSubmissions.length && <button disabled={busy} className="text-sm text-brand" onClick={() => void perform(async () => {
+            const result = await workflowRequest<{ submissions: Submission[] }>("/api/pga/holds/" + id + "/submissions?page=" + historyPage);
+            setOlderSubmissions(previous => [...previous, ...result.submissions.filter(row => !previous.some(saved => saved.id === row.id) && !detail.hold.submissions.some(saved => saved.id === row.id))]);
+            setHistoryPage(page => page + 1);
+          })}>Show older submissions</button>}
         </div>}
       </>}
     </>}

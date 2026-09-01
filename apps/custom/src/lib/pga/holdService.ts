@@ -16,7 +16,7 @@ export async function getHold(accountId: string, id: string) {
     where: { id, accountId, shipment: { accountId, deletedAt: null } },
     include: {
       shipment: { include: { lineItems: { where: { accountId }, orderBy: { lineNumber: "asc" } } } },
-      submissions: { where: { accountId }, orderBy: { submittedAt: "desc" }, take: 20 },
+      submissions: { where: { accountId }, orderBy: [{ submittedAt: "desc" }, { id: "desc" }], take: 20 },
     },
   });
   if (!hold) throw notFound();
@@ -37,7 +37,7 @@ export async function getHoldDetail(accountId: string, id: string) {
   const previous = latestInput && typeof latestInput === "object" && !Array.isArray(latestInput) ? latestInput : {};
   const draft = restoreHoldDraft(hold.draftFormInput, hold.draftUpdatedAt);
   return {
-    hold, fields: getPreparationFields(hold.agencyCode), prefill,
+    hold, submissionTotal: await db.pgaHoldSubmission.count({ where: { accountId, pgaHoldId: id } }), fields: getPreparationFields(hold.agencyCode), prefill,
     formInput: { ...prefill, ...previous, ...(draft ?? {}) },
     staleDraft: !!hold.draftUpdatedAt && !draft,
     explanation: getHoldCodeEntry(hold.agencyCode, hold.holdCode)?.explanation ?? hold.reasonText,
