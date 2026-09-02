@@ -6,7 +6,8 @@ const m = vi.hoisted(() => ({
   db: {
     user: { findUnique: vi.fn() }, client: { findMany: vi.fn() },
     shipment: { findMany: vi.fn(), findUnique: vi.fn() },
-    entryProof: { findMany: vi.fn() },
+    entryProof: { findMany: vi.fn(), aggregate: vi.fn() },
+    complianceDeadline: { findMany: vi.fn() }, onboardingCase: { findMany: vi.fn() },
     customerRequest: { groupBy: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     customerRequestMessage: { create: vi.fn() }, auditLog: { create: vi.fn() },
     $transaction: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock('@qubere/db', async (original) => ({ ...await original<object>(), db: m.
 const { getDataModeContext, getAccountIdContext, buildIsolatedQueryArgs } = await import('@qubere/db');
 const shipments = await import('../src/app/api/shipments/route');
 const detail = await import('../src/app/api/shipments/[id]/route');
+const summaries = await import('../src/app/api/dashboard/summary/route');
 const dashboard = await import('../src/app/api/dashboard/route');
 const requests = await import('../src/app/api/requests/route');
 const request = await import('../src/app/api/requests/[id]/route');
@@ -51,6 +53,8 @@ beforeEach(() => {
   m.db.customerRequest.findMany.mockImplementation(async args => { checkContext('CustomerRequest', 'findMany', args); return [action]; });
   m.db.customerRequest.findUnique.mockImplementation(async args => { checkContext('CustomerRequest', 'findUnique', args); return action; });
   m.db.entryProof.findMany.mockImplementation(async args => { checkContext('EntryProof', 'findMany', args); return [{ filingId: 'f1', shipmentId: 's1', filing: { entryNumber: 'ENTRY-TGT-24001' }, shipment: { shipmentNumber: shipment.shipmentNumber }, scoreOverall: 80, dutyAndFeesUsd: 500, dutySavingsIdentifiedUsd: 50 }]; });
+  m.db.entryProof.aggregate.mockResolvedValue({ _count: 1, _avg: { scoreOverall: 80 }, _sum: { linesAtRisk: 0, dutySavingsIdentifiedUsd: 50 } });
+  m.db.complianceDeadline.findMany.mockResolvedValue([]); m.db.onboardingCase.findMany.mockResolvedValue([]);
   m.db.customerRequest.groupBy.mockImplementation(async args => { checkContext('CustomerRequest', 'groupBy', args); return []; });
   m.db.user.findUnique.mockResolvedValue({ id: 'porter', email: 'porter@target.com' });
   m.db.client.findMany.mockImplementation(async args => { checkContext('Client', 'findMany', args); return [{ id: 'target', name: 'Target' }]; });
@@ -150,5 +154,53 @@ describe('Freight and proof access', () => {
     const response = await proofs.GET(req('proofs'));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([]);
+  });
+});
+
+describe('Actions survive optional summary failures', () => {
+  it('returns existing Target actions when the generated client has no EntryProof model', async () => {
+    m.ctx.permissions.push('portal.entries.read', 'portal.setup.read');
+    const delegate = m.db.entryProof;
+    (m.db as any).entryProof = undefined;
+    try {
+      const response = await dashboard.GET(req('dashboard'));
+      expect(response.status).toBe(200);
+      expect((await response.json()).actionItems[0].id).toBe('r1');
+      const shipmentResponse = await detail.GET(req('shipments/s1'), params('s1'));
+      expect(shipmentResponse.status).toBe(200);
+      const shipmentBody = await shipmentResponse.json();
+      expect(shipmentBody.requests[0].id).toBe('r1');
+      expect(shipmentBody.unavailableSections).toEqual(['Entry Proof']);
+      const summary = await summaries.GET(req('dashboard/summary'));
+      expect(summary.status).toBe(200);
+      expect((await summary.json()).unavailableSections).toEqual(['Compliance']);
+    } finally { m.db.entryProof = delegate; }
+  });
+  it('an unavailable optional table cannot hide existing actions or successful summaries', async () => {
+    m.ctx.permissions.push('portal.entries.read', 'portal.setup.read');
+    m.db.onboardingCase.findMany.mockRejectedValue({ code: 'P2021' });
+    const response = await dashboard.GET(req('dashboard'));
+    expect((await response.json()).actionItems).toHaveLength(1);
+    expect(m.db.entryProof.aggregate).not.toHaveBeenCalled();
+    const summary = await (await summaries.GET(req('dashboard/summary'))).json();
+    expect(summary.unavailableSections).toEqual(['Setup']);
+    expect(summary.complianceSummary.entriesWithProof).toBe(1);
+  });
+  it('keeps published filing metadata and tracking when the proof table is missing', async () => {
+    m.ctx.permissions.push('portal.entries.read');
+    m.db.shipment.findUnique.mockResolvedValue({ ...shipment, customsFilings: [{ id: 'f1', entryNumber: 'ENTRY-TGT-24001' }] });
+    m.db.entryProof.findMany.mockRejectedValue({ code: 'P2021' });
+    const response = await detail.GET(req('shipments/s1'), params('s1'));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries[0].entryNumber).toBe('ENTRY-TGT-24001');
+    expect(body.unavailableSections).toEqual(['Entry Proof']);
+    expect(body.progress.legs).toEqual([]);
+  });
+  it('still reports a failed core action query as an error, never as an empty success', async () => {
+    m.db.customerRequest.findMany.mockRejectedValue(new Error('Database unavailable'));
+    const response = await dashboard.GET(req('dashboard'));
+    expect(response.status).toBe(500);
+    expect((await response.json()).actionItems).toBeUndefined();
   });
 });

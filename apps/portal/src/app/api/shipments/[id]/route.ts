@@ -48,7 +48,6 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
           totalDuties: true,
           totalTaxes: true,
           customerVisibleAt: true,
-          entryProofs: { where: { status: "PUBLISHED", accountId: ctx.accountId, clientId: auth.effectiveClientId! }, orderBy: { version: "desc" }, take: 1, select: { payload: true, scoreOverall: true, scoreBand: true, linesVerified: true, linesTotal: true, openFindingsCount: true, dutySavingsIdentifiedUsd: true } },
         },
       },
       documents: {
@@ -98,6 +97,16 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
+  // A not-yet-updated proof model must not hide existing shipment data.
+  let proofUnavailable: boolean = canReadEntries && !db.entryProof?.findMany;
+  const proofs = canReadEntries && !proofUnavailable && shipment.customsFilings.length
+    ? await db.entryProof.findMany({
+        where: { accountId: ctx.accountId, clientId: auth.effectiveClientId!, status: "PUBLISHED", filingId: { in: shipment.customsFilings.map(f => f.id) } },
+        orderBy: { version: "desc" }, select: { filingId: true, payload: true, scoreOverall: true, scoreBand: true },
+      }).catch(error => { proofUnavailable = true; console.error("[portal] Shipment proof unavailable; tracking and requests remain available.", error); return []; })
+    : [];
+  const proofByFiling = new Map(proofs.map(p => [p.filingId, p]));
+
   const filingStatus = shipment.customsFilings[0]?.filingStatus || null;
   const mapped = mapPortalShipmentStatus({
     internalStatus: shipment.status,
@@ -124,6 +133,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   }
 
   return NextResponse.json({
+    unavailableSections: proofUnavailable ? ["Entry Proof"] : [],
     progress: { ...buildShipmentProgress(shipment), ...(!canReadEntries ? { workflow: [], currentStage: null } : {}) },
     filingData: canReadEntries ? {
       importerName: shipment.importerName, countryOfOrigin: shipment.countryOfOrigin, countryOfExport: shipment.countryOfExport,
@@ -162,7 +172,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
       status: d.status === "Received" ? "Ready" : "Processing",
       createdAt: d.createdAt,
     })),
-    entries: shipment.customsFilings.map((f) => ({
+    entries: shipment.customsFilings.map((f) => { const proof = proofByFiling.get(f.id); return ({
       id: f.id,
       entryNumber: f.entryNumber,
       entryType: f.entryType,
@@ -173,9 +183,9 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
       dutyTotal: f.totalDuties ? Number(f.totalDuties) : null,
       taxTotal: f.totalTaxes ? Number(f.totalTaxes) : null,
       publishedAt: f.customerVisibleAt,
-      proof: f.entryProofs[0] ? { available: true, scoreOverall: f.entryProofs[0].scoreOverall, scoreBand: f.entryProofs[0].scoreBand } : null,
-      lines: f.entryProofs[0] ? (f.entryProofs[0].payload as unknown as EntryProofPayload).lines.map(l => ({ lineNumber: l.lineNumber, description: l.description, htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin, quantity: l.quantity, enteredValueUsd: l.enteredValueUsd, lineDutyTotalUsd: l.lineDutyTotalUsd, dutyComplete: l.dutyStack.every(d => !['NOT_EVALUATED', 'DATA_UNAVAILABLE', 'REVIEW_REQUIRED'].includes(d.status)) })) : [],
-    })),
+      proof: proof ? { available: true, scoreOverall: proof.scoreOverall, scoreBand: proof.scoreBand } : null,
+      lines: proof ? (proof.payload as unknown as EntryProofPayload).lines.map(l => ({ lineNumber: l.lineNumber, description: l.description, htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin, quantity: l.quantity, enteredValueUsd: l.enteredValueUsd, lineDutyTotalUsd: l.lineDutyTotalUsd, dutyComplete: l.dutyStack.every(d => !['NOT_EVALUATED', 'DATA_UNAVAILABLE', 'REVIEW_REQUIRED'].includes(d.status)) })) : [],
+    }); }),
     invoices: Array.from(invoicesMap.values()),
   });
 });

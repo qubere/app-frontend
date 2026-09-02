@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ShipmentIcon, DocumentIcon, InvoiceIcon, BellIcon } from "../../icons";
 
 interface ShipmentData {
+  unavailableSections?: string[];
   progress: ShipmentProgress;
   filingData: PortalFilingData | null;
   overview: {
@@ -130,6 +131,7 @@ export default function ShipmentDetailPage() {
         </div>
       </div>
 
+      {!!data.unavailableSections?.length && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{data.unavailableSections.join(", ")} is temporarily unavailable. Tracking, requests, and documents remain available.</p>}
       <ShipmentMilestones progress={data.progress} onTracking={() => setActiveTab("tracking")} />
       <AtAGlance shipmentId={id} />
 
