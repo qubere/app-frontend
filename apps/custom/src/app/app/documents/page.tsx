@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getAccountContext } from "@/lib/auth";
 import { db, isDataMode, withDataModeContext } from "@/lib/db";
 import { DocumentsClient } from "./DocumentsClient";
@@ -119,7 +120,7 @@ export default async function DocumentsPage() {
     const initialQuarantineCount = quarantinedEmails.length;
 
     return (
-      <DocumentsClient
+      <><div className="mb-4 flex justify-end"><Link className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-brand" href="/app/documents/inbound-review">Email review →</Link></div><DocumentsClient
         context={{
           userId: ctx.userId,
           roleNames: ctx.roleNames,
@@ -134,7 +135,7 @@ export default async function DocumentsPage() {
         initialShipments={initialShipments}
         initialUnattachedDocs={initialUnattachedDocs}
         initialQuarantineCount={initialQuarantineCount}
-      />
+      /></>
     );
   });
 }

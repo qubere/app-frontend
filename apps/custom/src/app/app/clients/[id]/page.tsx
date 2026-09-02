@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { ClientInboundAddresses } from '../../admin/settings/ClientInboundAddresses';
 type Data = {
     id: string;
     name: string;
@@ -35,7 +36,7 @@ export default function ClientSetupPage() {
             return r.json();
         }).then(setData).catch(e => setError(e.message));
     }, [id]);
-    return <div className="space-y-5"><Link href="/app/clients" className="text-brand text-sm">← Clients and Importers</Link><h1 className="text-2xl font-bold">{data?.name || 'Client'} · Portal & setup</h1>{error && <p role="alert" className="text-red-700">{error}</p>}{data && <><p className="text-sm text-ink-muted">Onboarding: {data.onboardingCases[0]?.status || 'Not started'} · Step {data.onboardingCases[0]?.currentStep || 1}</p><section className="rounded-xl border border-border p-5"><h2 className="font-semibold">Stakeholders</h2>{data.clientStakeholders.map(p => <div key={p.id} className="flex flex-wrap justify-between gap-3 border-b border-border py-3 text-sm"><div><strong>{p.name}</strong><p>{p.email} · {p.role}</p></div><span>{p.loginStatus}</span><button className="text-brand" onClick={async () => {
+    return <div className="space-y-5"><Link href="/app/clients" className="text-brand text-sm">← Clients and Importers</Link><h1 className="text-2xl font-bold">{data?.name || 'Client'} · Portal & setup</h1>{error && <p role="alert" className="text-red-700">{error}</p>}{data && <><ClientInboundAddresses clientId={id} /><p className="text-sm text-ink-muted">Onboarding: {data.onboardingCases[0]?.status || 'Not started'} · Step {data.onboardingCases[0]?.currentStep || 1}</p><section className="rounded-xl border border-border p-5"><h2 className="font-semibold">Stakeholders</h2>{data.clientStakeholders.map(p => <div key={p.id} className="flex flex-wrap justify-between gap-3 border-b border-border py-3 text-sm"><div><strong>{p.name}</strong><p>{p.email} · {p.role}</p></div><span>{p.loginStatus}</span><button className="text-brand" onClick={async () => {
                     setError('');
                     const r = await fetch('/api/broker/portal-invitations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: id, email: p.email, roleName: p.role === 'IMPORTER_ADMIN' ? 'CUSTOMER_ADMIN' : p.role === 'VIEWER' ? 'CUSTOMER_VIEWER' : 'CUSTOMER_USER' }) });
                     const d = await r.json();

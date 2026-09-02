@@ -65,6 +65,8 @@ export function notificationCategory(type: string): NotificationCategory {
 /** Deep link for a notification row, keyed on its entity then its category. */
 export function resolveNotificationHref(n: NotificationLike): string {
   switch (n.entityType) {
+    case "InboundDocumentReview":
+      return "/app/documents/inbound-review";
     case "Assist":
       return "/app/assists";
     case "AgentDecision":
