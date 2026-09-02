@@ -1,3 +1,4 @@
+import { promoteSetupForCase } from "@/lib/portal/clientSetup";
 import { NextResponse } from "next/server";
 import { db, runWithAccountId } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
@@ -129,5 +130,6 @@ export async function POST(req: Request) {
     });
   });
 
+  if (result === "accepted" && record.caseId) await promoteSetupForCase(record.accountId, record.caseId);
   return NextResponse.json({ message: "ok", id: record.id, result });
 }

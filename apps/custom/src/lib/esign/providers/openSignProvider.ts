@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 // OpenSign e-sign provider (sandbox.opensignlabs.com).
 // API v1.2 — JSON transport, x-api-token auth.
 // Docs: https://docs.opensignlabs.com/docs/API-docs/v1.2/createdocument
@@ -125,7 +126,13 @@ export class OpenSignProvider implements EsignProvider {
     return null;
   }
 
-  parseWebhook(_headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent {
+  parseWebhook(headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent {
+    const secret = process.env.OPENSIGN_WEBHOOK_SECRET;
+    const supplied = headers["x-qubere-webhook-secret"] ?? "";
+    if (!secret || Buffer.byteLength(secret) !== Buffer.byteLength(supplied) ||
+        !timingSafeEqual(Buffer.from(secret), Buffer.from(supplied))) {
+      throw new Error("Invalid OpenSign webhook authentication");
+    }
     // OpenSign delivers webhooks as Parse afterSave payloads — the body is the
     // serialized contracts_Document object.
     const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;

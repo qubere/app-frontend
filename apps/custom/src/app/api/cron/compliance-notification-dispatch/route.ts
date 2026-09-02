@@ -1,3 +1,4 @@
+import { syncPortalNotifications } from "@/lib/portal/portalNotifications";
 import { dispatchAssistBells } from "@/modules/notifications/assistAlertNotifications";
 import { NextResponse } from "next/server";
 import { withCronRoute } from "@/lib/api/auth-guards";
@@ -8,6 +9,7 @@ export const maxDuration = 120;
 async function handleDispatch(requestId: string) {
   try {
     await dispatchAssistBells();
+    await syncPortalNotifications();
     const result = await ComplianceNotificationDispatcher.dispatchPending();
     return NextResponse.json({ status: "SUCCESS", requestId, ...result });
   } catch (err: any) {

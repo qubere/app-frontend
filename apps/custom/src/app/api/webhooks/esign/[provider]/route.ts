@@ -1,3 +1,5 @@
+import { storeDocumentBytes } from "@qubere/storage";
+import { promoteSetupForPoa } from "@/lib/portal/clientSetup";
 // E-sign webhook handler — called by Dropbox Sign (or future providers) when
 // the signature status changes. The INTERNAL provider completes via
 // /api/sign/[token] instead, so only DROPBOX_SIGN reaches this route.
@@ -15,7 +17,7 @@ import type { EsignProviderName } from "@/lib/esign";
 export const POST = async (req: Request, { params }: { params: Promise<{ provider: string }> }) => {
   const { provider } = await params;
   const providerName = (provider?.toUpperCase() ?? "") as EsignProviderName;
-  if (!["DROPBOX_SIGN"].includes(providerName)) {
+  if (!["DROPBOX_SIGN", "OPEN_SIGN"].includes(providerName)) {
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }
 
@@ -66,11 +68,17 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
         }
       }
 
+      // Fetch signed bytes through the authenticated provider, then keep an owned copy.
+      const esign = getEsignProvider(providerName);
+      const state = await esign.getEnvelope(envelope.providerEnvelopeId!);
+      if (!["signed", "completed"].includes(state.status)) throw new Error("Provider has not completed this signature");
+      const executed = await storeDocumentBytes({buffer:await esign.downloadExecutedDocument(envelope.providerEnvelopeId!),fileName:`executed-poa-${poa.id}.pdf`,contentType:"application/pdf",folder:`portal/${poa.accountId}/setup`});
       await db.$transaction([
         db.poaEnvelope.update({
           where: { id: envelope.id },
           data: {
             status: "completed",
+            executedDocumentUrl: executed.url,
             completedAt,
             webhookEventsRaw: [
               ...(envelope.webhookEventsRaw as unknown[]),
@@ -83,12 +91,15 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
           where: { id: poa.id },
           data: {
             status: "executed",
+            executedDocumentUrl: executed.url,
             signedDate: completedAt,
             expirationDate: expirationDate ?? null,
             updatedAt: new Date(),
           },
         }),
       ]);
+
+      await promoteSetupForPoa(poa.accountId, poa.id);
 
       await createAuditLog({
         accountId: poa.accountId,

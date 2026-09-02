@@ -7324,6 +7324,7 @@ enum RpsEmailFormat {
 /// LICENSE_DETERMINATION_REVIEW_REQUIRED is queued for one
 /// LicenseDeterminationResult whose status is REVIEW_REQUIRED/BLOCKED.
 enum ComplianceNotificationType {
+  PORTAL_UPDATE
   ASSIST_AMORTIZATION_ALERT
   RPS_HIT
   RPS_REVIEW_REQUIRED
@@ -7356,6 +7357,7 @@ enum NotificationDeliveryStatus {
 /// same result/type collide on it (caught as already-queued) instead of
 /// needing a separate idempotency key.
 model ComplianceNotification {
+  portalEventKey String? @unique
   assistAlertKey String? @unique
   bellDeliveredAt DateTime?
   id        String  @id @default(cuid())
@@ -10439,9 +10441,9 @@ model EntryProof {
   generatedByUserId String?
   publishedByUserId String?
   publishedAt DateTime?
-  supersededById String? @unique
+  supersededById String?
   supersededBy EntryProof? @relation("EntryProofSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
-  supersedes EntryProof? @relation("EntryProofSupersession")
+  supersedes EntryProof[] @relation("EntryProofSupersession")
   events EntryProofEvent[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

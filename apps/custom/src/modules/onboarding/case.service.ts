@@ -1,3 +1,4 @@
+import { promoteSetupForCase } from "@/lib/portal/clientSetup";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { computeReadiness } from "./readiness";
@@ -211,6 +212,7 @@ export class CaseService {
       metadata: {},
     });
 
+    await promoteSetupForCase(accountId, caseId);
     return { activated: true };
   }
 

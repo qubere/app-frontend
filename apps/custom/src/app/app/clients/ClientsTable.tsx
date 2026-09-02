@@ -326,6 +326,7 @@ export function ClientsTable({ clients, onSaved }: ClientsTableProps) {
                     <div>
                       <div className="flex items-center space-x-2">
                         <span className="font-bold text-ink text-base">{c.name}</span>
+                        <Link href={`/app/clients/${c.id}`} onClick={e=>e.stopPropagation()} className="text-xs text-brand ml-3">Portal & setup</Link>
                         <Badge variant="info" className="font-extrabold">
                           {c.legalEntities.length} Legal {c.legalEntities.length === 1 ? "Entity" : "Entities"}
                         </Badge>

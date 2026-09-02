@@ -162,7 +162,17 @@ export async function GET(req: Request) {
       };
     });
 
-    return { actionItems };
+    const mayReadCustoms = ctx.isPlatformAdmin || ctx.roleNames.some(r=>["OWNER","ADMIN","BROKER_ADMIN"].includes(r)) || ctx.permissions.includes("portal.entries.read");
+    const [proofSummary, deadlines, setups] = await Promise.all([
+      mayReadCustoms ? db.entryProof.aggregate({where:{...actionWhere,status:"PUBLISHED",filing:{customerVisibleAt:{not:null}}},_count:true,_avg:{scoreOverall:true},_sum:{linesAtRisk:true,dutySavingsIdentifiedUsd:true}}) : null,
+      mayReadCustoms ? db.complianceDeadline.findMany({where:{accountId:ctx.accountId,customerActionable:true,status:"OPEN",shipment:{...(clientScope.clientIds===null?{}:{clientId:{in:clientScope.clientIds}})}},take:50,orderBy:{dueAt:"asc"},select:{id:true,customerLabel:true,dueAt:true,shipmentId:true}}) : [],
+      mayReadCustoms ? db.onboardingCase.findMany({where:{...actionWhere,activatedAt:null,status:{notIn:["active","activated","withdrawn"]}},select:{id:true,currentStep:true},take:50}) : [],
+    ]);
+    return { actionItems,
+      complianceSummary: proofSummary ? {entriesWithProof:proofSummary._count,avgScore:Math.round(proofSummary._avg.scoreOverall??0),linesAtRiskTotal:proofSummary._sum.linesAtRisk??0,dutySavingsIdentifiedUsd:Number(proofSummary._sum.dutySavingsIdentifiedUsd??0)} : null,
+      setupSummary:{incompleteCount:setups.length,stepsRemaining:setups.reduce((n,s)=>n+Math.max(1,7-s.currentStep),0)},
+      needsFromYou:deadlines.map(d=>({id:d.id,label:d.customerLabel||"Your broker needs information",dueAt:d.dueAt,href:`/shipments/${d.shipmentId}`})),
+    };
   })();
 
   inFlightDashboardPromises.set(cacheKey, fetchPromise);

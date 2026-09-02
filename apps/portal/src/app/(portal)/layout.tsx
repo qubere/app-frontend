@@ -1,5 +1,6 @@
 "use client";
 
+import { PortalNotifications } from "@/components/PortalNotifications";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -253,18 +254,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               <HelpCircle className="w-4 h-4" />
             </button>
 
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                aria-label="Notifications"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F5F5F7] transition cursor-pointer"
-              >
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-white font-bold text-[9px] flex items-center justify-center border-2 border-white">
-                  4
-                </span>
-              </button>
-            </div>
+            <PortalNotifications />
 
             {/* Clerk Avatar & User Menu Dropdown */}
             <div className="relative">

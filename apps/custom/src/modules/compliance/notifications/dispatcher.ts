@@ -1,3 +1,4 @@
+import { renderPortalEmail } from "@/lib/portal/portalNotifications";
 import { renderAssistAlertEmail } from "@/modules/notifications/assistAlertNotifications";
 // Asynchronous delivery of queued ComplianceNotification rows. Mirrors
 // ShipmentEventConsumer.dispatchOutboxEvents: optimistic claim via updateMany
@@ -119,6 +120,8 @@ export class ComplianceNotificationDispatcher {
             },
           });
           format = accountConfig?.rpsEmailFormat ?? "HTML";
+        } else if (notification.notificationType === "PORTAL_UPDATE") {
+          rendered = renderPortalEmail(notification.payload);
         } else if (notification.notificationType === "ASSIST_AMORTIZATION_ALERT") {
           rendered = renderAssistAlertEmail(notification.payload, config.appBaseUrl);
         } else if (notification.notificationType === "LICENSE_ALERT") {

@@ -1,3 +1,6 @@
+-- AlterEnum
+ALTER TYPE "ComplianceNotificationType" ADD VALUE 'PORTAL_UPDATE';
+
 -- AlterTable
 ALTER TABLE "ComplianceDeadline" ADD COLUMN     "customerActionable" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "customerLabel" TEXT;
@@ -8,6 +11,9 @@ ALTER TABLE "CustomerRequest" ADD COLUMN     "metadata" JSONB;
 -- AlterTable
 ALTER TABLE "ComplianceFinding" ADD COLUMN     "lineNumber" INTEGER,
 ADD COLUMN     "metadata" JSONB;
+
+-- AlterTable
+ALTER TABLE "ComplianceNotification" ADD COLUMN     "portalEventKey" TEXT;
 
 -- AlterTable
 ALTER TABLE "ShipmentCharge" ADD COLUMN     "portalVisible" BOOLEAN NOT NULL DEFAULT false;
@@ -102,9 +108,6 @@ CREATE TABLE "ClientDocument" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EntryProof_supersededById_key" ON "EntryProof"("supersededById");
-
--- CreateIndex
 CREATE INDEX "EntryProof_accountId_idx" ON "EntryProof"("accountId");
 
 -- CreateIndex
@@ -145,6 +148,9 @@ CREATE INDEX "ClientDocument_clientId_kind_status_idx" ON "ClientDocument"("clie
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ClientDocument_clientId_kind_sourceModel_sourceId_key" ON "ClientDocument"("clientId", "kind", "sourceModel", "sourceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ComplianceNotification_portalEventKey_key" ON "ComplianceNotification"("portalEventKey");
 
 -- AddForeignKey
 ALTER TABLE "EntryProof" ADD CONSTRAINT "EntryProof_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -82,11 +82,11 @@ export function mapPortalShipmentStatus(params: {
   let customsStatus: CustomerCustomsStatus = "Broker preparing entry";
   const normFiling = (filingStatus || "").toUpperCase();
 
-  if (openCustomerRequestCount > 0) {
-    customsStatus = "Documents needed";
-  } else if (normFiling.includes("RELEASED") || normFiling.includes("ACCEPTED")) {
+  if (normFiling.includes("RELEASED")) {
     customsStatus = "Released";
-  } else if (normFiling.includes("TRANSMITTED") || normFiling.includes("SUBMITTED")) {
+  } else if (openCustomerRequestCount > 0) {
+    customsStatus = "Documents needed";
+  } else if (normFiling.includes("ACCEPTED") || normFiling.includes("TRANSMITTED") || normFiling.includes("SUBMITTED")) {
     customsStatus = "Filed with customs";
   } else if (normFiling.includes("CUSTOMSHOLD") || normFiling.includes("HOLD")) {
     customsStatus = "On hold";
