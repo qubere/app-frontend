@@ -242,7 +242,7 @@ describe('Shipment loading budget and deferred sections', () => {
   });
   it('loads workspace documents, 50 per page, with another page available', async () => {
     m.ctx.permissions.push('portal.documents.read');
-    m.db.shipmentDocument.findMany.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ id: `doc${i}`, status: 'Received' })));
+    m.db.shipmentDocument.findMany.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ id: `doc${i}`, status: 'Received', createdAt: new Date('2026-01-01T00:00:00Z') })));
     const response = await detail.GET(req('shipments/s1?section=documents&page=1'), params('s1'));
     expect(response.status).toBe(200);
     const body = await response.json();

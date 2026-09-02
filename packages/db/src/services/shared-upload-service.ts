@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
+import type { DocumentChannel, DocumentUploaderType, Prisma } from "@prisma/client";
 import { storeDocumentBytes } from "@qubere/storage";
 import { db } from "../index";
+import { buildDocumentProvenance } from "./document-provenance";
 
 export interface SharedUploadParams {
   accountId: string;
@@ -15,6 +17,13 @@ export interface SharedUploadParams {
   source?: string; // "UPLOAD" | "PORTAL_UPLOAD" | "EMAIL"
   portalVisibility?: string; // "CUSTOMER" | "INTERNAL"
   userId?: string | null;
+  /** Normalized ingestion provenance. See ShipmentDocument.channel. */
+  channel?: DocumentChannel | null;
+  uploadedByUserId?: string | null;
+  uploadedByType?: DocumentUploaderType | null;
+  uploadedByName?: string | null;
+  uploadedByEmail?: string | null;
+  channelMeta?: Prisma.InputJsonValue | null;
 }
 
 export interface SharedUploadResult {
@@ -51,11 +60,39 @@ export async function processSharedDocumentUpload(
     source = "PORTAL_UPLOAD",
     portalVisibility = "CUSTOMER",
     userId,
+    channel,
+    uploadedByType,
+    channelMeta = null,
   } = params;
 
   if (!fileBuffer || fileBuffer.byteLength === 0) {
     throw new Error("File content is empty");
   }
+
+  // Ingestion provenance -- written once, immutable. Attribution is explicit:
+  // callers pass `uploadedByUserId` for a real user upload; `userId` alone
+  // only drives the work assignee (below), since an email/API ingest has no
+  // uploading user. Falls back to sensible defaults for older callers.
+  const provenance = channel
+    ? await buildDocumentProvenance({
+        channel,
+        uploadedByType:
+          uploadedByType ??
+          (channel === "CUSTOMER_PORTAL"
+            ? "CUSTOMER_USER"
+            : channel === "EMAIL"
+            ? "EMAIL_SENDER"
+            : channel === "API"
+            ? "API_CLIENT"
+            : channel === "WEB_APP"
+            ? "INTERNAL_USER"
+            : "SYSTEM"),
+        uploadedByUserId: params.uploadedByUserId ?? null,
+        uploadedByName: params.uploadedByName ?? null,
+        uploadedByEmail: params.uploadedByEmail ?? null,
+        channelMeta: channelMeta ?? null,
+      })
+    : null;
 
   const byteSize = fileBuffer.byteLength;
   const checksum = createHash("sha256").update(fileBuffer).digest("hex");
@@ -119,6 +156,7 @@ export async function processSharedDocumentUpload(
       byteSize,
       checksum,
       source,
+      ...(provenance ?? {}),
       portalVisibility,
       status: "Received",
       assignedToUserId: userId || null,

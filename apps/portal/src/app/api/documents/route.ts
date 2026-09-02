@@ -57,6 +57,9 @@ export const POST = withPortalAccount(async (ctx, req: Request) => {
       source: "PORTAL_UPLOAD",
       portalVisibility: "CUSTOMER",
       userId: ctx.userId,
+      channel: "CUSTOMER_PORTAL",
+      uploadedByType: "CUSTOMER_USER",
+      uploadedByUserId: ctx.userId,
     });
 
     // Link to request if uploaded as part of a customer request

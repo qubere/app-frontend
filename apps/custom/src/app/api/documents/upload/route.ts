@@ -5,6 +5,7 @@ import { buildErrorResponse } from "@/lib/api/error";
 import { db } from "@/lib/db";
 import { storeDocumentFile, StorageValidationError } from "@/lib/storage";
 import { createAuditLog } from "@/lib/audit";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 import {
   resolveTenantShipmentId,
   shipmentResolutionStatus,
@@ -163,7 +164,17 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         data: { fileName: file.name, ...documentFields },
       })
     : await db.shipmentDocument.create({
-        data: { accountId, shipmentId: targetShipmentId, fileName: file.name, ...documentFields },
+        data: {
+          accountId,
+          shipmentId: targetShipmentId,
+          fileName: file.name,
+          ...documentFields,
+          ...(await buildDocumentProvenance({
+            channel: "WEB_APP",
+            uploadedByType: "INTERNAL_USER",
+            uploadedByUserId: userId,
+          })),
+        },
       });
 
   const crossShipmentDuplicates = await findCrossShipmentDuplicates(

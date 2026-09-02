@@ -2,6 +2,7 @@ import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db } from "@qubere/db";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 import { storeDocumentBytes } from "@qubere/storage";
 import { createHash } from "crypto";
 import path from "path";
@@ -181,6 +182,12 @@ export const POST = withPortalAccount(async (ctx, req: Request, { params }: { pa
         status: "QUARANTINED",
         portalVisibility: "CUSTOMER",
         source: "PORTAL_UPLOAD",
+        ...(await buildDocumentProvenance({
+          channel: "CUSTOMER_PORTAL",
+          uploadedByType: "CUSTOMER_USER",
+          uploadedByUserId: auth.ctx.userId,
+          channelMeta: { requestId: id },
+        })),
       },
     });
 

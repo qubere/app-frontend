@@ -11,6 +11,7 @@ import { assertParseableFormat } from "@/modules/documents/processing/documentSo
 import { isDocumentParserError } from "@/modules/documents/parser/contracts";
 import { screenUploadForMalware } from "@/modules/documents/processing/malwarePolicy";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 
 export const maxDuration = 60;
 
@@ -99,6 +100,13 @@ export async function POST(
         mimeType: file.type === "" ? null : file.type,
         status: "Received",
         source: "EMAIL_REQUEST",
+        ...(await buildDocumentProvenance({
+          channel: "EMAIL",
+          uploadedByType: "EMAIL_SENDER",
+          uploadedByName: recipientEmail ?? null,
+          uploadedByEmail: recipientEmail ?? null,
+          channelMeta: { via: "secure-upload-link", recipientEmail: recipientEmail ?? null },
+        })),
       },
     });
 

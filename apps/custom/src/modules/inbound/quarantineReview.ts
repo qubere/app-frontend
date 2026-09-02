@@ -11,6 +11,7 @@ import { randomUUID } from "crypto";
 import { db, withDataModeContext } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 import { enqueueDocumentParse } from "@/modules/documents/processing/documentProcessingWorker";
 import { notify } from "@/modules/notifications/notify";
 import {
@@ -156,6 +157,7 @@ async function releaseQuarantinedInboundEmailImpl(params: {
     const correlationId = randomUUID();
     const docType = DocumentTypeCatalog.matchDocumentType(attachment.originalFilename).name;
 
+    const senderAddress = email.originalFromAddress || email.normalizedFromAddress || null;
     const document = await db.shipmentDocument.create({
       data: {
         accountId,
@@ -168,6 +170,18 @@ async function releaseQuarantinedInboundEmailImpl(params: {
         checksum: attachment.checksum,
         byteSize: attachment.actualSize,
         mimeType: attachment.declaredMimeType,
+        ...(await buildDocumentProvenance({
+          channel: "EMAIL",
+          uploadedByType: "EMAIL_SENDER",
+          uploadedByName: senderAddress,
+          uploadedByEmail: senderAddress,
+          channelMeta: {
+            fromAddress: senderAddress,
+            subject: email.subject ?? null,
+            inboundEmailId,
+            releasedFromQuarantineBy: adminUserId,
+          },
+        })),
       },
     });
 

@@ -64,6 +64,11 @@ export async function POST(req: Request) {
       source: "INBOUND_EMAIL",
       portalVisibility: "CUSTOMER",
       userId: ctx.userId,
+      channel: "EMAIL",
+      uploadedByType: "EMAIL_SENDER",
+      uploadedByName: senderEmail,
+      uploadedByEmail: senderEmail,
+      channelMeta: { fromAddress: senderEmail, toAddress: recipientEmail },
     });
 
     return NextResponse.json({

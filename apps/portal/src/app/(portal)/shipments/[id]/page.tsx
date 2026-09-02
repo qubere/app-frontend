@@ -41,6 +41,9 @@ interface ShipmentData {
     docType: string;
     status: string;
     createdAt: string;
+    channel?: string | null;
+    uploadedBy?: string | null;
+    uploadedAt?: string;
   }>;
   entries: PortalEntry[];
   invoices: Array<{
@@ -257,7 +260,11 @@ function ShipmentDetails({ id }: { id: string }) {
             <div key={d.id} className="p-4 flex items-center justify-between">
               <div>
                 <h4 className="text-sm font-semibold text-[#1D1D1F]">{d.fileName}</h4>
-                <span className="text-xs text-[#86868B]">{d.docType}</span>
+                <span className="text-xs text-[#86868B]">
+                  {d.docType}
+                  {" · "}Uploaded by {d.uploadedBy || "Not recorded"}
+                  {d.uploadedAt ? ` on ${new Date(d.uploadedAt).toLocaleDateString()}` : ""}
+                </span>
               </div>
               <a
                 href={`/api/documents/${d.id}/download`}

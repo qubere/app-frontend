@@ -9,6 +9,7 @@
     "./dataMode": "./src/dataMode.ts",
     "./environment": "./src/environment.ts",
     "./services/shared-upload-service": "./src/services/shared-upload-service.ts",
+    "./services/document-provenance": "./src/services/document-provenance.ts",
     "./services/client-setup-service": "./src/services/client-setup-service.ts",
     "./services/onboarding-readiness": "./src/services/onboarding-readiness.ts"
   },
