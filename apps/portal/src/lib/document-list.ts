@@ -23,7 +23,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
   const owners = await loadImporterOwners(accountId, clientIds);
   const [shipmentDocuments, clientDocuments] = await Promise.all([
     db.shipmentDocument.findMany({
-      where: { AND: [documentClientWhere(accountId, clientIds, owners), afterCursor(cursor, 'S')], portalVisibility: 'CUSTOMER', ...(shipmentId ? { shipmentId } : {}), ...(docType ? { docType } : {}) },
+      where: { AND: [documentClientWhere(accountId, clientIds, owners), afterCursor(cursor, 'S')], ...(shipmentId ? { shipmentId } : {}), ...(docType ? { docType } : {}) },
       take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true, fileName: true, docType: true, byteSize: true, mimeType: true, source: true, status: true, shipmentId: true, createdAt: true,
         shipment: { select: { id: true, shipmentNumber: true } },
@@ -31,7 +31,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
       },
     }),
     input.includeSetup && !shipmentId ? db.clientDocument.findMany({
-      where: { accountId, ...(clientIds === null ? {} : { clientId: { in: clientIds } }), status: 'ACTIVE', portalVisible: true, ...(docType ? { kind: docType } : {}), ...afterCursor(cursor, 'C') },
+      where: { accountId, ...(clientIds === null ? {} : { clientId: { in: clientIds } }), status: 'ACTIVE', ...(docType ? { kind: docType } : {}), ...afterCursor(cursor, 'C') },
       take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true, title: true, kind: true, contentType: true, sourceModel: true, sourceId: true, createdAt: true },
     }) : [],

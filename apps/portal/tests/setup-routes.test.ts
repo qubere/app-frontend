@@ -3,7 +3,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ImporterSetupList } from '../src/components/ImporterSetupList';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const m = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read', 'portal.users.manage'], dataMode: 'DEMO' }, scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] }, read: vi.fn(), db: { user: { findUnique: vi.fn() }, client: { findMany: vi.fn(), findFirst: vi.fn() }, clientDocument: { findFirst: vi.fn() }, accountMembership: { findFirst: vi.fn(), findMany: vi.fn() }, auditLog: { create: vi.fn() }, customerRequest: { create: vi.fn() } } }));
+const m = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read', 'portal.users.manage'], dataMode: 'DEMO' }, scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] }, read: vi.fn(), db: { account: { findFirst: vi.fn() }, powerOfAttorney: { findFirst: vi.fn() }, user: { findUnique: vi.fn() }, client: { findMany: vi.fn(), findFirst: vi.fn() }, clientDocument: { findFirst: vi.fn() }, accountMembership: { findFirst: vi.fn(), findMany: vi.fn() }, auditLog: { create: vi.fn() }, customerRequest: { create: vi.fn() } } }));
 vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: async () => m.ctx }));
 vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: async () => m.scope }));
 vi.mock('@qubere/auth', async () => ({ ...await import('../../../packages/auth/src/portal-auth'), getAccountContext: async () => m.ctx, getEffectiveUserScope: async () => m.scope }));
@@ -19,7 +19,7 @@ describe('Setup schema recovery', () => {
     it.each(['P2021', 'P2022'])('returns a safe update-required response for %s', async code => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         m.db.client.findFirst.mockRejectedValue({ code, message: 'PRIVATE database schema' });
-        const response = await setup.GET(new Request('http://portal/api/setup'));
+        const response = await setup.GET(new Request('http://portal/api/setup?clientId=target'));
         expect(response.status).toBe(503);
         expect((await response.json()).error).toBe('PORTAL_SCHEMA_OUTDATED');
         expect(response.headers.get('Cache-Control')).toBe('no-store');
@@ -27,7 +27,7 @@ describe('Setup schema recovery', () => {
     it('recognizes an old generated client rejecting the new setup relation', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         m.db.client.findFirst.mockRejectedValue(new Prisma.PrismaClientValidationError('Unknown field `clientDocuments` for include statement. PRIVATE query', { clientVersion: '6.19.3' }));
-        const response = await setup.GET(new Request('http://portal/api/setup'));
+        const response = await setup.GET(new Request('http://portal/api/setup?clientId=target'));
         expect(response.status).toBe(503);
         const body = await response.text();
         expect(body).toContain('PORTAL_SCHEMA_OUTDATED');
@@ -36,7 +36,7 @@ describe('Setup schema recovery', () => {
     it('does not treat an unrelated query typo as a deployment problem', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         m.db.client.findFirst.mockRejectedValue(new Prisma.PrismaClientValidationError('Unknown argument `typo`.', { clientVersion: '6.19.3' }));
-        const response = await setup.GET(new Request('http://portal/api/setup'));
+        const response = await setup.GET(new Request('http://portal/api/setup?clientId=target'));
         expect(response.status).toBe(500);
         expect((await response.json()).error).toBe('PORTAL_UNAVAILABLE');
     });
@@ -45,20 +45,29 @@ describe('Setup schema recovery', () => {
         const delegate = m.db.clientDocument;
         (m.db as any).clientDocument = undefined;
         try {
-            expect((await setup.GET(new Request('http://portal/api/setup'))).status).toBe(503);
+            expect((await setup.GET(new Request('http://portal/api/setup?clientId=target'))).status).toBe(503);
             expect((await download.GET(new Request('http://portal/api/setup/documents/doc1/download'), { params: Promise.resolve({ id: 'doc1' }) })).status).toBe(503);
             expect(m.read).not.toHaveBeenCalled();
         } finally { m.db.clientDocument = delegate; }
     });
 });
 describe('Setup scope and content safety', () => {
-    it('masks EIN and excludes raw notes and screening details', async () => { const r = await setup.GET(new Request('http://portal/api/setup')); expect(r.status).toBe(200); const body = JSON.stringify(await r.json()); expect(body).toContain('6789'); expect(body).not.toMatch(/12-345|PRIVATE|storageUrl/); expect(r.headers.get('Cache-Control')).toBe('no-store'); });
+    it('masks EIN and excludes raw notes and screening details', async () => { const r = await setup.GET(new Request('http://portal/api/setup?clientId=target')); expect(r.status).toBe(200); const body = JSON.stringify(await r.json()); expect(body).toContain('6789'); expect(body).not.toMatch(/12-345|PRIVATE|storageUrl/); expect(r.headers.get('Cache-Control')).toBe('no-store'); });
     it('rejects another client before reading any setup', async () => { const r = await setup.GET(new Request('http://portal/api/setup?clientId=amazon')); expect(r.status).toBe(404); expect(m.db.client.findFirst).not.toHaveBeenCalled(); });
-    it('requires a choice when more than one client is assigned', async () => { m.scope.authorizedClientIds = ['target', 'amazon']; m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }, { id: 'amazon', name: 'Amazon' }]); const r = await setup.GET(new Request('http://portal/api/setup')); expect((await r.json()).selectClient).toBe(true); expect(m.db.client.findFirst).not.toHaveBeenCalled(); });
+    it('loads workspace setup by default even with multiple client records', async () => {
+        m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }, { id: 'duplicate', name: 'target' }]);
+        const data = await m.db.client.findFirst(); m.db.client.findFirst.mockClear();
+        m.db.account.findFirst.mockResolvedValue({ ...data, id: 'a1' });
+        const r = await setup.GET(new Request('http://portal/api/setup'));
+        const body = await r.json();
+        expect(body.clientId).toBeNull(); expect(body.selectClient).toBeUndefined(); expect(body.importers).toHaveLength(1);
+        expect(m.db.account.findFirst.mock.calls[0][0].where).toEqual({ id: 'a1', deletedAt: null });
+        expect(m.db.client.findFirst).not.toHaveBeenCalled();
+    });
     it('keeps all authorized choices after selecting an empty client so another setup is reachable', async () => {
         m.scope.authorizedClientIds = ['target', 'target-retail'];
         const choices = [{ id: 'target', name: 'Target' }, { id: 'target-retail', name: 'Target Retail' }];
-        m.db.client.findMany.mockImplementation(async ({ where }) => choices.filter(c => where.id.in.includes(c.id)));
+        m.db.client.findMany.mockImplementation(async ({ where }) => choices.filter(c => !where.id || where.id.in.includes(c.id)));
         m.db.client.findFirst.mockResolvedValueOnce({ id: 'target', name: 'Target', account: { name: 'Broker' }, onboardingCases: [], importersOfRecord: [], clientDocuments: [], clientStakeholders: [] });
         const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
         expect(body.importers).toEqual([]);
@@ -71,7 +80,7 @@ describe('Setup scope and content safety', () => {
         expect(response.status).toBe(404);
         expect(m.db.client.findFirst).not.toHaveBeenCalled();
     });
-    it('downloads only active visible documents in the scoped client and audits access', async () => { const r = await download.GET(new Request('http://portal/api/setup/documents/doc1/download'), { params: Promise.resolve({ id: 'doc1' }) }); expect(r.status).toBe(200); expect(await r.text()).toContain('%PDF'); expect(r.headers.get('X-Content-Type-Options')).toBe('nosniff'); expect(m.db.clientDocument.findFirst).toHaveBeenCalledWith({ where: { id: 'doc1', accountId: 'a1', clientId: { in: ['target'] }, portalVisible: true, status: 'ACTIVE' } }); expect(m.db.auditLog.create).toHaveBeenCalled(); });
+    it('downloads active documents within the workspace and audits access', async () => { const r = await download.GET(new Request('http://portal/api/setup/documents/doc1/download'), { params: Promise.resolve({ id: 'doc1' }) }); expect(r.status).toBe(200); expect(await r.text()).toContain('%PDF'); expect(r.headers.get('X-Content-Type-Options')).toBe('nosniff'); expect(m.db.clientDocument.findFirst).toHaveBeenCalledWith({ where: { id: 'doc1', accountId: 'a1', status: 'ACTIVE' } }); expect(m.db.auditLog.create).toHaveBeenCalled(); });
     it('does not touch storage for an inaccessible or revoked document', async () => { m.db.clientDocument.findFirst.mockResolvedValue(null); expect((await download.GET(new Request('http://portal/api/setup/documents/other/download'), { params: Promise.resolve({ id: 'other' }) })).status).toBe(404); expect(m.read).not.toHaveBeenCalled(); });
     it('records an access request rather than creating a login', async () => { const r = await invite.POST(new Request('http://portal/api/setup/stakeholders/invite-request', { method: 'POST', body: JSON.stringify({ clientId: 'target', name: 'Billing contact', email: 'billing@example.com', role: 'BILLING_CONTACT' }) })); expect(r.status).toBe(201); expect(m.db.customerRequest.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'CONFIRMATION', clientId: 'target', metadata: { name: 'Billing contact', email: 'billing@example.com', role: 'BILLING_CONTACT' } }) }); });
     it('denies access requests without the management permission', async () => { m.ctx.permissions = ['portal.setup.read']; expect((await invite.POST(new Request('http://portal/api/setup/stakeholders/invite-request', { method: 'POST', body: '{}' }))).status).toBe(404); expect(m.db.customerRequest.create).not.toHaveBeenCalled(); });
@@ -90,7 +99,7 @@ describe('Setup navigation and API access agree', () => {
         m.ctx.permissions = permissions;
         const profile = await (await me.GET(new Request('http://portal/api/me'))).json();
         expect(profile.capabilities.canReadSetup).toBe(allowed);
-        const response = await setup.GET(new Request('http://portal/api/setup'));
+        const response = await setup.GET(new Request('http://portal/api/setup?clientId=target'));
         expect(response.status).toBe(allowed ? 200 : 404);
         if (!allowed) expect(m.db.client.findFirst).not.toHaveBeenCalled();
     });
@@ -100,7 +109,7 @@ describe('Setup navigation and API access agree', () => {
         m.ctx.permissions = ['portal.porter'];
         const profile = await (await me.GET(new Request('http://portal/api/me'))).json();
         expect(profile.capabilities.canReadSetup).toBe(false);
-        expect((await setup.GET(new Request('http://portal/api/setup'))).status).toBe(404);
+        expect((await setup.GET(new Request('http://portal/api/setup?clientId=target'))).status).toBe(404);
         expect(m.db.user.findUnique).toHaveBeenCalledTimes(1);
     });
 
@@ -120,7 +129,7 @@ describe('Newly uploaded signed PoAs', () => {
             importersOfRecord: [{ id: 'different-ior', name: 'Other Target subsidiary', powersOfAttorney: [{ id: 'wrong-poa', status: 'draft', createdAt: new Date('2026-09-03') }] }, importer],
             clientDocuments: [{ id: 'signed-file', kind: 'EXECUTED_POA', sourceId: 'poa-new', title: 'Executed Power of Attorney' }], clientStakeholders: [],
         });
-        const response = await setup.GET(new Request('http://portal/api/setup'));
+        const response = await setup.GET(new Request('http://portal/api/setup?clientId=target'));
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.poa).toMatchObject({ status: 'executed', documentId: 'signed-file' });
@@ -147,7 +156,7 @@ describe('Customs and portal readiness agree', () => {
     };
     it('matches the screenshot with a legacy unlinked importer and only 5106/activation pending', async () => {
         m.db.client.findFirst.mockResolvedValueOnce(completed());
-        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
         const states = Object.fromEntries(body.onboarding.steps.map((s: any) => [s.key, s.state]));
         expect(states).toEqual({ legal_entity: 'done', five_oh_six: 'pending', poa: 'done', bond: 'done', screening: 'done', billing: 'done', activation: 'pending' });
         expect(body.onboarding.blockers).toEqual(['Importer registration pending']);
@@ -159,7 +168,7 @@ describe('Customs and portal readiness agree', () => {
         const client = completed();
         (client.onboardingCases[0].fiveOhSixRecords as any[]).push({ status: 'submitted' });
         m.db.client.findFirst.mockResolvedValueOnce(client);
-        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
         expect(body.onboarding.steps.find((s: any) => s.key === 'five_oh_six').state).toBe('done');
         expect(body.onboarding.steps.find((s: any) => s.key === 'activation').state).toBe('pending');
     });
@@ -167,13 +176,13 @@ describe('Customs and portal readiness agree', () => {
         const client = completed();
         client.onboardingCases[0].entities.push({ ...client.onboardingCases[0].entities[0], importerOfRecordId: 'secondary', importerOfRecord: { ...client.onboardingCases[0].entities[0].importerOfRecord, id: 'secondary', name: 'Target subsidiary' }, screeningStatus: 'pending' });
         m.db.client.findFirst.mockResolvedValueOnce(client);
-        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
         expect(body.onboarding.steps.find((s: any) => s.key === 'screening').state).toBe('pending');
     });
     it('does not invent a POA awaiting signature for a client with no linked setup', async () => {
         const client = completed(); client.onboardingCases = [];
         m.db.client.findFirst.mockResolvedValueOnce(client);
-        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
         expect(body.onboarding.status).toBe('not_started');
         expect(body.onboarding.blockers).toEqual([]);
         expect(body.onboarding.steps.every((s: any) => s.state === 'pending')).toBe(true);
@@ -182,7 +191,7 @@ describe('Customs and portal readiness agree', () => {
         const client = completed();
         (client.onboardingCases[0].stepStatus as any).waiver_five_oh_six = { reason: 'PRIVATE approval notes' };
         m.db.client.findFirst.mockResolvedValueOnce(client);
-        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
         expect(body.onboarding.steps.find((s: any) => s.key === 'five_oh_six').state).toBe('waived');
         expect(JSON.stringify(body)).not.toContain('PRIVATE');
     });
@@ -191,7 +200,7 @@ describe('Customs and portal readiness agree', () => {
 describe('All importers in a client workspace', () => {
     const importer = (id: string, name: string, clientId = 'target') => ({ id, accountId: 'a1', clientId, name, irsEin: '123456789', cbpImporterNumber: id, registrationStatus: 'registered', powersOfAttorney: [], bond: null });
     const client = (importers: any[] = []) => ({ id: 'target', name: 'Target', account: { name: 'Broker' }, importersOfRecord: importers, onboardingCases: [] as any[], clientDocuments: [], clientStakeholders: [] });
-    const load = async () => (await setup.GET(new Request('http://portal/api/setup'))).json();
+    const load = async () => (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
     it('returns and renders every linked importer even without an onboarding case', async () => {
         m.db.client.findFirst.mockResolvedValueOnce(client([importer('one', 'Target Retail'), importer('two', 'Target Imports')]));
         const body = await load();
@@ -242,5 +251,41 @@ describe('All importers in a client workspace', () => {
         c.onboardingCases = [{ id: 'case-one', primaryImporter: one, primaryImporterId: 'one', status: 'active', stepStatus: {}, fiveOhSixRecords: [], entities: [] }];
         m.db.client.findFirst.mockResolvedValueOnce(c);
         expect((await load()).onboarding.status).toBe('in_progress');
+    });
+});
+
+describe('Workspace onboarding and legacy signed artifacts', () => {
+    it('shows the saved executed PoA and every importer despite duplicate or missing client links', async () => {
+        const poa = { id: 'executed', status: 'executed', signerName: 'Officer', createdAt: new Date('2026-09-02'), signedDate: new Date('2026-09-02'), executedDocumentUrl: 'PRIVATE_STORAGE_URL' };
+        const importer = { id: 'ior', accountId: 'a1', clientId: null, name: 'target', irsEin: '123456789', registrationStatus: 'pending_5106', powersOfAttorney: [poa], bond: null };
+        m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target Corporation' }, { id: 'duplicate', name: 'target' }]);
+        m.db.account.findFirst.mockResolvedValue({ id: 'a1', name: 'Target', importersOfRecord: [importer, { ...importer, id: 'second', clientId: 'duplicate', name: 'Target Imports', powersOfAttorney: [] }], clientDocuments: [], clientStakeholders: [], onboardingCases: [{ id: 'case', clientId: 'duplicate', status: 'in_progress', primaryImporter: importer, primaryImporterId: 'ior', stepStatus: {}, fiveOhSixRecords: [], entities: [{ id: 'entity', importerOfRecord: importer, importerNumber: '123456789', importerNumberType: 'EIN', poa, screeningStatus: 'passed' }] }] });
+        const response = await setup.GET(new Request('http://portal/api/setup'));
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.clientId).toBeNull(); expect(body.importers).toHaveLength(2);
+        const target = body.importers.find((i: any) => i.id === 'ior');
+        expect(target.poa).toMatchObject({ status: 'executed', downloadUrl: '/api/setup/poas/executed/download' });
+        expect(target.screening.status).toBe('passed');
+        expect(target.onboarding.steps.find((s: any) => s.key === 'poa').state).toBe('done');
+        expect(body.documents[0].downloadUrl).toBe('/api/setup/poas/executed/download');
+        expect(JSON.stringify(body)).not.toMatch(/PRIVATE_STORAGE|123456789/);
+        const query = m.db.account.findFirst.mock.calls.at(-1)![0];
+        expect(query.include.onboardingCases.where).toEqual({ accountId: 'a1', status: { not: 'withdrawn' } });
+        expect(query.include.importersOfRecord.where).toEqual({ accountId: 'a1' });
+    });
+    it('downloads an executed artifact before ClientDocument promotion and audits the read', async () => {
+        const poas = await import('../src/app/api/setup/poas/[id]/download/route');
+        m.db.powerOfAttorney.findFirst.mockResolvedValue({ id: 'poa', executedDocumentUrl: 'stored://signed', envelope: null });
+        const response = await poas.GET(new Request('http://portal/api/setup/poas/poa/download'), { params: Promise.resolve({ id: 'poa' }) });
+        expect(response.status).toBe(200); expect(response.headers.get('Content-Type')).toBe('application/pdf');
+        expect(m.db.powerOfAttorney.findFirst.mock.calls[0][0].where).toEqual({ id: 'poa', accountId: 'a1', status: 'executed', revokedAt: null, importerOfRecord: { accountId: 'a1' } });
+        expect(m.db.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ accountId: 'a1', entity: 'PowerOfAttorney', entityId: 'poa' }) });
+    });
+    it('does not access storage for a foreign, revoked or unsigned PoA', async () => {
+        const poas = await import('../src/app/api/setup/poas/[id]/download/route');
+        m.db.powerOfAttorney.findFirst.mockResolvedValue(null);
+        expect((await poas.GET(new Request('http://portal/api/setup/poas/other/download'), { params: Promise.resolve({ id: 'other' }) })).status).toBe(404);
+        expect(m.read).not.toHaveBeenCalled();
     });
 });

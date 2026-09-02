@@ -47,7 +47,7 @@ describe("authorizePortalResource Engine", () => {
     expect(result.errorResponse?.status).toBe(404);
   });
 
-  it("should fail closed with 404 when resource has null/unresolved clientId", async () => {
+  it("allows a workspace shipment without a client link", async () => {
     vi.mocked(authModule.getAccountContext).mockResolvedValueOnce(mockAccountContext as any);
     vi.mocked(scopeModule.getEffectiveUserScope).mockResolvedValueOnce({
       isAllClients: false,
@@ -61,11 +61,11 @@ describe("authorizePortalResource Engine", () => {
       resourceClientId: null,
     });
 
-    expect(result.authorized).toBe(false);
-    expect(result.errorResponse?.status).toBe(404);
+    expect(result.authorized).toBe(true);
+    expect(result.errorResponse).toBeNull();
   });
 
-  it("should fail closed with 404 when clientId is outside user's authorizedClientIds", async () => {
+  it("allows other client metadata inside the same workspace", async () => {
     vi.mocked(authModule.getAccountContext).mockResolvedValueOnce(mockAccountContext as any);
     vi.mocked(scopeModule.getEffectiveUserScope).mockResolvedValueOnce({
       isAllClients: false,
@@ -79,8 +79,8 @@ describe("authorizePortalResource Engine", () => {
       resourceClientId: "cli_OTHER_CLIENT",
     });
 
-    expect(result.authorized).toBe(false);
-    expect(result.errorResponse?.status).toBe(404);
+    expect(result.authorized).toBe(true);
+    expect(result.errorResponse).toBeNull();
   });
 
   it("should succeed when accountId matches and clientId is within scope", async () => {
@@ -150,10 +150,10 @@ describe("resolvePortalClientScope", () => {
 });
 
 describe('Entry Proof and setup permissions',()=>{
- it.each(['portal.entries.comment','portal.setup.read'])('rejects cross-client %s with the real authorization engine',async permission=>{
+ it.each(['portal.entries.comment','portal.setup.read'])('rejects cross-workspace %s with the real authorization engine',async permission=>{
   vi.mocked(authModule.getAccountContext).mockResolvedValue({accountId:'a',userId:'u',roleNames:['CUSTOMER_USER'],permissions:[permission]} as any);
   vi.mocked(scopeModule.getEffectiveUserScope).mockResolvedValue({isAllClients:false,authorizedClientIds:['target'],teamIds:[]} as any);
-  expect((await authorizePortalResource({permission,resourceAccountId:'a',resourceClientId:'amazon'})).errorResponse?.status).toBe(404);
+  expect((await authorizePortalResource({permission,resourceAccountId:'amazon-workspace',resourceClientId:'amazon'})).errorResponse?.status).toBe(404);
  });
  it('does not let a viewer submit line questions',async()=>{
   vi.mocked(authModule.getAccountContext).mockResolvedValue({accountId:'a',userId:'u',roleNames:['CUSTOMER_VIEWER'],permissions:['portal.setup.read','portal.entries.read']} as any);

@@ -10,9 +10,9 @@ export async function authorizedProof(id: string, permission = 'portal.entries.r
         if (!filing)
             return { error: notFound() } as const;
         const auth = await authorizePortalResource({ permission, resourceAccountId: filing.accountId, resourceClientId: filing.shipment?.clientId, importerName: filing.shipment?.importerName, customerVisibleAt: filing.customerVisibleAt });
-        if (!auth.authorized || !auth.ctx || !auth.effectiveClientId)
+        if (!auth.authorized || !auth.ctx)
             return { error: auth.errorResponse ?? notFound() } as const;
-        const proof = await portalData(auth.ctx, () => db.entryProof.findFirst({ where: { filingId: id, accountId: auth.ctx!.accountId, clientId: auth.effectiveClientId!, status: 'PUBLISHED' }, orderBy: { version: 'desc' } }));
+        const proof = await portalData(auth.ctx, () => db.entryProof.findFirst({ where: { filingId: id, accountId: auth.ctx!.accountId, status: 'PUBLISHED' }, orderBy: { version: 'desc' } }));
         if (!proof)
             return { error: notFound() } as const;
         return { auth, proof, filing } as const;

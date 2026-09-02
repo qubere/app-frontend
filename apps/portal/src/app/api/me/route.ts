@@ -1,6 +1,6 @@
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getEffectiveUserScope, hasRequiredPortalPermission } from "@qubere/auth";
+import { getPortalWorkspaceScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const meCache = new Map<string, { data: any; time: number }>();
@@ -30,7 +30,7 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
     });
   }
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
 
   const [user, authorizedClients] = await Promise.all([
     db.user.findUnique({

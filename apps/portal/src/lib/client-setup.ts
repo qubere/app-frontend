@@ -1,8 +1,9 @@
+import type { Prisma } from '@prisma/client';
 import { db } from '@qubere/db';
 import { computeReadiness } from '@qubere/db/services/onboarding-readiness';
 import type { SetupSummary } from '@qubere/entry-proof';
 
-const poaSelect = { id: true, status: true, createdAt: true, executionMethod: true, signerName: true, signedDate: true, expirationDate: true } as const;
+const poaSelect = { id: true, status: true, createdAt: true, executionMethod: true, signerName: true, signedDate: true, expirationDate: true, executedDocumentUrl: true, envelope: { select: { executedDocumentUrl: true } } } as const;
 const bondSelect = { id: true, bondType: true, suretyName: true, bondNumber: true, bondAmount: true, activityCode: true, expirationDate: true, status: true } as const;
 const importerSelect = {
     id: true, accountId: true, clientId: true, name: true, irsEin: true, cbpImporterNumber: true, registrationStatus: true,
@@ -12,12 +13,12 @@ const importerSelect = {
 const labels: Record<string, string> = { legal_entity: 'Company details', five_oh_six: 'Importer registration', poa: 'Power of attorney', bond: 'Customs bond', screening: 'Screening', billing: 'Billing' };
 const publicBlockers: Record<string, string> = { legal_entity: 'Company details pending', five_oh_six: 'Importer registration pending', poa: 'POA awaiting signature', bond: 'Bond verification pending', screening: 'Screening review pending', billing: 'Billing setup pending' };
 
-export async function loadClientSetup(accountId: string, clientId: string): Promise<SetupSummary | null> {
+export const loadClientSetup = (accountId: string, clientId: string) => loadSetup(accountId, clientId);
+export const loadWorkspaceSetup = (accountId: string) => loadSetup(accountId);
+
+async function loadSetup(accountId: string, clientId?: string): Promise<SetupSummary | null> {
     if (!db.clientDocument?.findFirst) throw { code: 'PORTAL_SCHEMA_OUTDATED' };
-    const c = await db.client.findFirst({
-        where: { id: clientId, accountId },
-        include: {
-            account: { select: { name: true } },
+    const relations = {
             onboardingCases: {
                 where: { accountId, status: { not: 'withdrawn' } }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
                 select: { id: true, primaryImporterId: true, status: true, path: true, activatedAt: true, assignedUserId: true, stepStatus: true, projectedAnnualDutyTaxFee: true,
@@ -26,17 +27,21 @@ export async function loadClientSetup(accountId: string, clientId: string): Prom
                 },
             },
             importersOfRecord: { where: { accountId }, orderBy: [{ name: 'asc' }, { id: 'asc' }], select: importerSelect },
-            clientDocuments: { where: { accountId, portalVisible: true, status: 'ACTIVE' }, select: { id: true, kind: true, title: true, expirationDate: true, sourceId: true } },
+            clientDocuments: { where: { accountId, status: 'ACTIVE' }, select: { id: true, kind: true, title: true, expirationDate: true, sourceId: true } },
             clientStakeholders: { where: { accountId }, orderBy: { name: 'asc' }, select: { name: true, role: true, title: true, isSigner: true, loginStatus: true } },
-        },
-    });
+    } satisfies Prisma.ClientInclude;
+    const c = clientId
+        ? await db.client.findFirst({ where: { id: clientId, accountId }, include: { ...relations, account: { select: { name: true } } } })
+        : await db.account.findFirst({ where: { id: accountId, deletedAt: null }, include: relations });
     if (!c) return null;
     type Importer = NonNullable<(typeof c.onboardingCases)[number]['primaryImporter']>;
     type Case = (typeof c.onboardingCases)[number];
     type Entity = Case['entities'][number];
     const linked = new Map<string, { importer: Importer; onboarding?: Case; entity?: Entity }>();
     const belongsToClient = (i: Importer) => {
-        if ((i.accountId && i.accountId !== accountId) || (i.clientId && i.clientId !== clientId)) return false;
+        if (i.accountId && i.accountId !== accountId) return false;
+        if (!clientId) return true;
+        if (i.clientId && i.clientId !== clientId) return false;
         const clients = new Set((i.onboardingEntities ?? []).filter(e => e.case.accountId === accountId).map(e => e.case.clientId));
         return !!i.clientId || clients.size === 0 || (clients.size === 1 && clients.has(clientId));
     };
@@ -75,7 +80,7 @@ export async function loadClientSetup(accountId: string, clientId: string): Prom
             onboardingCaseId: onboarding?.id ?? null,
             onboarding: { status: onboarding?.status ?? 'on_file', path: onboarding?.path ?? null, activatedAt: onboarding?.activatedAt?.toISOString() ?? null, steps, blockers: active || !onboarding ? [] : checklist.filter(s => !['done', 'waived'].includes(s.status)).map(s => publicBlockers[s.item]) },
             bond: bond ? { type: bond.bondType, surety: bond.suretyName, number: bond.bondNumber, amountUsd: Number(bond.bondAmount), activityCode: bond.activityCode, expirationDate: bond.expirationDate?.toISOString() ?? null, status: bond.status } : null,
-            poa: poa ? { status: poa.status, executionMethod: poa.executionMethod, signerName: poa.signerName, signedDate: poa.status === 'executed' ? poa.signedDate.toISOString() : null, expirationDate: poa.expirationDate?.toISOString() ?? null, documentId: c.clientDocuments.find(d => d.kind === 'EXECUTED_POA' && d.sourceId === poa.id)?.id ?? null } : null,
+            poa: poa ? { status: poa.status, executionMethod: poa.executionMethod, signerName: poa.signerName, signedDate: poa.status === 'executed' ? poa.signedDate?.toISOString() ?? null : null, expirationDate: poa.expirationDate?.toISOString() ?? null, documentId: c.clientDocuments.find(d => d.kind === 'EXECUTED_POA' && d.sourceId === poa.id)?.id ?? null, downloadUrl: poa.status === 'executed' && (poa.executedDocumentUrl || poa.envelope?.executedDocumentUrl) ? `/api/setup/poas/${poa.id}/download` : null } : null,
             screening: { status: entity?.screeningStatus ?? 'not_recorded', lastRunAt: null },
         };
     }).sort((a, b) => a.importer.legalName.localeCompare(b.importer.legalName) || a.id.localeCompare(b.id));
@@ -90,12 +95,12 @@ export async function loadClientSetup(accountId: string, clientId: string): Prom
     const primaryId = latest?.primaryImporterId ?? latest?.entities[0]?.importerOfRecord?.id;
     const primary = importers.find(i => i.id === primaryId) ?? importers[0];
     return {
-        clientId: c.id, clientName: c.name, brokerName: c.account.name, importers,
+        clientId: clientId ?? null, clientName: c.name, brokerName: 'account' in c ? c.account.name : c.name, importers,
         onboarding: { status: allActive ? 'active' : latest ? (['active', 'activated'].includes(latest.status) ? 'in_progress' : latest.status) : (importers.length ? 'on_file' : 'not_started'), path: latest?.path ?? null, activatedAt: allActive ? latest?.activatedAt?.toISOString() ?? null : null, steps, blockers: [...new Set(importers.flatMap(i => i.onboarding.blockers))] },
         // Retain the legacy primary fields for existing consumers. New screens
         // render the full importer collection instead of selecting this one.
         importer: primary?.importer ?? null, bond: primary?.bond ?? null, poa: primary?.poa ?? null, screening: primary?.screening ?? { status: 'not_recorded', lastRunAt: null },
-        documents: c.clientDocuments.map(d => ({ id: d.id, kind: d.kind, title: d.title, expirationDate: d.expirationDate?.toISOString() ?? null })), stakeholders: c.clientStakeholders,
+        documents: [...c.clientDocuments.map(d => ({ id: d.id, kind: d.kind, title: d.title, expirationDate: d.expirationDate?.toISOString() ?? null })), ...importers.flatMap(i => i.poa?.downloadUrl && !i.poa.documentId ? [{ id: `poa-${i.id}`, kind: 'EXECUTED_POA', title: `${i.importer.legalName} — Executed Power of Attorney`, expirationDate: i.poa.expirationDate, downloadUrl: i.poa.downloadUrl }] : [])], stakeholders: c.clientStakeholders,
         brokerTeam: team.map(t => ({ name: [t.user.firstName, t.user.lastName].filter(Boolean).join(' ') || 'Your broker', role: 'Assigned broker', email: t.user.email })),
     };
 }

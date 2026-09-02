@@ -8,7 +8,7 @@ export const DELETE = withPortalAccount(async (ctx, req: Request, { params }: { 
   const { id } = await params;
 
   const document = await db.shipmentDocument.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
     select: {
       id: true,
       accountId: true,
@@ -17,6 +17,7 @@ export const DELETE = withPortalAccount(async (ctx, req: Request, { params }: { 
       fileUrl: true,
       shipmentId: true,
       portalVisibility: true,
+      source: true,
     },
   });
 
@@ -34,6 +35,8 @@ export const DELETE = withPortalAccount(async (ctx, req: Request, { params }: { 
   if (!auth.authorized || auth.errorResponse) {
     return auth.errorResponse || NextResponse.json({ error: "UNAUTHORIZED" }, { status: 403 });
   }
+
+  if (document.source !== "PORTAL_UPLOAD") return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   // Check if attached to a shipment
   if (document.shipmentId) {
@@ -53,7 +56,7 @@ export const DELETE = withPortalAccount(async (ctx, req: Request, { params }: { 
 
   // Delete document record, then best-effort remove the stored object.
   await db.shipmentDocument.delete({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
   });
   if (document.fileUrl) {
     await deleteStoredObject(document.fileUrl);

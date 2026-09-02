@@ -4,7 +4,6 @@ import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource, hasRequiredPortalPermission } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
-import { shipmentClientId } from "@/lib/client-ownership";
 
 export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
@@ -28,7 +27,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   const auth = await authorizePortalResource({
     permission: shipmentReadPermission(ctx, rawShipment.productWorkspaces),
     resourceAccountId: rawShipment.accountId,
-    resourceClientId: await shipmentClientId(ctx.accountId, rawShipment),
+    resourceClientId: rawShipment.clientId,
   });
 
   if (!auth.authorized || auth.errorResponse) {
@@ -38,16 +37,18 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   const canReadEntries = hasRequiredPortalPermission(ctx, "portal.entries.read");
   const pageSize = 50;
   if (section === "documents") {
+    if (!hasRequiredPortalPermission(ctx, "portal.documents.read")) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
     const documents = await db.shipmentDocument.findMany({
-      where: { shipmentId: id, accountId: ctx.accountId, portalVisibility: "CUSTOMER" },
+      where: { shipmentId: id, accountId: ctx.accountId },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: page * pageSize, take: pageSize + 1,
       select: { id: true, fileName: true, docType: true, status: true, createdAt: true },
     });
     return NextResponse.json({ documents: documents.slice(0, pageSize).map(d => ({ ...d, status: d.status === "Received" ? "Ready" : "Processing" })), hasMore: documents.length > pageSize });
   }
   if (section === "invoices") {
+    if (!hasRequiredPortalPermission(ctx, "portal.invoices.read")) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
     const invoices = await db.invoice.findMany({
-      where: { accountId: ctx.accountId, clientId: auth.effectiveClientId!, status: { in: ["SENT", "PAID", "OVERDUE", "PARTIALLY_PAID"] }, lines: { some: { shipmentId: id } } },
+      where: { accountId: ctx.accountId, status: { in: ["SENT", "PAID", "OVERDUE", "PARTIALLY_PAID"] }, lines: { some: { shipmentId: id } } },
       orderBy: [{ issueDate: "desc" }, { id: "desc" }], skip: page * pageSize, take: pageSize + 1,
       select: { id: true, invoiceNumber: true, status: true, issueDate: true, dueDate: true, totalAmount: true },
     });
@@ -80,7 +81,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
           filingType: true, filingStatus: true, totalDuties: true, totalTaxes: true, customerVisibleAt: true },
       },
       customerRequests: {
-        where: { accountId: ctx.accountId, clientId: auth.effectiveClientId! },
+        where: { accountId: ctx.accountId },
         orderBy: { createdAt: "desc" },
         select: { id: true, type: true, title: true, status: true, dueAt: true, version: true },
       },
@@ -95,7 +96,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   let proofUnavailable: boolean = canReadEntries && !db.entryProof?.findMany;
   const proofs = canReadEntries && !proofUnavailable && shipment.customsFilings.length
     ? await db.entryProof.findMany({
-        where: { accountId: ctx.accountId, clientId: auth.effectiveClientId!, status: "PUBLISHED", filingId: { in: shipment.customsFilings.map(f => f.id) } },
+        where: { accountId: ctx.accountId, status: "PUBLISHED", filingId: { in: shipment.customsFilings.map(f => f.id) } },
         orderBy: { version: "desc" }, select: { filingId: true, scoreOverall: true, scoreBand: true, linesTotal: true },
       }).catch(error => { proofUnavailable = true; console.error("[portal] Shipment proof unavailable; tracking and requests remain available.", error); return []; })
     : [];

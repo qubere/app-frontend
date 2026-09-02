@@ -2,13 +2,12 @@ import { db, isDataMode } from '@qubere/db';
 import type { Prisma } from '@prisma/client';
 
 /** Called only after shipment authorization. Raw SQL must repeat every tenant,
- * client, data-mode and publication constraint because ORM isolation does not
+ * data-mode and publication constraint because ORM isolation does not
  * apply to $queryRaw. Compute the boolean in PostgreSQL rather than transferring
  * every line's evidence, findings and duty stack just to summarize costs. */
 export async function loadPublishedProofCosts(
-  ctx: { accountId: string; dataMode?: string | null }, shipmentId: string, clientId: string,
+  ctx: { accountId: string; dataMode?: string | null }, shipmentId: string,
 ) {
-  if (!clientId) throw new Error('Authorized client is required');
   const mode = isDataMode(ctx.dataMode) ? ctx.dataMode : 'PRODUCTION';
   return db.$queryRaw<Array<{ dutyAndFeesUsd: Prisma.Decimal; complete: boolean }>>`
     SELECT p."dutyAndFeesUsd", NOT EXISTS (
@@ -22,7 +21,6 @@ export async function loadPublishedProofCosts(
     JOIN "Account" a ON a.id = p."accountId"
     WHERE p."accountId" = ${ctx.accountId}
       AND a."dataMode"::text = ${mode}
-      AND p."clientId" = ${clientId}
       AND p."shipmentId" = ${shipmentId}
       AND f."shipmentId" = ${shipmentId}
       AND p.status = 'PUBLISHED'

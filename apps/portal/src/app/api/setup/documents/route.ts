@@ -6,5 +6,5 @@ export const GET = withPortalAccount(async (_ctx, req: Request) => {
     if (s.error)
         return s.error;
     if (!db.clientDocument?.findMany) throw { code: 'PORTAL_SCHEMA_OUTDATED' };
-    return portalData(s.ctx, async () => NextResponse.json(await db.clientDocument.findMany({ where: { accountId: s.ctx.accountId, ...(s.clientIds === null ? {} : { clientId: { in: s.clientIds } }), status: 'ACTIVE', portalVisible: true }, select: { id: true, clientId: true, kind: true, title: true, effectiveDate: true, expirationDate: true }, orderBy: { createdAt: 'desc' } }), noStore));
+    return portalData(s.ctx, async () => NextResponse.json(await db.clientDocument.findMany({ where: { accountId: s.ctx.accountId, ...(s.clientIds === null ? {} : { clientId: { in: s.clientIds } }), status: 'ACTIVE' }, select: { id: true, clientId: true, kind: true, title: true, effectiveDate: true, expirationDate: true }, orderBy: { createdAt: 'desc' } }), noStore));
 });

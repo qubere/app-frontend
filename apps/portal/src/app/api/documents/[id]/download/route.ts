@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { readStoredObject } from "@qubere/storage";
 import { db } from "@qubere/db";
-import { shipmentClientId } from "@/lib/client-ownership";
 
 /**
  * Byte signatures we are willing to serve INLINE with their real media type.
@@ -50,16 +49,13 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
-  const linkedClient = document.shipment && document.shipment.accountId === ctx.accountId && !document.shipment.deletedAt ? await shipmentClientId(ctx.accountId, document.shipment) : null;
-  if (document.shipment && (!linkedClient || document.shipment.deletedAt)) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
-  if (document.shipment) {
-    const linkedAuth = await authorizePortalResource({ permission: "portal.documents.read", resourceAccountId: document.shipment.accountId, resourceClientId: linkedClient });
-    if (!linkedAuth.authorized) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  if (document.shipment && (document.shipment.accountId !== ctx.accountId || document.shipment.deletedAt)) {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
   const auth = await authorizePortalResource({
     permission: "portal.documents.read",
     resourceAccountId: document.accountId,
-    resourceClientId: document.clientId ?? linkedClient,
+    resourceClientId: document.clientId,
     portalVisibility: document.portalVisibility,
   });
 

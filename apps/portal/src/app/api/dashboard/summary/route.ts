@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getEffectiveUserScope, hasRequiredPortalPermission, resolvePortalClientScope } from '@qubere/auth';
+import { getPortalWorkspaceScope, hasRequiredPortalPermission, resolvePortalClientScope } from '@qubere/auth';
 import { db } from '@qubere/db';
 import { withPortalAccount } from '@/lib/portal-scope';
 import { isPortalSchemaOutdated } from '@/lib/portal-errors';
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
   const clients = resolvePortalClientScope(scope, new URL(req.url).searchParams.get('clientId'));
   if (clients.forbidden) return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 });
   const where = { accountId: ctx.accountId, ...(clients.clientIds === null ? {} : { clientId: { in: clients.clientIds } }) };

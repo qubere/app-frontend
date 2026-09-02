@@ -1,13 +1,13 @@
 import { freightReadPermission } from "@/lib/shipment-access";
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission } from "@qubere/auth";
+import { getPortalWorkspaceScope, resolvePortalClientScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
 import { loadImporterOwners, shipmentClientWhere } from "@/lib/client-ownership";
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
   const url = new URL(req.url);
   const workspace = url.searchParams.get("workspace");
   if (workspace && workspace !== "TMS") return NextResponse.json({ error: "INVALID_WORKSPACE" }, { status: 400 });

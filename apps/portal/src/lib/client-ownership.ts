@@ -17,6 +17,7 @@ export function importerClientId(importer: ImporterOwner, accountId: string): st
 }
 
 export async function loadImporterOwners(accountId: string, clientIds: string[] | null) {
+  if (clientIds === null) return new Map<string, string>();
   const importers = await db.importerOfRecord.findMany({
     where: { accountId, ...(clientIds === null ? {} : { OR: [
       { clientId: { in: clientIds } },

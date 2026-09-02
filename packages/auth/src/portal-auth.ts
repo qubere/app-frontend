@@ -1,6 +1,5 @@
-import { db } from "@qubere/db";
 import { getAccountContext, AccountContext } from "./auth";
-import { getEffectiveUserScope, UserScope } from "./scope-engine";
+import type { UserScope } from "./scope-engine";
 import { buildErrorResponse } from "./error";
 
 export interface PortalAuthOptions {
@@ -20,15 +19,17 @@ export interface PortalAuthResult {
   errorResponse: ReturnType<typeof buildErrorResponse> | null;
 }
 
-/**
- * Fail-closed portal resource authorization engine.
- * Ensures the target resource:
- * 1. Matches active user's accountId.
- * 2. Resolves to a non-null clientId (or resolves via importerName/authorizedClientIds).
- * 3. Fall within user's assigned client scope (authorizedClientIds).
- * 4. Meets customer visibility requirements (not internal-only or draft/unpublished).
- * Returns uniform 404 response on any authorization failure to prevent data enumeration.
+/** The authenticated account is the customer workspace. Client records are
+ * organizational metadata inside it, not a second portal access boundary.
+ * Call only with the context returned by getAccountContext, which validates
+ * active workspace membership. Every query still needs ctx.accountId.
  */
+export function getPortalWorkspaceScope(ctx: Pick<AccountContext, 'accountId'>): UserScope {
+  if (!ctx.accountId) throw new Error('Authenticated workspace is required');
+  return { isAllClients: true, authorizedClientIds: [], teamIds: [], authorizedShipmentIds: null };
+}
+
+/** Enforce workspace membership, action permission and filing publication. */
 export async function authorizePortalResource(
   options: PortalAuthOptions
 ): Promise<PortalAuthResult> {
@@ -67,55 +68,10 @@ export async function authorizePortalResource(
     };
   }
 
-  // 2. Resolve effective user scope
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
-
-  // 3. Client ownership check - if resource has no explicit clientId, attempt resolution from importerName
-  let resourceClientId = options.resourceClientId;
-  if (!resourceClientId && options.importerName) {
-    const matchingClient = await db.client.findFirst({
-      where: {
-        accountId: ctx.accountId,
-        name: { contains: options.importerName, mode: "insensitive" },
-      },
-      select: { id: true },
-    });
-    if (matchingClient) {
-      resourceClientId = matchingClient.id;
-    }
-  }
-
-  if (!resourceClientId) {
-    return {
-      authorized: false,
-      ctx,
-      scope,
-      effectiveClientId: null,
-      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
-    };
-  }
-
-  // 4. Verify client scope authorization
-  if (!scope.isAllClients && !scope.authorizedClientIds.includes(resourceClientId)) {
-    return {
-      authorized: false,
-      ctx,
-      scope,
-      effectiveClientId: resourceClientId,
-      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
-    };
-  }
-
-  // 5. Visibility check
-  if (options.portalVisibility && options.portalVisibility !== "CUSTOMER") {
-    return {
-      authorized: false,
-      ctx,
-      scope,
-      effectiveClientId: resourceClientId,
-      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
-    };
-  }
+  const scope = getPortalWorkspaceScope(ctx);
+  const resourceClientId = options.resourceClientId ?? null;
+  // Legacy CUSTOMER/INTERNAL document labels do not restrict members of the
+  // owning customer workspace. Publication still governs finalized filings.
 
   if (options.customerVisibleAt === null) {
     return {

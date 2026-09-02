@@ -1,6 +1,6 @@
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
+import { getPortalWorkspaceScope, resolvePortalClientScope } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const inFlightDashboardPromises = new Map<string, Promise<any>>();
@@ -11,7 +11,7 @@ export function invalidateDashboardCache() {
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
   const url = new URL(req.url);
   const clientId = url.searchParams.get("clientId") || "";
 

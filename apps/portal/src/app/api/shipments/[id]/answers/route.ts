@@ -1,6 +1,5 @@
 import { loadPublishedProofCosts } from '@/lib/shipment-proof-costs';
 import { shipmentReadPermission } from "@/lib/shipment-access";
-import { shipmentClientId } from "@/lib/client-ownership";
 import { NextResponse } from 'next/server';
 import { authorizePortalResource, hasRequiredPortalPermission } from '@qubere/auth';
 import { db, mapPortalShipmentStatus } from '@qubere/db';
@@ -16,9 +15,10 @@ export const GET = withPortalAccount(async (ctx, _req: Request, { params }: {
         const resource = await db.shipment.findFirst({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: { accountId: true, clientId: true, importerOfRecordId: true, productWorkspaces: { select: { product: true, status: true } } } });
         if (!resource)
             return notFound();
-        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces || []), resourceAccountId: resource.accountId, resourceClientId: await shipmentClientId(ctx.accountId, resource) });
+        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces || []), resourceAccountId: resource.accountId, resourceClientId: resource.clientId });
         if (!auth.authorized)
             return auth.errorResponse ?? notFound();
+        const canReadInvoices = hasRequiredPortalPermission(ctx, 'portal.invoices.read');
         const canReadEntries = hasRequiredPortalPermission(ctx, 'portal.entries.read');
         const [s, proofCosts, invoices] = await Promise.all([
           db.shipment.findUnique({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: {
@@ -30,12 +30,12 @@ export const GET = withPortalAccount(async (ctx, _req: Request, { params }: {
             legs: { orderBy: { sequence: 'asc' }, select: { mode: true, actualDeparture: true, actualArrival: true, originStop: { select: { name: true } }, destinationStop: { select: { name: true } } } },
             trackingIdentifiers: { select: { type: true, value: true } },
             shipmentCharges: { where: { portalVisible: true, status: { not: 'VOIDED' } }, select: { netAmount: true, currency: true, portalVisible: true, status: true } },
-            customerRequests: { where: { accountId: ctx.accountId, clientId: auth.effectiveClientId!, status: { in: ['OPEN', 'CUSTOMER_RESPONDED'] } }, select: { id: true, title: true, status: true, dueAt: true } },
+            customerRequests: { where: { accountId: ctx.accountId, status: { in: ['OPEN', 'CUSTOMER_RESPONDED'] } }, select: { id: true, title: true, status: true, dueAt: true } },
             complianceDeadlines: { where: { customerActionable: true, status: 'OPEN', ...(!canReadEntries ? { id: { in: [] } } : {}) }, select: { id: true, customerActionable: true, customerLabel: true, status: true, dueAt: true } },
             pgaHolds: { where: { ...(!canReadEntries ? { id: { in: [] } } : {}) }, select: { agencyCode: true, status: true } },
           } }),
-          canReadEntries ? loadPublishedProofCosts(ctx, id, auth.effectiveClientId!) : Promise.resolve([]),
-          db.invoice.findMany({ where: { accountId: ctx.accountId, clientId: auth.effectiveClientId!, lines: { some: { shipmentId: id } }, status: { in: ['SENT', 'PAID', 'OVERDUE', 'PARTIALLY_PAID'] } }, select: { id: true, invoiceNumber: true, status: true, totalAmount: true, currency: true } }),
+          canReadEntries ? loadPublishedProofCosts(ctx, id) : Promise.resolve([]),
+          canReadInvoices ? db.invoice.findMany({ where: { accountId: ctx.accountId, lines: { some: { shipmentId: id } }, status: { in: ['SENT', 'PAID', 'OVERDUE', 'PARTIALLY_PAID'] } }, select: { id: true, invoiceNumber: true, status: true, totalAmount: true, currency: true } }) : Promise.resolve([]),
         ]);
         if (!s)
             return notFound();

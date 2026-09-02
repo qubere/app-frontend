@@ -35,10 +35,10 @@ beforeAll(async () => {
 afterAll(async () => { await pg?.close(); });
 
 describe('Proof summaries in PostgreSQL', () => {
-  it('returns only published, visible, same-account/client/shipment costs', async () => {
-    const rows = await loadPublishedProofCosts({ accountId: 'demo', dataMode: 'DEMO' }, 'shipment', 'target');
-    expect(rows).toHaveLength(4);
-    expect(rows.filter(row => row.complete)).toHaveLength(1);
+  it('returns only published, visible, same-workspace/shipment costs', async () => {
+    const rows = await loadPublishedProofCosts({ accountId: 'demo', dataMode: 'DEMO' }, 'shipment');
+    expect(rows).toHaveLength(5);
+    expect(rows.filter(row => row.complete)).toHaveLength(2);
     expect(rows.filter(row => !row.complete)).toHaveLength(3);
     for (const row of rows) {
       expect(Number(row.dutyAndFeesUsd)).toBe(123.45);
@@ -46,13 +46,13 @@ describe('Proof summaries in PostgreSQL', () => {
     }
   });
   it('enforces data-mode isolation even though raw SQL bypasses Prisma middleware', async () => {
-    expect(await loadPublishedProofCosts({ accountId: 'demo', dataMode: 'PRODUCTION' }, 'shipment', 'target')).toEqual([]);
-    expect(await loadPublishedProofCosts({ accountId: 'production', dataMode: 'PRODUCTION' }, 'shipment', 'target')).toHaveLength(1);
+    expect(await loadPublishedProofCosts({ accountId: 'demo', dataMode: 'PRODUCTION' }, 'shipment')).toEqual([]);
+    expect(await loadPublishedProofCosts({ accountId: 'production', dataMode: 'PRODUCTION' }, 'shipment')).toHaveLength(1);
   });
-  it('does not interpolate client-controlled values into SQL', async () => {
-    expect(await loadPublishedProofCosts({ accountId: 'demo', dataMode: 'DEMO' }, 'shipment', "target' OR true --")).toEqual([]);
+  it('does not interpolate request-controlled values into SQL', async () => {
+    expect(await loadPublishedProofCosts({ accountId: 'demo', dataMode: 'DEMO' }, "shipment' OR true --")).toEqual([]);
   });
-  it('refuses a missing authorized client', async () => {
-    await expect(loadPublishedProofCosts({ accountId: 'demo', dataMode: 'DEMO' }, 'shipment', '')).rejects.toThrow('Authorized client');
+  it('returns no costs for an unknown workspace', async () => {
+    expect(await loadPublishedProofCosts({ accountId: 'unknown', dataMode: 'DEMO' }, 'shipment')).toEqual([]);
   });
 });

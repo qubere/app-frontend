@@ -1,5 +1,5 @@
 export interface SetupSummary {
-    clientId: string;
+    clientId: string | null;
     clientName: string;
     brokerName: string;
     importers: ImporterSetup[];
@@ -36,6 +36,7 @@ export interface SetupSummary {
         signedDate: string | null;
         expirationDate: string | null;
         documentId: string | null;
+        downloadUrl?: string | null;
     } | null;
     screening: {
         status: string;
@@ -44,6 +45,7 @@ export interface SetupSummary {
     documents: {
         id: string;
         kind: string;
+        downloadUrl?: string;
         title: string;
         expirationDate: string | null;
     }[];

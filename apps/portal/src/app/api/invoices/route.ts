@@ -1,11 +1,11 @@
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
+import { getPortalWorkspaceScope, resolvePortalClientScope } from "@qubere/auth";
 import { getCustomerInvoices } from "@qubere/db";
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
   const url = new URL(req.url);
   const shipmentId = url.searchParams.get("shipmentId") || undefined;
   const cursor = url.searchParams.get("cursor") || undefined;

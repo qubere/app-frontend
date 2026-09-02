@@ -1,5 +1,5 @@
 import { portalReadError } from "./portal-errors";
-import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission, type AccountContext } from '@qubere/auth';
+import { getAccountContext, getPortalWorkspaceScope, resolvePortalClientScope, hasRequiredPortalPermission, type AccountContext } from '@qubere/auth';
 import { withDataModeContext, withAccountIdContext, isDataMode } from '@qubere/db';
 import { NextResponse } from 'next/server';
 export const noStore = { headers: { 'Cache-Control': 'no-store' } };
@@ -10,7 +10,7 @@ export async function portalScope(req: Request, permission: string) {
         return { error: NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 }) } as const;
     if (!hasRequiredPortalPermission(ctx, permission))
         return { error: notFound() } as const;
-    const scope = await portalData(ctx, () => getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames ?? []));
+    const scope = getPortalWorkspaceScope(ctx);
     const resolved = resolvePortalClientScope(scope, new URL(req.url).searchParams.get('clientId'));
     if (resolved.forbidden)
         return { error: notFound() } as const;
