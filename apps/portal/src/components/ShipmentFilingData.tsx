@@ -1,3 +1,8 @@
+'use client';
+
+import { useState } from 'react';
+import { usePortalData } from '@/lib/use-portal-data';
+import type { EntryProofPayload } from '@qubere/entry-proof';
 import Link from 'next/link';
 
 export interface PortalFilingData {
@@ -14,7 +19,7 @@ export interface PortalEntry {
   id: string; entryNumber: string; status: string; publishedAt: string;
   entryType?: string | null; country?: string | null; procedureCode?: string | null; filingType?: string | null;
   dutyTotal?: number | null; taxTotal?: number | null;
-  proof?: { available: boolean; scoreOverall: number; scoreBand: string } | null;
+  proof?: { available: boolean; scoreOverall: number; scoreBand: string; linesTotal?: number } | null;
   lines?: { lineNumber: number; description: string; htsCode: string | null; countryOfOrigin: string | null; quantity: number; enteredValueUsd: number; lineDutyTotalUsd: number; dutyComplete: boolean }[];
 }
 const money = (n: number | null | undefined) => n == null ? 'Not available' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
@@ -29,9 +34,33 @@ export function ShipmentFilingData({ data, entries }: { data: PortalFilingData; 
       {entries.map(entry => <article key={entry.id} className="rounded-2xl border border-slate-200 bg-white p-6"><div className="flex flex-wrap justify-between items-center gap-3"><h3 className="font-semibold">{entry.entryNumber}</h3><span className="text-xs rounded-full bg-blue-50 px-3 py-1 text-blue-800">{entry.status}</span></div><dl className="grid gap-4 mt-5 sm:grid-cols-2 lg:grid-cols-4">{[
         ['Country', entry.country || 'Not on file'], ['Entry type / procedure', [entry.entryType, entry.procedureCode].filter(Boolean).join(' · ') || 'Not on file'], ['Duty', money(entry.dutyTotal)], ['Taxes', money(entry.taxTotal)],
       ].map(([title, value]) => <div key={title}><dt className="text-xs text-slate-500">{title}</dt><dd className="text-sm mt-1">{value}</dd></div>)}</dl>
-        {!!entry.lines?.length && <div className="overflow-x-auto mt-5"><table className="w-full text-sm text-left"><caption className="text-left font-medium pb-3">Published line items</caption><thead><tr>{['Line', 'Description', 'HTS', 'Origin', 'Quantity', 'Entered value', 'Duty & fees'].map(h => <th key={h} className="p-3 bg-slate-50 text-xs font-medium">{h}</th>)}</tr></thead><tbody>{entry.lines.map(l => <tr key={l.lineNumber} className="border-t border-slate-100"><td className="p-3">{l.lineNumber}</td><td className="p-3">{l.description}</td><td className="p-3 font-mono">{l.htsCode || 'Not published'}</td><td className="p-3">{l.countryOfOrigin || 'Not published'}</td><td className="p-3">{l.quantity}</td><td className="p-3">{money(l.enteredValueUsd)}</td><td className="p-3">{l.dutyComplete ? money(l.lineDutyTotalUsd) : <span className="text-amber-800">{money(l.lineDutyTotalUsd)} known · partial</span>}</td></tr>)}</tbody></table></div>}
+        <PublishedLines key={entry.id} entry={entry} />
         {entry.proof?.available && <Link href={`/entries/${entry.id}`} className="inline-block text-sm font-medium text-[#0071E3] mt-5 hover:underline">Inspect Entry Proof →</Link>}
       </article>)}
     </section>
   </div>;
+}
+
+function PublishedLines({ entry }: { entry: PortalEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const proof = usePortalData<EntryProofPayload>(`/api/entries/${entry.id}/proof`, expanded && !entry.lines);
+  const lines = entry.lines ?? proof.data?.lines.map(l => ({
+    lineNumber: l.lineNumber, description: l.description, htsCode: l.htsCode,
+    countryOfOrigin: l.countryOfOrigin, quantity: l.quantity, enteredValueUsd: l.enteredValueUsd,
+    lineDutyTotalUsd: l.lineDutyTotalUsd,
+    dutyComplete: l.dutyStack.every(d => !['NOT_EVALUATED', 'DATA_UNAVAILABLE', 'REVIEW_REQUIRED'].includes(d.status)),
+  }));
+  if (!entry.proof?.available && !lines) return null;
+  return <div className="mt-5">
+    <button onClick={() => setExpanded(value => !value)} aria-expanded={expanded} className="text-sm font-medium text-[#0071E3]">
+      {expanded ? 'Hide' : 'Show'} published line items{entry.proof?.linesTotal != null ? ` (${entry.proof.linesTotal})` : ''}
+    </button>
+    {expanded && (proof.error ? <p role="alert" className="text-sm text-amber-800 mt-3">{proof.error} <button onClick={proof.retry} className="underline">Try again</button></p>
+      : !lines ? <p role="status" className="text-sm text-slate-500 mt-3">Loading published lines…</p>
+      : !lines.length ? <p className="text-sm text-slate-500 mt-3">No published line items.</p>
+      : <FilingLines lines={lines} />)}
+  </div>;
+}
+function FilingLines({ lines }: { lines: NonNullable<PortalEntry['lines']> }) {
+  return <div className="overflow-x-auto mt-5"><table className="w-full text-sm text-left"><caption className="text-left font-medium pb-3">Published line items</caption><thead><tr>{['Line', 'Description', 'HTS', 'Origin', 'Quantity', 'Entered value', 'Duty & fees'].map(h => <th key={h} className="p-3 bg-slate-50 text-xs font-medium">{h}</th>)}</tr></thead><tbody>{lines.map(l => <tr key={l.lineNumber} className="border-t border-slate-100"><td className="p-3">{l.lineNumber}</td><td className="p-3">{l.description}</td><td className="p-3 font-mono">{l.htsCode || 'Not published'}</td><td className="p-3">{l.countryOfOrigin || 'Not published'}</td><td className="p-3">{l.quantity}</td><td className="p-3">{money(l.enteredValueUsd)}</td><td className="p-3">{l.dutyComplete ? money(l.lineDutyTotalUsd) : <span className="text-amber-800">{money(l.lineDutyTotalUsd)} known · partial</span>}</td></tr>)}</tbody></table></div>;
 }

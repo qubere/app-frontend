@@ -5,7 +5,7 @@ const m = vi.hoisted(() => ({
   ctx: { accountId: 'broker-demo', userId: 'porter', email: 'porter@target.com', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.shipments.read', 'portal.requests.read', 'portal.requests.respond'] } as any,
   scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] },
   db: {
-    user: { findUnique: vi.fn() }, client: { findMany: vi.fn() },
+    shipmentDocument: { findMany: vi.fn() }, invoice: { findMany: vi.fn() }, user: { findUnique: vi.fn() }, client: { findMany: vi.fn() },
     shipment: { findMany: vi.fn(), findUnique: vi.fn() },
     entryProof: { findMany: vi.fn(), aggregate: vi.fn() },
     complianceDeadline: { findMany: vi.fn() }, onboardingCase: { findMany: vi.fn() },
@@ -57,6 +57,7 @@ beforeEach(() => {
   m.db.entryProof.aggregate.mockResolvedValue({ _count: 1, _avg: { scoreOverall: 80 }, _sum: { linesAtRisk: 0, dutySavingsIdentifiedUsd: 50 } });
   m.db.complianceDeadline.findMany.mockResolvedValue([]); m.db.onboardingCase.findMany.mockResolvedValue([]);
   m.db.customerRequest.groupBy.mockImplementation(async args => { checkContext('CustomerRequest', 'groupBy', args); return []; });
+  m.db.shipmentDocument.findMany.mockResolvedValue([]); m.db.invoice.findMany.mockResolvedValue([]);
   m.db.user.findUnique.mockResolvedValue({ id: 'porter', email: 'porter@target.com' });
   m.db.client.findMany.mockImplementation(async args => { checkContext('Client', 'findMany', args); return [{ id: 'target', name: 'Target' }]; });
   m.db.customerRequestMessage.create.mockImplementation(async () => { expect(getDataModeContext()).toBe(m.ctx.dataMode); return { id: 'msg1' }; });
@@ -127,7 +128,7 @@ describe('Freight and proof access', () => {
     expect(body.overview.shipmentNumber).toBe(shipment.shipmentNumber);
     expect(body.filingData).toBeNull();
     expect(body.progress.workflow).toEqual([]);
-    expect(m.db.shipment.findUnique).toHaveBeenLastCalledWith(expect.objectContaining({ include: expect.objectContaining({ customsFilings: expect.objectContaining({ where: { customerVisibleAt: { not: null }, id: { in: [] } } }) }) }));
+    expect(m.db.shipment.findUnique).toHaveBeenLastCalledWith(expect.objectContaining({ select: expect.objectContaining({ customsFilings: expect.objectContaining({ where: { customerVisibleAt: { not: null }, id: { in: [] } } }) }) }));
   });
   it('does not widen a freight-only login to customs-only shipments', async () => {
     m.ctx.permissions = ['portal.orders.read'];
@@ -217,5 +218,56 @@ describe('Actions survive optional summary failures', () => {
     const response = await dashboard.GET(req('dashboard'));
     expect(response.status).toBe(500);
     expect((await response.json()).actionItems).toBeUndefined();
+  });
+});
+
+describe('Shipment loading budget and deferred sections', () => {
+  it('loads milestones and requests without conversations, hidden tabs or proof payloads', async () => {
+    m.ctx.permissions.push('portal.entries.read');
+    m.db.shipment.findUnique.mockResolvedValue({ ...shipment, customsFilings: [{ id: 'f1' }], customerRequests: [action] });
+    const body = await (await detail.GET(req('shipments/s1'), params('s1'))).json();
+    const query = m.db.shipment.findUnique.mock.calls.at(-1)![0];
+    expect(query.include).toBeUndefined();
+    expect(query.select.shipmentNumber).toBe(true);
+    for (const name of ['trackingEvents', 'trackingIdentifiers', 'etaObservations', 'documents', 'invoiceLines', 'actualBuyCost', 'grossProfit']) expect(query.select[name]).toBeUndefined();
+    expect(query.select.customerRequests.select.messages).toBeUndefined();
+    expect(query.select.customerRequests.select.description).toBeUndefined();
+    expect(m.db.entryProof.findMany.mock.calls.at(-1)![0].select.payload).toBeUndefined();
+    expect(m.db.shipmentDocument.findMany).not.toHaveBeenCalled();
+    expect(m.db.invoice.findMany).not.toHaveBeenCalled();
+    expect(body.requests[0]).not.toHaveProperty('messages');
+    expect(body).not.toHaveProperty('documents');
+  });
+  it('loads only visible documents, 50 per page, with another page available', async () => {
+    m.db.shipmentDocument.findMany.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ id: `doc${i}`, status: 'Received' })));
+    const response = await detail.GET(req('shipments/s1?section=documents&page=1'), params('s1'));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.documents).toHaveLength(50);
+    expect(body.hasMore).toBe(true);
+    expect(m.db.shipmentDocument.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'broker-demo', shipmentId: 's1', portalVisibility: 'CUSTOMER' }, skip: 50, take: 51 }));
+    expect(m.db.shipment.findUnique).toHaveBeenCalledTimes(1);
+    expect(m.db.entryProof.findMany).not.toHaveBeenCalled();
+  });
+  it('queries unique customer invoices instead of every invoice line', async () => {
+    expect((await detail.GET(req('shipments/s1?section=invoices'), params('s1'))).status).toBe(200);
+    expect(m.db.invoice.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'broker-demo', clientId: 'target', lines: { some: { shipmentId: 's1' } }, status: { in: ['SENT', 'PAID', 'OVERDUE', 'PARTIALLY_PAID'] } }, take: 51 }));
+  });
+  it('loads tracking history only for the tracking section', async () => {
+    const response = await detail.GET(req('shipments/s1?section=tracking'), params('s1'));
+    expect(response.status).toBe(200);
+    expect(m.db.shipment.findUnique.mock.calls.at(-1)![0].select.trackingEvents.take).toBe(50);
+    expect(m.db.entryProof.findMany).not.toHaveBeenCalled();
+  });
+  it.each(['documents', 'invoices', 'tracking'])('rejects another client before reading %s', async section => {
+    m.db.shipment.findUnique.mockResolvedValue({ ...shipment, clientId: 'amazon' });
+    expect((await detail.GET(req(`shipments/s1?section=${section}`), params('s1'))).status).toBe(404);
+    expect(m.db.shipmentDocument.findMany).not.toHaveBeenCalled();
+    expect(m.db.invoice.findMany).not.toHaveBeenCalled();
+    expect(m.db.shipment.findUnique).toHaveBeenCalledTimes(1);
+  });
+  it.each(['section=private', 'section=documents&page=-1', 'section=invoices&page=1.5'])('rejects invalid section/page: %s', async query => {
+    expect((await detail.GET(req(`shipments/s1?${query}`), params('s1'))).status).toBe(400);
+    expect(m.db.shipment.findUnique).not.toHaveBeenCalled();
   });
 });
