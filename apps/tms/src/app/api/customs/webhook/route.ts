@@ -29,6 +29,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "shipmentId is required" }, { status: 400 });
     }
 
+    // Resolve and verify the owning account for this shipment before any
+    // mutation, so every write below can be scoped to it — the shared
+    // webhook secret identifies the caller, not a tenant, so a caller must
+    // not be able to reach another tenant's rows via a foreign filingId.
+    const shipment = await db.shipment
+      .findFirst({
+        where: accountId ? { id: shipmentId, accountId } : { id: shipmentId },
+        select: { accountId: true },
+      })
+      .catch(() => null);
+
+    if (!shipment) {
+      return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
+    }
+    const resolvedAccountId = shipment.accountId;
+
     const isReleased =
       filingStatus === "RELEASED" ||
       filingStatus === "ACCEPTED" ||
@@ -38,7 +54,7 @@ export async function POST(req: Request) {
     if (filingId) {
       await db.customsFiling
         .updateMany({
-          where: { id: filingId },
+          where: { id: filingId, accountId: resolvedAccountId, shipmentId },
           data: { filingStatus: isReleased ? "RELEASED" : filingStatus },
         })
         .catch(() => null);
@@ -48,7 +64,7 @@ export async function POST(req: Request) {
     if (isReleased) {
       await db.exceptionItem
         .updateMany({
-          where: { shipmentId, type: "CUSTOMS_HOLD" },
+          where: { shipmentId, accountId: resolvedAccountId, type: "CUSTOMS_HOLD" },
           data: {
             status: "Resolved",
             resolvedAt: new Date(),
@@ -63,7 +79,7 @@ export async function POST(req: Request) {
       // Also resolve LFD_AT_RISK exceptions — customs released means no demurrage
       await db.exceptionItem
         .updateMany({
-          where: { shipmentId, type: "LFD_AT_RISK", status: "Open" },
+          where: { shipmentId, accountId: resolvedAccountId, type: "LFD_AT_RISK", status: "Open" },
           data: {
             status: "Resolved",
             resolvedAt: new Date(),
@@ -75,47 +91,33 @@ export async function POST(req: Request) {
         .catch(() => null);
     }
 
-    // Determine accountId for event publishing (look it up if not provided)
-    let resolvedAccountId = accountId;
-    if (!resolvedAccountId) {
-      const shipment = await db.shipment
-        .findFirst({
-          where: { id: shipmentId },
-          select: { accountId: true },
-        })
-        .catch(() => null);
-      resolvedAccountId = shipment?.accountId;
-    }
-
     // Emit TransportationEvent for the customs release — this creates an
-    // immutable audit trail entry and can trigger downstream Inngest functions
-    if (resolvedAccountId) {
-      // For a CBP webhook (no user session), construct a minimal service context.
-      // All services here only use ctx.accountId.
-      const ctx = {
-        accountId: resolvedAccountId,
-      } as unknown as AccountContext;
+    // immutable audit trail entry and can trigger downstream Inngest functions.
+    // For a CBP webhook (no user session), construct a minimal service context.
+    // All services here only use ctx.accountId.
+    const ctx = {
+      accountId: resolvedAccountId,
+    } as unknown as AccountContext;
 
-      await publishTransportationEvent(ctx, {
-        entityType: "SHIPMENT",
-        entityId: shipmentId,
-        shipmentId,
-        eventType: isReleased ? "CUSTOMS_RELEASED" : "CUSTOMS_HOLD",
-        source: "CBP",
-        payload: {
-          filingId: filingId ?? null,
-          entryNumber: entryNumber ?? null,
-          filingStatus: isReleased ? "RELEASED" : filingStatus,
-          cbpDispositionCode: cbpDispositionCode ?? null,
-          releasedAt: isReleased ? new Date().toISOString() : null,
-        },
-      }).catch(() => null);
+    await publishTransportationEvent(ctx, {
+      entityType: "SHIPMENT",
+      entityId: shipmentId,
+      shipmentId,
+      eventType: isReleased ? "CUSTOMS_RELEASED" : "CUSTOMS_HOLD",
+      source: "CBP",
+      payload: {
+        filingId: filingId ?? null,
+        entryNumber: entryNumber ?? null,
+        filingStatus: isReleased ? "RELEASED" : filingStatus,
+        cbpDispositionCode: cbpDispositionCode ?? null,
+        releasedAt: isReleased ? new Date().toISOString() : null,
+      },
+    }).catch(() => null);
 
-      // After customs release, trigger ETA Agent to recompute ETA/promise state
-      // since drayage can now be dispatched (customs was a blocking dependency)
-      if (isReleased) {
-        await runTrackingEtaAgent(ctx, shipmentId).catch(() => null);
-      }
+    // After customs release, trigger ETA Agent to recompute ETA/promise state
+    // since drayage can now be dispatched (customs was a blocking dependency)
+    if (isReleased) {
+      await runTrackingEtaAgent(ctx, shipmentId).catch(() => null);
     }
 
     return NextResponse.json({
