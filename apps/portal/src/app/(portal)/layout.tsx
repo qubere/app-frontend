@@ -124,6 +124,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Actions", href: "/", icon: LayoutDashboard, visible: true },
     { label: "Customs Shipments", href: "/shipments", icon: FileText, visible: capabilities.hasCustomsAccess },
     { label: "TMS Freight", href: "/freight", icon: Truck, visible: capabilities.hasTmsAccess },
+    { label: "Compliance", href: "/compliance", icon: ShieldCheck, visible: capabilities.hasCustomsAccess },
+    { label: "Setup", href: "/setup", icon: Building2, visible: capabilities.hasCustomsAccess },
     { label: "Documents", href: "/documents", icon: Files, visible: true },
     { label: "Invoices", href: "/invoices", icon: Receipt, visible: true },
   ];

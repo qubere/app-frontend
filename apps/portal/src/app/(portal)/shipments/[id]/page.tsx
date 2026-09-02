@@ -1,5 +1,6 @@
 "use client";
 
+import { AtAGlance } from "@/components/shipment-answers/AtAGlance";
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -41,6 +42,7 @@ interface ShipmentData {
     status: string;
     dutyTotal?: number;
     publishedAt: string;
+    proof?: { available: boolean; scoreOverall: number; scoreBand: string };
   }>;
   invoices: Array<{
     id: string;
@@ -56,7 +58,7 @@ export default function ShipmentDetailPage() {
   const id = params.id as string;
   const [data, setData] = useState<ShipmentData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "requests" | "documents" | "entries" | "invoices">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "requests" | "documents" | "entries" | "invoices" | "proof">("overview");
 
   useEffect(() => {
     fetch(`/api/shipments/${id}`)
@@ -120,9 +122,11 @@ export default function ShipmentDetailPage() {
         </div>
       </div>
 
+      <AtAGlance shipmentId={id} />
+
       {/* Tabs */}
       <div className="flex space-x-2 border-b border-[#E5E5EA] pb-3">
-        {(["overview", "requests", "documents", "entries", "invoices"] as const).map((tab) => (
+        {(["overview", "requests", "documents", "entries", "invoices", ...(entries.some(e=>e.proof?.available)?["proof" as const]:[])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -137,6 +141,7 @@ export default function ShipmentDetailPage() {
         ))}
       </div>
 
+      {activeTab === "proof" && <div className="grid gap-4 md:grid-cols-2">{entries.filter(e=>e.proof?.available).map(e=><Link key={e.id} href={`/entries/${e.id}`} className="qubere-card rounded-2xl p-6"><strong>{e.entryNumber}</strong><p className="text-sm mt-2">Compliance score {e.proof!.scoreOverall} · {e.proof!.scoreBand.replaceAll('_',' ')}</p><p className="text-sm text-[#0071E3] mt-3">View line-by-line proof →</p></Link>)}</div>}
       {/* Tab Panels */}
       {activeTab === "overview" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

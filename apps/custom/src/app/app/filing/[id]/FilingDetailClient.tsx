@@ -1,4 +1,5 @@
 "use client";
+import { EntryProofPanel } from "./EntryProofPanel";
 import { AssistEntryBanner } from "./AssistEntryBanner";
 
 import { useEffect, useMemo, useState } from "react";
@@ -503,7 +504,7 @@ export function FilingDetailClient({
   const country = filing.country || shipment?.destinationCountry || "US";
   const config = getFilingConfig(country);
   
-  type Tab = "overview" | "declaration" | "response" | "form7501" | "psc" | "documents";
+  type Tab = "proof" | "overview" | "declaration" | "response" | "form7501" | "psc" | "documents";
   const [tab, setTab] = useState<Tab>("overview");
   const [edits] = useState<Record<string, LineItemEdit>>(() =>
     Object.fromEntries((lineItems || []).map((li) => [li.id, { htsCode: li.htsCode, countryOfOrigin: li.countryOfOrigin }]))
@@ -1103,6 +1104,7 @@ export function FilingDetailClient({
             ["overview", "Overview"],
             ["declaration", "Declaration"],
             ["response", "Response"],
+            config.showForm7501 && ["proof", "Entry Proof"],
             config.showForm7501 && ["form7501", config.formPreviewLabel || "7501 Preview"],
             config.showPSC && ["psc", config.postCorrectionLabel || "Post-Summary Correction"],
             ["documents", "Documents"],
@@ -1124,6 +1126,7 @@ export function FilingDetailClient({
         ))}
       </div>
 
+      {tab === "proof" && <EntryProofPanel filingId={filing.id} />}
       {tab === "overview" && (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-2xl border border-border shadow-2xs space-y-4">

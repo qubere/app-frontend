@@ -378,14 +378,15 @@ export async function resolveAdCvdForHtsCode(
 
 export async function loadHtsCodesMap(
   lineItems: Array<TariffLineInput>,
-  country: string = "US"
+  country: string = "US",
+  releaseId?: string | null
 ): Promise<Record<string, DutyRateInput>> {
   const { db } = await import("@/lib/db");
   const codes = [...new Set(lineItems.map((li) => li.htsCode).filter((c): c is string => !!c))];
   if (codes.length === 0) return {};
 
   const publishedRelease = await db.htsRelease.findFirst({
-    where: { country, publicationStatus: "PUBLISHED" },
+    where: releaseId ? { id: releaseId, country } : { country, publicationStatus: "PUBLISHED" },
     orderBy: { effectiveFrom: "desc" },
     select: { id: true },
   });
@@ -557,28 +558,33 @@ export function calculateLineItemDuty(
 
 export function computeFilingTariff(
   lineItems: Array<TariffLineInput>,
-  htsCodesMap: Record<string, DutyRateInput> = {}
+  htsCodesMap: Record<string, DutyRateInput> = {},
+  lineRates?: Array<DutyRateInput | undefined>
 ): TariffEngineResult {
   let totalCustomsValueDec = new Decimal(0);
   let totalBaseDutyDec = new Decimal(0);
   let totalSec301Dec = new Decimal(0);
   let totalSec232Dec = new Decimal(0);
+  let totalAdDec = new Decimal(0);
+  let totalCvdDec = new Decimal(0);
   const lineResults: LineItemDutyResult[] = [];
   let unratedLineCount = 0;
 
-  for (const item of lineItems) {
-    const hts = item.htsCode ? htsCodesMap[item.htsCode] : null;
+  for (const [index, item] of lineItems.entries()) {
+    const hts = lineRates ? lineRates[index] : item.htsCode ? htsCodesMap[item.htsCode] : null;
     const res = calculateLineItemDuty(item, hts);
     if (res.baseDutyRate === null) unratedLineCount++;
     totalCustomsValueDec = totalCustomsValueDec.plus(new Decimal(res.customsValue));
     totalBaseDutyDec = totalBaseDutyDec.plus(new Decimal(res.baseDutyAmount));
     totalSec301Dec = totalSec301Dec.plus(new Decimal(res.section301Amount));
     totalSec232Dec = totalSec232Dec.plus(new Decimal(res.section232Amount));
+    totalAdDec = totalAdDec.plus(res.dutyStack?.antidumping ?? 0);
+    totalCvdDec = totalCvdDec.plus(res.dutyStack?.countervailing ?? 0);
     lineResults.push(res);
   }
 
   const roundedCustomsValue = roundToCents(totalCustomsValueDec);
-  const totalDutyDec = roundToCents(totalBaseDutyDec.plus(totalSec301Dec).plus(totalSec232Dec));
+  const totalDutyDec = roundToCents(totalBaseDutyDec.plus(totalSec301Dec).plus(totalSec232Dec).plus(totalAdDec).plus(totalCvdDec));
   const totalMpfDec = calculateMPFDecimal(roundedCustomsValue);
   const totalHmfDec = calculateHMFDecimal(roundedCustomsValue, true);
   const totalFeesDec = roundToCents(totalMpfDec.plus(totalHmfDec));
@@ -589,6 +595,8 @@ export function computeFilingTariff(
   const totalSec232Num = roundedCustomsValue.gt(0) ? totalSec232Dec.dividedBy(roundedCustomsValue).times(100).toNumber() : 0;
 
   const dutyBreakdown = [
+    ...(totalAdDec.gt(0) ? [{ feeName: "Antidumping Duty", amount: roundToCents(totalAdDec).toNumber(), rate: "Company-specific" }] : []),
+    ...(totalCvdDec.gt(0) ? [{ feeName: "Countervailing Duty", amount: roundToCents(totalCvdDec).toNumber(), rate: "Company-specific" }] : []),
     {
       feeName: "Base Customs Duty",
       amount: roundToCents(totalBaseDutyDec).toNumber(),
@@ -634,4 +642,15 @@ export function computeFilingTariff(
     dutyBreakdown,
     lineResults,
   };
+}
+
+
+/** Resolve by full line context: the same HTS can carry different origin/company rates. */
+export async function loadLineDutyRates(lines: TariffLineInput[], releaseId?: string | null): Promise<DutyRateInput[]> {
+  const cache = new Map<string, Promise<DutyRateInput>>();
+  return Promise.all(lines.map(line => {
+    const key = JSON.stringify([line.htsCode, line.countryOfOrigin, line.manufacturer]);
+    if (!cache.has(key)) cache.set(key, loadHtsCodesMap([line], "US", releaseId).then(map => map[line.htsCode ?? ""] ?? {}));
+    return cache.get(key)!;
+  }));
 }

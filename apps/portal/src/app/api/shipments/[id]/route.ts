@@ -42,6 +42,7 @@ export async function GET(
           totalDuties: true,
           totalTaxes: true,
           customerVisibleAt: true,
+          entryProofs: { where: { status: "PUBLISHED" }, orderBy: { version: "desc" }, take: 1, select: { scoreOverall: true, scoreBand: true, linesVerified: true, linesTotal: true, openFindingsCount: true, dutySavingsIdentifiedUsd: true } },
         },
       },
       documents: {
@@ -155,6 +156,7 @@ export async function GET(
       dutyTotal: f.totalDuties ? Number(f.totalDuties) : null,
       taxTotal: f.totalTaxes ? Number(f.totalTaxes) : null,
       publishedAt: f.customerVisibleAt,
+      proof: f.entryProofs[0] ? { available: true, ...f.entryProofs[0], dutySavingsIdentifiedUsd: Number(f.entryProofs[0].dutySavingsIdentifiedUsd) } : null,
     })),
     invoices: Array.from(invoicesMap.values()),
   });
