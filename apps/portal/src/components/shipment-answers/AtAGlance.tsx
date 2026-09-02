@@ -7,8 +7,13 @@ export function AtAGlance({ shipmentId }: {
     shipmentId: string;
 }) {
     const [data, setData] = useState<ShipmentAnswerSet | null>(null), [error, setError] = useState('');
-    useEffect(() => { fetch(`/api/shipments/${shipmentId}/answers`).then(async (r) => { if (!r.ok)
-        throw new Error('Shipment answers are unavailable.'); return r.json(); }).then(setData).catch(e => setError(e.message)); }, [shipmentId]);
+    useEffect(() => {
+        fetch(`/api/shipments/${shipmentId}/answers`).then(async (r) => {
+            if (!r.ok)
+                throw new Error('Shipment answers are unavailable.');
+            return r.json();
+        }).then(setData).catch(e => setError(e.message));
+    }, [shipmentId]);
     if (error)
         return <p role="alert" className="text-sm text-amber-800">{error}</p>;
     if (!data)

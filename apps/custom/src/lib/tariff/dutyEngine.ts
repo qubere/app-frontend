@@ -486,14 +486,14 @@ export async function loadHtsCodesMap(
         const nodeAdRate = resolveMostSpecific(adRates);
         if (nodeAdRate != null) {
           adRate = nodeAdRate;
-          adStatus = "EVALUATED_APPLICABLE";
+          adStatus = nodeAdRate === 0 ? "EVALUATED_NOT_APPLICABLE" : "EVALUATED_APPLICABLE";
         }
       }
       if (cvdStatus === "NOT_EVALUATED") {
         const nodeCvdRate = resolveMostSpecific(cvdRates);
         if (nodeCvdRate != null) {
           cvdRate = nodeCvdRate;
-          cvdStatus = "EVALUATED_APPLICABLE";
+          cvdStatus = nodeCvdRate === 0 ? "EVALUATED_NOT_APPLICABLE" : "EVALUATED_APPLICABLE";
         }
       }
     }

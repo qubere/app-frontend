@@ -20,19 +20,24 @@ export function AskAboutLine({ filingId, lineNumber }: {
     const [open, setOpen] = useState(false), [body, setBody] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [href, setHref] = useState('');
     if (href)
         return <p role="status" className="text-sm text-emerald-800">Question sent. <Link className="underline" href={href}>Follow the conversation</Link></p>;
-    return <div>{!open ? <button onClick={() => setOpen(true)} className="text-sm font-semibold text-[#0071E3]">{lineNumber ? `Ask about line ${lineNumber}` : 'Ask your broker about this entry'}</button> : <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); setBusy(true); setError(''); try {
-            const r = await fetch(`/api/entries/${filingId}/proof/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, ...(lineNumber ? { lineNumber } : {}) }) });
-            const data = await r.json();
-            if (!r.ok)
-                throw new Error(r.status === 404 ? 'Your access does not allow questions on this entry.' : 'Could not send your question. Please try again.');
-            setHref(data.href);
-        }
-        catch (e) {
-            setError(e instanceof Error ? e.message : 'Request failed');
-        }
-        finally {
-            setBusy(false);
-        } }}>
+    return <div>{!open ? <button onClick={() => setOpen(true)} className="text-sm font-semibold text-[#0071E3]">{lineNumber ? `Ask about line ${lineNumber}` : 'Ask your broker about this entry'}</button> : <form className="space-y-3" onSubmit={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                setError('');
+                try {
+                    const r = await fetch(`/api/entries/${filingId}/proof/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, ...(lineNumber ? { lineNumber } : {}) }) });
+                    const data = await r.json();
+                    if (!r.ok)
+                        throw new Error(r.status === 404 ? 'Your access does not allow questions on this entry.' : 'Could not send your question. Please try again.');
+                    setHref(data.href);
+                }
+                catch (e) {
+                    setError(e instanceof Error ? e.message : 'Request failed');
+                }
+                finally {
+                    setBusy(false);
+                }
+            }}>
  <label className="block text-sm font-medium">{lineNumber ? `Question about line ${lineNumber}` : 'Question for your broker'}<textarea required maxLength={5000} value={body} onChange={e => setBody(e.target.value)} className="mt-2 block w-full rounded-xl border border-slate-300 p-3" rows={3}/></label>
  <button disabled={busy || !body.trim()} className="rounded-lg bg-[#0071E3] px-4 py-2 text-sm text-white disabled:opacity-50">{busy ? 'Sending…' : 'Send question'}</button> <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-600">Cancel</button>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}</form>}</div>;
 }

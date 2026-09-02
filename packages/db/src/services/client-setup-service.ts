@@ -41,7 +41,7 @@ export async function promoteClientDocument(input: {
 }
 /** Re-runnable migration/backfill; no invites or emails are sent. */
 export async function syncClientSetup(accountId: string, clientId: string) {
-    const c = await db.client.findFirst({ where: { id: clientId, accountId }, include: { onboardingCases: { include: { entities: { include: { poa: { include: { envelope: true } }, bond: { include: { verifications: { orderBy: { performedAt: 'desc' }, take: 1 } } } } }, fiveOhSixRecords: true } }, invitations: { where: { purpose: 'CUSTOMER_PORTAL' }, include: { role: true }, orderBy: { createdAt: 'asc' } }, userAssignments: { include: { user: true } }, importersOfRecord: { include: { powersOfAttorney: { include: { envelope: true } }, bond: true } } } });
+    const c = await db.client.findFirst({ where: { id: clientId, accountId }, include: { onboardingCases: { include: { entities: { include: { poa: { include: { envelope: true } }, bond: { include: { verifications: { orderBy: { performedAt: 'desc' }, take: 1 } } } } }, fiveOhSixRecords: true } }, invitations: { where: { purpose: 'CUSTOMER_PORTAL' }, include: { role: true }, orderBy: { createdAt: 'asc' } }, userAssignments: { include: { user: true } }, importersOfRecord: { include: { powersOfAttorney: { include: { envelope: true } }, bond: { include: { verifications: { orderBy: { performedAt: 'desc' }, take: 1 } } } } } } });
     if (!c)
         throw new Error('CLIENT_NOT_FOUND');
     if (c.contactEmail)
@@ -52,6 +52,21 @@ export async function syncClientSetup(accountId: string, clientId: string) {
         const assignment = c.userAssignments.find(a => normalizeEmail(a.user.email) === normalizeEmail(invitation.email));
         const loginStatus = invitation.status === 'REVOKED' ? 'DISABLED' : invitation.status === 'ACCEPTED' && assignment && !assignment.user.deletedAt ? 'ACTIVE' : invitation.status === 'PENDING' && invitation.expiresAt > new Date() ? 'INVITED' : 'NOT_INVITED';
         await syncClientStakeholder({ accountId, clientId, email: invitation.email, name: assignment ? [assignment.user.firstName, assignment.user.lastName].filter(Boolean).join(' ') || invitation.email : invitation.email, role: invitation.role.name === 'CUSTOMER_ADMIN' ? 'IMPORTER_ADMIN' : invitation.role.name === 'CUSTOMER_VIEWER' ? 'VIEWER' : 'CUSTOMS_CONTACT', loginStatus, userId: assignment?.userId, invitationId: invitation.id, sourceEvent: 'PORTAL_INVITE' });
+    }
+    for (const importer of c.importersOfRecord) {
+        const bond = importer.bond;
+        if (!bond || !['verified', 'attested'].includes(bond.status))
+            continue;
+        let docId: string | undefined;
+        try {
+            docId = bond.verifications[0]?.responseRaw ? JSON.parse(bond.verifications[0].responseRaw).suretyLetterDocumentId : undefined;
+        }
+        catch { }
+        if (docId) {
+            const document = await db.shipmentDocument.findFirst({ where: { id: docId, accountId, clientId }, select: { fileUrl: true } });
+            if (document?.fileUrl)
+                await promoteClientDocument({ accountId, clientId, kind: 'BOND', title: `Bond ${bond.bondNumber}`, storageUrl: document.fileUrl, sourceModel: 'Bond', sourceId: bond.id, effectiveDate: bond.effectiveDate, expirationDate: bond.expirationDate });
+        }
     }
     const poas = new Map(c.importersOfRecord.flatMap(i => i.powersOfAttorney).map(p => [p.id, p]));
     for (const onboarding of c.onboardingCases) {

@@ -11,8 +11,8 @@ type Context = {
 };
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const digits = (s: string) => s.replace(/\D/g, '');
-export async function buildEntryProofPayload(filingId: string, ctx: Context): Promise<EntryProofPayload> {
-    const filing = await db.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { include: { lineItems: { orderBy: { lineNumber: 'asc' } }, documents: { where: { portalVisibility: 'CUSTOMER' }, select: { id: true, fileName: true } } } }, importerOfRecord: true, bond: true, snapshot: true } });
+export async function buildEntryProofPayload(filingId: string, ctx: Context, source: Prisma.TransactionClient = db): Promise<EntryProofPayload> {
+    const filing = await source.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { include: { lineItems: { orderBy: { lineNumber: 'asc' } }, documents: { where: { portalVisibility: 'CUSTOMER' }, select: { id: true, fileName: true } } } }, importerOfRecord: true, bond: true, snapshot: true } });
     if (!filing?.shipment?.clientId)
         throw new Error('PROOF_REQUIRES_CLIENT_SHIPMENT');
     if (filing.country && filing.country !== 'US')
@@ -24,18 +24,25 @@ export async function buildEntryProofPayload(filingId: string, ctx: Context): Pr
         ? snapshot.lineItems.map(l => ({ ...l, productId: live.find(x => x.id === l.id)?.productId ?? null, htsConfidence: live.find(x => x.id === l.id)?.htsConfidence ?? null, totalValue: l.customsValue ?? l.totalValue })) : live;
     if (!lines.length)
         throw new Error('PROOF_REQUIRES_ENTRY_LINES');
+    const productIds = lines.flatMap(l => l.productId ? [l.productId] : []);
+    const manufacturers = await source.productParty.findMany({ where: { accountId: ctx.accountId, productId: { in: productIds }, role: 'MANUFACTURER', status: 'ACTIVE', effectiveFrom: { lte: new Date() }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }] }, select: { productId: true, legalEntity: { select: { legalName: true } } } });
+    // Ambiguous product manufacturers must never select an arbitrary company duty rate.
+    const tariffLines = lines.map(line => {
+        const names = [...new Set(manufacturers.filter(m => m.productId === line.productId).map(m => m.legalEntity.legalName))];
+        return { ...line, manufacturer: names.length === 1 ? names[0] : null };
+    });
     const snapshotRelease = (filing.snapshot?.snapshotData as Record<string, unknown> | null)?.htsReleaseId;
-    const release = await db.htsRelease.findFirst({ where: typeof snapshotRelease === 'string' ? { id: snapshotRelease, country: 'US' } : { country: 'US', publicationStatus: 'PUBLISHED' }, orderBy: { effectiveFrom: 'desc' } });
+    const release = await source.htsRelease.findFirst({ where: typeof snapshotRelease === 'string' ? { id: snapshotRelease, country: 'US' } : { country: 'US', publicationStatus: 'PUBLISHED' }, orderBy: { effectiveFrom: 'desc' } });
     const [classifications, findings, refunds, assists, pga, rates] = await Promise.all([
-        db.productClassification.findMany({ where: { accountId: ctx.accountId, productId: { in: lines.flatMap(l => l.productId ? [l.productId] : []) }, jurisdiction: 'US', status: 'APPROVED', supersededById: null }, orderBy: { reviewedAt: 'desc' } }),
-        db.complianceFinding.findMany({ where: { accountId: ctx.accountId, filingId, status: { in: ['Open', 'Investigating', 'AcceptedRisk'] } } }),
-        db.refundOpportunity.findMany({ where: { accountId: ctx.accountId, filingId, status: 'Identified' } }),
-        db.valuationAssistsRecord.findFirst({ where: { accountId: ctx.accountId, filingId } }),
-        db.htsPgaRequirement.findMany({ where: { htsNumber: { in: lines.flatMap(l => [l.htsCode, digits(l.htsCode)]) } } }),
-        loadLineDutyRates(lines, release?.id),
+        source.productClassification.findMany({ where: { accountId: ctx.accountId, productId: { in: lines.flatMap(l => l.productId ? [l.productId] : []) }, jurisdiction: 'US', status: 'APPROVED', supersededById: null }, orderBy: { reviewedAt: 'desc' } }),
+        source.complianceFinding.findMany({ where: { accountId: ctx.accountId, filingId, status: { in: ['Open', 'Investigating', 'AcceptedRisk'] } } }),
+        source.refundOpportunity.findMany({ where: { accountId: ctx.accountId, filingId, status: 'Identified' } }),
+        source.valuationAssistsRecord.findFirst({ where: { accountId: ctx.accountId, filingId } }),
+        source.htsPgaRequirement.findMany({ where: { htsNumber: { in: lines.flatMap(l => [l.htsCode, digits(l.htsCode)]) } } }),
+        loadLineDutyRates(tariffLines, release?.id),
     ]);
     const isOcean = !shipment.transportMode || ['OCEAN', 'SEA', 'VESSEL', 'FCL', 'LCL'].includes(shipment.transportMode.toUpperCase());
-    const tariff = computeFilingTariff(lines, {}, rates, { isOcean });
+    const tariff = computeFilingTariff(tariffLines, {}, rates, { isOcean });
     const lineInputs = lines.map((l, i) => {
         // Never label a different classification code approved, including frozen entries.
         const classification = classifications.find(c => c.productId === l.productId && digits(c.classificationCode) === digits(l.htsCode));
@@ -75,12 +82,16 @@ export async function buildEntryProofPayload(filingId: string, ctx: Context): Pr
     return assembleEntryProof({ filingId, entryNumber: filing.entryNumber, entryType: filing.entryType, importerName: filing.importerOfRecord?.name ?? shipment.importerName, portOfEntry: shipment.portOfEntry, countryOfExport: shipment.countryOfExport, generatedAt: new Date().toISOString(), htsReleaseId: release?.id ?? null, htsReleaseLabel: release?.releaseName ?? null, referenceDataAsOf: release?.retrievedAt.toISOString() ?? null, totals: { enteredValueUsd: tariff.totalCustomsValue, dutyUsd: tariff.totalDuty, feesUsd: tariff.totalFees, dutyAndFeesUsd: tariff.totalAmount }, lines: proofLines, findings: findings.filter(f => f.lineNumber === null).map(safeFinding), refundOpportunities: refunds.map(r => ({ status: r.status, estimatedRefundAmount: Number(r.estimatedRefundAmount ?? 0) })), coverageStatus: { complete: form.coverageStatus.missing === 0, missingFields: form.coverageStatus.missing, unapprovedFields: form.coverageStatus.sourced - form.coverageStatus.approved, warnings: tariff.unratedLineCount ? ['Some duty amounts are incomplete because published rates are unavailable.'] : [] } });
 }
 export async function generateEntryProof(filingId: string, ctx: Context) {
-    const payload = await buildEntryProofPayload(filingId, ctx);
     return db.$transaction(async (tx) => {
         await tx.$queryRaw `SELECT id FROM "CustomsFiling" WHERE id = ${filingId} AND "accountId" = ${ctx.accountId} FOR UPDATE`;
-        const filing = await tx.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { select: { clientId: true } } } });
+        let filing = await tx.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { select: { clientId: true } } } });
         if (!filing?.shipment?.clientId)
             throw new Error('PROOF_REQUIRES_CLIENT_SHIPMENT');
+        await tx.$queryRaw `SELECT id FROM "Shipment" WHERE id = ${filing.shipmentId} AND "accountId" = ${ctx.accountId} FOR UPDATE`;
+        filing = await tx.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { select: { clientId: true } } } });
+        if (!filing?.shipment?.clientId)
+            throw new Error('PROOF_REQUIRES_CLIENT_SHIPMENT');
+        const payload = await buildEntryProofPayload(filingId, ctx, tx);
         const latest = await tx.entryProof.findFirst({ where: { filingId }, orderBy: { version: 'desc' } });
         const draft = await tx.entryProof.findFirst({ where: { filingId, status: 'DRAFT' } });
         if (draft)
@@ -89,7 +100,7 @@ export async function generateEntryProof(filingId: string, ctx: Context) {
         if (draft)
             await tx.entryProof.update({ where: { id: draft.id }, data: { supersededById: proof.id } });
         return proof;
-    });
+    }, { timeout: 60000 });
 }
 export async function publishEntryProof(filingId: string, ctx: Context) {
     const existing = await db.entryProof.findFirst({ where: { filingId, accountId: ctx.accountId, status: 'DRAFT' } });
@@ -100,6 +111,7 @@ export async function publishEntryProof(filingId: string, ctx: Context) {
         const draft = await tx.entryProof.findFirst({ where: { filingId, accountId: ctx.accountId, status: 'DRAFT' }, orderBy: { version: 'desc' } });
         if (!draft)
             throw new Error('PROOF_DRAFT_CHANGED_RETRY');
+        await tx.$queryRaw `SELECT id FROM "Shipment" WHERE id = ${draft.shipmentId} AND "accountId" = ${ctx.accountId} FOR UPDATE`;
         const filing = await tx.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { select: { clientId: true } } } });
         if (!filing?.shipment || filing.shipmentId !== draft.shipmentId || filing.shipment.clientId !== draft.clientId)
             throw new Error('PROOF_CLIENT_CHANGED_REGENERATE');

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { EntryProofPayload } from '@qubere/entry-proof';
 import { db } from '@/lib/db';
 import { generateEntryProof, publishEntryProof } from '@/lib/filing/entryProofService';
 import { computeFilingTariff } from '@/lib/tariff/dutyEngine';
@@ -13,7 +14,7 @@ beforeEach(() => {
     mock('customsFiling', 'findFirst', async () => filing);
     mock('customsFiling', 'update', async () => filing);
     mock('productClassification', 'findMany', async () => [{ id: 'class1', productId: 'prod1', classificationCode: line.htsCode, reviewedByUserId: 'broker1', reviewedAt: new Date() }]);
-    for (const model of ['complianceFinding', 'refundOpportunity', 'htsPgaRequirement', 'section301Rate', 'section232Rate', 'adcvdOrder'])
+    for (const model of ['productParty', 'complianceFinding', 'refundOpportunity', 'htsPgaRequirement', 'section301Rate', 'section232Rate', 'adcvdOrder'])
         mock(model, 'findMany', async () => []);
     mock('valuationAssistsRecord', 'findFirst', async () => null);
     mock('htsRelease', 'findFirst', async () => ({ id: 'r1', releaseName: 'HTS test', retrievedAt: new Date(), sourceUrl: 'https://hts.usitc.gov/' }));
@@ -28,7 +29,7 @@ beforeEach(() => {
 });
 describe('Entry Proof lifecycle through the actual assembler and tariff engine', () => {
     it('refuses to publish an old draft after client reassignment', async () => { await generateEntryProof('f1', ctx); mock('customsFiling', 'findFirst', async () => ({ ...filing, shipment: { ...filing.shipment, clientId: 'amazon' } })); await expect(publishEntryProof('f1', ctx)).rejects.toThrow('PROOF_CLIENT_CHANGED_REGENERATE'); expect(records[0].status).toBe('DRAFT'); });
-    it('generates a customer-safe draft with tariff parity', async () => { const p = await generateEntryProof('f1', ctx); const tariff = computeFilingTariff([line], { [line.htsCode]: { generalDutyRate: '5%' } }); expect(p.payload.totals.dutyAndFeesUsd).toBe(tariff.totalAmount); expect(p.status).toBe('DRAFT'); expect(p.version).toBe(1); expect(p.payload.lines[0].classificationStatus).toBe('sourced_approved'); expect(db.$transaction).toHaveBeenCalledTimes(1); });
+    it('generates a customer-safe draft with tariff parity', async () => { const p = await generateEntryProof('f1', ctx); const tariff = computeFilingTariff([line], { [line.htsCode]: { generalDutyRate: '5%' } }); expect((p.payload as unknown as EntryProofPayload).totals.dutyAndFeesUsd).toBe(tariff.totalAmount); expect(p.status).toBe('DRAFT'); expect(p.version).toBe(1); expect((p.payload as unknown as EntryProofPayload).lines[0].classificationStatus).toBe('sourced_approved'); expect(db.$transaction).toHaveBeenCalledTimes(1); });
     it('retains published v1 while drafts refresh, then supersedes both predecessor paths', async () => {
         await generateEntryProof('f1', ctx);
         await publishEntryProof('f1', ctx);

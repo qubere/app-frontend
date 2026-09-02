@@ -3,11 +3,17 @@ import { syncClientSetup } from './clientSetup';
 import { escapeHtml } from '@/modules/compliance/notifications/templates/escapeHtml';
 import type { RenderedEmail } from '@/modules/compliance/notifications/templates/types';
 const COPY: Record<string, string> = { POA_SIGNED: 'Your Power of Attorney has been signed.', FORM_5106_ACCEPTED: 'Your importer registration has been accepted.', ACCOUNT_ACTIVATED: 'Your importer setup is active.', ENTRY_PROOF_PUBLISHED: 'A new Entry Proof is available.', ETA_CHANGED: 'Your shipment arrival estimate has slipped by more than 24 hours.', CUSTOMS_RELEASED: 'Customs has released your shipment.', HOLD_PLACED: 'An agency hold has been placed on your shipment.', DOCUMENT_REQUESTED: 'Your broker has requested a document.', INVOICE_ISSUED: 'A new invoice is available.' };
-export function renderPortalEmail(value: unknown): RenderedEmail { const p = value as {
-    type: string;
-    href: string;
-}; if (!p || !COPY[p.type] || typeof p.href !== 'string' || !p.href.startsWith('/') || p.href.startsWith('//') || p.href.includes('\\'))
-    throw new Error('Invalid portal notification'); const url = new URL(p.href, process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3002').toString(); const message = COPY[p.type]; return { subject: message, text: message + '\n' + url, html: `<p>${escapeHtml(message)}</p><p><a href="${escapeHtml(url)}">Open your portal</a></p>` }; }
+export function renderPortalEmail(value: unknown): RenderedEmail {
+    const p = value as {
+        type: string;
+        href: string;
+    };
+    if (!p || !COPY[p.type] || typeof p.href !== 'string' || !p.href.startsWith('/') || p.href.startsWith('//') || p.href.includes('\\'))
+        throw new Error('Invalid portal notification');
+    const url = new URL(p.href, process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3002').toString();
+    const message = COPY[p.type];
+    return { subject: message, text: message + '\n' + url, html: `<p>${escapeHtml(message)}</p><p><a href="${escapeHtml(url)}">Open your portal</a></p>` };
+}
 export async function queuePortalUpdate(accountId: string, clientId: string, type: string, sourceId: string, href: string) {
     if (!COPY[type])
         throw new Error('Unknown portal notification');

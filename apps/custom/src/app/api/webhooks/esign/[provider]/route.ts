@@ -1,12 +1,8 @@
 import { storeDocumentBytes } from "@qubere/storage";
 import { promoteSetupForPoa } from "@/lib/portal/clientSetup";
-// E-sign webhook handler — called by Dropbox Sign (or future providers) when
-// the signature status changes. The INTERNAL provider completes via
-// /api/sign/[token] instead, so only DROPBOX_SIGN reaches this route.
-//
-// Security: HMAC-SHA256 signature verified inside provider.parseWebhook()
-//           before any DB writes. Returns 200 early for Dropbox Sign's
-//           mandatory handshake response.
+// E-sign webhooks are authenticated by the provider parser before database writes.
+// OpenSign completion is confirmed through its API before signed bytes are stored.
+// The INTERNAL provider completes through /api/sign/[token].
 
 import { NextResponse } from "next/server";
 import { db, runWithAccountId } from "@/lib/db";
@@ -59,6 +55,10 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
   await runWithAccountId(envelope.powerOfAttorney.accountId, async () => {
     if (event.eventType === "completed") {
       const poa = envelope.powerOfAttorney;
+      if (['revoked', 'expired'].includes(poa.status) || envelope.status === 'completed') {
+        await promoteSetupForPoa(poa.accountId, poa.id);
+        return;
+      }
       let expirationDate = poa.expirationDate;
       if (!expirationDate && poa.templateId) {
         const tpl = await db.poaTemplate.findUnique({ where: { id: poa.templateId } });
@@ -100,6 +100,10 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
       ]);
 
       await promoteSetupForPoa(poa.accountId, poa.id);
+      const onboardingEntities = await db.onboardingEntity.findMany({ where: { accountId: poa.accountId, poaId: poa.id }, select: { caseId: true } });
+      for (const entity of onboardingEntities) {
+        await db.onboardingEvent.upsert({ where: { id: `portal-poa-${envelope.id}-${entity.caseId}` }, update: {}, create: { id: `portal-poa-${envelope.id}-${entity.caseId}`, accountId: poa.accountId, caseId: entity.caseId, type: 'POA_EXECUTED', actorType: 'SYSTEM', detail: { poaId: poa.id, provider: providerName } } });
+      }
 
       await createAuditLog({
         accountId: poa.accountId,
