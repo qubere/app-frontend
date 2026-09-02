@@ -202,6 +202,9 @@ enum DeadlineClass {
 }
 
 model Account {
+  entryProofs EntryProof[]
+  clientStakeholders ClientStakeholder[]
+  clientDocuments ClientDocument[]
   pgaHolds PgaHold[]
   pgaHoldSubmissions PgaHoldSubmission[]
   assists Assist[]
@@ -439,6 +442,7 @@ model ShipmentSequence {
 }
 
 model User {
+  clientStakeholders ClientStakeholder[]
   id                  String    @id @default(cuid())
   clerkUserId         String    @unique
   email               String    @unique
@@ -663,6 +667,7 @@ model IdempotencyRecord {
 // -----------------------------------------------------------------------------
 
 model Shipment {
+  entryProofs EntryProof[]
   pgaHolds PgaHold[]
 
   id                 String                 @id @default(cuid())
@@ -1222,6 +1227,8 @@ model TrackingSubscription {
 // ~60 read sites continue to work without changes.
 // ---------------------------------------------------------------------------
 model ComplianceDeadline {
+  customerActionable Boolean @default(false)
+  customerLabel String?
   id        String  @id @default(cuid())
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -1743,6 +1750,7 @@ model AgentPolicyConfig {
 }
 
 model CustomsFiling {
+  entryProofs EntryProof[]
   assistDecisions AssistDecision[]
   assistDeclarations AssistDeclaration[]
 
@@ -1884,6 +1892,7 @@ model CustomsFiling {
 // =============================================================================
 
 model CustomerRequest {
+  metadata Json?
   id              String    @id @default(cuid())
   accountId       String
   account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -2637,6 +2646,9 @@ model ImporterOfRecord {
 // shipments are tagged with a Client rather than each customer being its
 // own separate tenant Account.
 model Client {
+  entryProofs EntryProof[]
+  clientStakeholders ClientStakeholder[]
+  clientDocuments ClientDocument[]
   id                  String   @id @default(cuid())
   accountId           String
   account             Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -3291,6 +3303,8 @@ model PgaRequirement {
 }
 
 model ComplianceFinding {
+  lineNumber Int?
+  metadata Json?
   id               String        @id @default(cuid())
   accountId        String
   account          Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -8636,6 +8650,7 @@ model UsageEvent {
 }
 
 model ShipmentCharge {
+  portalVisible Boolean @default(false)
   id                String           @id @default(cuid())
   accountId         String
   account           Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -10393,4 +10408,109 @@ model AssistDeclaration {
   declaredAt DateTime @default(now())
   @@unique([assistId, filingId])
   @@index([accountId, filingId])
+}
+
+
+// Immutable customer-safe proof. Publication serializes on the parent filing.
+model EntryProof {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId String
+  filing CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  shipmentId String?
+  shipment Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  clientId String
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  version Int
+  status String @default("DRAFT")
+  scoreOverall Int
+  scoreBand String
+  linesTotal Int
+  linesVerified Int
+  linesReview Int
+  linesAtRisk Int
+  dutyAndFeesUsd Decimal @db.Decimal(16, 2)
+  dutySavingsIdentifiedUsd Decimal @default(0) @db.Decimal(16, 2)
+  openFindingsCount Int @default(0)
+  payload Json
+  htsReleaseId String?
+  referenceDataAsOf DateTime?
+  generatedByUserId String?
+  publishedByUserId String?
+  publishedAt DateTime?
+  supersededById String? @unique
+  supersededBy EntryProof? @relation("EntryProofSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes EntryProof? @relation("EntryProofSupersession")
+  events EntryProofEvent[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([filingId, version])
+  @@index([accountId])
+  @@index([filingId])
+  @@index([clientId, status])
+  @@index([accountId, status, publishedAt])
+}
+
+model EntryProofEvent {
+  id String @id @default(cuid())
+  entryProofId String
+  entryProof EntryProof @relation(fields: [entryProofId], references: [id], onDelete: Cascade)
+  accountId String
+  type String
+  actorUserId String?
+  actorType String
+  detail Json?
+  createdAt DateTime @default(now())
+  @@index([entryProofId])
+  @@index([accountId, createdAt])
+}
+
+model ClientStakeholder {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId String
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name String
+  email String
+  title String?
+  role String
+  isSigner Boolean @default(false)
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invitationId String?
+  loginStatus String @default("NOT_INVITED")
+  notifyPrefs Json?
+  onboardingEntityId String?
+  sourceEvent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([clientId, email])
+  @@index([accountId])
+  @@index([clientId, role])
+}
+
+model ClientDocument {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId String
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  kind String
+  title String
+  storageUrl String
+  contentType String @default("application/pdf")
+  status String @default("ACTIVE")
+  effectiveDate DateTime?
+  expirationDate DateTime?
+  portalVisible Boolean @default(true)
+  sourceModel String?
+  sourceId String?
+  supersededById String? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([clientId, kind, sourceModel, sourceId])
+  @@index([accountId])
+  @@index([clientId, kind, status])
 }
