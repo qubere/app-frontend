@@ -115,3 +115,55 @@ describe('Newly uploaded signed PoAs', () => {
         expect(response.headers.get('Content-Disposition')).toContain('.png');
     });
 });
+
+describe('Customs and portal readiness agree', () => {
+    const completed = () => {
+        const importer = { id: 'ior-target', name: 'Target legal entity', irsEin: '123456789', registrationStatus: 'pending_5106', powersOfAttorney: [], bond: null };
+        const poa = { id: 'executed-poa', status: 'executed', signedDate: new Date('2026-09-01'), createdAt: new Date('2026-09-01') };
+        const bond = { id: 'bond', status: 'verified', bondAmount: 50000, bondNumber: 'BOND-TARGET' };
+        return { id: 'target', name: 'Target Corporation', account: { name: 'Broker' }, importersOfRecord: [], clientDocuments: [{ id: 'signed-doc', kind: 'EXECUTED_POA', sourceId: 'executed-poa', title: 'Executed PoA' }], clientStakeholders: [],
+            onboardingCases: [{ status: 'in_progress', primaryImporterId: 'ior-target', primaryImporter: importer, fiveOhSixRecords: [], stepStatus: { step_6: 'done' }, entities: [{ importerOfRecordId: 'ior-target', importerOfRecord: importer, importerNumber: '123456789', importerNumberType: 'EIN', screeningStatus: 'passed', bondCoverage: 'own', poa, bond }], blockers: ['POA_NOT_EXECUTED', 'SCREENING_INCOMPLETE'] }],
+        };
+    };
+    it('matches the screenshot with a legacy unlinked importer and only 5106/activation pending', async () => {
+        m.db.client.findFirst.mockResolvedValueOnce(completed());
+        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        const states = Object.fromEntries(body.onboarding.steps.map((s: any) => [s.key, s.state]));
+        expect(states).toEqual({ legal_entity: 'done', five_oh_six: 'pending', poa: 'done', bond: 'done', screening: 'done', billing: 'done', activation: 'pending' });
+        expect(body.onboarding.blockers).toEqual(['Importer registration pending']);
+        expect(body.poa.documentId).toBe('signed-doc');
+        expect(body.importer.legalName).toBe('Target legal entity');
+        expect(body.bond.number).toBe('BOND-TARGET');
+    });
+    it('recognizes a submitted 5106 before activation updates importer registration', async () => {
+        const client = completed();
+        (client.onboardingCases[0].fiveOhSixRecords as any[]).push({ status: 'submitted' });
+        m.db.client.findFirst.mockResolvedValueOnce(client);
+        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        expect(body.onboarding.steps.find((s: any) => s.key === 'five_oh_six').state).toBe('done');
+        expect(body.onboarding.steps.find((s: any) => s.key === 'activation').state).toBe('pending');
+    });
+    it('does not report all entities complete when a secondary entity is pending', async () => {
+        const client = completed();
+        client.onboardingCases[0].entities.push({ ...client.onboardingCases[0].entities[0], importerOfRecordId: 'secondary', screeningStatus: 'pending' });
+        m.db.client.findFirst.mockResolvedValueOnce(client);
+        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        expect(body.onboarding.steps.find((s: any) => s.key === 'screening').state).toBe('pending');
+    });
+    it('does not invent a POA awaiting signature for a client with no linked setup', async () => {
+        const client = completed(); client.onboardingCases = [];
+        m.db.client.findFirst.mockResolvedValueOnce(client);
+        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        expect(body.onboarding.status).toBe('not_started');
+        expect(body.onboarding.blockers).toEqual([]);
+        expect(body.onboarding.steps.every((s: any) => s.state === 'pending')).toBe(true);
+    });
+    it('shows waivers without exposing the broker’s private reason', async () => {
+        const client = completed();
+        (client.onboardingCases[0].stepStatus as any).waiver_five_oh_six = { reason: 'PRIVATE approval notes' };
+        m.db.client.findFirst.mockResolvedValueOnce(client);
+        const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
+        expect(body.onboarding.steps.find((s: any) => s.key === 'five_oh_six').state).toBe('waived');
+        expect(JSON.stringify(body)).not.toContain('PRIVATE');
+    });
+});

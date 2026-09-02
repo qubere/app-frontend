@@ -146,6 +146,31 @@ files; it also used an Active status/placeholder path and did not publish a port
 record. Uploads through that old path may need to be repeated once after updating.
 Do not backfill a placeholder path as though it were a signed document.
 
+### Customs shows setup complete, but the portal shows no setup
+
+The client selected on the onboarding case must be the same **client record** assigned
+to the portal user. Similar names are not an ownership link: `target` and
+`Target Corporation` can be different clients under the same broker account.
+
+| Feature | Customer benefit | How to demo |
+| --- | --- | --- |
+| Onboard an existing client | Keep setup, shipments and portal access on the same customer record. | In Customs, start onboarding, keep **Existing client**, search for **Target Corporation**, and select it. Choose **New client** only for a genuinely new customer. |
+| Correct the portal client on an existing case | Recover saved setup and signed documents without uploading the PoA again. | Open the existing Customs onboarding case. Under its header choose **Update client link**, select the client assigned to `porter@target.com` (the screenshot shows **Target Corporation**), and choose **Save client link**. If the correct client is already selected, save it again to repair missing importer links and republish saved documents. |
+| Consistent readiness in both apps | Clients see what the broker has actually completed and what remains pending. | As Porter, open **Your setup → Refresh setup** and select the same client. Verify company details, executed PoA, verified bond and screening; a submitted/accepted Form 5106 or an explicit waiver completes importer registration. Activation remains pending until the broker activates the case. |
+| Download the existing signed PoA | No repeat signature or upload for an already stored onboarding document. | Open **Power of Attorney → View signed POA**, or **Documents on file → Download**, and compare with the broker's saved signed file. |
+
+When moving an unactivated case from an unused duplicate client, review **Billing &
+access** for the selected client before activation. The old client's confirmation is
+not reused. The correction does not move logins, invitations, requests, shipments, or
+invoices, and refuses to move an activated case or an importer already in operational
+use. Existing client documents retain their visible/revoked state. No name or email
+matching, client merging, or account data-mode change occurs.
+
+If no onboarding case is linked, the portal says **Setup not linked** and explains
+where the broker should check. It no longer invents “POA awaiting signature” for an
+unlinked client. This is separate from a failed upload through the old multipart bug:
+an executed onboarding PoA with saved bytes does **not** need re-uploading.
+
 ## 4:15–5:00 — Broker controls and notifications
 
 Open the broker client's Portal & setup panel. Show login status, documents, and invitation

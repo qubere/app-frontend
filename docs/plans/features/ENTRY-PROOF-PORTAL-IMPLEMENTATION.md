@@ -190,3 +190,36 @@ failed publication, old-draft precedence, and signed-image downloads. Portal Typ
 passes. The full customs typecheck exceeded the default 2 GB Node heap; a scoped check
 of the changed upload route, both broker screens, their imports, and tests passed.
 The live user database and real object-storage upload remain unverified here.
+
+### Follow-up: onboarding and portal client mismatch (2026-09-02)
+
+The screenshot pair shows Customs onboarding for `target` and an empty portal setup
+for `Target Corporation`. Live client IDs were not available, so duplicate ownership
+is an inference. Two code defects were confirmed: the new-case UI always sent
+`newClient`, and entity creation omitted `ImporterOfRecord.clientId`. PoA/bond
+publication then relied on that missing importer link.
+
+- Existing-client onboarding is the default; the server validates the chosen client
+  within the account. New importers inherit the case's client ID. The client picker
+  selects only ID/name/contact email, searches within the account, and caps at 50.
+- Legacy PoA/bond promotion also follows explicit onboarding-case relationships.
+- A broker-only `POST /api/onboarding/cases/[caseId]/client` repairs the case and
+  importer/legal-entity links and republishes the saved setup in one serializable
+  transaction. Existing case document rows move with their visibility/revocation
+  intact. Source clients with portal access or operational history, activated cases,
+  and importers used elsewhere cannot be silently moved. Logins and operational data
+  are never reassigned. The case event records the actor and before/after client IDs.
+- A changed client requires reviewing Billing & access again. Saving the same client
+  can repair legacy null links without resetting completed billing.
+- Customs and portal now share the pure readiness function. Form 5106 submission,
+  bond coverage, waivers, and all-entity completion use the same rules. Empty entity
+  arrays cannot count as completed PoA/bond/screening. The portal selects the primary
+  importer, ignores withdrawn cases, computes current public blockers, and explains
+  missing case linkage rather than asserting a signature is outstanding.
+
+Validation: 23 broker tests across onboarding-client-link, onboarding-client-repair,
+PoA upload; 27 portal Setup tests including the screenshot state, submitted Form
+5106, secondary entities, waivers and scope. TypeScript checks for the changed broker
+and portal modules/tests passed. Full portal TypeScript was blocked by a missing
+local PGlite test dependency in this restored workspace; no live database, storage,
+Clerk session, or user record was changed. No schema migration is introduced.
