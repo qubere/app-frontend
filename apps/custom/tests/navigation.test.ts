@@ -105,11 +105,11 @@ describe("navigation visibility", () => {
     expect(hrefsFor(billingViewer)).toContain("/app/billing");
   });
 
-  it("surfaces bonds, POA, and importers of record in the sidebar (broker-critical records)", () => {
+  it("groups client, importer, bond, and POA records under one sidebar destination", () => {
     const hrefs = hrefsFor(owner);
-    expect(hrefs).toContain("/app/bonds");
-    expect(hrefs).toContain("/app/poa");
-    expect(hrefs).toContain("/app/importers-of-record");
+    expect(hrefs).not.toContain("/app/bonds");
+    expect(hrefs).not.toContain("/app/poa");
+    expect(hrefs).not.toContain("/app/importers-of-record");
     expect(hrefs).toContain("/app/clients");
   });
 

@@ -50,6 +50,8 @@ export interface NavItem {
   /** Permission that also grants visibility when the caller's role is not listed. */
   permission?: string;
   platformAdminOnly?: boolean;
+  /** Sidebar destination to highlight when this unlisted route is active. */
+  sidebarHref?: string;
   /** Optional live count shown as a badge. Populated externally, not in the static definition. */
   badge?: number;
 }
@@ -133,10 +135,7 @@ export const NAV_SECTIONS: NavSection[] = [
     collapsible: true,
     items: [
       { id: "onboarding", labelKey: "onboarding", href: "/app/onboarding", icon: "onboarding", permission: "onboarding.manage" },
-      { id: "clients", labelKey: "clientsAndEntities", href: "/app/clients", icon: "clients" },
-      { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord" },
-      { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds" },
-      { id: "poa", labelKey: "poa", href: "/app/poa", icon: "poa" },
+      { id: "clients", labelKey: "clientsAndImporters", href: "/app/clients", icon: "clients" },
       { id: "filingConfig", labelKey: "filingConfiguration", href: "/app/filing-config", icon: "settings", platformAdminOnly: true },
     ],
   },
@@ -228,10 +227,14 @@ export const NAV_SECTIONS: NavSection[] = [
  *   - reconciliation: reached from the Post-Entry hub (/app/post-entry)
  *   - tariffs: the old hub, now redirects to /app/regulatory
  *   - compliance-reports: now the "Reports" tab of /app/compliance
+ *   - importers-of-record / bonds / poa: tabs under Clients and Importers
  * navItemByHref() falls back to this list so canAccessHref() (and the Copilot's
  * tool gate) still resolve them.
  */
 export const UNLISTED_NAV_ITEMS: NavItem[] = [
+  { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord", sidebarHref: "/app/clients" },
+  { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds", sidebarHref: "/app/clients" },
+  { id: "poa", labelKey: "poa", href: "/app/poa", icon: "poa", sidebarHref: "/app/clients" },
   { id: "support", labelKey: "helpCenter", href: "/app/support", icon: "support" },
   { id: "products", labelKey: "products", href: "/app/products", icon: "products" },
   { id: "parties", labelKey: "parties", href: "/app/parties", icon: "parties" },
@@ -307,5 +310,9 @@ export function activeNavHref(pathname: string, hrefs: string[]): string | null 
       best = href;
     }
   }
-  return best;
+  if (best) return best;
+  // Tabs can use sibling URLs while sharing a single sidebar destination.
+  return UNLISTED_NAV_ITEMS.find(
+    (item) => item.sidebarHref && hrefs.includes(item.sidebarHref) && isPathWithin(pathname, item.href)
+  )?.sidebarHref ?? null;
 }
