@@ -44,10 +44,19 @@ invoices, and Entry Proof remain on this same shipment page.
    Existing assigned actions do **not** need reseeding. The reported `db.entryProof.aggregate`
    failure means the running Prisma client did not contain the new model. Optional summary
    failures no longer prevent `/api/dashboard` from returning existing actions.
+   `Unknown argument customerActionable` also indicates a stale generated client. Stop all
+   dev processes **before** regeneration and restart them afterward: hot reload preserves
+   the Prisma singleton and is not sufficient. Prisma version `6.19.3` can be identical
+   before and after regeneration; its version does not identify the generated schema.
+   Setup now reports the same update-required response for missing new relations/models.
    The `/api/proofs` endpoint returns
    `503 PORTAL_SCHEMA_OUTDATED` for a stale client or missing proof tables/columns, rather than silently appearing as an empty list.
-2. While signed in, open `/api/me` on the **portal** origin. Its `account.id` is the active
-   account and `clients` lists the permitted clients. Match that account to the demo seed;
+2. While signed in, open `/api/me?refresh=1` on the **portal** origin. Its `account.id`,
+   `account.name`, and `account.dataMode` identify the active account; `clients` lists the
+   permitted clients. `PRODUCTION` describes the account dataset, independently of local
+   development or `NODE_ENV`. The portal uses the authenticated account mode; the database
+   layer defaults to PRODUCTION if mode context is absent. Do not change an account to DEMO
+   merely to suppress an error. Match that account to the demo seed;
    the seed defaults to `demo-account`, which may differ from an existing user's account.
 3. For a different existing DEMO/SANDBOX account, use:
    `npx tsx --tsconfig apps/custom/tsconfig.json apps/custom/scripts/seed-partner-portal-demo.ts --account-id <account.id>`.

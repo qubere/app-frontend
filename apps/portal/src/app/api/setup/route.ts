@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@qubere/db';
-import { portalScope, portalData, noStore, notFound } from '@/lib/portal-scope';
+import { withPortalAccount, portalScope, portalData, noStore, notFound } from '@/lib/portal-scope';
 import { loadClientSetup } from '@/lib/client-setup';
-export async function GET(req: Request) {
+export const GET = withPortalAccount(async (_ctx, req: Request) => {
     const s = await portalScope(req, 'portal.setup.read');
     if (s.error)
         return s.error;
@@ -17,4 +17,4 @@ export async function GET(req: Request) {
         const summary = await loadClientSetup(s.ctx.accountId, clientId);
         return summary ? NextResponse.json({ ...summary, clients }, noStore) : notFound();
     });
-}
+});

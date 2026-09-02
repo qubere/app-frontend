@@ -1,6 +1,7 @@
 import { db } from '@qubere/db';
 import type { SetupSummary } from '@qubere/entry-proof';
 export async function loadClientSetup(accountId: string, clientId: string): Promise<SetupSummary | null> {
+    if (!db.clientDocument?.findFirst) throw { code: 'PORTAL_SCHEMA_OUTDATED' };
     const c = await db.client.findFirst({ where: { id: clientId, accountId }, include: { account: { select: { name: true } }, onboardingCases: { orderBy: { createdAt: 'desc' }, take: 1, include: { entities: { include: { poa: true, bond: true, importerOfRecord: true } } } }, importersOfRecord: { orderBy: { createdAt: 'asc' }, include: { bond: true, powersOfAttorney: { orderBy: { createdAt: 'desc' }, take: 1 } } }, clientDocuments: { where: { portalVisible: true, status: 'ACTIVE' }, select: { id: true, kind: true, title: true, expirationDate: true, sourceId: true } }, clientStakeholders: { orderBy: { name: 'asc' }, select: { name: true, role: true, title: true, isSigner: true, loginStatus: true } } } });
     if (!c)
         return null;

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getEffectiveUserScope, hasRequiredPortalPermission, resolvePortalClientScope } from '@qubere/auth';
 import { db } from '@qubere/db';
 import { withPortalAccount } from '@/lib/portal-scope';
+import { isPortalSchemaOutdated } from '@/lib/portal-errors';
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
@@ -13,7 +14,7 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
   const results = await Promise.allSettled([
     (async () => {
       if (!mayReadCustoms) return null;
-      if (!db.entryProof?.aggregate) throw new Error('Entry Proof client is outdated. Regenerate Prisma and restart the portal.');
+      if (!db.entryProof?.aggregate) throw { code: 'PORTAL_SCHEMA_OUTDATED' };
       return db.entryProof.aggregate({ where: { ...where, status: 'PUBLISHED', filing: { customerVisibleAt: { not: null } } }, _count: true, _avg: { scoreOverall: true }, _sum: { linesAtRisk: true, dutySavingsIdentifiedUsd: true } });
     })(),
     (async () => mayReadCustoms ? db.complianceDeadline.findMany({ where: { accountId: ctx.accountId, customerActionable: true, status: 'OPEN', shipment: { ...(clients.clientIds === null ? {} : { clientId: { in: clients.clientIds } }) } }, take: 50, orderBy: { dueAt: 'asc' }, select: { id: true, customerLabel: true, dueAt: true, shipmentId: true } }) : [])(),
@@ -22,7 +23,9 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
   const sections = ['Compliance', 'Upcoming deadlines', 'Setup'];
   const unavailableSections = results.flatMap((result, i) => {
     if (result.status === 'fulfilled') return [];
-    console.error(`[portal] ${sections[i]} summary unavailable; core action requests are unaffected.`, result.reason);
+    console.error(`[portal] ${sections[i]} summary unavailable; core action requests are unaffected.`, isPortalSchemaOutdated(result.reason)
+      ? 'Database/client update required. Apply migrations, run npm --workspace @qubere/db run db:generate, and fully restart the dev processes.'
+      : result.reason);
     return [sections[i]];
   });
   const proof = results[0].status === 'fulfilled' ? results[0].value : null;

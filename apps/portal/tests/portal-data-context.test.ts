@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
@@ -89,9 +90,12 @@ describe('Portal account data mode', () => {
   });
 
   it('loads the assigned company and separates cached profiles by data mode', async () => {
-    expect((await (await me.GET(req('me'))).json()).clients[0].id).toBe('target');
+    const profile = await (await me.GET(req('me'))).json();
+    expect(profile.clients[0].id).toBe('target');
+    expect(profile.account).toMatchObject({ id: 'broker-demo', dataMode: 'DEMO' });
     m.ctx.dataMode = 'SANDBOX';
-    await me.GET(req('me'));
+    const sandboxProfile = await (await me.GET(req('me'))).json();
+    expect(sandboxProfile.account.dataMode).toBe('SANDBOX');
     expect(m.db.client.findMany).toHaveBeenCalledTimes(2);
   });
 
@@ -158,6 +162,17 @@ describe('Freight and proof access', () => {
 });
 
 describe('Actions survive optional summary failures', () => {
+  it('keeps actions and other summaries when an old client rejects customerActionable', async () => {
+    m.ctx.permissions.push('portal.entries.read', 'portal.setup.read');
+    m.db.complianceDeadline.findMany.mockRejectedValue(new Prisma.PrismaClientValidationError('Unknown argument `customerActionable`. Available options are marked with ?.', { clientVersion: '6.19.3' }));
+    expect((await (await dashboard.GET(req('dashboard'))).json()).actionItems[0].id).toBe('r1');
+    const response = await summaries.GET(req('dashboard/summary'));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.unavailableSections).toEqual(['Upcoming deadlines']);
+    expect(body.complianceSummary.entriesWithProof).toBe(1);
+    expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('fully restart'));
+  });
   it('returns existing Target actions when the generated client has no EntryProof model', async () => {
     m.ctx.permissions.push('portal.entries.read', 'portal.setup.read');
     const delegate = m.db.entryProof;

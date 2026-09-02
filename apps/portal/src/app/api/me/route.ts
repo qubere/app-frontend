@@ -77,6 +77,8 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
     },
     account: {
       id: ctx.accountId,
+      name: ctx.accountName,
+      dataMode: ctx.dataMode,
     },
     capabilities: {
       hasPorterView,
