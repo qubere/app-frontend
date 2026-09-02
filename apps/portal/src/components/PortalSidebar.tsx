@@ -17,7 +17,7 @@ interface PortalSidebarProps {
   hasCustomsAccess: boolean;
   hasTmsAccess: boolean;
   canReadSetup: boolean;
-  clients: { id: string; name: string }[];
+  workspaceName: string;
   userName: string;
   userEmail: string;
 }
@@ -27,7 +27,7 @@ const profile: NavItem = { label: "Profile & security", href: "/settings/profile
 const matches = (pathname: string, item: NavItem) =>
   [item.href, ...(item.activePaths ?? [])].some(path => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`)));
 
-export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, canReadSetup, clients, userName, userEmail }: PortalSidebarProps) {
+export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, canReadSetup, workspaceName, userName, userEmail }: PortalSidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -58,7 +58,7 @@ export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, canReadSetup, cl
   const activeSectionId = sections.find(section => section.items.some(item => matches(pathname, item)))?.id;
   const [expandedId, setExpandedId] = useState<string | null>(activeSectionId ?? "operations");
   const compact = collapsed && !mobileOpen;
-  const clientLabel = clients.length === 1 ? clients[0].name : clients.length ? `${clients.length} client accounts` : "Client portal";
+  const clientLabel = workspaceName || "Your workspace";
 
   useEffect(() => {
     setMobileOpen(false);

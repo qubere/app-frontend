@@ -7,7 +7,7 @@ export interface PortalAuthOptions {
   resourceAccountId: string;
   resourceClientId?: string | null;
   importerName?: string | null;
-  portalVisibility?: string | null; // e.g. "CUSTOMER" vs "INTERNAL"
+  portalVisibility?: string | null; // Legacy document metadata; workspace membership governs reads.
   customerVisibleAt?: Date | null;   // for published filings/entries
 }
 
@@ -104,11 +104,10 @@ export interface PortalClientScopeResult {
 }
 
 /**
- * Resolves the effective client filter for a portal LIST endpoint, given the caller's
- * scope and an optional caller-supplied `clientId`. Callers MUST treat `forbidden` as
- * a hard 403 and MUST apply `clientIds` as `{ clientId: { in: clientIds } }` when it is
- * not null. A caller-supplied `clientId` is never trusted on its own.
- * See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P0-3/P0-5/P0-6).
+ * Optional client filtering. Portal callers supply getPortalWorkspaceScope(ctx),
+ * then always combine the result with ctx.accountId. Legacy scoped callers still
+ * fail closed for unassigned client filters. Never use a requested client ID as
+ * a substitute for the authenticated workspace predicate.
  */
 export function resolvePortalClientScope(
   scope: { isAllClients: boolean; authorizedClientIds: string[] },

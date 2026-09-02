@@ -83,7 +83,7 @@ export function ShipmentList({ freight = false }: { freight?: boolean }) {
         <div className="qubere-card p-12 text-center rounded-2xl">
           <ShipmentIcon className="w-10 h-10 text-[#86868B] mx-auto mb-3" />
           <h3 className="text-base font-semibold text-[#1D1D1F]">{freight ? "No freight shipments found" : "No shipments found"}</h3>
-          <p className="text-[#86868B] text-xs mt-1">{searchQuery ? "Try another shipment number or PO reference." : "Your service provider’s assigned shipments will appear here when available."}</p>
+          <p className="text-[#86868B] text-xs mt-1">{searchQuery ? "Try another shipment number or PO reference." : "Shipments in your workspace will appear here when available."}</p>
         </div>
       ) : (
         <ShipmentTable shipments={shipments} freight={freight} />

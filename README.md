@@ -948,17 +948,28 @@ It loads the portal app's development environment first, with the root environme
 as fallback, and prints the database host and account data mode so you can confirm
 the target. Explicit environment variables take precedence.
 
-Compare `clients[].assignedToUser` with the `clientId` on importers, cases and
-shipments. Matching names alone do not establish access. Client IDs with no
-importers/cases explain an empty Setup result; do not reseed or reassign records
-until their intended ownership is confirmed. Metadata lists have explicit limits
-and a `truncated` indicator. This operator report can include other clients in the
-selected account; keep it within your broker/admin team. It excludes passwords,
-EINs, document contents, storage URLs and request message bodies, and does not
-change records or send notifications.
+Portal customers have access to an **account/workspace** through active membership.
+For example, Broker-A manages Target, Amazon and DHL in separate workspaces. A
+Target member can read Target's shipments, documents, importers and onboarding,
+including records with missing or different client links. Role permissions still
+control actions. Other workspaces remain inaccessible. `clientAssignments` in the
+report is organizational metadata, not a second portal access boundary.
 
-In the portal, the client selector remains available after opening a setup, so a
-user with multiple assigned clients can switch away from an empty record.
+Compare `account.id` with the workspace selected in Customs and `/api/me` in the
+portal. `PRODUCTION` is the account's data mode, independent of running localhost.
+Do not relink records or change data mode to make them appear. Your setup opens
+**All workspace setup** by default and shows every importer, including an existing
+executed PoA without a promoted ClientDocument. Stored signed files can be downloaded;
+placeholder URLs are not reconstructed as documents.
+
+Document lists include legacy INTERNAL files in the owning workspace and an
+**Uploaded by** column from audit history or the inbound sender. Pagination keeps
+responses bounded. Upload and response permissions remain enforced; access to a
+workspace does not grant broker administration or editing of broker-uploaded files.
+
+The diagnostic has explicit limits and a `truncated` indicator. Keep the operator
+report within your admin team. It excludes passwords, EINs, file contents, storage
+URLs and request message bodies. It does not change records or send notifications.
 
 ### Production Build Verification
 

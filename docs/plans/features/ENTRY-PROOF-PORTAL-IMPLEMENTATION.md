@@ -1,5 +1,42 @@
 # Partner portal: Entry Proof, shipment answers, and Your setup
 
+## Current customer access model (supersedes client-filter assumptions below)
+
+Active account membership grants access to the customer workspace. Broker-A keeps
+Target, Amazon and DHL in separate accounts. Portal queries retain account and data
+mode predicates, but client assignments, null client links and legacy document
+visibility labels do not restrict reads within that workspace. Optional client filters
+are organizational views. Role permissions, filing publication, document lifecycle
+and other-workspace isolation remain enforced.
+
+The September 2 follow-up makes Setup aggregate the account's importers and cases by
+default. It retrieves stored executed PoAs without requiring ClientDocument promotion,
+projects safe metadata and audits downloads. No live ownership repair or migration is
+needed. Documents include legacy INTERNAL files with uploader attribution, and uploads
+validate referenced client/shipment account membership before storing bytes. Default
+workspace shipment/document lists skip importer-ownership lookups.
+
+The user-provided diagnostic explains the previous mismatch: 000001 has no client or
+importer link, Porter's assigned client has no onboarding, and the saved executed PoA
+belongs to a null-client importer under another client record in the **same Target
+account**. These links no longer hide records. No database records were changed.
+
+The portal header/sidebar display the authenticated workspace, replacing a client
+selector that only changed its label. Setup still offers an optional company filter.
+The read-only diagnostic reports workspace access separately from client assignments.
+
+Validation: real authorization-engine and route tests cover Target/Amazon/DHL workspace
+isolation, null-client shipments, INTERNAL documents, workspace uploads, importer
+aggregation, legacy signed downloads, role restrictions, data-mode contexts and loading
+budgets. Portal source TypeScript passed. This restored environment lacks PGlite and happy-dom, so the PostgreSQL
+execution and DOM-interaction test files cannot run here; SQL parameterization and
+publication guards are covered in route tests. The other 113 portal tests and 14
+authorization tests pass. No authenticated live walkthrough or
+latency benchmark has been performed. The sections below record earlier implementation
+history; the access model above governs current behavior. See the sales demo for the
+current walkthrough.
+
+
 Implementation of [issue #294](https://github.com/qubere/app-frontend/issues/294).
 
 ## Contract

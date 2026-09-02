@@ -75,12 +75,13 @@ async function main() {
       ]);
       return {
         user, account: membership.account, roles,
-        clientAccess: { allClients, directClientIds: direct.map(d => d.clientId), teamIds: teams.map(t => t.teamId), assignedClientIds },
+        workspaceAccess: { accountId, membershipId: membership.id, scope: 'WORKSPACE', note: 'Active membership grants workspace access; role permissions govern actions.' },
+        clientAssignments: { allClients, directClientIds: direct.map(d => d.clientId), teamIds: teams.map(t => t.teamId), assignedClientIds },
         clients: clients.slice(0, limit).map(c => ({ ...c, assignedToUser: allClients || assignedClientIds.includes(c.id) })),
         importers: importers.slice(0, limit), cases: cases.slice(0, limit).map(c => ({ ...c, entities: c.entities.slice(0, limit) })),
         shipments, requestedShipmentNumbers: shipmentNumbers, documentCounts, setupDocumentCounts, assignedRequests,
         truncated: { clients: clients.length > limit, importers: importers.length > limit, cases: cases.length > limit, caseEntities: cases.some(c => c.entities.length > limit), shipments: shipments.length === 100 },
-        note: 'This is an operator ownership report, not a portal API response. Compare explicit client IDs; names do not grant access. No records were changed.',
+        note: 'This is an operator ownership report, not a portal API response. Portal access uses the account/workspace ID. Client assignments and legacy visibility labels are metadata, not a second portal read boundary. No records were changed.',
       };
     }, { timeout: 60000, maxWait: 10000, isolationLevel: 'RepeatableRead' });
     console.log(JSON.stringify({ databaseHost: target.hostname, databaseName: target.pathname.slice(1), readOnly: true, ...report }, null, 2));

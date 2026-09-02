@@ -27,11 +27,6 @@ interface Capability {
   canReadSetup: boolean;
 }
 
-interface ClientScope {
-  id: string;
-  name: string;
-}
-
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user: clerkUser } = useUser();
   const { signOut } = useClerk();
@@ -47,12 +42,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     canRespondRequests: false,
     canReadSetup: false,
   });
-  const [clients, setClients] = useState<ClientScope[]>([]);
-  const [selectedClient, setSelectedClient] = useState<ClientScope | null>(null);
+  const [workspaceName, setWorkspaceName] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  const SESSION_CACHE_KEY = "qubere_portal_user_session_v2";
+  const SESSION_CACHE_KEY = "qubere_portal_user_session_v3";
   const SESSION_CACHE_TTL = 300 * 1000; // 300s (5 minutes)
 
   useEffect(() => {
@@ -66,10 +60,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           setUser(data.user);
           if (data.account?.id) setAccountId(data.account.id);
           if (data.capabilities) setCapabilities(data.capabilities);
-          if (data.clients && data.clients.length > 0) {
-            setClients(data.clients);
-            setSelectedClient(data.clients[0]);
-          }
+          setWorkspaceName(data.account?.name || '');
         }
       }
     } catch {}
@@ -94,10 +85,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           setUser(data.user);
           if (data.account?.id) setAccountId(data.account.id);
           if (data.capabilities) setCapabilities(data.capabilities);
-          if (data.clients && data.clients.length > 0) {
-            setClients(data.clients);
-            setSelectedClient(data.clients[0]);
-          }
+          setWorkspaceName(data.account?.name || '');
           try {
             sessionStorage.setItem(
               SESSION_CACHE_KEY,
@@ -118,7 +106,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         hasCustomsAccess={capabilities.hasCustomsAccess}
         hasTmsAccess={capabilities.hasTmsAccess}
         canReadSetup={capabilities.canReadSetup}
-        clients={clients}
+        workspaceName={workspaceName}
         userName={userName}
         userEmail={userEmail}
       />
@@ -130,29 +118,10 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           {/* Account Context & Isolation Badge */}
           <div className="flex items-center space-x-2 text-xs">
             <Building2 className="w-4 h-4 text-[#0071E3]" />
-            {clients.length > 1 ? (
-              <select
-                value={selectedClient?.id || ""}
-                onChange={(e) => {
-                  const found = clients.find((c) => c.id === e.target.value);
-                  if (found) setSelectedClient(found);
-                }}
-                className="font-bold text-[#1D1D1F] bg-transparent border-0 focus:outline-none cursor-pointer"
-              >
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="font-bold text-[#1D1D1F]">
-                {selectedClient?.name || "—"}
-              </span>
-            )}
+            <span className="font-bold text-[#1D1D1F]">{workspaceName || "—"}</span>
             <span className="text-[#86868B] font-light">/</span>
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium text-[#86868B] bg-[#F5F5F7] border border-[#E5E5EA]">
-              Account Isolated
+              Workspace
             </span>
           </div>
 
@@ -222,9 +191,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-[#86868B]">
-                        <span>Client Scope:</span>
+                        <span>Workspace:</span>
                         <span className="font-semibold text-[#1D1D1F] truncate max-w-[140px]">
-                          {selectedClient?.name || "—"}
+                          {workspaceName || "—"}
                         </span>
                       </div>
                     </div>
@@ -344,7 +313,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               {/* Tenant & Client Authorization */}
               <div className="space-y-3">
                 <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#86868B]">
-                  Tenant & Client Scope
+                  Workspace access
                 </h4>
                 <div className="p-5 rounded-2xl border border-[#E5E5EA] bg-white space-y-3 text-xs">
                   <div className="flex justify-between items-center">
@@ -354,9 +323,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[#86868B] font-medium">Authorized Client Account:</span>
+                    <span className="text-[#86868B] font-medium">Active workspace:</span>
                     <span className="font-bold text-[#1D1D1F]">
-                      {selectedClient?.name || "—"}
+                      {workspaceName || "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
