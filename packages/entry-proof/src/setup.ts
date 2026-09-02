@@ -2,6 +2,7 @@ export interface SetupSummary {
     clientId: string;
     clientName: string;
     brokerName: string;
+    importers: ImporterSetup[];
     onboarding: {
         status: string;
         path: string | null;
@@ -58,4 +59,14 @@ export interface SetupSummary {
         role: string;
         email: string;
     }[];
+}
+
+export interface ImporterSetup {
+    id: string;
+    importer: NonNullable<SetupSummary['importer']>;
+    onboardingCaseId: string | null;
+    onboarding: SetupSummary['onboarding'];
+    bond: SetupSummary['bond'];
+    poa: SetupSummary['poa'];
+    screening: SetupSummary['screening'];
 }

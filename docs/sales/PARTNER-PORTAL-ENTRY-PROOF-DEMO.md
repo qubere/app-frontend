@@ -166,9 +166,9 @@ invoices, and refuses to move an activated case or an importer already in operat
 use. Existing client documents retain their visible/revoked state. No name or email
 matching, client merging, or account data-mode change occurs.
 
-If no onboarding case is linked, the portal says **Setup not linked** and explains
-where the broker should check. It no longer invents “POA awaiting signature” for an
-unlinked client. This is separate from a failed upload through the old multipart bug:
+All linked importers appear even without onboarding cases. When no importers are
+linked, the portal says **No importers on file**. It no longer invents “POA awaiting
+signature” for an unlinked client. This is separate from a failed upload through the old multipart bug:
 an executed onboarding PoA with saved bytes does **not** need re-uploading.
 
 ## 4:15–5:00 — Broker controls and notifications
@@ -191,3 +191,19 @@ and channel delivery; both active membership and client assignment are required.
   provider before promotion. Dropbox Sign's existing provider remains a stub.
 - This change does not configure Clerk, a database, object storage, cron scheduling, or email
   credentials. Validate these integration settings before a customer demonstration.
+
+## Complete client workspace: shipments, documents and importers
+
+| Feature | Customer benefit | How to demo |
+| --- | --- | --- |
+| Shipments across all linked importers | A subsidiary's shipment remains visible when ownership is recorded on its importer rather than directly on the shipment. | As Porter, open Shipments and search for `SHP-2026-000001`, then `SHP-2026-000002`. Open each shipment number. Both must belong to an assigned client directly or through an explicit importer/case link. Use Next/Previous for additional pages. |
+| Workspace documents with Uploaded by | Find broker-shared and client-uploaded files together, and identify who supplied them. | Open Documents Vault, click Refresh documents, and check Uploaded by, shipment number, source and date. Open an invoice and an executed PoA. Load more documents to reach older files. Uploader history comes from upload audit events or the original inbound email; Not recorded means historical attribution is absent. |
+| Every importer under the client | See each legal entity's readiness, PoA and bond without switching client workspaces. | Open Your setup, choose the authorized client if prompted, and refresh. Under Importers of record, show each entity's identifiers, registration, signed PoA, bond and screening. An importer created outside onboarding appears as On file. |
+| Independent importer progress | Avoid confusing one entity's signed PoA or 5106 with another entity's incomplete setup. | Compare two importers in the same client. Complete or submit a requirement for one; refresh and verify the other retains its own status. A client-wide completion indicator requires all importers to be complete. |
+
+This view includes customer-visible files across the authorized client workspace;
+broker-internal and other-client documents remain restricted. It does not infer client
+ownership from similar company names. If a specific shipment is still absent, check its
+direct client and importer client links in Customs. The live user's records were not
+available during automated verification, and the fixes do not relink those records or
+reseed their shipments automatically.

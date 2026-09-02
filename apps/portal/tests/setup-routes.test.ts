@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ImporterSetupList } from '../src/components/ImporterSetupList';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const m = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read', 'portal.users.manage'], dataMode: 'DEMO' }, scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] }, read: vi.fn(), db: { user: { findUnique: vi.fn() }, client: { findMany: vi.fn(), findFirst: vi.fn() }, clientDocument: { findFirst: vi.fn() }, accountMembership: { findFirst: vi.fn() }, auditLog: { create: vi.fn() }, customerRequest: { create: vi.fn() } } }));
+const m = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read', 'portal.users.manage'], dataMode: 'DEMO' }, scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] }, read: vi.fn(), db: { user: { findUnique: vi.fn() }, client: { findMany: vi.fn(), findFirst: vi.fn() }, clientDocument: { findFirst: vi.fn() }, accountMembership: { findFirst: vi.fn(), findMany: vi.fn() }, auditLog: { create: vi.fn() }, customerRequest: { create: vi.fn() } } }));
 vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: async () => m.ctx }));
 vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: async () => m.scope }));
 vi.mock('@qubere/auth', async () => ({ ...await import('../../../packages/auth/src/portal-auth'), getAccountContext: async () => m.ctx, getEffectiveUserScope: async () => m.scope }));
@@ -10,7 +13,7 @@ const me = await import('../src/app/api/me/route');
 const setup = await import('../src/app/api/setup/route');
 const download = await import('../src/app/api/setup/documents/[id]/download/route');
 const invite = await import('../src/app/api/setup/stakeholders/invite-request/route');
-beforeEach(() => { vi.clearAllMocks(); me.invalidateMeCache(); m.ctx.roleNames = ['CUSTOMER_ADMIN']; m.db.user.findUnique.mockResolvedValue({ id: 'u1', email: 'client@example.com', firstName: 'Client', lastName: 'User' }); m.ctx.permissions = ['portal.setup.read', 'portal.users.manage']; m.scope.authorizedClientIds = ['target']; m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }]); m.db.client.findFirst.mockResolvedValue({ id: 'target', name: 'Target', account: { name: 'Broker' }, onboardingCases: [], importersOfRecord: [{ name: 'Target', irsEin: '12-3456789', cbpImporterNumber: 'DEMO123', registrationStatus: 'registered', powersOfAttorney: [], bond: null }], clientDocuments: [], clientStakeholders: [], internalNotes: 'PRIVATE' }); m.db.clientDocument.findFirst.mockResolvedValue({ id: 'doc1', clientId: 'target', title: 'Signed POA', storageUrl: 'stored://poa' }); m.read.mockResolvedValue({ body: Buffer.from('%PDF-1.7 DEMO') }); m.db.customerRequest.create.mockResolvedValue({ id: 'r1' }); });
+beforeEach(() => { vi.clearAllMocks(); me.invalidateMeCache(); m.ctx.roleNames = ['CUSTOMER_ADMIN']; m.db.user.findUnique.mockResolvedValue({ id: 'u1', email: 'client@example.com', firstName: 'Client', lastName: 'User' }); m.ctx.permissions = ['portal.setup.read', 'portal.users.manage']; m.scope.authorizedClientIds = ['target']; m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }]); m.db.client.findFirst.mockResolvedValue({ id: 'target', name: 'Target', account: { name: 'Broker' }, onboardingCases: [], importersOfRecord: [{ id: 'ior-target', accountId: 'a1', clientId: 'target', name: 'Target', irsEin: '12-3456789', cbpImporterNumber: 'DEMO123', registrationStatus: 'registered', powersOfAttorney: [], bond: null }], clientDocuments: [], clientStakeholders: [], internalNotes: 'PRIVATE' }); m.db.clientDocument.findFirst.mockResolvedValue({ id: 'doc1', clientId: 'target', title: 'Signed POA', storageUrl: 'stored://poa' }); m.read.mockResolvedValue({ body: Buffer.from('%PDF-1.7 DEMO') }); m.db.customerRequest.create.mockResolvedValue({ id: 'r1' }); });
 afterEach(() => vi.restoreAllMocks());
 describe('Setup schema recovery', () => {
     it.each(['P2021', 'P2022'])('returns a safe update-required response for %s', async code => {
@@ -98,14 +101,15 @@ describe('Newly uploaded signed PoAs', () => {
         const importer = { id: 'ior-target', name: 'Target', powersOfAttorney: [{ id: 'poa-new', status: 'executed', executionMethod: 'WET_INK', signedDate: new Date('2026-09-02'), createdAt: new Date('2026-09-02') }], bond: null };
         m.db.client.findFirst.mockResolvedValueOnce({ id: 'target', name: 'Target', account: { name: 'Broker' },
             onboardingCases: [{ status: 'poa_pending', blockers: ['POA_NOT_EXECUTED'], entities: [{ importerOfRecord: importer, poa: { id: 'poa-old', status: 'draft', createdAt: new Date('2026-08-01') }, screeningStatus: 'pending' }] }],
-            importersOfRecord: [{ id: 'different-ior', powersOfAttorney: [{ id: 'wrong-poa', status: 'draft', createdAt: new Date('2026-09-03') }] }, importer],
+            importersOfRecord: [{ id: 'different-ior', name: 'Other Target subsidiary', powersOfAttorney: [{ id: 'wrong-poa', status: 'draft', createdAt: new Date('2026-09-03') }] }, importer],
             clientDocuments: [{ id: 'signed-file', kind: 'EXECUTED_POA', sourceId: 'poa-new', title: 'Executed Power of Attorney' }], clientStakeholders: [],
         });
         const response = await setup.GET(new Request('http://portal/api/setup'));
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.poa).toMatchObject({ status: 'executed', documentId: 'signed-file' });
-        expect(body.onboarding.steps.find((step: any) => step.key === 'poa').state).toBe('done');
+        expect(body.importers.find((i: any) => i.id === 'ior-target').onboarding.steps.find((step: any) => step.key === 'poa').state).toBe('done');
+        expect(body.onboarding.steps.find((step: any) => step.key === 'poa').state).toBe('pending');
         expect(body.onboarding.blockers).not.toContain('POA awaiting signature');
     });
     it('downloads an uploaded signed image with the correct format', async () => {
@@ -145,7 +149,7 @@ describe('Customs and portal readiness agree', () => {
     });
     it('does not report all entities complete when a secondary entity is pending', async () => {
         const client = completed();
-        client.onboardingCases[0].entities.push({ ...client.onboardingCases[0].entities[0], importerOfRecordId: 'secondary', screeningStatus: 'pending' });
+        client.onboardingCases[0].entities.push({ ...client.onboardingCases[0].entities[0], importerOfRecordId: 'secondary', importerOfRecord: { ...client.onboardingCases[0].entities[0].importerOfRecord, id: 'secondary', name: 'Target subsidiary' }, screeningStatus: 'pending' });
         m.db.client.findFirst.mockResolvedValueOnce(client);
         const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
         expect(body.onboarding.steps.find((s: any) => s.key === 'screening').state).toBe('pending');
@@ -165,5 +169,62 @@ describe('Customs and portal readiness agree', () => {
         const body = await (await setup.GET(new Request('http://portal/api/setup'))).json();
         expect(body.onboarding.steps.find((s: any) => s.key === 'five_oh_six').state).toBe('waived');
         expect(JSON.stringify(body)).not.toContain('PRIVATE');
+    });
+});
+
+describe('All importers in a client workspace', () => {
+    const importer = (id: string, name: string, clientId = 'target') => ({ id, accountId: 'a1', clientId, name, irsEin: '123456789', cbpImporterNumber: id, registrationStatus: 'registered', powersOfAttorney: [], bond: null });
+    const client = (importers: any[] = []) => ({ id: 'target', name: 'Target', account: { name: 'Broker' }, importersOfRecord: importers, onboardingCases: [] as any[], clientDocuments: [], clientStakeholders: [] });
+    const load = async () => (await setup.GET(new Request('http://portal/api/setup'))).json();
+    it('returns and renders every linked importer even without an onboarding case', async () => {
+        m.db.client.findFirst.mockResolvedValueOnce(client([importer('one', 'Target Retail'), importer('two', 'Target Imports')]));
+        const body = await load();
+        expect(body.importers.map((i: any) => i.id)).toEqual(['two', 'one']);
+        expect(body.onboarding.status).toBe('on_file');
+        expect(body.importers.every((i: any) => i.onboarding.status === 'on_file')).toBe(true);
+        const html = renderToStaticMarkup(React.createElement(ImporterSetupList, { importers: body.importers }));
+        expect(html).toContain('Importers of record (2)');
+        expect(html).toContain('Target Retail'); expect(html).toContain('Target Imports');
+        expect(html).not.toContain('has not linked an onboarding');
+        expect(html).not.toContain('123456789');
+    });
+    it('loads different onboarding cases for different importers without dropping older cases', async () => {
+        const one = importer('one', 'Target Retail'), two = importer('two', 'Target Imports');
+        const c = client([one, two]);
+        c.onboardingCases = [one, two].map((i, index) => ({ id: `case-${i.id}`, status: 'in_progress', primaryImporterId: i.id, primaryImporter: i, stepStatus: {}, fiveOhSixRecords: [], entities: [{ id: `entity-${i.id}`, importerOfRecordId: i.id, importerOfRecord: i, importerNumber: '123456789', importerNumberType: 'EIN', screeningStatus: index ? 'pending' : 'passed', bondCoverage: 'own', bond: null, poa: null }] }));
+        m.db.client.findFirst.mockResolvedValueOnce(c);
+        const body = await load();
+        expect(body.importers.find((i: any) => i.id === 'one').screening.status).toBe('passed');
+        expect(body.importers.find((i: any) => i.id === 'two').screening.status).toBe('pending');
+        expect(body.importers.find((i: any) => i.id === 'two').onboardingCaseId).toBe('case-two');
+        expect(m.db.client.findFirst.mock.calls.at(-1)![0].include.onboardingCases.take).toBeUndefined();
+    });
+    it('keeps registration and signed PoA evidence separate for each entity in one case', async () => {
+        const one = importer('one', 'Retail'), two = importer('two', 'Imports');
+        const c = client([one, two]);
+        c.onboardingCases = [{ id: 'case', status: 'in_progress', stepStatus: {}, primaryImporterId: 'one', primaryImporter: one,
+            fiveOhSixRecords: [{ status: 'submitted', onboardingEntityId: 'e-one' }],
+            entities: [one, two].map(i => ({ id: `e-${i.id}`, importerOfRecordId: i.id, importerOfRecord: i, importerNumber: '123456789', importerNumberType: 'EIN', screeningStatus: 'passed', bondCoverage: 'own', bond: null, poa: i.id === 'one' ? { id: 'poa-one', status: 'executed', signedDate: new Date(), createdAt: new Date() } : null })) }];
+        m.db.client.findFirst.mockResolvedValueOnce(c);
+        const body = await load();
+        const states = (id: string) => Object.fromEntries(body.importers.find((i: any) => i.id === id).onboarding.steps.map((s: any) => [s.key, s.state]));
+        expect(states('one')).toMatchObject({ five_oh_six: 'done', poa: 'done' });
+        expect(states('two')).toMatchObject({ five_oh_six: 'pending', poa: 'pending' });
+    });
+    it('does not expose an importer explicitly assigned to another client through a stale case relation', async () => {
+        const other = importer('other', 'PRIVATE IMPORTER', 'amazon');
+        const c = client();
+        c.onboardingCases = [{ id: 'case', entities: [{ importerOfRecord: other }], primaryImporter: other }];
+        m.db.client.findFirst.mockResolvedValueOnce(c);
+        const body = await load();
+        expect(body.importers).toEqual([]);
+        expect(JSON.stringify(body)).not.toContain('PRIVATE');
+    });
+    it('does not mark the whole client active when another importer is only on file', async () => {
+        const one = importer('one', 'Active importer'), two = importer('two', 'Pending importer');
+        const c = client([one, two]);
+        c.onboardingCases = [{ id: 'case-one', primaryImporter: one, primaryImporterId: 'one', status: 'active', stepStatus: {}, fiveOhSixRecords: [], entities: [] }];
+        m.db.client.findFirst.mockResolvedValueOnce(c);
+        expect((await load()).onboarding.status).toBe('in_progress');
     });
 });

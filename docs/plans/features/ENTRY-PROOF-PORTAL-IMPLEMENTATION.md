@@ -223,3 +223,35 @@ PoA upload; 27 portal Setup tests including the screenshot state, submitted Form
 and portal modules/tests passed. Full portal TypeScript was blocked by a missing
 local PGlite test dependency in this restored workspace; no live database, storage,
 Clerk session, or user record was changed. No schema migration is introduced.
+
+### Follow-up: complete client workspace and multiple importers
+
+- Shipment lists now include direct client shipments and shipments with a null direct
+  client linked to any importer owned by that client. Detail and answers use the same
+  explicit importer/case ownership, replacing the importer-name fallback. A conflicting
+  explicit client is never overridden; ambiguous legacy case links fail closed. The
+  list selects only displayed metadata and offers Previous/Next paging.
+- Documents resolves client ownership directly or through its shipment/importer. It
+  combines customer-visible shipment files and active, visible setup documents, with
+  bounded 25/50-row keyset pages across both sources and stable timestamp ties. Downloads
+  recheck both the document and linked shipment scope. No full parsed document JSON or
+  storage URLs are fetched for the list. Internal files retain their visibility policy.
+- Uploaded by uses original upload audit events or the inbound sender. It never uses
+  the current assignee. Missing history is shown as Not recorded. Source, refresh,
+  paging and the appropriate shipment/setup download endpoint are rendered per row.
+  Lists no longer reuse a response after the user's client assignments change.
+- Your setup returns all explicitly linked importers plus importers linked through
+  every non-withdrawn case for the client. The newest case is selected per importer,
+  not once for the entire client. Each importer has separate masked identifiers,
+  registration, PoA, bond, screening, and progress. A registered importer can be On file
+  without an onboarding case. The case-link warning no longer blocks those records.
+  Entity-bound 5106 evidence is not applied to a sibling importer; overall completion
+  requires every importer, and existing primary fields remain for compatibility.
+
+Validation: 46 ownership/document/shipments/answers route tests and 32 Setup tests pass
+(78 total), including both SHP-2026-000001 and SHP-2026-000002 fixtures, explicit-client
+precedence, legacy ambiguity, uploader attribution, shared document downloads, source
+pagination ties, current scope, multiple cases/importers and rendered importer cards.
+TypeScript passes for all portal source and the changed workspace/Setup tests. These
+fixtures do not establish the user's live shipment/client linkage. No database record,
+permission assignment, or document visibility flag was changed in the live environment.
