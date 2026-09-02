@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { CRON_JOB_DEFINITIONS } from "./cronJobs.data";
 
 export interface SystemCronJob {
   id: string;
@@ -12,144 +13,20 @@ export interface SystemCronJob {
   details?: string | null;
 }
 
-export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "details">[] = [
-  {
-    id: "compliance-audit",
-    name: "Daily Compliance Audit",
-    endpoint: "/api/cron/compliance-audit",
-    method: "GET",
-    schedule: "0 1 * * * (Daily at 01:00 UTC)",
-    description: "Sweeps compliance deadlines, generates audit findings, and notifies account owners of upcoming or overdue filings.",
-  },
-  {
-    id: "data-dispatcher",
-    name: "Dataset Refresh & Staleness Dispatcher",
-    endpoint: "/api/cron/data-dispatcher",
-    method: "POST",
-    schedule: "0 2 * * * (Daily at 02:00 UTC)",
-    description: "Master fan-out cron checking dataset freshness, triggering due ingesting pipelines, and alerting on stale datasets.",
-  },
-  {
-    id: "fx-rate-refresh",
-    name: "FX Foreign Exchange Rate Refresh",
-    endpoint: "/api/cron/fx-rate-refresh",
-    method: "POST",
-    schedule: "0 3 * * * (Daily at 03:00 UTC)",
-    description: "Fetches latest ECB / Federal Reserve foreign currency exchange rates for landed cost multi-currency conversion.",
-  },
-  {
-    id: "deadline-sweep",
-    name: "Compliance Deadline Sweep",
-    endpoint: "/api/cron/deadline-sweep",
-    method: "GET",
-    schedule: "*/15 * * * * (Every 15 minutes)",
-    description: "High-frequency sweep checking impending customs entry and ISF filing deadlines.",
-  },
-  {
-    id: "outbox-dispatch",
-    name: "Shipment Event Outbox Dispatcher",
-    endpoint: "/api/cron/outbox-dispatch",
-    method: "POST",
-    schedule: "*/5 * * * * (Every 5 minutes)",
-    description: "Dispatches queued shipment outbox domain events to external webhooks and downstream event consumers.",
-  },
-  {
-    id: "document-processing",
-    name: "Document Processing Pipeline",
-    endpoint: "/api/cron/document-processing",
-    method: "GET",
-    schedule: "0 9 * * * (Daily at 09:00 UTC / Backstop)",
-    description: "Backstop worker advancing unparsed customs documents through OCR, entity extraction, and classification.",
-  },
-  {
-    id: "regulatory-ingest",
-    name: "Federal Register Ingestion",
-    endpoint: "/api/cron/regulatory-ingest",
-    method: "POST",
-    schedule: "0 4 * * * (Daily at 04:00 UTC)",
-    description: "Ingests CBP notices from the Federal Register, extracts affected HTS codes, and creates RegulatoryUpdate records.",
-  },
-  {
-    id: "compliance-notification-dispatch",
-    name: "Compliance Notification Dispatcher",
-    endpoint: "/api/cron/compliance-notification-dispatch",
-    method: "POST",
-    schedule: "*/10 * * * * (Every 10 minutes)",
-    description: "Processes queued compliance alerts and dispatches emails via configured EmailProvider.",
-  },
-  {
-    id: "rdps-recall-validation",
-    name: "RDPS Recall & Rescreening Sweeper",
-    endpoint: "/api/cron/rdps-recall-validation",
-    method: "POST",
-    schedule: "0 5 * * * (Daily at 05:00 UTC)",
-    description: "Executes continuous party rescreening for RDPS and records outcome changes.",
-  },
-  {
-    id: "rdps-delta-impact-dispatch",
-    name: "RDPS Delta-Impact Dispatcher",
-    endpoint: "/api/cron/rdps-delta-impact-dispatch",
-    method: "POST",
-    schedule: "*/10 * * * * (Every 10 minutes)",
-    description: "Reacts to denied-party reference-data changes by re-screening only the parties a given change could plausibly affect.",
-  },
-  {
-    id: "rdps-full-population-dispatch",
-    name: "RDPS Full-Population Dispatcher",
-    endpoint: "/api/cron/rdps-full-population-dispatch",
-    method: "POST",
-    schedule: "0 * * * * (Hourly)",
-    description: "Proactively walks the account's entire screened-party population as a periodic safety net, independent of reference-data changes.",
-  },
-  {
-    id: "db-backup",
-    name: "Automated Database Backup Job",
-    endpoint: "gcloud run jobs execute qubere-db-backup-demo",
-    method: "POST",
-    schedule: "0 */6 * * * (Every 6 hours)",
-    description: "Executes automated Cloud Run DB backup job exporting PostgreSQL pg_dump dumps to GCP Cloud Storage.",
-  },
-  {
-    id: "reference-data-expiry-sweep",
-    name: "Reference Data Expiry Sweep",
-    endpoint: "/api/cron/reference-data-expiry-sweep",
-    method: "POST",
-    schedule: "0 * * * * (Hourly)",
-    description: "Supersedes published reference-data entities whose own expirationDate has passed and records an EXPIRED change so RDPS re-screens affected parties.",
-  },
-  {
-    id: "community-screening-dispatch",
-    name: "Community Screening Dispatcher",
-    endpoint: "/api/cron/community-screening-dispatch",
-    method: "POST",
-    schedule: "*/2 * * * * (Every 2 minutes)",
-    description: "Processes queued Community Screening runs claimed row-by-row, mirroring the compliance-notification dispatch pattern.",
-  },
-  {
-    id: "origin-re-eval",
-    name: "Origin Re-evaluation Sweeper",
-    endpoint: "/api/cron/origin-re-eval",
-    method: "POST",
-    schedule: "0 6 * * * (Daily at 06:00 UTC)",
-    description: "Re-evaluates country of origin determinations for line items affected by recent product country fact updates.",
-  },
-  {
-    id: "compliance-batch-dispatch",
-    name: "Bulk Compliance Screening Dispatcher",
-    endpoint: "/api/cron/compliance-batch-dispatch",
-    method: "POST",
-    schedule: "*/2 * * * * (Every 2 minutes)",
-    description: "Processes queued Bulk Compliance Screening batch records claimed row-by-row through Party/License screening.",
-  },
-  {
-    id: "compliance-batch-retention-sweep",
-    name: "Bulk Compliance Screening Retention Sweep",
-    endpoint: "/api/cron/compliance-batch-retention-sweep",
-    method: "POST",
-    schedule: "0 4 * * * (Daily at 04:00 UTC)",
-    description: "Marks terminal Bulk Compliance Screening batches older than the retention window as EXPIRED (status flag only, never deletes data).",
-  },
-];
+// Derived from CRON_JOB_DEFINITIONS (cronJobs.data.ts) so this dashboard
+// listing and infrastructure/gcp/configure-scheduler.sh can never drift back
+// apart the way they previously did.
+export const SYSTEM_CRON_JOBS: Omit<SystemCronJob, "lastRun" | "status" | "details">[] = CRON_JOB_DEFINITIONS.map(
+  (job) => ({
+    id: job.id,
+    name: job.name,
+    description: job.description,
+    schedule: `${job.cronExpression} (${job.scheduleLabel})`,
+    ...(job.trigger.kind === "http"
+      ? { endpoint: job.trigger.path, method: job.trigger.method }
+      : { endpoint: `gcloud run jobs execute ${job.trigger.defaultJobName}`, method: "POST" as const }),
+  }),
+);
 
 export async function getSystemCronJobs(): Promise<SystemCronJob[]> {
   const datasetIdsToQuery = SYSTEM_CRON_JOBS.flatMap((j) => [`cron:${j.id}`, j.id]);

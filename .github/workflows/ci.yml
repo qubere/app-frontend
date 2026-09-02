@@ -138,6 +138,10 @@ jobs:
         if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
         run: npm run openapi
 
+      - name: Cloud Scheduler config must match cronJobs.data.ts
+        if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
+        run: npm run scheduler:check
+
       - name: Production build
         if: ${{ !cancelled() && steps.compile.conclusion == 'success' && steps.lint.conclusion == 'success' }}
         run: npm run build
