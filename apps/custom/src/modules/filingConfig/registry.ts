@@ -28,6 +28,8 @@ export type FilingConfigTableKey =
   // CUSTOMS VERSION MANAGEMENT
   | "country-customs-version"
   | "customer-customs-version"
+  // STATUS CATALOG (with multi-language descriptions)
+  | "status-catalog"
   // DROPPED TABLES (commented out - kept for reference)
   // | "procedure-mapping" // DROPPED - replaced by procedure-config
   // | "authority-config" // DROPPED - authority names in UI layer
@@ -133,6 +135,46 @@ const actionConfigurationSchema = z.object({
   createdBy: z.string().trim().max(100).optional(),
   updatedBy: z.string().trim().max(100).optional(),
 });
+
+// FilingStatusCatalog.localeDescription is stored as a JSON key-value map
+// (locale code -> translated description), but the generic fieldArray editor
+// in FilingConfigClient only knows how to edit a list of flat entries, so the
+// wire/UI shape is an array of { locale, description } rows -- converted
+// to/from the map at the registry boundary (see localeArrayToMap/localeMapToArray).
+const localeDescriptionEntrySchema = z.object({
+  locale: z.string().trim().min(1).max(20),
+  description: z.string().trim().min(1).max(500),
+});
+
+const statusCatalogCreateSchema = z.object({
+  statusCode: z.string().trim().min(1).max(20),
+  defaultDescription: z.string().trim().min(1).max(200),
+  localeDescriptions: z.array(localeDescriptionEntrySchema).max(50).default([]),
+  createdBy: z.string().trim().max(100).optional(),
+});
+
+const statusCatalogUpdateSchema = z.object({
+  statusCode: z.string().trim().min(1).max(20).optional(),
+  defaultDescription: z.string().trim().min(1).max(200).optional(),
+  localeDescriptions: z.array(localeDescriptionEntrySchema).max(50).optional(),
+  updatedBy: z.string().trim().max(100).optional(),
+});
+
+function localeArrayToMap(entries: Array<{ locale: string; description: string }>): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const { locale, description } of entries) {
+    if (locale) map[locale] = description;
+  }
+  return map;
+}
+
+function localeMapToArray(map: unknown): Array<{ locale: string; description: string }> {
+  if (!map || typeof map !== "object") return [];
+  return Object.entries(map as Record<string, unknown>).map(([locale, description]) => ({
+    locale,
+    description: String(description ?? ""),
+  }));
+}
 
 // ============================================================================
 // OLD SCHEMAS (commented out - tables dropped)
@@ -375,6 +417,60 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     remove: (id) => wrapPrismaErrors(() => db.filingActionConfiguration.delete({ where: { id } })).then(() => undefined),
     createSchema: actionConfigurationSchema,
     updateSchema: actionConfigurationSchema,
+  },
+  "status-catalog": {
+    label: "Filing Status Catalog",
+    description: "Master list of filing status codes with a default description and optional per-locale (multi-language) description overrides",
+    idField: "id",
+    fields: [
+      { key: "statusCode", label: "Status Code", type: "text", help: "Business/system code, e.g. DRAFT, SUBMITTED, APPROVED" },
+      { key: "defaultDescription", label: "Default Description", type: "text", help: "Fallback description shown when no locale-specific override exists" },
+      {
+        key: "localeDescriptions",
+        label: "Locale Descriptions",
+        type: "fieldArray",
+        help: "Per-language description overrides. Add one row per locale (e.g. en, fr, nl).",
+        itemFields: [
+          { key: "locale", label: "Locale", type: "text", help: "Locale/language code, e.g. en, fr, nl" },
+          { key: "description", label: "Description", type: "text" },
+        ],
+      },
+    ],
+    list: async () => {
+      const rows = await db.filingStatusCatalog.findMany({ orderBy: { statusCode: "asc" } });
+      return rows.map((row) => ({
+        ...row,
+        localeDescriptions: localeMapToArray(row.localeDescription),
+      }));
+    },
+    create: (data) => wrapPrismaErrors(async () => {
+      const parsed = statusCatalogCreateSchema.parse(data);
+      const row = await db.filingStatusCatalog.create({
+        data: {
+          statusCode: parsed.statusCode,
+          defaultDescription: parsed.defaultDescription,
+          localeDescription: localeArrayToMap(parsed.localeDescriptions),
+          createdBy: parsed.createdBy ?? null,
+        },
+      });
+      return { ...row, localeDescriptions: localeMapToArray(row.localeDescription) };
+    }),
+    update: (id, data) => wrapPrismaErrors(async () => {
+      const parsed = statusCatalogUpdateSchema.parse(data);
+      const row = await db.filingStatusCatalog.update({
+        where: { id },
+        data: {
+          statusCode: parsed.statusCode,
+          defaultDescription: parsed.defaultDescription,
+          localeDescription: parsed.localeDescriptions ? localeArrayToMap(parsed.localeDescriptions) : undefined,
+          updatedBy: parsed.updatedBy,
+        },
+      });
+      return { ...row, localeDescriptions: localeMapToArray(row.localeDescription) };
+    }),
+    remove: (id) => wrapPrismaErrors(() => db.filingStatusCatalog.delete({ where: { id } })).then(() => undefined),
+    createSchema: statusCatalogCreateSchema,
+    updateSchema: statusCatalogUpdateSchema,
   },
   // ============================================================================
   // KEPT TABLE (existing functionality)
@@ -706,18 +802,32 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     idField: "id",
     fields: [
       { key: "applyToAllCustomers", label: "Apply to All Customers", type: "boolean", help: "When checked, this version applies to all customers" },
-      { key: "customerId", label: "Customer", type: "select", help: "Select specific customer (leave empty if Apply to All is checked)", options: [] },
-      { key: "filingCountryCustomsId", label: "Country Customs Version", type: "select", help: "Select country customs version", options: [] },
+      { key: "customerId", label: "Customer", type: "select", help: "Select specific customer (leave empty if Apply to All is checked)", optionsSource: "/api/filing-config/customers" },
+      { key: "filingCountryCustomsId", label: "Country Customs Version", type: "select", help: "Select country customs version", optionsSource: "/api/filing-config/country-customs-versions" },
       { key: "notes", label: "Notes", type: "text" },
       { key: "isActive", label: "Active", type: "boolean" },
     ],
     list: async () => {
-      return await db.filingCustomerCustomsVersion.findMany({
+      const rows = await db.filingCustomerCustomsVersion.findMany({
         orderBy: { createdAt: "desc" },
         include: {
           countryCustomsVersion: true,
         },
       });
+
+      // customerId has no DB-level FK to Account (it's a plain string so the
+      // mapping stays valid even if the account is later deleted), so the
+      // display name has to be joined here rather than via `include`.
+      const customerIds = Array.from(new Set(rows.map((r) => r.customerId).filter((id): id is string => Boolean(id))));
+      const accounts = customerIds.length
+        ? await db.account.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true } })
+        : [];
+      const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
+
+      return rows.map((row) => ({
+        ...row,
+        customerName: row.customerId ? accountNameById.get(row.customerId) ?? null : null,
+      }));
     },
     create: (data) => wrapPrismaErrors(() => {
       return db.filingCustomerCustomsVersion.create({
