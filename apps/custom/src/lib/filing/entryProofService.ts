@@ -7,12 +7,12 @@ import type { FilingSnapshotData } from '@/modules/filings/filing.service';
 import Decimal from 'decimal.js';
 type Context = {
     accountId: string;
-    userId: string;
+    userId?: string;
 };
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const digits = (s: string) => s.replace(/\D/g, '');
 export async function buildEntryProofPayload(filingId: string, ctx: Context, source: Prisma.TransactionClient = db): Promise<EntryProofPayload> {
-    const filing = await source.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { include: { lineItems: { orderBy: { lineNumber: 'asc' } }, documents: { where: { portalVisibility: 'CUSTOMER' }, select: { id: true, fileName: true } } } }, importerOfRecord: true, bond: true, snapshot: true } });
+    const filing = await source.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { include: { lineItems: { orderBy: { lineNumber: 'asc' } }, documents: { where: { portalVisibility: 'CUSTOMER' }, select: { id: true, fileName: true, source: true, createdAt: true } } } }, importerOfRecord: true, bond: true, snapshot: true } });
     if (!filing?.shipment?.clientId)
         throw new Error('PROOF_REQUIRES_CLIENT_SHIPMENT');
     if (filing.country && filing.country !== 'US')
@@ -76,14 +76,18 @@ export async function buildEntryProofPayload(filingId: string, ctx: Context, sou
             { key: 'HMF', label: 'Harbor maintenance fee', status: isOcean ? 'EVALUATED_APPLICABLE' : 'EVALUATED_NOT_APPLICABLE', ratePct: isOcean ? 0.125 : 0, amountUsd: hmf.toNumber(), detail: null },
         ];
         return { lineNumber: l.lineNumber, shipmentLineItemId: l.id, description: l.description, htsCode: l.htsCode, htsDescription: classifications.find(c => c.productId === l.productId && digits(c.classificationCode) === digits(l.htsCode))?.description ?? null, htsConfidence: l.htsConfidence, classificationStatus: f.htsCode.status, classificationApprovedBy: lineInputs[i].approvedByUserId ?? null, classificationApprovedAt: lineInputs[i].approvedAt ?? null, griRulesApplied: [], whyThisCode: lineInputs[i].classificationId ? 'This tariff code matches the approved product classification.' : null, countryOfOrigin: l.countryOfOrigin, quantity: Number(l.quantity), enteredValueUsd: result.customsValue, dutyStack, lineDutyTotalUsd: result.totalDutyAmount, pgaAgencies: pga.filter(p => digits(p.htsNumber) === digits(l.htsCode)).map(p => p.agencyCode), valuation: { transactionValueUsd: Number(l.totalValue), assistsDeclared: potentialAssists.every(a => a.declared), assistsUndeclaredEstimateUsd: potentialAssists.filter(a => !a.declared).reduce((n, a) => n + Number(a.estimatedValue ?? 0), 0), relatedParty: assists?.relatedPartyTransaction ?? false },
-            evidence: [...(release ? [{ kind: 'REFERENCE_DATA' as const, label: release.releaseName, sourceModel: 'HtsRelease', sourceId: release.id, portalHref: null, citation: release.sourceUrl }] : []), ...(lineInputs[i].classificationId ? [{ kind: 'BROKER_DECISION' as const, label: 'Approved product classification', sourceModel: 'ProductClassification', sourceId: lineInputs[i].classificationId!, portalHref: null, citation: null }] : []), ...shipment.documents.map(d => ({ kind: 'DOCUMENT' as const, label: d.fileName, sourceModel: 'ShipmentDocument', sourceId: d.id, portalHref: `/api/documents/${d.id}/download`, citation: null }))],
+            evidence: [...(release ? [{ kind: 'REFERENCE_DATA' as const, label: release.releaseName, sourceModel: 'HtsRelease', sourceId: release.id, portalHref: null, citation: release.sourceUrl }] : []), ...(lineInputs[i].classificationId ? [{ kind: 'BROKER_DECISION' as const, label: 'Approved product classification', sourceModel: 'ProductClassification', sourceId: lineInputs[i].classificationId!, portalHref: null, citation: null }] : []), ...shipment.documents.map(d => ({ kind: 'DOCUMENT' as const, label: d.source === 'INBOUND_EMAIL' ? `${d.fileName} (received by email ${d.createdAt.toISOString().slice(0, 10)})` : d.fileName, sourceModel: 'ShipmentDocument', sourceId: d.id, portalHref: `/api/documents/${d.id}/download`, citation: null }))],
             flags: findings.filter(f => f.lineNumber === null || f.lineNumber === l.lineNumber).map(safeFinding) };
     });
     return assembleEntryProof({ filingId, entryNumber: filing.entryNumber, entryType: filing.entryType, importerName: filing.importerOfRecord?.name ?? shipment.importerName, portOfEntry: shipment.portOfEntry, countryOfExport: shipment.countryOfExport, generatedAt: new Date().toISOString(), htsReleaseId: release?.id ?? null, htsReleaseLabel: release?.releaseName ?? null, referenceDataAsOf: release?.retrievedAt.toISOString() ?? null, totals: { enteredValueUsd: tariff.totalCustomsValue, dutyUsd: tariff.totalDuty, feesUsd: tariff.totalFees, dutyAndFeesUsd: tariff.totalAmount }, lines: proofLines, findings: findings.filter(f => f.lineNumber === null).map(safeFinding), refundOpportunities: refunds.map(r => ({ status: r.status, estimatedRefundAmount: Number(r.estimatedRefundAmount ?? 0) })), coverageStatus: { complete: form.coverageStatus.missing === 0, missingFields: form.coverageStatus.missing, unapprovedFields: form.coverageStatus.sourced - form.coverageStatus.approved, warnings: tariff.unratedLineCount ? ['Some duty amounts are incomplete because published rates are unavailable.'] : [] } });
 }
-export async function generateEntryProof(filingId: string, ctx: Context) {
+export async function generateEntryProof(filingId: string, ctx: Context, trigger?: { inboundDocumentId: string }) {
     return db.$transaction(async (tx) => {
         await tx.$queryRaw `SELECT id FROM "CustomsFiling" WHERE id = ${filingId} AND "accountId" = ${ctx.accountId} FOR UPDATE`;
+        if (trigger) {
+            const event = await tx.entryProofEvent.findFirst({ where: { accountId: ctx.accountId, type: 'GENERATED', entryProof: { filingId }, detail: { path: ['shipmentDocumentId'], equals: trigger.inboundDocumentId } }, include: { entryProof: true } });
+            if (event) return event.entryProof;
+        }
         let filing = await tx.customsFiling.findFirst({ where: { id: filingId, accountId: ctx.accountId }, include: { shipment: { select: { clientId: true } } } });
         if (!filing?.shipment?.clientId)
             throw new Error('PROOF_REQUIRES_CLIENT_SHIPMENT');
@@ -96,7 +100,7 @@ export async function generateEntryProof(filingId: string, ctx: Context) {
         const draft = await tx.entryProof.findFirst({ where: { filingId, status: 'DRAFT' } });
         if (draft)
             await tx.entryProof.update({ where: { id: draft.id }, data: { status: 'SUPERSEDED' } });
-        const proof = await tx.entryProof.create({ data: { accountId: ctx.accountId, filingId, shipmentId: filing.shipmentId, clientId: filing.shipment.clientId, version: (latest?.version ?? 0) + 1, ...payload.scorecard, dutyAndFeesUsd: payload.totals.dutyAndFeesUsd, payload: json(payload), htsReleaseId: payload.htsReleaseId, referenceDataAsOf: payload.referenceDataAsOf ? new Date(payload.referenceDataAsOf) : null, generatedByUserId: ctx.userId, events: { create: { accountId: ctx.accountId, type: 'GENERATED', actorType: 'BROKER', actorUserId: ctx.userId } } } });
+        const proof = await tx.entryProof.create({ data: { accountId: ctx.accountId, filingId, shipmentId: filing.shipmentId, clientId: filing.shipment.clientId, version: (latest?.version ?? 0) + 1, ...payload.scorecard, dutyAndFeesUsd: payload.totals.dutyAndFeesUsd, payload: json(payload), htsReleaseId: payload.htsReleaseId, referenceDataAsOf: payload.referenceDataAsOf ? new Date(payload.referenceDataAsOf) : null, generatedByUserId: ctx.userId, events: { create: { accountId: ctx.accountId, type: 'GENERATED', actorType: trigger ? 'SYSTEM' : 'BROKER', actorUserId: ctx.userId, ...(trigger ? { detail: { trigger: 'INBOUND_DOCUMENT', shipmentDocumentId: trigger.inboundDocumentId } } : {}) } } } });
         if (draft)
             await tx.entryProof.update({ where: { id: draft.id }, data: { supersededById: proof.id } });
         return proof;

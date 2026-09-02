@@ -1,3 +1,4 @@
+import { routeParsedInboundDocument } from "@/modules/inbound/inboundDocumentRouting";
 /**
  * Qubere document processing worker.
  *
@@ -609,6 +610,8 @@ async function handleRunFailure(
     success: false,
   });
 
+  if (!willRetry) await routeParsedInboundDocument(run.document.accountId, run.documentId, null, true);
+
   log("failure", {
     runId: run.id,
     stage,
@@ -642,7 +645,7 @@ async function dispatchDownstream(run: DueRun): Promise<void> {
 
   let shipmentId = document?.shipmentId ?? null;
 
-  if (shipmentId === null && (document?.source === "EMAIL" || document?.source === "API")) {
+  if (shipmentId === null && (document?.source === "EMAIL" || document?.source === "INBOUND_EMAIL" || document?.source === "API")) {
     shipmentId = await tryAutoMatchShipment(run);
   }
 
@@ -713,6 +716,7 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
   const index = parseArtifactIndex(parseVersion?.artifactsJson ?? null);
   if (index === null) {
     log("auto_match.skipped", { runId: run.id, reason: "no artifact index" });
+    await routeParsedInboundDocument(run.document.accountId, run.documentId, null, true);
     return null;
   }
 
@@ -728,6 +732,9 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     });
     return null;
   }
+
+  const inboundDocument = await db.shipmentDocument.findFirst({ where: { id: run.documentId, accountId: run.document.accountId }, select: { source: true } });
+  if (inboundDocument?.source === 'INBOUND_EMAIL') return routeParsedInboundDocument(run.document.accountId, run.documentId, parsedText);
 
   const inboundAttachment = await db.inboundAttachment.findUnique({
     where: { shipmentDocumentId: run.documentId },

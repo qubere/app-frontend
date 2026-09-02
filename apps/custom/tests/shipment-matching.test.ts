@@ -122,7 +122,7 @@ describe("matchShipmentForDocument", () => {
     );
     expect(result.matchedShipmentId).toBeNull();
     expect(recorded).toHaveLength(0);
-    expect(deleted).toEqual([]);
+    expect(deleted).toEqual(["doc_1"]);
   });
 
   it("persists conflicting shipment-number candidates but auto-selects neither", async () => {

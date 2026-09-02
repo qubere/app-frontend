@@ -1,3 +1,4 @@
+import { clientInboundEnabled, issueClientInboundAddress } from "@/modules/inbound/inboundAddressService";
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { parseAndValidateBody, validatePathParams } from "@/lib/api/validation";
@@ -58,6 +59,8 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         data: { clientId: targetClientId },
       });
     }
+
+    if (clientInboundEnabled() && targetClientId) await issueClientInboundAddress({ accountId: ctx.accountId, clientId: targetClientId, createdByUserId: ctx.userId });
 
     // 2. Create CustomerRequest in Database
     const dueAt = new Date();

@@ -6,10 +6,10 @@ import { parseAndValidateBody } from "@/lib/api/validation";
 import { db } from "@/lib/db";
 import { createInboundSenderRoute, InboundSenderAlreadyRoutedError, InboundSenderBlockedError } from "@/modules/inbound/senderRouting";
 
-export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
+export const GET = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const [routes, memberships] = await Promise.all([
     db.inboundSenderRoute.findMany({
-      where: { accountId: ctx.accountId },
+      where: { accountId: ctx.accountId, ...(new URL(req.url).searchParams.has("clientId") ? { clientId: new URL(req.url).searchParams.get("clientId") || null } : {}) },
       include: { defaultAssignedToUser: { select: { id: true, email: true, firstName: true, lastName: true } } },
       orderBy: { createdAt: "desc" },
     }),
@@ -35,13 +35,14 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
 
 const createSchema = z.object({
   email: z.string().trim().email(),
+  clientId: z.string().min(1).nullable().optional(),
   defaultAssignedToUserId: z.string().optional(),
 });
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const bodyVal = await parseAndValidateBody(req, createSchema, requestId);
   if ("response" in bodyVal) return bodyVal.response;
-  const { email, defaultAssignedToUserId } = bodyVal.data;
+  const { email, clientId, defaultAssignedToUserId } = bodyVal.data;
 
   if (defaultAssignedToUserId) {
     const membership = await db.accountMembership.findFirst({
@@ -62,6 +63,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     const route = await createInboundSenderRoute({
       accountId: ctx.accountId,
       email,
+      clientId,
       defaultAssignedToUserId,
       createdByUserId: ctx.userId,
       auditSource: "UI",

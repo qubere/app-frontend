@@ -1453,6 +1453,7 @@ model InboundSenderRoute {
 /// the sender is routed -- an email can exist here and still never touch a
 /// tenant's document library.
 model InboundEmail {
+  autoReplyAttemptedAt DateTime?
   clientId              String?
   client                Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   inboundAddressId      String?

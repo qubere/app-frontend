@@ -141,17 +141,17 @@ const TRACKING_TYPE_MAP: Record<string, MatchIdentifierType | null> = {
   TRACKING: null,
 };
 
-export const databaseShipmentIdentifierLookup: ShipmentIdentifierLookup = {
+export const scopedShipmentIdentifierLookup = (clientId?: string | null): ShipmentIdentifierLookup => ({
   async findByShipmentNumber(accountId, shipmentNumber) {
     return db.shipment.findFirst({
-      where: { accountId, shipmentNumber, deletedAt: null },
+      where: { accountId, shipmentNumber, deletedAt: null, ...(clientId !== undefined ? { clientId } : {}) },
       select: { id: true },
     });
   },
 
   async findByPoReference(accountId, normalizedPoReference) {
     const shipments = await db.shipment.findMany({
-      where: { accountId, poReference: { not: null }, deletedAt: null },
+      where: { accountId, poReference: { not: null }, deletedAt: null, ...(clientId !== undefined ? { clientId } : {}) },
       select: { id: true, poReference: true },
     });
     return shipments
@@ -163,7 +163,7 @@ export const databaseShipmentIdentifierLookup: ShipmentIdentifierLookup = {
     if (normalizedTokens.length === 0) return [];
     const wanted = new Set(normalizedTokens);
     const rows = await db.shipmentTrackingIdentifier.findMany({
-      where: { accountId },
+      where: { accountId, shipment: { accountId, deletedAt: null, ...(clientId !== undefined ? { clientId } : {}) } },
       select: { shipmentId: true, type: true, value: true },
     });
     const hits: TrackingIdentifierHit[] = [];
@@ -199,7 +199,8 @@ export const databaseShipmentIdentifierLookup: ShipmentIdentifierLookup = {
       },
     });
   },
-};
+});
+export const databaseShipmentIdentifierLookup = scopedShipmentIdentifierLookup();
 
 // ---------------------------------------------------------------------------
 // Matching
@@ -210,6 +211,9 @@ export type MatchSource = "EMAIL_SUBJECT" | "PARSED_DOCUMENT_TEXT";
 export interface MatchShipmentInput {
   accountId: string;
   documentId: string;
+  clientId?: string | null;
+  autoAttachThreshold?: number;
+  requireReview?: boolean;
   emailSubject: string | null;
   parsedText: string | null;
 }
@@ -348,10 +352,13 @@ function scoreShipment(shipmentId: string, signals: Signal[]): ScoredCandidate {
  */
 export async function matchShipmentForDocument(
   input: MatchShipmentInput,
-  lookup: ShipmentIdentifierLookup = databaseShipmentIdentifierLookup
+  lookup: ShipmentIdentifierLookup = scopedShipmentIdentifierLookup(input.clientId)
 ): Promise<{ matchedShipmentId: string | null; candidates: ScoredCandidate[] }> {
   const signals = await collectSignals(input, lookup);
-  if (signals.length === 0) return { matchedShipmentId: null, candidates: [] };
+  if (signals.length === 0) {
+    await lookup.deleteCandidatesForDocument(input.documentId);
+    return { matchedShipmentId: null, candidates: [] };
+  }
 
   const shipmentIds = Array.from(new Set(signals.map((s) => s.shipmentId)));
   const scored = shipmentIds
@@ -361,7 +368,7 @@ export async function matchShipmentForDocument(
   const [top, second] = scored;
   const rivalPlausible = second !== undefined && second.score >= SUGGEST_THRESHOLD;
   const matchedShipmentId =
-    top.score >= AUTO_ATTACH_THRESHOLD && !rivalPlausible ? top.shipmentId : null;
+    !input.requireReview && top.score >= (input.autoAttachThreshold ?? AUTO_ATTACH_THRESHOLD) && !rivalPlausible ? top.shipmentId : null;
 
   await lookup.deleteCandidatesForDocument(input.documentId);
   for (const cand of scored) {

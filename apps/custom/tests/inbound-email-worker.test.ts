@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const dbMock = {
+  $transaction: (fn: (tx: unknown) => unknown) => fn(dbMock),
+  inboundAddress: { findUnique: vi.fn() },
+  inboundSenderRoute: { findMany: vi.fn() },
+  inboundDocumentReview: { count: vi.fn().mockResolvedValue(0) },
   inboundEmail: {
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     findMany: vi.fn(),
     findUniqueOrThrow: vi.fn(),
     update: vi.fn(),
@@ -38,6 +43,8 @@ vi.mock("@/lib/db", () => ({
   runWithDataMode: (_mode: string | null | undefined, fn: () => unknown) => fn(),
   withDataModeContext: (_mode: string | null | undefined, fn: () => Promise<unknown>) => fn(),
 }));
+vi.mock("@/modules/inbound/inboundDocumentRouting", () => ({ openInboundReview: vi.fn() }));
+vi.mock("@/modules/notifications/notifyAccount", () => ({ notifyAccountRoleHolders: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
   createAuditLog: createAuditLogMock,
   AuditAction: { DOCUMENT_STORED: "document.stored", INBOUND_EMAIL_ATTACHMENT_QUARANTINED: "inbound_email.attachment_quarantined" },
@@ -397,5 +404,29 @@ describe("inbound email worker", () => {
     });
     expect(dbMock.shipmentDocument.create).toHaveBeenCalledTimes(1);
     expect(enqueueDocumentParseMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('client-address worker routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.inboundEmail.updateMany.mockResolvedValue({ count: 1 });
+    dbMock.inboundEmail.findMany.mockResolvedValue([{ ...RECEIVED_EMAIL, accountId: 'acct_a' }]);
+    dbMock.inboundEmail.findUniqueOrThrow.mockResolvedValue({ ...RECEIVED_EMAIL, accountId: 'acct_a', clientId: 'target', inboundAddressId: 'target-address' });
+    dbMock.inboundAddress.findUnique.mockResolvedValue({ id: 'target-address', accountId: 'acct_a', clientId: 'target', status: 'ACTIVE', senderPolicy: 'ALLOWLIST' });
+    dbMock.inboundSenderRoute.findMany.mockResolvedValue([]);
+  });
+  it('holds an unknown ALLOWLIST sender without fetching or storing attachments', async () => {
+    const { runInboundEmailWorkerTick } = await import('@/modules/documents/processing/inboundEmailWorker');
+    await runInboundEmailWorkerTick();
+    expect(getReceivedEmailMock).not.toHaveBeenCalled(); expect(storeDocumentFileMock).not.toHaveBeenCalled();
+    expect(resolveInboundRouteMock).not.toHaveBeenCalled();
+    expect(dbMock.inboundEmail.update).toHaveBeenCalledWith({ where: { id: 'in_1' }, data: expect.objectContaining({ routingStatus: 'NEEDS_REVIEW' }) });
+  });
+  it('rejects blocked senders before storage even if the destination is open', async () => {
+    dbMock.inboundAddress.findUnique.mockResolvedValue({ accountId: 'acct_a', clientId: 'target', status: 'ACTIVE', senderPolicy: 'OPEN' });
+    dbMock.inboundSenderRoute.findMany.mockResolvedValue([{ status: 'BLOCKED' }]);
+    const { runInboundEmailWorkerTick } = await import('@/modules/documents/processing/inboundEmailWorker'); await runInboundEmailWorkerTick();
+    expect(getReceivedEmailMock).not.toHaveBeenCalled(); expect(storeDocumentFileMock).not.toHaveBeenCalled();
   });
 });

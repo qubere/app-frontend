@@ -6,7 +6,8 @@ ALTER TABLE "InboundSenderRoute" ADD COLUMN     "clientId" TEXT,
 ADD COLUMN     "scopeKey" TEXT NOT NULL DEFAULT '';
 
 -- AlterTable
-ALTER TABLE "InboundEmail" ADD COLUMN     "autoReplySentAt" TIMESTAMP(3),
+ALTER TABLE "InboundEmail" ADD COLUMN "autoReplyAttemptedAt" TIMESTAMP(3),
+ADD COLUMN     "autoReplySentAt" TIMESTAMP(3),
 ADD COLUMN     "clientId" TEXT,
 ADD COLUMN     "inboundAddressId" TEXT,
 ADD COLUMN     "processingLeaseToken" TEXT,

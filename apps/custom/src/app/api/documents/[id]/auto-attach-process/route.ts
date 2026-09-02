@@ -1,90 +1,24 @@
-import { NextResponse } from "next/server";
-import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
-import { validatePathParams } from "@/lib/api/validation";
-import { db } from "@/lib/db";
-import { createAuditLog } from "@/lib/audit";
-import { z } from "zod";
+import { NextResponse } from 'next/server';
+import { withAuthenticatedRoute } from '@/lib/api/auth-guards';
+import { db } from '@/lib/db';
+import { matchShipmentForDocument } from '@/modules/shipments/shipmentMatching';
+import { routeParsedInboundDocument, attachInboundDocument, openInboundReview } from '@/modules/inbound/inboundDocumentRouting';
+import { enqueueDocumentParse } from '@/modules/documents/processing/documentProcessingWorker';
+import { randomUUID } from 'node:crypto';
 
-const paramsSchema = z.object({ id: z.string().min(1) });
-
-/**
- * Auto-attaches an unattached inbound document to its mapped client workspace shipment
- * and processes it immediately through extraction and classification.
- */
-export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req: _req, ctx, requestId, params }) => {
-  const paramsVal = validatePathParams(params, paramsSchema, requestId);
-  if ("response" in paramsVal) return paramsVal.response;
-  const { id } = paramsVal.data;
-
-  const doc = await db.shipmentDocument.findFirst({
-    where: { id, accountId: ctx.accountId },
-  });
-
-  if (!doc) {
-    return NextResponse.json({ error: "Document not found" }, { status: 404 });
+/** Reuse actual identifier evidence. Never invent a shipment or a processed status. */
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params, requestId }) => {
+  const doc = await db.shipmentDocument.findFirst({ where: { id: params.id, accountId: ctx.accountId }, include: { inboundAttachment: { include: { inboundEmail: true } } } });
+  if (!doc || doc.status === 'DISCARDED') return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });
+  let shipmentId = doc.shipmentId;
+  if (!shipmentId && doc.source === 'INBOUND_EMAIL') {
+    shipmentId = await routeParsedInboundDocument(ctx.accountId, doc.id, doc.rawContent || doc.extractedJson);
+  } else if (!shipmentId) {
+    const result = await matchShipmentForDocument({ accountId: ctx.accountId, clientId: doc.clientId, documentId: doc.id, emailSubject: doc.inboundAttachment?.inboundEmail.subject ?? null, parsedText: doc.rawContent || doc.extractedJson });
+    shipmentId = result.matchedShipmentId;
+    if (shipmentId) await attachInboundDocument(ctx.accountId, doc.id, shipmentId, ctx.userId);
+    else if (doc.inboundAttachment) await openInboundReview({ accountId: ctx.accountId, clientId: doc.clientId, inboundEmailId: doc.inboundAttachment.inboundEmailId, shipmentDocumentId: doc.id, reason: result.candidates.length > 1 ? 'MATCH_CONFLICT' : result.candidates.length ? 'LOW_CONFIDENCE' : 'NO_MATCH', candidateSummary: result.candidates.map(c => ({ shipmentId: c.shipmentId, score: c.score, signals: c.breakdown.signals })) });
   }
-
-  let targetShipmentId = doc.shipmentId;
-
-  if (!targetShipmentId) {
-    // 1. Look for an existing active shipment in this account
-    const matchingShipment = await db.shipment.findFirst({
-      where: {
-        accountId: ctx.accountId,
-        deletedAt: null,
-      },
-      orderBy: { updatedAt: "desc" },
-    });
-
-    if (matchingShipment) {
-      targetShipmentId = matchingShipment.id;
-    } else {
-      // 2. Automatically create a workspace shipment shell if none exists yet
-      const clientName = "Workspace Inbound";
-
-      const newShipment = await db.shipment.create({
-        data: {
-          accountId: ctx.accountId,
-          importerName: clientName,
-          shipmentNumber: `SHP-INB-${Date.now().toString(36).toUpperCase()}`,
-          status: "Draft",
-          transportMode: "Ocean",
-          portOfEntry: "USLAX",
-        },
-      });
-
-      targetShipmentId = newShipment.id;
-    }
-  }
-
-  // Attach document to workspace shipment and update status
-  const updated = await db.shipmentDocument.update({
-    where: { id },
-    data: {
-      shipmentId: targetShipmentId,
-      status: "PROCESSED",
-    },
-  });
-
-  await createAuditLog({
-    accountId: ctx.accountId,
-    userId: ctx.userId,
-    action: "document.attach_and_process",
-    entity: "ShipmentDocument",
-    entityId: id,
-    source: "UI",
-    metadata: {
-      fileName: doc.fileName,
-      shipmentId: targetShipmentId,
-    },
-    success: true,
-  });
-
-  return NextResponse.json({
-    success: true,
-    documentId: id,
-    shipmentId: targetShipmentId,
-    document: updated,
-    requestId,
-  });
-});
+  if (doc.checksum) await enqueueDocumentParse({ accountId: ctx.accountId, documentId: doc.id, contentSha256: doc.checksum, profile: 'STANDARD', reason: 'INITIAL', correlationId: randomUUID() });
+  return NextResponse.json({ success: true, documentId: doc.id, shipmentId, status: shipmentId ? 'ATTACHED' : 'NEEDS_REVIEW', message: shipmentId ? 'Document attached. Processing is queued.' : 'No unambiguous shipment match. Select the shipment in document review.', requestId }, { status: shipmentId ? 200 : 202 });
+}, { permission: 'document.update', write: true });

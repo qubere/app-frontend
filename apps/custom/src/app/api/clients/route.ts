@@ -1,3 +1,4 @@
+import { clientInboundEnabled, issueClientInboundAddress } from "@/modules/inbound/inboundAddressService";
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse, errorMessage } from "@/lib/api/error";
@@ -34,6 +35,8 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         contactPhone: bodyVal.data.contactPhone?.trim() || null,
       },
 });
+
+    if (clientInboundEnabled()) await issueClientInboundAddress({ accountId: ctx.accountId, clientId: client.id, createdByUserId: ctx.userId });
 
     await createAuditLog({
       accountId: ctx.accountId,
