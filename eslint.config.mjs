@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import tenantScopedWrite from "./eslint-rules/tenant-scoped-write.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -50,6 +51,16 @@ const eslintConfig = defineConfig([
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
+  {
+    // Cross-tenant updateMany/deleteMany calls have shipped in apps/tms more
+    // than once and only been caught by manual audit passes -- see
+    // eslint-rules/tenant-scoped-write.mjs for the exact shape this catches.
+    files: ["apps/tms/src/**/*.{ts,tsx}"],
+    plugins: { local: tenantScopedWrite },
+    rules: {
+      "local/tenant-scoped-write": "error",
     },
   },
 ]);
