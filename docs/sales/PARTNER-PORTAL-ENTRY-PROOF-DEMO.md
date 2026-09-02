@@ -200,6 +200,7 @@ and channel delivery; both active membership and client assignment are required.
 | Workspace documents with Uploaded by | Find broker-shared and client-uploaded files together, and identify who supplied them. | Open Documents Vault, click Refresh documents, and check Uploaded by, shipment number, source and date. Open an invoice and an executed PoA. Load more documents to reach older files. Uploader history comes from upload audit events or the original inbound email; Not recorded means historical attribution is absent. |
 | Every importer under the client | See each legal entity's readiness, PoA and bond without switching client workspaces. | Open Your setup, choose the authorized client if prompted, and refresh. Under Importers of record, show each entity's identifiers, registration, signed PoA, bond and screening. An importer created outside onboarding appears as On file. |
 | Independent importer progress | Avoid confusing one entity's signed PoA or 5106 with another entity's incomplete setup. | Compare two importers in the same client. Complete or submit a requirement for one; refresh and verify the other retains its own status. A client-wide completion indicator requires all importers to be complete. |
+| Switch between authorized clients | An empty client record no longer hides the client selector. | With two assigned clients, choose one in Your setup, then use the same selector to open the other. The selector stays visible even when the first client has no importers. |
 
 This view includes customer-visible files across the authorized client workspace;
 broker-internal and other-client documents remain restricted. It does not infer client
@@ -207,3 +208,11 @@ ownership from similar company names. If a specific shipment is still absent, ch
 direct client and importer client links in Customs. The live user's records were not
 available during automated verification, and the fixes do not relink those records or
 reseed their shipments automatically.
+
+For an empty Setup result, an operator can run
+`npm run portal:diagnose -- --email porter@target.com` from the repository root
+using the portal's database environment. If prompted, add `--account-id` with the
+account selected in the portal. This read-only report identifies assignments,
+importer/case links, PoA states, document counts and the two reported shipment
+numbers. See the README for scope, limits and how to read it. It is an operator
+diagnostic, not a customer-facing report or automatic repair.

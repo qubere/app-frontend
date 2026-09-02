@@ -924,6 +924,42 @@ npx vitest run tests/assistant-tools.test.ts tests/assistant-tools-rbac.test.ts 
   tests/assistant-rate-limit.test.ts tests/ai-quota.test.ts tests/ai-meter.test.ts
 ```
 
+### Diagnose empty partner-portal Setup or missing shipments
+
+Run this from the repository root on the machine that has the portal's database
+environment configured:
+
+```bash
+npm run portal:diagnose -- --email porter@target.com
+```
+
+If the user has multiple active accounts, the command lists their IDs. Run it again
+with the same account selected in the portal:
+
+```bash
+npm run portal:diagnose -- --email porter@target.com --account-id <account-id>
+```
+
+The command uses a PostgreSQL **READ ONLY** transaction. It reports direct/team
+client assignments, importer and onboarding links, PoA statuses, document counts,
+and requests assigned to that user. By default it also checks `SHP-2026-000001` and
+`SHP-2026-000002`; use `--shipments <number,number>` for other shipments.
+It loads the portal app's development environment first, with the root environment
+as fallback, and prints the database host and account data mode so you can confirm
+the target. Explicit environment variables take precedence.
+
+Compare `clients[].assignedToUser` with the `clientId` on importers, cases and
+shipments. Matching names alone do not establish access. Client IDs with no
+importers/cases explain an empty Setup result; do not reseed or reassign records
+until their intended ownership is confirmed. Metadata lists have explicit limits
+and a `truncated` indicator. This operator report can include other clients in the
+selected account; keep it within your broker/admin team. It excludes passwords,
+EINs, document contents, storage URLs and request message bodies, and does not
+change records or send notifications.
+
+In the portal, the client selector remains available after opening a setup, so a
+user with multiple assigned clients can switch away from an empty record.
+
 ### Production Build Verification
 
 ```bash
