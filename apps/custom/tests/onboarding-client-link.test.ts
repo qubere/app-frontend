@@ -13,7 +13,7 @@ const m = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ db: m.db }));
 vi.mock('@/lib/audit', () => ({ createAuditLog: m.audit }));
 vi.mock('@qubere/db/services/client-setup-service', () => ({ syncClientSetup: m.sync }));
-vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: Function, options: any) => {
+vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: (...a: any[]) => any, options: any) => {
   m.options.push(options);
   return (req: Request) => handler({ req, ctx: { accountId: 'broker', userId: 'staff' }, params: { caseId: 'case' }, requestId: 'test' });
 } }));
@@ -36,7 +36,7 @@ beforeEach(() => {
   m.db.onboardingEntity.create.mockResolvedValue({ id: 'entity' });
   m.db.onboardingEntity.count.mockResolvedValue(1);
   m.db.powerOfAttorney.findFirst.mockResolvedValue({ importerOfRecord: { clientId: null } });
-  m.db.$transaction.mockImplementation((fn: Function) => fn(m.db));
+  m.db.$transaction.mockImplementation((fn: (tx: any) => any) => fn(m.db));
 });
 describe('Onboarding client ownership', () => {
   it('uses the explicitly chosen existing client without creating a duplicate', async () => {

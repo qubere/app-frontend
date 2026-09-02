@@ -7,7 +7,7 @@ const records: any[] = [];
 const ctx = { accountId: 'a1', userId: 'broker1' };
 const line = { id: 'l1', lineNumber: 1, description: 'Valve', htsCode: '8481.80.5090', countryOfOrigin: 'CN', quantity: 1, unitPrice: 1000, totalValue: 1000, productId: 'prod1', htsConfidence: 90 };
 const filing = { id: 'f1', accountId: 'a1', entryNumber: 'ENTRY-1', entryType: '01', country: 'US', shipmentId: 's1', importerOfRecordId: null, bondId: null, importerOfRecord: null, bond: null, snapshot: null, shipment: { clientId: 'target', importerName: 'Target', portOfEntry: '2704', countryOfExport: 'CN', carrierName: 'Carrier', lineItems: [line], documents: [] } };
-const mock = (model: string, method: string, fn: Function) => vi.spyOn((db as any)[model], method).mockImplementation(fn as any);
+const mock = (model: string, method: string, fn: (...args: any[]) => any) => vi.spyOn((db as any)[model], method).mockImplementation(fn as any);
 beforeEach(() => {
     vi.restoreAllMocks();
     records.length = 0;
@@ -24,7 +24,7 @@ beforeEach(() => {
     mock('entryProof', 'update', async ({ where, data }: any) => { const p = records.find(p => p.id === where.id); Object.assign(p, data); return p; });
     mock('entryProofEvent', 'create', async ({ data }: any) => data);
     mock('auditLog', 'create', async ({ data }: any) => data);
-    vi.spyOn(db, '$transaction').mockImplementation((async (fn: Function) => fn(db)) as any);
+    vi.spyOn(db, '$transaction').mockImplementation((async (fn: (tx: any) => any) => fn(db)) as any);
     vi.spyOn(db, '$queryRaw').mockResolvedValue([]);
 });
 describe('Entry Proof lifecycle through the actual assembler and tariff engine', () => {

@@ -12,7 +12,7 @@ const m = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ db: { $transaction: m.transaction } }));
 // The real publication service must use the transaction passed by the repair.
 vi.mock('../../../packages/db/src/index', () => ({ db: new Proxy({}, { get: () => { throw new Error('Publication escaped its transaction'); } }) }));
-vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: Function, options: any) => {
+vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: (...a: any[]) => any, options: any) => {
   m.options = options;
   return (req: Request) => handler({ req, ctx: { accountId: 'broker', userId: 'staff' }, params: { caseId: 'case' }, requestId: 'test' });
 } }));
@@ -32,7 +32,7 @@ beforeEach(() => {
   m.tx.legalEntity.findFirst.mockResolvedValue(null);
   m.tx.clientDocument.upsert.mockResolvedValue({ id: 'doc' });
   m.tx.clientStakeholder.findUnique.mockResolvedValue(null);
-  m.transaction.mockImplementation((fn: Function) => fn(m.tx));
+  m.transaction.mockImplementation((fn: (tx: any) => any) => fn(m.tx));
 });
 describe('Repair an explicit onboarding client link', () => {
   it('reuses saved PoA bytes, binds the importer and publishes inside the same transaction', async () => {
