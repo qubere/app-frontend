@@ -22,7 +22,7 @@
         <div class="stat-div"></div>
         <div><div class="stat-num">0</div><div class="stat-label">entries visible to a client before the broker publishes</div></div>
       </div>
-      <p class="honest-note" style="color:rgba(255,255,255,0.55);border-color:var(--amber);margin-top:22px;">Pilot / design-partner ready. Auth, client scoping, and object storage are hardened; generated 7501/invoice <strong>PDF downloads are still stubs</strong> &mdash; don't demo that flow.</p>
+      <p class="honest-note" style="color:rgba(255,255,255,0.55);border-color:var(--amber);margin-top:22px;">Pilot / design-partner ready. Auth, client scoping, storage, Entry Proof, shipment answers, and onboarding sync are implemented; generated 7501/invoice <strong>PDF downloads are still stubs</strong> &mdash; don't demo that flow. Stored executed POA / accepted 5106 downloads are real.</p>
     </div>
   </section>
 
@@ -232,6 +232,81 @@
 
   </div>
 </div>
+
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left"><p class="feature-eyebrow">Entry Proof</p><h2 class="feature-headline">Proof, not just status.</h2><p class="feature-pain">Expand a line to see its classification, duty measures, valuation, evidence, and review reason. Unavailable rates stay visible.</p>
+        <div class="demo-tip"><div class="demo-tip-label">How to demo</div><div class="demo-tip-text">Target → Entry Proof → expand the review line → ask a question.</div></div>
+      </div>
+      <div class="feature-right"><div class="app-frame"><div class="app-topbar"><span class="app-logo-name">Qubere Portal</span><span class="app-username">Illustrative demo view</span></div>
+        <div class="app-body" style="min-height:380px"><div class="app-main"><div class="app-content"><div class="page-header"><div class="page-title">ENTRY-TGT-24001</div></div><div class="panel">
+          <div class="field-row"><span class="field-k">Line review</span><span class="field-v">Classification and supporting evidence</span></div>
+          <div class="field-row"><span class="field-k">Base duty / 301 / 232</span><span class="field-v">Applicability and amounts</span></div>
+          <div class="field-row"><span class="field-k">Antidumping</span><span class="field-v">Data unavailable is not zero</span></div>
+          <div class="field-row"><span class="field-k">Evidence</span><span class="field-v">Published reference + approved classification</span></div>
+          <div class="field-row"><span class="field-k">Question</span><span class="field-v">Ask about line → tracked Actions conversation</span></div>
+        </div></div></div></div></div></div>
+    </div>
+  </section>
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left"><p class="feature-eyebrow">Compliance</p><h2 class="feature-headline">The compliance scorecard.</h2><p class="feature-pain">A published review snapshot, with a score whose underlying lines can be inspected. Savings are potential opportunities requiring broker review.</p>
+        <div class="demo-tip"><div class="demo-tip-label">How to demo</div><div class="demo-tip-text">Compliance → sort by score or identified savings → open an entry.</div></div>
+      </div>
+      <div class="feature-right"><div class="app-frame"><div class="app-topbar"><span class="app-logo-name">Qubere Portal</span><span class="app-username">Illustrative demo view</span></div>
+        <div class="app-body" style="min-height:380px"><div class="app-main"><div class="app-content"><div class="page-header"><div class="page-title">Compliance</div></div><div class="panel">
+          <div class="field-row"><span class="field-k">ENTRY-TGT-24001</span><span class="field-v">3 of 4 lines verified · $4,400 savings identified</span></div>
+          <div class="field-row"><span class="field-k">ENTRY-ACM-24002</span><span class="field-v">AT RISK · classification and AD/CVD review</span></div>
+          <div class="field-row"><span class="field-k">Score</span><span class="field-v">Value-weighted review coverage</span></div>
+          <div class="field-row"><span class="field-k">Publication</span><span class="field-v">Broker-controlled version history</span></div>
+        </div></div></div></div></div></div>
+    </div>
+  </section>
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left"><p class="feature-eyebrow">At a glance</p><h2 class="feature-headline">Answers, not phone calls.</h2><p class="feature-pain">Arrival estimates, costs, requests, and references come from recorded shipment facts. Unknown clearance timing remains unknown.</p>
+        <div class="demo-tip"><div class="demo-tip-label">How to demo</div><div class="demo-tip-text">Amazon shipment → At a glance → deadline → Actions.</div></div>
+      </div>
+      <div class="feature-right"><div class="app-frame"><div class="app-topbar"><span class="app-logo-name">Qubere Portal</span><span class="app-username">Illustrative demo view</span></div>
+        <div class="app-body" style="min-height:380px"><div class="app-main"><div class="app-content"><div class="page-header"><div class="page-title">SHP-ACME-2026-002</div></div><div class="panel">
+          <div class="field-row"><span class="field-k">Arrival</span><span class="field-v">Two-day slip · previous estimate retained</span></div>
+          <div class="field-row"><span class="field-k">Cost</span><span class="field-v">Published duty + visible charges · partial when incomplete</span></div>
+          <div class="field-row"><span class="field-k">Clearance</span><span class="field-v">FDA review in progress</span></div>
+          <div class="field-row"><span class="field-k">Needs from you</span><span class="field-v">Customer deadline and tracked request</span></div>
+          <div class="field-row"><span class="field-k">Free time</span><span class="field-v">Last free day · estimated exposure</span></div>
+        </div></div></div></div></div></div>
+    </div>
+  </section>
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left"><p class="feature-eyebrow">Your setup</p><h2 class="feature-headline">Every stakeholder, one login, one setup view.</h2><p class="feature-pain">Company registration, signed documents, bond, and people share one scoped view. The broker still controls invitations.</p>
+        <div class="demo-tip"><div class="demo-tip-label">How to demo</div><div class="demo-tip-text">Target Setup → signed POA download → Amazon Setup → pending signature.</div></div>
+      </div>
+      <div class="feature-right"><div class="app-frame"><div class="app-topbar"><span class="app-logo-name">Qubere Portal</span><span class="app-username">Illustrative demo view</span></div>
+        <div class="app-body" style="min-height:380px"><div class="app-main"><div class="app-content"><div class="page-header"><div class="page-title">Your setup</div></div><div class="panel">
+          <div class="field-row"><span class="field-k">Importer of record</span><span class="field-v">Masked EIN · CBP importer number</span></div>
+          <div class="field-row"><span class="field-k">Documents on file</span><span class="field-v">Stored executed POA and accepted 5106</span></div>
+          <div class="field-row"><span class="field-k">People</span><span class="field-v">Signer and login status</span></div>
+          <div class="field-row"><span class="field-k">Access</span><span class="field-v">Request access for someone</span></div>
+          <div class="field-row"><span class="field-k">Your broker team</span><span class="field-v">Assigned contact</span></div>
+        </div></div></div></div></div></div>
+    </div>
+  </section>
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left"><p class="feature-eyebrow">Broker partnership</p><h2 class="feature-headline">“We already have a broker.”</h2><p class="feature-pain">Exactly. Entry Proof rides alongside them. The broker approves, publishes, answers questions, and keeps the customer informed.</p>
+        <div class="demo-tip"><div class="demo-tip-label">How to demo</div><div class="demo-tip-text">Broker filing → refresh proof → publish → customer opens the new version.</div></div>
+      </div>
+      <div class="feature-right"><div class="app-frame"><div class="app-topbar"><span class="app-logo-name">Qubere Portal</span><span class="app-username">Illustrative demo view</span></div>
+        <div class="app-body" style="min-height:380px"><div class="app-main"><div class="app-content"><div class="page-header"><div class="page-title">Broker controls</div></div><div class="panel">
+          <div class="field-row"><span class="field-k">Generate / refresh</span><span class="field-v">Create a new draft snapshot</span></div>
+          <div class="field-row"><span class="field-k">Publish to customer</span><span class="field-v">Replace the prior published version atomically</span></div>
+          <div class="field-row"><span class="field-k">Questions</span><span class="field-v">Version-linked requests and replies</span></div>
+          <div class="field-row"><span class="field-k">Notifications</span><span class="field-v">Email + portal bell, respecting preferences</span></div>
+          <div class="field-row"><span class="field-k">Boundaries</span><span class="field-v">7501 / invoice generated PDFs remain stubs</span></div>
+        </div></div></div></div></div></div>
+    </div>
+  </section>
 <script src="assets/deck.js"></script>
 </body>
 </html>
