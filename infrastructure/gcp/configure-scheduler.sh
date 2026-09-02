@@ -92,6 +92,8 @@ upsert_job qubere-rdps-delta-impact-dispatch "*/10 * * * *" /api/cron/rdps-delta
 upsert_job qubere-rdps-full-population-dispatch "0 * * * *" /api/cron/rdps-full-population-dispatch
 upsert_job qubere-reference-data-expiry-sweep "0 * * * *" /api/cron/reference-data-expiry-sweep
 upsert_job qubere-community-screening-dispatch "*/2 * * * *" /api/cron/community-screening-dispatch
+upsert_job qubere-compliance-batch-dispatch "*/2 * * * *" /api/cron/compliance-batch-dispatch
+upsert_job qubere-compliance-batch-retention-sweep "0 4 * * *" /api/cron/compliance-batch-retention-sweep
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"
 upsert_backup_job() {
