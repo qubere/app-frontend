@@ -166,3 +166,27 @@ Compile mode is compilation verification, not a deployed/authenticated walkthrou
 No live production latency claim is made. Use the browser Network panel to compare a
 warm Overview load, first tab access, and repeat tab access against the same shipment
 on the same database; repeat access should not refetch cached tab data.
+
+
+## Broker PoA upload follow-up
+
+Both importer/PoA upload forms sent multipart files to a JSON-only handler. The old
+handler created legacy Active records and placeholder document URLs without promoting
+a portal document. The handler now accepts and validates the actual file through the
+existing storage/MIME/size/malware workflow, stores it, and transactionally creates an
+executed PoA plus a client document for the account-verified importer/client. It keeps
+the existing parties.manage write permission. Unlinked importers receive an explicit
+portalVisible=false response and UI explanation; no client is guessed from a name.
+
+The broker grids recognize the canonical executed status. Portal Setup selects the
+newer PoA for the same importer instead of always preferring an older onboarding draft,
+and filters the resolved stale POA blocker from its projection. Refresh setup and
+window-focus refresh expose newly saved documents. Signed PNG/JPEG downloads retain
+the correct content type and extension.
+
+Validation: six broker upload tests and 22 portal Setup tests pass, covering multipart
+storage/publication, account/client boundaries, missing/invalid files, unlinked importers,
+failed publication, old-draft precedence, and signed-image downloads. Portal TypeScript
+passes. The full customs typecheck exceeded the default 2 GB Node heap; a scoped check
+of the changed upload route, both broker screens, their imports, and tests passed.
+The live user database and real object-storage upload remain unverified here.

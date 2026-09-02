@@ -92,3 +92,26 @@ describe('Setup navigation and API access agree', () => {
         expect(m.db.client.findFirst).not.toHaveBeenCalled();
     });
 });
+
+describe('Newly uploaded signed PoAs', () => {
+    it('shows the newer signed upload for the same importer instead of an old onboarding draft', async () => {
+        const importer = { id: 'ior-target', name: 'Target', powersOfAttorney: [{ id: 'poa-new', status: 'executed', executionMethod: 'WET_INK', signedDate: new Date('2026-09-02'), createdAt: new Date('2026-09-02') }], bond: null };
+        m.db.client.findFirst.mockResolvedValueOnce({ id: 'target', name: 'Target', account: { name: 'Broker' },
+            onboardingCases: [{ status: 'poa_pending', blockers: ['POA_NOT_EXECUTED'], entities: [{ importerOfRecord: importer, poa: { id: 'poa-old', status: 'draft', createdAt: new Date('2026-08-01') }, screeningStatus: 'pending' }] }],
+            importersOfRecord: [{ id: 'different-ior', powersOfAttorney: [{ id: 'wrong-poa', status: 'draft', createdAt: new Date('2026-09-03') }] }, importer],
+            clientDocuments: [{ id: 'signed-file', kind: 'EXECUTED_POA', sourceId: 'poa-new', title: 'Executed Power of Attorney' }], clientStakeholders: [],
+        });
+        const response = await setup.GET(new Request('http://portal/api/setup'));
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.poa).toMatchObject({ status: 'executed', documentId: 'signed-file' });
+        expect(body.onboarding.steps.find((step: any) => step.key === 'poa').state).toBe('done');
+        expect(body.onboarding.blockers).not.toContain('POA awaiting signature');
+    });
+    it('downloads an uploaded signed image with the correct format', async () => {
+        m.read.mockResolvedValueOnce({ body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
+        const response = await download.GET(new Request('http://portal/api/setup/documents/doc1/download'), { params: Promise.resolve({ id: 'doc1' }) });
+        expect(response.headers.get('Content-Type')).toBe('image/png');
+        expect(response.headers.get('Content-Disposition')).toContain('.png');
+    });
+});

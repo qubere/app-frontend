@@ -127,6 +127,25 @@ signed POA. In Amazon Setup, show the pending signature and incomplete steps.
 An admin can request access for a colleague; the broker reviews the request and issues the
 actual scoped invitation. Saving a stakeholder never silently sends an invitation.
 
+### Upload a signed PoA and verify it as the client
+
+In the broker app, open **Clients and Importers → Powers of Attorney (POA)** (or the
+Importer of Record tab), find the importer linked to Target, and choose **Upload Signed
+POA**. Upload a signed PDF, PNG, or JPEG. The file is stored and its executed PoA and
+client-visible document are saved together. An unlinked importer can retain its PoA,
+but the UI explains that a client link is required before it can appear in the portal.
+
+As porter@target.com, open **Your setup**, select Target if prompted, and choose **Refresh
+setup**. The PoA appears in **Power of Attorney** and **Documents on file**. Returning to
+the portal window also refreshes Setup. Download the document and compare it with the
+uploaded file. A newer signed upload for the same importer takes precedence over an
+older onboarding draft in this customer view.
+
+The old importer-upload endpoint expected JSON while both upload forms sent multipart
+files; it also used an Active status/placeholder path and did not publish a portal
+record. Uploads through that old path may need to be repeated once after updating.
+Do not backfill a placeholder path as though it were a signed document.
+
 ## 4:15–5:00 — Broker controls and notifications
 
 Open the broker client's Portal & setup panel. Show login status, documents, and invitation

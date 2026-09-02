@@ -81,10 +81,12 @@ export function PoaClient({
         method: "POST",
         body: formData,
       });
+      const result = await res.json().catch(() => ({}));
       if (res.ok) {
-        fetchImporters();
+        await fetchImporters();
+        if (result.portalVisible === false) alert("POA saved. Link this importer to a client to make it available in their partner portal.");
       } else {
-        alert("Failed to upload Power of Attorney document.");
+        alert(typeof result.error === "string" ? result.error : result.error?.message || "Failed to upload Power of Attorney document.");
       }
     } catch {
       alert("Error uploading POA document.");
@@ -100,7 +102,7 @@ export function PoaClient({
       (i.client?.name ?? "").toLowerCase().includes(search.toLowerCase());
 
     const hasPoa = i.powersOfAttorney?.some(
-      (p) => p.status === "GRANTED" || p.status === "ACTIVE"
+      (p) => ["executed", "granted", "active"].includes(p.status.toLowerCase())
     );
 
     if (statusFilter === "GRANTED") return matchesSearch && hasPoa;
@@ -109,7 +111,7 @@ export function PoaClient({
   });
 
   const grantedCount = importers.filter((i) =>
-    i.powersOfAttorney?.some((p) => p.status === "GRANTED" || p.status === "ACTIVE")
+    i.powersOfAttorney?.some((p) => ["executed", "granted", "active"].includes(p.status.toLowerCase()))
   ).length;
 
   const pendingCount = importers.length - grantedCount;
@@ -233,7 +235,7 @@ export function PoaClient({
                 {filteredImporters.map((importer) => {
                   const poaRecord = importer.powersOfAttorney?.[0];
                   const hasPoa = importer.powersOfAttorney?.some(
-                    (p) => p.status === "GRANTED" || p.status === "ACTIVE"
+                    (p) => ["executed", "granted", "active"].includes(p.status.toLowerCase())
                   );
                   return (
                     <tr key={importer.id} className="hover:bg-surface-hover/50 transition-colors">
