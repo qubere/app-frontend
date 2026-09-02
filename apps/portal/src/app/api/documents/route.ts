@@ -41,6 +41,23 @@ export const POST = withPortalAccount(async (ctx, req: Request) => {
     return NextResponse.json({ error: "MISSING_FILE", message: "File is required" }, { status: 400 });
   }
 
+  // A scoped customer user may only upload into their own client workspace(s).
+  const scope = await getPortalWorkspaceScope(ctx);
+  if (!scope.isAllClients) {
+    if (clientIdInput && !scope.authorizedClientIds.includes(clientIdInput)) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (shipmentId) {
+      const target = await db.shipment.findFirst({
+        where: { id: shipmentId, accountId: ctx.accountId, deletedAt: null },
+        select: { clientId: true },
+      });
+      if (!target || !target.clientId || !scope.authorizedClientIds.includes(target.clientId)) {
+        return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+      }
+    }
+  }
+
   const effectiveClientId = clientIdInput;
 
   const buffer = Buffer.from(await file.arrayBuffer());

@@ -28,6 +28,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
     permission: shipmentReadPermission(ctx, rawShipment.productWorkspaces),
     resourceAccountId: rawShipment.accountId,
     resourceClientId: rawShipment.clientId,
+    importerOfRecordId: rawShipment.importerOfRecordId,
   });
 
   if (!auth.authorized || auth.errorResponse) {

@@ -79,7 +79,7 @@ describe('Portal account data mode', () => {
     const body = await response.json();
     expect(body.overview.shipmentNumber).toBe(shipment.shipmentNumber);
     expect(body.requests[0].id).toBe('r1');
-    expect(m.db.customerRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'target-workspace' } }));
+    expect(m.db.customerRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'target-workspace', clientId: { in: ['target'] } } }));
     expect(getDataModeContext()).toBeUndefined();
     expect(getAccountIdContext()).toBeUndefined();
   });
@@ -114,9 +114,15 @@ describe('Portal account data mode', () => {
     expect(m.db.shipment.findUnique).not.toHaveBeenCalled();
   });
 
-  it('keeps optional client filters inside the authenticated workspace', async () => {
-    expect((await shipments.GET(req('shipments?clientId=amazon'))).status).toBe(200);
+  it('rejects an optional client filter outside the caller scope', async () => {
+    expect((await shipments.GET(req('shipments?clientId=amazon'))).status).toBe(403);
+    expect(m.db.shipment.findMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps an in-scope optional client filter within the authenticated workspace', async () => {
+    expect((await shipments.GET(req('shipments?clientId=target'))).status).toBe(200);
     expect(m.db.shipment.findMany.mock.calls[0][0].where.accountId).toBe('target-workspace');
+    expect(m.db.shipment.findMany.mock.calls[0][0].where.OR).toContainEqual({ clientId: { in: ['target'] } });
   });
 });
 

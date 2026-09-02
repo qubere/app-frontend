@@ -1,11 +1,18 @@
+import { db } from "@qubere/db";
 import { getAccountContext, AccountContext } from "./auth";
-import type { UserScope } from "./scope-engine";
+import { getEffectiveUserScope, type UserScope } from "./scope-engine";
 import { buildErrorResponse } from "./error";
 
 export interface PortalAuthOptions {
   permission: string;
   resourceAccountId: string;
   resourceClientId?: string | null;
+  /**
+   * Importer of record for the target resource. Used to resolve the owning
+   * client when the resource itself has no `clientId` (legacy shipments /
+   * documents). Ownership is only inferred from an unambiguous link.
+   */
+  importerOfRecordId?: string | null;
   importerName?: string | null;
   portalVisibility?: string | null; // Legacy document metadata; workspace membership governs reads.
   customerVisibleAt?: Date | null;   // for published filings/entries
@@ -19,14 +26,46 @@ export interface PortalAuthResult {
   errorResponse: ReturnType<typeof buildErrorResponse> | null;
 }
 
-/** The authenticated account is the customer workspace. Client records are
- * organizational metadata inside it, not a second portal access boundary.
- * Call only with the context returned by getAccountContext, which validates
- * active workspace membership. Every query still needs ctx.accountId.
+/**
+ * The customer's portal workspace is the Client (or Clients) they are assigned
+ * to via UserClientAssignment / TeamClientAssignment — resolved by
+ * getEffectiveUserScope. One broker Account holds many client workspaces, so
+ * account membership alone is NOT the read boundary: a CUSTOMER_* user must
+ * only ever see the clients in their scope (scope-engine P0-4). Broker / admin
+ * roles resolve to all-clients. Callers still combine the result with
+ * ctx.accountId on every query.
  */
-export function getPortalWorkspaceScope(ctx: Pick<AccountContext, 'accountId'>): UserScope {
+export async function getPortalWorkspaceScope(
+  ctx: Pick<AccountContext, 'accountId' | 'userId' | 'roleNames'>,
+): Promise<UserScope> {
   if (!ctx.accountId) throw new Error('Authenticated workspace is required');
-  return { isAllClients: true, authorizedClientIds: [], teamIds: [], authorizedShipmentIds: null };
+  return getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+}
+
+/**
+ * Resolve the owning client for a resource that has no explicit clientId, using
+ * its importer of record. Returns null when the importer is unlinked or its
+ * onboarding cases point at more than one client (conflicting links need a
+ * broker correction, not a guess).
+ */
+async function resolveImporterClientId(
+  accountId: string,
+  importerOfRecordId: string,
+): Promise<string | null> {
+  const importer = await db.importerOfRecord.findFirst({
+    where: { id: importerOfRecordId, accountId },
+    select: {
+      clientId: true,
+      onboardingEntities: {
+        where: { case: { status: { not: 'withdrawn' }, clientId: { not: null } } },
+        select: { case: { select: { clientId: true } } },
+      },
+    },
+  });
+  if (!importer) return null;
+  if (importer.clientId) return importer.clientId;
+  const ids = [...new Set(importer.onboardingEntities.flatMap((e) => (e.case.clientId ? [e.case.clientId] : [])))];
+  return ids.length === 1 ? ids[0] : null;
 }
 
 /** Enforce workspace membership, action permission and filing publication. */
@@ -68,10 +107,24 @@ export async function authorizePortalResource(
     };
   }
 
-  const scope = getPortalWorkspaceScope(ctx);
-  const resourceClientId = options.resourceClientId ?? null;
-  // Legacy CUSTOMER/INTERNAL document labels do not restrict members of the
-  // owning customer workspace. Publication still governs finalized filings.
+  const scope = await getPortalWorkspaceScope(ctx);
+
+  // 3. Client workspace check. Resolve the owning client (directly, or from the
+  // importer of record for legacy null-client records) and confirm it is in the
+  // caller's scope. Broker / admin (all-clients) skip this.
+  let resourceClientId = options.resourceClientId ?? null;
+  if (!resourceClientId && options.importerOfRecordId) {
+    resourceClientId = await resolveImporterClientId(ctx.accountId, options.importerOfRecordId);
+  }
+  if (!scope.isAllClients && (!resourceClientId || !scope.authorizedClientIds.includes(resourceClientId))) {
+    return {
+      authorized: false,
+      ctx,
+      scope,
+      effectiveClientId: resourceClientId,
+      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
+    };
+  }
 
   if (options.customerVisibleAt === null) {
     return {
