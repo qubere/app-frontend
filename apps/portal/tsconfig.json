@@ -23,6 +23,9 @@
       }
     ],
     "paths": {
+      "@qubere/entry-proof": [
+        "../../packages/entry-proof/src/index.ts"
+      ],
       "@/*": [
         "./src/*"
       ],

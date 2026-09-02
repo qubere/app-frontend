@@ -40,7 +40,9 @@ invoices, and Entry Proof remain on this same shipment page.
 
 ## If porter@target.com sees empty data or a loading error
 
-1. Pull this branch, apply any pending migrations, regenerate Prisma, and restart the dev processes.
+1. Pull this branch and run `npm install` from the repository root to link new workspace
+   packages such as `@qubere/entry-proof`. Apply any pending migrations, regenerate Prisma,
+   and restart the dev processes. `db:generate` does not install or link workspace packages.
    Existing assigned actions do **not** need reseeding. The reported `db.entryProof.aggregate`
    failure means the running Prisma client did not contain the new model. Optional summary
    failures no longer prevent `/api/dashboard` from returning existing actions.
