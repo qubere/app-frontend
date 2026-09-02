@@ -46,6 +46,9 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate --schema=packages/db/prisma/schema.prisma
 
+      - name: Check for new migration timestamp collisions
+        run: npm --workspace @qubere/db run db:check-migration-timestamps
+
       - name: Run Prisma migrations from scratch
         run: npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma
 

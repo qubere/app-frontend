@@ -19,6 +19,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:diff": "prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma",
+    "db:check-migration-timestamps": "node scripts/check-migration-timestamps.mjs",
     "db:seed": "npx tsx prisma/seed.ts",
     "postinstall": "prisma generate"
   },
