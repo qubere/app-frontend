@@ -103,6 +103,8 @@ describe("inbound sender route lifecycle", () => {
     expect(dbMock.inboundSenderRoute.create).toHaveBeenCalledWith({
       data: {
         accountId: "acct_a",
+        clientId: null,
+        scopeKey: "",
         normalizedSenderEmail: "spam@example.com",
         displaySenderEmail: "spam@example.com",
         defaultAssignedToUserId: null,

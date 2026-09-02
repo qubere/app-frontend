@@ -10,7 +10,8 @@
     "./environment": "./src/environment.ts",
     "./services/shared-upload-service": "./src/services/shared-upload-service.ts",
     "./services/client-setup-service": "./src/services/client-setup-service.ts",
-    "./services/onboarding-readiness": "./src/services/onboarding-readiness.ts"
+    "./services/onboarding-readiness": "./src/services/onboarding-readiness.ts",
+    "./services/inbound-address-service": "./src/services/inbound-address-service.ts"
   },
   "scripts": {
     "build": "prisma generate",

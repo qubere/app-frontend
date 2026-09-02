@@ -18,12 +18,13 @@ export const databaseInboundRouteLookup: InboundRouteLookup = {
     // Sender routing happens before the email has a tenant. Keep the bypass at
     // the repository boundary so callers cannot accidentally hide valid routes
     // behind the default account.dataMode filter.
-    return withDataModeContext(null, async () =>
-      db.inboundSenderRoute.findFirst({
-        where: { normalizedSenderEmail: normalizedEmail, status: "ACTIVE" },
-        select: { id: true, accountId: true, defaultAssignedToUserId: true },
-      })
-    );
+    return withDataModeContext(null, async () => {
+      const routes = await db.inboundSenderRoute.findMany({
+        where: { normalizedSenderEmail: normalizedEmail, clientId: null, status: "ACTIVE" },
+        select: { id: true, accountId: true, defaultAssignedToUserId: true }, take: 2,
+      });
+      return routes.length === 1 ? routes[0] : null;
+    });
   },
 };
 
@@ -31,20 +32,13 @@ export async function resolveBlockedInboundRoute(rawSenderEmail: string): Promis
   const normalized = normalizeSenderEmail(rawSenderEmail);
   return withDataModeContext(null, async () =>
     db.inboundSenderRoute.findFirst({
-      where: { normalizedSenderEmail: normalized, status: "BLOCKED" },
+      where: { normalizedSenderEmail: normalized, clientId: null, status: "BLOCKED" },
       select: { id: true, accountId: true, defaultAssignedToUserId: true },
     })
   );
 }
 
-/**
- * Resolves the single active route for a sender, if any.
- *
- * The `normalizedSenderEmail` column is globally unique (see
- * prisma/schema.prisma), so this can never return routes belonging to two
- * different accounts for the same sender -- that guarantee lives at the
- * database level, not here.
- */
+/** Legacy shared inbox: resolve only one unambiguous account-level sender route. */
 export async function resolveInboundRoute(
   rawSenderEmail: string,
   lookup: InboundRouteLookup = databaseInboundRouteLookup
@@ -89,6 +83,7 @@ export class InboundSenderBlockedError extends Error {
  */
 export async function createInboundSenderRoute(params: {
   accountId: string;
+  clientId?: string | null;
   email: string;
   defaultAssignedToUserId?: string | null;
   createdByUserId: string;
@@ -97,6 +92,9 @@ export async function createInboundSenderRoute(params: {
 }) {
   const { accountId, email, defaultAssignedToUserId, createdByUserId, auditSource = "UI", requestId } = params;
   const normalizedSenderEmail = normalizeSenderEmail(email);
+  const scopeKey = params.clientId ?? "";
+  if (params.clientId && !await db.client.findFirst({ where: { id: params.clientId, accountId }, select: { id: true } })) throw new Error("CLIENT_NOT_FOUND");
+  const senderKey = { accountId_scopeKey_normalizedSenderEmail: { accountId, scopeKey, normalizedSenderEmail } };
 
   const reactivateExisting = async (existing: { id: string; accountId: string; status: string }) => {
     if (existing.accountId !== accountId) throw new InboundSenderAlreadyRoutedError();
@@ -131,7 +129,7 @@ export async function createInboundSenderRoute(params: {
 
   const existing = await withDataModeContext(null, async () =>
     db.inboundSenderRoute.findUnique({
-      where: { normalizedSenderEmail },
+      where: senderKey,
       select: { id: true, accountId: true, status: true },
     })
   );
@@ -142,6 +140,8 @@ export async function createInboundSenderRoute(params: {
       data: {
         accountId,
         normalizedSenderEmail,
+        scopeKey,
+        clientId: params.clientId ?? null,
         displaySenderEmail: email.trim(),
         defaultAssignedToUserId: defaultAssignedToUserId ?? null,
         createdByUserId,
@@ -166,7 +166,7 @@ export async function createInboundSenderRoute(params: {
       // misleading "authorized elsewhere" error.
       const raced = await withDataModeContext(null, async () =>
         db.inboundSenderRoute.findUnique({
-          where: { normalizedSenderEmail },
+          where: senderKey,
           select: { id: true, accountId: true, status: true },
         })
       );
@@ -179,6 +179,7 @@ export async function createInboundSenderRoute(params: {
 
 export async function blockInboundSenderRoute(params: {
   accountId: string;
+  clientId?: string | null;
   email: string;
   blockedByUserId: string;
   auditSource?: string;
@@ -186,9 +187,12 @@ export async function blockInboundSenderRoute(params: {
 }) {
   const { accountId, email, blockedByUserId, auditSource = "UI", requestId } = params;
   const normalizedSenderEmail = normalizeSenderEmail(email);
+  const scopeKey = params.clientId ?? "";
+  if (params.clientId && !await db.client.findFirst({ where: { id: params.clientId, accountId }, select: { id: true } })) throw new Error("CLIENT_NOT_FOUND");
+  const senderKey = { accountId_scopeKey_normalizedSenderEmail: { accountId, scopeKey, normalizedSenderEmail } };
 
   const existing = await withDataModeContext(null, async () =>
-    db.inboundSenderRoute.findUnique({ where: { normalizedSenderEmail } })
+    db.inboundSenderRoute.findUnique({ where: senderKey })
   );
   if (existing && existing.accountId !== accountId) throw new InboundSenderAlreadyRoutedError();
 
@@ -201,6 +205,8 @@ export async function blockInboundSenderRoute(params: {
         data: {
           accountId,
           normalizedSenderEmail,
+          scopeKey,
+          clientId: params.clientId ?? null,
           displaySenderEmail: email.trim(),
           defaultAssignedToUserId: null,
           status: "BLOCKED",
