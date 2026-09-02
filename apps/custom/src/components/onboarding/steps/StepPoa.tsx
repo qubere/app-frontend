@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { CheckCircle2, AlertTriangle, Loader2, Send, Upload, RotateCcw, ExternalLink } from "lucide-react";
 import { Button, Input, Label, Card, CardHeader, Badge } from "@/components/ui";
-import { VALID_SIGNER_ROLES, SIGNER_ROLE_LABELS } from "@/lib/esign";
+import { VALID_SIGNER_ROLES, SIGNER_ROLE_LABELS } from "@/lib/esign/signerRoles";
 
 type ExecutionMethod = "E_SIGN" | "WET_INK" | "WET_INK_NOTARIZED";
 
