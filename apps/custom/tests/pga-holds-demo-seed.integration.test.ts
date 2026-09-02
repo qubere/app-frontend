@@ -65,12 +65,7 @@ describe.skipIf(process.env.PGA_ASSIST_INTEGRATION !== "1")("PGA demo seed / Pos
   it("rejects production accounts and a shipment belonging to another account", async () => {
     const production = await db.account.create({ data: { name: "PGA negative fixture", slug: `pga-prod-${randomUUID()}` } });
     accountIds.push(production.id);
-    vi.stubEnv("ALLOW_DEMO_SEEDING", "false");
-    try {
-      await expect(seedPgaHolds(db, { accountId: production.id, shipmentId })).rejects.toThrow("DEMO or SANDBOX");
-    } finally {
-      vi.stubEnv("ALLOW_DEMO_SEEDING", "true");
-    }
+    await expect(seedPgaHolds(db, { accountId: production.id, shipmentId })).rejects.toThrow("DEMO or SANDBOX");
     const foreign = await db.shipment.create({ data: { accountId: production.id, shipmentNumber: "FOREIGN", importerName: "Fixture" } });
     await expect(seedPgaHolds(db, { accountId, shipmentId: foreign.id })).rejects.toThrow("Shipment not found");
     expect(await db.pgaHold.count({ where: { accountId: production.id } })).toBe(0);
