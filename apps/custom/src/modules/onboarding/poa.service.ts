@@ -400,6 +400,7 @@ export class PoaService {
       metadata: { method: "WET_INK", attestationNote: input.attestation.note, executedDocumentUrl: stored.url },
     });
 
+    await promoteSetupForPoa(accountId, updatedPoa.id);
     return updatedPoa;
   }
 
@@ -443,6 +444,7 @@ export class PoaService {
       metadata: { reason },
     });
 
+    await promoteSetupForPoa(accountId, updatedPoa.id);
     return updatedPoa;
   }
 

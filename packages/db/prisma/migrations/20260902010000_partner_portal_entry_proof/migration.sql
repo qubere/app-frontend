@@ -185,3 +185,19 @@ ALTER TABLE "ClientDocument" ADD CONSTRAINT "ClientDocument_accountId_fkey" FORE
 -- AddForeignKey
 ALTER TABLE "ClientDocument" ADD CONSTRAINT "ClientDocument_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+
+-- Enforce one current draft and publication even outside the service's filing lock.
+CREATE UNIQUE INDEX "EntryProof_current_draft_key" ON "EntryProof" ("filingId") WHERE "status" = 'DRAFT';
+CREATE UNIQUE INDEX "EntryProof_current_published_key" ON "EntryProof" ("filingId") WHERE "status" = 'PUBLISHED';
+
+-- Existing installations need the new grants without rerunning the demo seed.
+INSERT INTO "Permission" ("id", "name", "description", "updatedAt") VALUES
+('perm_portal_entries_comment', 'portal.entries.comment', 'Ask questions about a published entry proof.', CURRENT_TIMESTAMP),
+('perm_portal_setup_read', 'portal.setup.read', 'View customer onboarding, documents, and stakeholders.', CURRENT_TIMESTAMP)
+ON CONFLICT ("name") DO NOTHING;
+INSERT INTO "RolePermission" ("roleId", "permissionId")
+SELECT r.id, p.id FROM "Role" r CROSS JOIN "Permission" p
+WHERE (
+(p.name = 'portal.entries.comment' AND r.name IN ('CUSTOMER_ADMIN','CUSTOMER_USER','CUSTOMER_CUSTOMS_USER','BROKER_ADMIN','OWNER')) OR
+(p.name = 'portal.setup.read' AND r.name IN ('CUSTOMER_ADMIN','CUSTOMER_USER','CUSTOMER_VIEWER','CUSTOMER_CUSTOMS_USER','BROKER_ADMIN','OWNER')))
+ON CONFLICT DO NOTHING;

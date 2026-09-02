@@ -51,3 +51,11 @@ describe("Portal Status Mapper", () => {
     expect(mapPortalFreightStatus("DELIVERED_POD")).toBe("POD Received");
   });
 });
+
+it('does not claim customs release for an accepted entry',()=>{
+ expect(mapPortalShipmentStatus({internalStatus:'In Progress',filingStatus:'Accepted',openCustomerRequestCount:0}).customsStatus).toBe('Filed with customs');
+});
+it('keeps a released entry released when a customer question is open',()=>{
+ const status=mapPortalShipmentStatus({internalStatus:'Completed',filingStatus:'Released',openCustomerRequestCount:1});
+ expect(status.customsStatus).toBe('Released');expect(status.hasCustomerActionRequired).toBe(true);
+});

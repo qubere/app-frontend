@@ -1,5 +1,23 @@
 'use client';
-import {useEffect,useState} from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-type Data={complianceSummary:{entriesWithProof:number;avgScore:number;linesAtRiskTotal:number;dutySavingsIdentifiedUsd:number}|null;setupSummary:{incompleteCount:number;stepsRemaining:number};needsFromYou:{id:string;label:string;dueAt:string|null;href:string}[]};
-export function PortalOverview(){const [data,setData]=useState<Data|null>(null);useEffect(()=>{fetch('/api/dashboard').then(r=>r.ok?r.json():null).then(setData).catch(()=>{})},[]);if(!data)return null;return <div className="space-y-4">{data.setupSummary?.incompleteCount>0&&<Link href="/setup" className="block rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">Finish setting up — {data.setupSummary.stepsRemaining} steps left. View your setup →</Link>}{data.complianceSummary&&<Link href="/compliance" className="block rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap justify-between gap-4"><div><h2 className="font-semibold">Compliance</h2><p className="text-sm text-slate-500 mt-1">{data.complianceSummary.entriesWithProof} entries with published proof</p></div><div className="text-sm">Average score <strong>{data.complianceSummary.avgScore}</strong> · {data.complianceSummary.linesAtRiskTotal} lines at risk<p className="text-emerald-700 mt-1">${data.complianceSummary.dutySavingsIdentifiedUsd.toLocaleString()} potential duty savings</p></div></div></Link>}{data.needsFromYou?.length>0&&<section className="rounded-2xl border border-amber-200 bg-white p-5"><h2 className="font-semibold">Upcoming customer actions</h2><ul className="space-y-2 mt-3">{data.needsFromYou.map(n=><li key={n.id} className="text-sm"><Link href={n.href} className="text-[#0071E3]">{n.label}</Link>{n.dueAt&&` · Due ${new Date(n.dueAt).toLocaleDateString()}`}</li>)}</ul></section>}</div>}
+type Data = {
+    complianceSummary: {
+        entriesWithProof: number;
+        avgScore: number;
+        linesAtRiskTotal: number;
+        dutySavingsIdentifiedUsd: number;
+    } | null;
+    setupSummary: {
+        incompleteCount: number;
+        stepsRemaining: number;
+    };
+    needsFromYou: {
+        id: string;
+        label: string;
+        dueAt: string | null;
+        href: string;
+    }[];
+};
+export function PortalOverview() { const [data, setData] = useState<Data | null>(null); useEffect(() => { fetch('/api/dashboard').then(r => r.ok ? r.json() : null).then(setData).catch(() => { }); }, []); if (!data)
+    return null; return <div className="space-y-4">{data.setupSummary?.incompleteCount > 0 && <Link href="/setup" className="block rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">Finish setting up — {data.setupSummary.stepsRemaining} steps left. View your setup →</Link>}{data.complianceSummary && <Link href="/compliance" className="block rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap justify-between gap-4"><div><h2 className="font-semibold">Compliance</h2><p className="text-sm text-slate-500 mt-1">{data.complianceSummary.entriesWithProof} entries with published proof</p></div><div className="text-sm">Average score <strong>{data.complianceSummary.avgScore}</strong> · {data.complianceSummary.linesAtRiskTotal} lines at risk<p className="text-emerald-700 mt-1">${data.complianceSummary.dutySavingsIdentifiedUsd.toLocaleString()} potential duty savings</p></div></div></Link>}{data.needsFromYou?.length > 0 && <section className="rounded-2xl border border-amber-200 bg-white p-5"><h2 className="font-semibold">Upcoming customer actions</h2><ul className="space-y-2 mt-3">{data.needsFromYou.map(n => <li key={n.id} className="text-sm"><Link href={n.href} className="text-[#0071E3]">{n.label}</Link>{n.dueAt && ` · Due ${new Date(n.dueAt).toLocaleDateString()}`}</li>)}</ul></section>}</div>; }

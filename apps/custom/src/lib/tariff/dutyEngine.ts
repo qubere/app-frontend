@@ -165,7 +165,7 @@ export function calculateDutyStack(
   const baseRate = isUsmca ? new Decimal(0) : new Decimal(baseRateNum ?? 0);
   const baseDuty = roundToCents(customsValue.times(baseRate));
 
-  const sec301Rate = isUsmca
+  const sec301Rate = isUsmca || htsRateInput?.section301Exclusion
     ? new Decimal(0)
     : (htsRateInput?.section301Applicable
         ? (htsRateInput.section301AdditionalRate != null
@@ -255,8 +255,9 @@ export async function resolveSection232ForHtsCode(
   const country = countryOfOrigin?.toUpperCase() || null;
   const match =
     (country ? active.find((r) => r.countryOfOrigin?.toUpperCase() === country) : null) ??
-    active.find((r) => !r.countryOfOrigin) ??
-    active[0];
+    active.find((r) => !r.countryOfOrigin);
+
+  if (!match) return { applicable: false, additionalRate: 0, status: country ? "EVALUATED_NOT_APPLICABLE" : "NOT_EVALUATED" };
 
   if (match.isGeneralApprovedExclusion) {
     return { applicable: false, additionalRate: 0, status: "EVALUATED_NOT_APPLICABLE" };
@@ -476,8 +477,8 @@ export async function loadHtsCodesMap(
         );
         if (countryMatch) return countryMatch.adValoremPercent ?? (countryMatch.rawRateText ? parseFloat(countryMatch.rawRateText) : null);
 
-        // 3. Fallback to first matched rate for node
-        const fallback = rates[0];
+        // Only a global rate may be the fallback; another manufacturer/country is not applicable.
+        const fallback = rates.find(r => !r.countryOfOrigin && (!r.manufacturer || r.manufacturer === "*"));
         return fallback?.adValoremPercent ?? (fallback?.rawRateText ? parseFloat(fallback.rawRateText) : null);
       };
 
@@ -497,6 +498,30 @@ export async function loadHtsCodesMap(
       }
     }
 
+    // Governed, active 301 rows take precedence over legacy HTS-node data.
+    // Exclusion descriptions require broker review; no automatic regex matching.
+    const now = new Date();
+    const governed301 = await db.section301Rate.findMany({
+      where: { htsNumber: { in: [...new Set([code, norm, norm.slice(0, 8), `${norm.slice(0, 4)}.${norm.slice(4, 6)}.${norm.slice(6, 8)}`])] } },
+      orderBy: { effectiveDate: "desc" },
+    });
+    const current301 = governed301.filter(r => r.effectiveDate <= now && (!r.expirationDate || r.expirationDate >= now));
+    const approved301 = current301.find(r => r.reviewStatus === "APPROVED");
+    let section301Status: TradeMeasureEvaluationStatus = sec301Rate
+      ? !lineCountry ? "NOT_EVALUATED" : sec301Applicable && !sec301Exclusion ? "EVALUATED_APPLICABLE" : "EVALUATED_NOT_APPLICABLE"
+      : "NOT_EVALUATED";
+    if (approved301) {
+      sec301Tranche = approved301.tranche;
+      sec301Applicable = lineCountry === "CN" && approved301.dutyRatePct > 0;
+      sec301AdditionalRate = sec301Applicable ? approved301.dutyRatePct : 0;
+      sec301Exclusion = false;
+      section301Status = !lineCountry ? "NOT_EVALUATED" : sec301Applicable ? "EVALUATED_APPLICABLE" : "EVALUATED_NOT_APPLICABLE";
+    } else if (current301.some(r => r.reviewStatus === "PENDING")) {
+      sec301Applicable = false;
+      sec301AdditionalRate = null;
+      section301Status = "REVIEW_REQUIRED";
+    }
+    if (!lineCountry) { sec301Applicable = false; sec301AdditionalRate = null; }
     const section232 = await resolveSection232ForHtsCode(code, lineCountry ?? null);
 
     map[code] = {
@@ -506,7 +531,7 @@ export async function loadHtsCodesMap(
       section301Tranche: sec301Tranche,
       section301AdditionalRate: sec301AdditionalRate,
       section301Exclusion: sec301Exclusion,
-      section301Status: sec301Rate ? (sec301Applicable ? "EVALUATED_APPLICABLE" : "EVALUATED_NOT_APPLICABLE") : "NOT_EVALUATED",
+      section301Status,
       section232Applicable: section232.applicable,
       section232AdditionalRate: section232.additionalRate,
       section232Status: section232.status,
@@ -523,8 +548,9 @@ export function parsePublishedDutyRate(raw: string | null | undefined): number |
   if (!raw) return null;
   const text = raw.trim();
   if (/^free\b/i.test(text)) return 0;
-  const parsed = parseFloat(text.replace("%", ""));
-  return isNaN(parsed) ? null : parsed / 100;
+  // Specific/compound rates need quantity and unit handling; never treat cents/kg as a percent.
+  if (!/^\d+(?:\.\d+)?\s*%?$/.test(text)) return null;
+  return Number(text.replace("%", "").trim()) / 100;
 }
 
 export function calculateLineItemDuty(
@@ -559,7 +585,8 @@ export function calculateLineItemDuty(
 export function computeFilingTariff(
   lineItems: Array<TariffLineInput>,
   htsCodesMap: Record<string, DutyRateInput> = {},
-  lineRates?: Array<DutyRateInput | undefined>
+  lineRates?: Array<DutyRateInput | undefined>,
+  options: { isOcean?: boolean } = {}
 ): TariffEngineResult {
   let totalCustomsValueDec = new Decimal(0);
   let totalBaseDutyDec = new Decimal(0);
@@ -586,7 +613,7 @@ export function computeFilingTariff(
   const roundedCustomsValue = roundToCents(totalCustomsValueDec);
   const totalDutyDec = roundToCents(totalBaseDutyDec.plus(totalSec301Dec).plus(totalSec232Dec).plus(totalAdDec).plus(totalCvdDec));
   const totalMpfDec = calculateMPFDecimal(roundedCustomsValue);
-  const totalHmfDec = calculateHMFDecimal(roundedCustomsValue, true);
+  const totalHmfDec = calculateHMFDecimal(roundedCustomsValue, options.isOcean ?? true);
   const totalFeesDec = roundToCents(totalMpfDec.plus(totalHmfDec));
   const totalAmountDec = roundToCents(totalDutyDec.plus(totalFeesDec));
 
