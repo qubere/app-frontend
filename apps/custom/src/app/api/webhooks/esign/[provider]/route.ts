@@ -1,10 +1,13 @@
-// E-sign webhook handler — called by Dropbox Sign (or future providers) when
-// the signature status changes. The INTERNAL provider completes via
-// /api/sign/[token] instead, so only DROPBOX_SIGN reaches this route.
+// E-sign webhook handler — called by Dropbox Sign or OpenSign when the
+// signature status changes. The INTERNAL provider completes via
+// /api/sign/[token] instead, so only externally-hosted providers reach this
+// route.
 //
-// Security: HMAC-SHA256 signature verified inside provider.parseWebhook()
-//           before any DB writes. Returns 200 early for Dropbox Sign's
-//           mandatory handshake response.
+// Security: request authenticity verified inside provider.parseWebhook()
+//           before any DB writes — Dropbox Sign via HMAC-SHA256 header,
+//           OpenSign via a shared secret in the webhook URL's query string
+//           (it has no header-based signing). Returns 200 early for Dropbox
+//           Sign's mandatory handshake response.
 
 import { NextResponse } from "next/server";
 import { db, runWithAccountId } from "@/lib/db";
@@ -15,7 +18,7 @@ import type { EsignProviderName } from "@/lib/esign";
 export const POST = async (req: Request, { params }: { params: Promise<{ provider: string }> }) => {
   const { provider } = await params;
   const providerName = (provider?.toUpperCase() ?? "") as EsignProviderName;
-  if (!["DROPBOX_SIGN"].includes(providerName)) {
+  if (!["DROPBOX_SIGN", "OPEN_SIGN"].includes(providerName)) {
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }
 
@@ -35,7 +38,7 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
   let event;
   try {
     const provider = getEsignProvider(providerName);
-    event = provider.parseWebhook(headers, rawBody);
+    event = provider.parseWebhook(headers, rawBody, req.url);
   } catch {
     // Return 200 to Dropbox Sign even on bad signature so they don't disable the endpoint.
     if (dropboxHandshake) return new NextResponse("Hello API Event Received", { status: 200 });

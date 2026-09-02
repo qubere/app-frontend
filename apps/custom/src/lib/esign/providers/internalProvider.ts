@@ -51,7 +51,7 @@ export class InternalProvider implements EsignProvider {
     return null;
   }
 
-  parseWebhook(_headers: Record<string, string>, _rawBody: Buffer): EsignWebhookEvent {
+  parseWebhook(_headers: Record<string, string>, _rawBody: Buffer, _url: string): EsignWebhookEvent {
     throw new Error("INTERNAL provider: no webhook — completion is handled by the /api/sign/[token] route");
   }
 }

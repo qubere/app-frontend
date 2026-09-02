@@ -38,7 +38,7 @@ export class ManualUploadProvider implements EsignProvider {
     return null;
   }
 
-  parseWebhook(_headers: Record<string, string>, _rawBody: Buffer): EsignWebhookEvent {
+  parseWebhook(_headers: Record<string, string>, _rawBody: Buffer, _url: string): EsignWebhookEvent {
     throw new Error("MANUAL_UPLOAD: no webhook");
   }
 }

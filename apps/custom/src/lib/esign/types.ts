@@ -53,6 +53,11 @@ export interface EsignProvider {
   getEnvelope(providerEnvelopeId: string): Promise<EsignEnvelopeState>;
   downloadExecutedDocument(providerEnvelopeId: string): Promise<Buffer>;
   downloadCertificate(providerEnvelopeId: string): Promise<Buffer | null>;
-  /** Verify provider webhook signature and parse event. Throws if signature invalid. */
-  parseWebhook(headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent;
+  /**
+   * Verify provider webhook signature and parse event. Throws if signature invalid.
+   * `url` is the full incoming request URL — providers that authenticate via a
+   * shared secret in the webhook URL's query string (e.g. OpenSign, which has
+   * no header-based signing) read it from there.
+   */
+  parseWebhook(headers: Record<string, string>, rawBody: Buffer, url: string): EsignWebhookEvent;
 }

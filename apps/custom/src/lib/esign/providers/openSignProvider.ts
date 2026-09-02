@@ -9,6 +9,7 @@ import type {
   EsignEnvelopeState,
   EsignWebhookEvent,
 } from "../types";
+import { timingSafeEqual } from "crypto";
 
 const BASE_URL = (process.env.OPEN_SIGN_BASE_URL ?? "https://sandbox.opensignlabs.com").replace(/\/$/, "");
 const API_TOKEN = process.env.OPEN_SIGN_API_TOKEN ?? "";
@@ -125,7 +126,20 @@ export class OpenSignProvider implements EsignProvider {
     return null;
   }
 
-  parseWebhook(_headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent {
+  parseWebhook(_headers: Record<string, string>, rawBody: Buffer, url: string): EsignWebhookEvent {
+    // OpenSign delivers webhooks as Parse afterSave payloads with no built-in
+    // request signing. Authenticate instead via a shared secret embedded in
+    // the webhook URL's query string when it's registered in the OpenSign
+    // dashboard (?secret=...), checked against OPEN_SIGN_WEBHOOK_SECRET.
+    const configuredSecret = (process.env.OPEN_SIGN_WEBHOOK_SECRET ?? "").trim();
+    if (!configuredSecret) throw new Error("OPEN_SIGN_WEBHOOK_SECRET is not configured");
+    const providedSecret = new URL(url).searchParams.get("secret") ?? "";
+    const expectedBuf = Buffer.from(configuredSecret, "utf8");
+    const providedBuf = Buffer.from(providedSecret, "utf8");
+    if (expectedBuf.length !== providedBuf.length || !timingSafeEqual(expectedBuf, providedBuf)) {
+      throw new Error("OpenSign webhook secret verification failed");
+    }
+
     // OpenSign delivers webhooks as Parse afterSave payloads — the body is the
     // serialized contracts_Document object.
     const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
