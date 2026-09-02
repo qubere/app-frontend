@@ -26,6 +26,9 @@ export function ShipmentList({ freight = false }: { freight?: boolean }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [previousCursors, setPreviousCursors] = useState<Array<string | undefined>>([]);
   const ShipmentIcon = freight ? Truck : Package;
 
   useEffect(() => {
@@ -34,12 +37,14 @@ export function ShipmentList({ freight = false }: { freight?: boolean }) {
     setError("");
     const timer = setTimeout(() => {
       const query = new URLSearchParams({ query: searchQuery });
+      if (cursor) query.set('cursor', cursor);
       if (freight) query.set("workspace", "TMS");
       fetch(`/api/shipments?${query}`, { signal: controller.signal, cache: "no-store" })
         .then(async res => {
           if (!res.ok) throw new Error(await portalResponseError(res, "Could not load shipments. Please try again."));
           const data = await res.json();
           if (!Array.isArray(data.items)) throw new Error("Could not load shipments. Please try again.");
+          if (!controller.signal.aborted) setNextCursor(data.nextCursor);
           return data.items;
         })
         .then(items => { if (!controller.signal.aborted) setShipments(items); })
@@ -47,7 +52,7 @@ export function ShipmentList({ freight = false }: { freight?: boolean }) {
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [searchQuery, freight, retry]);
+  }, [searchQuery, freight, retry, cursor]);
 
   return (
     <div className="space-y-6">
@@ -63,7 +68,7 @@ export function ShipmentList({ freight = false }: { freight?: boolean }) {
           type="text"
           placeholder="Search by shipment #, PO reference..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => { setSearchQuery(e.target.value); setCursor(undefined); setPreviousCursors([]); }}
           className="bg-white border border-[#E5E5EA] text-[#1D1D1F] text-xs rounded-xl px-4 py-2.5 w-full md:w-72 focus:ring-2 focus:ring-[#0071E3] focus:outline-none shadow-2xs"
         />
       </div>
@@ -83,6 +88,10 @@ export function ShipmentList({ freight = false }: { freight?: boolean }) {
       ) : (
         <ShipmentTable shipments={shipments} freight={freight} />
       )}
+      {!error && (previousCursors.length > 0 || nextCursor) && <nav aria-label="Shipment pages" className="flex justify-end gap-3 text-sm">
+        <button disabled={loading || !previousCursors.length} onClick={() => { setCursor(previousCursors.at(-1)); setPreviousCursors(p => p.slice(0, -1)); }} className="rounded-lg border px-4 py-2 disabled:opacity-40">Previous</button>
+        <button disabled={loading || !nextCursor} onClick={() => { setPreviousCursors(p => [...p, cursor]); setCursor(nextCursor); }} className="rounded-lg border px-4 py-2 disabled:opacity-40">Next</button>
+      </nav>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { loadPublishedProofCosts } from '@/lib/shipment-proof-costs';
 import { shipmentReadPermission } from "@/lib/shipment-access";
+import { shipmentClientId } from "@/lib/client-ownership";
 import { NextResponse } from 'next/server';
 import { authorizePortalResource, hasRequiredPortalPermission } from '@qubere/auth';
 import { db, mapPortalShipmentStatus } from '@qubere/db';
@@ -12,10 +13,10 @@ export const GET = withPortalAccount(async (ctx, _req: Request, { params }: {
 }) => {
     return portalData(ctx, async () => {
         const { id } = await params;
-        const resource = await db.shipment.findFirst({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: { accountId: true, clientId: true, importerName: true, productWorkspaces: { select: { product: true, status: true } } } });
+        const resource = await db.shipment.findFirst({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: { accountId: true, clientId: true, importerOfRecordId: true, productWorkspaces: { select: { product: true, status: true } } } });
         if (!resource)
             return notFound();
-        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces || []), resourceAccountId: resource.accountId, resourceClientId: resource.clientId, importerName: resource.importerName });
+        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces || []), resourceAccountId: resource.accountId, resourceClientId: await shipmentClientId(ctx.accountId, resource) });
         if (!auth.authorized)
             return auth.errorResponse ?? notFound();
         const canReadEntries = hasRequiredPortalPermission(ctx, 'portal.entries.read');

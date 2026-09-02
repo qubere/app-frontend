@@ -3,6 +3,7 @@ import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
+import { loadImporterOwners, shipmentClientWhere } from "@/lib/client-ownership";
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
 
@@ -15,6 +16,7 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
   const query = url.searchParams.get("query") || "";
   const cursor = url.searchParams.get("cursor") || undefined;
   const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
+  if (!Number.isSafeInteger(limit) || limit < 1) return NextResponse.json({ error: 'INVALID_LIMIT' }, { status: 400 });
   const clientId = url.searchParams.get("clientId");
 
   const clientScope = resolvePortalClientScope(scope, clientId);
@@ -28,9 +30,8 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
     ...(workspace === "TMS" ? { productWorkspaces: { some: { product: "TMS", status: "ACTIVE" } } } : {}),
   };
 
-  if (clientScope.clientIds !== null) {
-    whereClause.clientId = { in: clientScope.clientIds };
-  }
+  const owners = await loadImporterOwners(ctx.accountId, clientScope.clientIds);
+  Object.assign(whereClause, shipmentClientWhere(clientScope.clientIds, owners));
 
   if (query) {
     whereClause.AND = [
@@ -47,9 +48,12 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
   const shipments = await db.shipment.findMany({
     take: limit + 1,
     cursor: cursor ? { id: cursor } : undefined,
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     where: whereClause,
-    include: {
+    select: {
+      id: true, shipmentNumber: true, poReference: true, countryOfExport: true, portOfEntry: true,
+      destinationCountry: true, transportMode: true, carrierName: true, estimatedArrival: true,
+      status: true, updatedAt: true,
       trackingStops: { orderBy: { sequence: "asc" }, select: { name: true } },
       customsFilings: {
         take: 1,

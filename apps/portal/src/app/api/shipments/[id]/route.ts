@@ -4,6 +4,7 @@ import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource, hasRequiredPortalPermission } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
+import { shipmentClientId } from "@/lib/client-ownership";
 
 export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
@@ -17,7 +18,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   // Fetch target shipment metadata for authorization check
   const rawShipment = await db.shipment.findUnique({
     where: { id, accountId: ctx.accountId, deletedAt: null },
-    select: { id: true, accountId: true, clientId: true, importerName: true, productWorkspaces: { select: { product: true, status: true } } },
+    select: { id: true, accountId: true, clientId: true, importerOfRecordId: true, productWorkspaces: { select: { product: true, status: true } } },
   });
 
   if (!rawShipment) {
@@ -27,8 +28,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   const auth = await authorizePortalResource({
     permission: shipmentReadPermission(ctx, rawShipment.productWorkspaces),
     resourceAccountId: rawShipment.accountId,
-    resourceClientId: rawShipment.clientId,
-    importerName: rawShipment.importerName,
+    resourceClientId: await shipmentClientId(ctx.accountId, rawShipment),
   });
 
   if (!auth.authorized || auth.errorResponse) {
