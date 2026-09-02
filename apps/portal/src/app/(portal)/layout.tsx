@@ -1,21 +1,12 @@
 "use client";
 
+import { PortalSidebar } from "@/components/PortalSidebar";
 import { PortalNotifications } from "@/components/PortalNotifications";
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
 import {
-  ShieldCheck,
   Building2,
-  Bell,
   HelpCircle,
-  Sparkles,
-  LayoutDashboard,
-  FileText,
-  Truck,
-  Files,
-  Receipt,
   LogOut,
   UserCheck,
   ChevronDown,
@@ -41,8 +32,6 @@ interface ClientScope {
 }
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
   const { user: clerkUser } = useUser();
   const { signOut } = useClerk();
 
@@ -121,99 +110,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const userName = user?.name || clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress || "";
   const userEmail = user?.email || clerkUser?.primaryEmailAddress?.emailAddress || "";
 
-  const navItems = [
-    { label: "Actions", href: "/", icon: LayoutDashboard, visible: true },
-    { label: "Customs Shipments", href: "/shipments", icon: FileText, visible: capabilities.hasCustomsAccess },
-    { label: "TMS Freight", href: "/freight", icon: Truck, visible: capabilities.hasTmsAccess },
-    { label: "Compliance", href: "/compliance", icon: ShieldCheck, visible: capabilities.hasCustomsAccess },
-    { label: "Setup", href: "/setup", icon: Building2, visible: capabilities.hasCustomsAccess },
-    { label: "Documents", href: "/documents", icon: Files, visible: true },
-    { label: "Invoices", href: "/invoices", icon: Receipt, visible: true },
-  ];
-
   return (
     <div className="min-h-screen flex bg-[#F5F5F7] text-[#1D1D1F]">
-      {/* Qubere Left Sidebar Panel */}
-      <aside className="w-64 bg-white border-r border-[#E5E5EA] flex flex-col justify-between shrink-0 fixed inset-y-0 left-0 z-40">
-        <div>
-          {/* Logo Section */}
-          <div className="h-16 px-5 flex items-center border-b border-[#E5E5EA]">
-            <Link href="/" className="flex items-center space-x-3 group">
-              <div className="w-9 h-9 rounded-xl bg-[#0071E3] flex items-center justify-center text-white shadow-md shadow-[#0071E3]/20 group-hover:scale-105 transition-transform">
-                <ShieldCheck className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-xl font-bold tracking-tight text-[#1D1D1F]">
-                Qubere
-              </span>
-            </Link>
-          </div>
-
-          {/* Ask Qubere AI Button */}
-          <div className="p-4">
-            <button
-              onClick={() => alert("Qubere AI Trade Compliance Assistant active.")}
-              className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-[#0071E3] to-[#38bdf8] text-white font-semibold text-xs shadow-xs hover:shadow-md transition cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-white shrink-0" />
-              <span>Ask Qubere</span>
-            </button>
-          </div>
-
-          {/* Vertical Navigation Items */}
-          <nav className="px-3 py-2 space-y-1">
-            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#86868B]">
-              Navigation
-            </div>
-            {navItems
-              .filter((item) => item.visible)
-              .map((item) => {
-                const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                      isActive
-                        ? "bg-[#0071E3]/10 text-[#0071E3] font-bold"
-                        : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F5F5F7]"
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 ${isActive ? "text-[#0071E3]" : "text-[#86868B]"}`} />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-          </nav>
-        </div>
-
-        {/* User Context Footer in Sidebar */}
-        <div className="p-4 border-t border-[#E5E5EA] bg-[#F5F5F7]/40">
-          <div className="flex items-center space-x-3">
-            {clerkUser?.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={clerkUser.imageUrl}
-                alt={userName}
-                className="w-8 h-8 rounded-full border border-[#E5E5EA] shadow-xs object-cover"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                {userName.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-[#1D1D1F] truncate">{userName}</p>
-              <p className="text-[10px] text-[#86868B] truncate">{userEmail}</p>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <PortalSidebar
+        hasCustomsAccess={capabilities.hasCustomsAccess}
+        hasTmsAccess={capabilities.hasTmsAccess}
+        clients={clients}
+        userName={userName}
+        userEmail={userEmail}
+      />
 
       {/* Main Right Area */}
-      <div className="flex-1 pl-64 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Qubere Top Navigation Header */}
-        <header className="h-16 bg-white border-b border-[#E5E5EA] px-6 flex items-center justify-between sticky top-0 z-30">
+        <header className="h-16 bg-white border-b border-[#E5E5EA] pl-16 pr-4 lg:px-6 flex items-center justify-between sticky top-0 z-30">
           {/* Account Context & Isolation Badge */}
           <div className="flex items-center space-x-2 text-xs">
             <Building2 className="w-4 h-4 text-[#0071E3]" />
@@ -352,7 +262,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         </header>
 
         {/* Page Body View */}
-        <main className="flex-1 p-8 max-w-7xl w-full mx-auto">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">{children}</main>
 
         {/* Minimal Footer */}
         <footer className="border-t border-[#E5E5EA] bg-white px-8 py-4 text-xs text-[#86868B]">

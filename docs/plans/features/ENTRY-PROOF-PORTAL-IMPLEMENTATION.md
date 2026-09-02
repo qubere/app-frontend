@@ -89,3 +89,17 @@ empty unless a publishable source is available.
 
 The seed contains synthetic reference data and visibly synthetic setup PDFs. Use an
 isolated demo database: the reference tables are global, even though clients are scoped.
+
+## Client navigation
+
+The portal uses the customs app's Qubere branding, muted rail, active white rows,
+accordion sections, and collapsible icon rail. Actions stays pinned. Operations
+contains Shipments, Freight (when enabled), and Documents; Compliance contains
+Entry Proofs; Billing contains Invoices; Your company contains Your setup. Profile
+and security stays in the footer. The portal uses its existing access capabilities
+and routes, including active states for entry, request, and onboarding detail pages.
+The former placeholder AI button is removed. Small screens use a dismissible drawer
+with Escape, keyboard focus containment, and automatic close after navigation.
+
+Validated with the portal TypeScript check and server-render smoke checks for seven
+route/active-state combinations, customs/freight visibility, and client-only links.
