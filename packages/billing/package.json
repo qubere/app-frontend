@@ -9,8 +9,10 @@
     "./conditionEvaluator": "./src/conditionEvaluator.ts",
     "./constants": "./src/constants.ts",
     "./costingEngine": "./src/costingEngine.ts",
+    "./form7501": "./src/form7501.ts",
     "./invoicing": "./src/invoicing.ts",
     "./ledger": "./src/ledger.ts",
+    "./pdfGenerator": "./src/pdfGenerator.ts",
     "./rateSimulation": "./src/rateSimulation.ts",
     "./ratingEngine": "./src/ratingEngine.ts",
     "./telemetry": "./src/telemetry.ts"

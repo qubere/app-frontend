@@ -1,19 +1,33 @@
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
+import { generateSimplePdfBuffer } from "@qubere/billing/pdfGenerator";
 import { db } from "@qubere/db";
 
 export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   const invoice = await db.invoice.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
     select: {
       id: true,
       invoiceNumber: true,
       accountId: true,
       clientId: true,
       status: true,
+      issueDate: true,
+      dueDate: true,
+      currency: true,
+      subtotal: true,
+      totalDiscounts: true,
+      totalTax: true,
+      totalAmount: true,
+      paidAmount: true,
+      balanceDue: true,
+      client: { select: { name: true } },
+      lines: {
+        select: { description: true, quantity: true, unitPrice: true, amount: true },
+      },
     },
   });
 
@@ -52,10 +66,43 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
     },
   });
 
-  const pdfMockHeader = `%PDF-1.4\n1 0 obj\n<< /Title (Invoice ${invoice.invoiceNumber}) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
-  const pdfBuffer = Buffer.from(pdfMockHeader, "utf-8");
+  const money = (v: unknown) => `$${Number(v).toFixed(2)}`;
+  const pdfBuffer = generateSimplePdfBuffer({
+    title: `Invoice ${invoice.invoiceNumber}`,
+    subtitle: invoice.client?.name ?? "Customer",
+    metadata: {
+      "Invoice Number": invoice.invoiceNumber,
+      "Issue Date": new Date(invoice.issueDate).toLocaleDateString(),
+      "Due Date": new Date(invoice.dueDate).toLocaleDateString(),
+      "Currency": invoice.currency,
+      "Status": invoice.status,
+      "Subtotal": money(invoice.subtotal),
+      "Discounts": money(invoice.totalDiscounts),
+      "Tax": money(invoice.totalTax),
+      "Total Amount": money(invoice.totalAmount),
+      "Paid Amount": money(invoice.paidAmount),
+      "Balance Due": money(invoice.balanceDue),
+    },
+    tables: [
+      {
+        heading: "Line Items",
+        columns: [
+          { key: "description", label: "Description", width: 280 },
+          { key: "quantity", label: "Qty", width: 60 },
+          { key: "unitPrice", label: "Unit Price", width: 96 },
+          { key: "amount", label: "Amount", width: 96 },
+        ],
+        rows: invoice.lines.map((line) => ({
+          description: line.description,
+          quantity: Number(line.quantity),
+          unitPrice: money(line.unitPrice),
+          amount: money(line.amount),
+        })),
+      },
+    ],
+  });
 
-  return new Response(pdfBuffer, {
+  return new Response(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",

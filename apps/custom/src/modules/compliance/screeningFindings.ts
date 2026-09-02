@@ -113,7 +113,10 @@ export async function persistComplianceScreeningFindings(
   // concurrent calls for the same shipment run this read-then-write section
   // one at a time. Lock key namespace 0 is reserved for this dedup lock --
   // any future unrelated pg_advisory_xact_lock use in this codebase must
-  // pick a different namespace to avoid colliding with it.
+  // pick a different namespace to avoid colliding with it. Namespace 1 is
+  // taken by the equivalent account-wide dedup lock in
+  // app/api/screening/embargo/sweep/route.ts, and namespace 2 by the
+  // per-shipment dedup lock in app/api/pga/screen/route.ts.
   const createdRows = await db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(0, hashtext(${shipmentId}))`;
 

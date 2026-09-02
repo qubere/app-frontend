@@ -57,7 +57,7 @@ export const POST = withAuthenticatedRoute(
       });
       if (stale.length > 0) {
         await db.assistantChatSession.deleteMany({
-          where: { id: { in: stale.map((s) => s.id) } },
+          where: { id: { in: stale.map((s) => s.id) }, accountId: ctx.accountId },
         });
       }
 

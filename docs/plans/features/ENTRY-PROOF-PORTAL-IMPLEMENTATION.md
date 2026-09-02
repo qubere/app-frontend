@@ -37,7 +37,7 @@ isolation, null-client shipments, INTERNAL documents, workspace uploads, importe
 aggregation, legacy signed downloads, role restrictions, data-mode contexts and loading
 budgets. Portal source TypeScript passed. This restored environment lacks PGlite and happy-dom, so the PostgreSQL
 execution and DOM-interaction test files cannot run here; SQL parameterization and
-publication guards are covered in route tests. The other 113 portal tests and 14
+publication guards are covered in route tests. The other 117 portal tests and 14
 authorization tests pass. No authenticated live walkthrough or
 latency benchmark has been performed. The sections below record earlier implementation
 history; the access model above governs current behavior. See the sales demo for the
@@ -299,3 +299,18 @@ pagination ties, current scope, multiple cases/importers and rendered importer c
 TypeScript passes for all portal source and the changed workspace/Setup tests. These
 fixtures do not establish the user's live shipment/client linkage. No database record,
 permission assignment, or document visibility flag was changed in the live environment.
+
+
+### Integration with main after the Setup redesign
+
+Merged main's shared entry-summary/invoice PDF generation, tenant-context adoption
+gate and current OpenSign webhook configuration. Kept portal account/data-mode
+wrappers, explicit account predicates, authenticated provider completion and signed
+artifact promotion. Canonical OPEN_SIGN_WEBHOOK_SECRET URL authentication takes
+precedence over legacy OPENSIGN_WEBHOOK_SECRET header adapters when both are set.
+The tenant-context gate now recognizes withPortalAccount/portalData and removes
+those adopted routes from its legacy allowlist. Validation: 117 portal tests, 14
+auth tests, 19 e-sign/form-builder tests, portal source TypeScript, Setup browser
+bundle and Tailwind CSS compilation passed. Migration timestamps pass (126 checked).
+PGlite/happy-dom tests and browser screenshots remain unavailable in this runtime;
+Chromium is absent and its download timed out. The user confirmed Setup data loads.

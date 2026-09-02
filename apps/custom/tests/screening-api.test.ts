@@ -11,7 +11,13 @@ const dbMock = {
   screeningLog: { create: vi.fn() },
   shipment: { findMany: vi.fn() },
   complianceScreeningFinding: { findMany: vi.fn(), createMany: vi.fn() },
+  $executeRaw: vi.fn(),
+  $transaction: vi.fn(),
 };
+// The sweep route wraps its read-then-write section in a transaction to
+// close a duplicate-finding race; run the callback against this same mock so
+// existing assertions against dbMock.complianceScreeningFinding still work.
+dbMock.$transaction.mockImplementation(async (callback: (tx: typeof dbMock) => Promise<unknown>) => callback(dbMock));
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: vi.fn() }));

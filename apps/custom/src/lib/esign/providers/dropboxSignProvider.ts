@@ -45,7 +45,7 @@ export class DropboxSignProvider implements EsignProvider {
     return null;
   }
 
-  parseWebhook(headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent {
+  parseWebhook(headers: Record<string, string>, rawBody: Buffer, _url: string): EsignWebhookEvent {
     // Dropbox Sign signs webhooks with HMAC-SHA256 using the API key.
     const sig = headers["x-hellosign-signature"] ?? "";
     const key = (process.env.DROPBOX_SIGN_API_KEY ?? "").trim();

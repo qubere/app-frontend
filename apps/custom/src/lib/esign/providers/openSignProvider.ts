@@ -155,13 +155,20 @@ export class OpenSignProvider implements EsignProvider {
     return Buffer.from(await res.arrayBuffer());
   }
 
-  parseWebhook(headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent {
-    const secret = process.env.OPENSIGN_WEBHOOK_SECRET;
-    const supplied = headers["x-qubere-webhook-secret"] ?? "";
+  parseWebhook(headers: Record<string, string>, rawBody: Buffer, url = ''): EsignWebhookEvent {
+    // Prefer main's OpenSign dashboard configuration. Older installations may
+    // still use OPENSIGN_WEBHOOK_SECRET with a trusted header delivery adapter.
+    // When both are set, only the canonical URL-secret configuration is accepted.
+    const configuredSecret = (process.env.OPEN_SIGN_WEBHOOK_SECRET ?? '').trim();
+    const secret = configuredSecret || process.env.OPENSIGN_WEBHOOK_SECRET || '';
+    const supplied = configuredSecret
+      ? (url ? new URL(url).searchParams.get('secret') ?? '' : '')
+      : headers['x-qubere-webhook-secret'] ?? '';
     if (!secret || Buffer.byteLength(secret) !== Buffer.byteLength(supplied) ||
         !timingSafeEqual(Buffer.from(secret), Buffer.from(supplied))) {
-      throw new Error("Invalid OpenSign webhook authentication");
+      throw new Error('Invalid OpenSign webhook authentication');
     }
+
     // OpenSign delivers webhooks as Parse afterSave payloads — the body is the
     // serialized contracts_Document object.
     const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;

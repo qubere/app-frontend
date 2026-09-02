@@ -79,7 +79,10 @@ function formatCellValue(row: Row, field: FieldMeta, tableKey: string): string {
         }
         return "";
       }
-      // If we have optionLabels, use them to display the formatted name
+      // Prefer the server-joined customer name; fall back to statically
+      // configured optionLabels, then the raw id.
+      const customerName = getNestedValue(row, "customerName");
+      if (customerName) return String(customerName);
       if (field.optionLabels && value) {
         return field.optionLabels[String(value)] || String(value);
       }
@@ -493,19 +496,37 @@ function RowFormModal({
 
   // Fetch dropdown options for any field that declares an optionsSource (e.g.
   // procedure-config's transactionType, sourced from the FilingTransactionType catalog).
+  // A transient 401 can happen right after sign-in while the auth session is
+  // still settling, so failed/non-OK fetches are retried a couple of times
+  // with a short backoff instead of silently leaving the field empty forever.
   useEffect(() => {
+    let cancelled = false;
     const selectFields = table.fields.filter((f) => f.type === "select" && f.optionsSource);
-    selectFields.forEach((f) => {
-      fetch(f.optionsSource as string, { credentials: "include" })
-        .then((res) => res.json())
-        .then((data) => {
-          setSelectOptions((prev) => ({ ...prev, [f.key]: data.codes || [] }));
-          if (data.optionLabels) {
-            setSelectOptionLabels((prev) => ({ ...prev, [f.key]: data.optionLabels }));
-          }
-        })
-        .catch((err) => console.error(`Failed to load options for ${f.key}:`, err));
-    });
+
+    async function loadWithRetry(f: FieldMeta, attempt = 0): Promise<void> {
+      try {
+        const res = await fetch(f.optionsSource as string, { credentials: "include" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setSelectOptions((prev) => ({ ...prev, [f.key]: data.codes || [] }));
+        if (data.optionLabels) {
+          setSelectOptionLabels((prev) => ({ ...prev, [f.key]: data.optionLabels }));
+        }
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          if (!cancelled) return loadWithRetry(f, attempt + 1);
+        } else {
+          console.error(`Failed to load options for ${f.key}:`, err);
+        }
+      }
+    }
+
+    selectFields.forEach((f) => loadWithRetry(f));
+    return () => {
+      cancelled = true;
+    };
   }, [table.key, table.fields]);
 
   async function handleSubmit() {
@@ -572,7 +593,7 @@ function RowFormModal({
                   <option value="false">{t.filingConfig?.no ?? "No"}</option>
                   <option value="true">{t.filingConfig?.yes ?? "Yes"}</option>
                 </select>
-              ) : f.type === "select" && fieldOptions && fieldOptions.length > 0 ? (
+              ) : f.type === "select" && (f.optionsSource || (fieldOptions && fieldOptions.length > 0)) ? (
                 <select
                   value={String(draft[f.key] ?? "")}
                   onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
@@ -580,11 +601,21 @@ function RowFormModal({
                   className={`w-full rounded-xl border border-border px-3 py-2 text-sm ${disabled ? "opacity-60" : ""}`}
                 >
                   <option value="">Select...</option>
-                  {fieldOptions.map((code) => (
+                  {(fieldOptions ?? []).map((code) => (
                     <option key={code} value={code}>
                       {selectOptionLabels[f.key]?.[code] ?? f.optionLabels?.[code] ?? code}
                     </option>
                   ))}
+                  {/* Keep the currently stored value selectable even if it hasn't
+                      shown up in the fetched options yet (still loading, a
+                      transient auth error, or an inactive/older record excluded
+                      from an active-only list) -- otherwise editing would silently
+                      clear a valid existing selection. */}
+                  {Boolean(draft[f.key]) && !(fieldOptions ?? []).includes(String(draft[f.key])) && (
+                    <option value={String(draft[f.key])}>
+                      {selectOptionLabels[f.key]?.[String(draft[f.key])] ?? f.optionLabels?.[String(draft[f.key])] ?? String(draft[f.key])}
+                    </option>
+                  )}
                 </select>
               ) : f.type === "fieldArray" ? (
                 <FieldArrayEditor

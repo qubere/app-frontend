@@ -1,8 +1,9 @@
 import { storeDocumentBytes } from "@qubere/storage";
 import { promoteSetupForPoa } from "@/lib/portal/clientSetup";
-// E-sign webhooks are authenticated by the provider parser before database writes.
-// OpenSign completion is confirmed through its API before signed bytes are stored.
-// The INTERNAL provider completes through /api/sign/[token].
+// Authenticate provider callbacks before database writes. OpenSign supports its
+// configured query secret and the legacy header configuration. Completed bytes
+// are confirmed through the provider API, stored and promoted to customer setup.
+
 
 import { NextResponse } from "next/server";
 import { db, runWithAccountId } from "@/lib/db";
@@ -33,7 +34,7 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
   let event;
   try {
     const provider = getEsignProvider(providerName);
-    event = provider.parseWebhook(headers, rawBody);
+    event = provider.parseWebhook(headers, rawBody, req.url);
   } catch {
     // Return 200 to Dropbox Sign even on bad signature so they don't disable the endpoint.
     if (dropboxHandshake) return new NextResponse("Hello API Event Received", { status: 200 });

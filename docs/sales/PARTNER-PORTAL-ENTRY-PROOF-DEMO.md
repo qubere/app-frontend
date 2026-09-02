@@ -94,7 +94,13 @@ errors for known schema drift.
 
 The supplied read-only diagnostic confirms the Target workspace relationships;
 these changes have not been verified through the user's live authenticated session.
-Generated 7501/invoice PDFs and the existing Dropbox Sign provider remain stubs.
-Stored signed PoA downloads are supported. No ABI/ACE transmission is added.
+Entry-summary and invoice PDF generation uses the shared billing implementation
+merged from main. The existing Dropbox Sign provider remains a stub. Stored signed
+PoA downloads are supported. No ABI/ACE transmission is added.
 Notification delivery remains opt-in for configured stakeholders through the existing
 outbox; viewing workspace data does not subscribe everyone to every notification.
+
+OpenSign webhooks use the configured `OPEN_SIGN_WEBHOOK_SECRET` in the registered
+webhook URL. Existing header adapters can retain `OPENSIGN_WEBHOOK_SECRET`; the
+canonical URL configuration takes precedence when both are set. Provider completion
+is verified before signed bytes are stored and promoted to Setup.

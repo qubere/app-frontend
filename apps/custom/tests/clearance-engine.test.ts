@@ -59,7 +59,13 @@ const dbMock = {
   },
   canonicalProduct: { findFirst: vi.fn(), create: vi.fn() },
   productAlias: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+  $executeRaw: vi.fn(),
+  $transaction: vi.fn(),
 };
+// The PGA screen route wraps its read-then-write section in a transaction to
+// close a duplicate-requirement race; run the callback against this same mock
+// so existing assertions against dbMock.pgaRequirement still work.
+dbMock.$transaction.mockImplementation(async (callback: (tx: typeof dbMock) => Promise<unknown>) => callback(dbMock));
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/auth", () => ({

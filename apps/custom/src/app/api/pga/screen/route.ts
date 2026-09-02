@@ -89,29 +89,46 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
 
   const lineItemIds = lineItems.map((i) => i.id);
 
-  // Re-screening used to append a second copy of every requirement, so a shipment
-  // screened twice appeared to owe two FDA Prior Notices for the same line.
-  const existing = await db.pgaRequirement.findMany({
-    where: { shipmentLineItemId: { in: lineItemIds }, agency: { in: SCREENED_AGENCIES } },
+  // Concurrent screen requests for the same shipment (a double-submitted button,
+  // or a manual re-screen racing the pipeline) each read `existing` before either
+  // commits its createMany -- without serialization both see "no existing row"
+  // and insert their own, producing duplicate PgaRequirement rows for the same
+  // (shipmentLineItemId, agency). Hold a transaction-scoped Postgres advisory
+  // lock keyed on the shipment id so concurrent screens of the same shipment run
+  // this read-then-write section one at a time. Lock key namespace 2 is reserved
+  // for this route -- namespace 0 is the per-shipment dedup lock in
+  // screeningFindings.ts and namespace 1 is the account-wide dedup lock in
+  // app/api/screening/embargo/sweep/route.ts; keeping all three on separate
+  // namespaces means their hashes can never collide with each other.
+  const { created, staleIds } = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(2, hashtext(${targetShipmentId}))`;
+
+    // Re-screening used to append a second copy of every requirement, so a shipment
+    // screened twice appeared to owe two FDA Prior Notices for the same line.
+    const existing = await tx.pgaRequirement.findMany({
+      where: { shipmentLineItemId: { in: lineItemIds }, agency: { in: SCREENED_AGENCIES } },
+    });
+
+    const created = detections.filter(
+      (d) => !existing.some((e) => e.shipmentLineItemId === d.shipmentLineItemId && e.agency === d.agency)
+    );
+
+    if (created.length > 0) {
+      await tx.pgaRequirement.createMany({ data: created });
+    }
+
+    // Only the three agencies screened here are withdrawn, and only when this run
+    // no longer detects them; a requirement recorded by anything else survives.
+    const staleIds = existing
+      .filter((e) => !detections.some((d) => d.shipmentLineItemId === e.shipmentLineItemId && d.agency === e.agency))
+      .map((e) => e.id);
+
+    if (staleIds.length > 0) {
+      await tx.pgaRequirement.deleteMany({ where: { id: { in: staleIds } } });
+    }
+
+    return { created, staleIds };
   });
-
-  const created = detections.filter(
-    (d) => !existing.some((e) => e.shipmentLineItemId === d.shipmentLineItemId && e.agency === d.agency)
-  );
-
-  if (created.length > 0) {
-    await db.pgaRequirement.createMany({ data: created });
-  }
-
-  // Only the three agencies screened here are withdrawn, and only when this run
-  // no longer detects them; a requirement recorded by anything else survives.
-  const staleIds = existing
-    .filter((e) => !detections.some((d) => d.shipmentLineItemId === e.shipmentLineItemId && d.agency === e.agency))
-    .map((e) => e.id);
-
-  if (staleIds.length > 0) {
-    await db.pgaRequirement.deleteMany({ where: { id: { in: staleIds } } });
-  }
 
   // The response used to list only the rows this run created. With duplicates
   // suppressed that would report requiresPgaFiling false on every re-screen of a
