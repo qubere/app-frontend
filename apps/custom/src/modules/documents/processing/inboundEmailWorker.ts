@@ -334,7 +334,9 @@ async function processOneAttachment(params: {
       verdict: scan.verdict,
       reason: scan.reason ?? null,
     });
-    if (scan.verdict === "QUARANTINE") {
+    // Public destination addresses must never accept an unscanned attachment,
+    // even when ordinary manual uploads use the legacy advisory policy.
+    if (scan.verdict === "QUARANTINE" || (email.inboundAddressId && scan.verdict !== "CLEAN")) {
       await rejectAttachment(attachmentRow.id, scan.reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       if (accountId) {
         await createAuditLog({

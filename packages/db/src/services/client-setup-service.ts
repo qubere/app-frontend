@@ -1,4 +1,4 @@
-import { clientInboundEnabled, issueClientInboundAddress } from './inbound-address-service';
+import { clientInboundEnabled, issueClientInboundAddress, issueClientInboundAddressInTransaction } from './inbound-address-service';
 import { db } from '../index';
 import type { Prisma } from '@prisma/client';
 type SetupDb = Prisma.TransactionClient;
@@ -45,7 +45,10 @@ export async function syncClientSetup(accountId: string, clientId: string, tx: S
     const c = await tx.client.findFirst({ where: { id: clientId, accountId }, include: { onboardingCases: { include: { entities: { include: { poa: { include: { envelope: true } }, bond: { include: { verifications: { orderBy: { performedAt: 'desc' }, take: 1 } } } } }, fiveOhSixRecords: true } }, invitations: { where: { purpose: 'CUSTOMER_PORTAL' }, include: { role: true }, orderBy: { createdAt: 'asc' } }, userAssignments: { include: { user: true } }, importersOfRecord: { include: { powersOfAttorney: { include: { envelope: true } }, bond: { include: { verifications: { orderBy: { performedAt: 'desc' }, take: 1 } } } } } } });
     if (!c)
         throw new Error('CLIENT_NOT_FOUND');
-    if (clientInboundEnabled() && !await tx.inboundAddress.findFirst({ where: { accountId, clientId, purpose: "CLIENT_DOCUMENTS" }, select: { id: true } })) await issueClientInboundAddress({ accountId, clientId });
+    if (clientInboundEnabled() && !await tx.inboundAddress.findFirst({ where: { accountId, clientId, purpose: "CLIENT_DOCUMENTS" }, select: { id: true } })) {
+      if (tx === db) await issueClientInboundAddress({ accountId, clientId });
+      else await issueClientInboundAddressInTransaction(tx, { accountId, clientId });
+    }
     if (c.contactEmail)
         await syncClientStakeholder({ accountId, clientId, email: c.contactEmail, name: c.contactName || c.contactEmail, role: 'CUSTOMS_CONTACT', sourceEvent: 'CLIENT_CONTACT' }, tx);
     if (c.billingContactEmail)

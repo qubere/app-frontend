@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { findMany } = vi.hoisted(() => ({ findMany: vi.fn() }));
-vi.mock('@/lib/db', () => ({ db: { inboundSenderRoute: { findMany } }, withDataModeContext: (_m: unknown, fn: Function) => fn() }));
+vi.mock('@/lib/db', () => ({ db: { inboundSenderRoute: { findMany } }, withDataModeContext: (_m: unknown, fn: (...args: any[]) => any) => fn() }));
 vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }));
 import { resolveInboundRoute } from '@/modules/inbound/senderRouting';
 beforeEach(() => vi.resetAllMocks());

@@ -54,11 +54,10 @@ export async function resolveInboundRoute(
   return route;
 }
 
-/** Thrown when the sender is already routed to a different account -- the
- * `normalizedSenderEmail` unique constraint is what actually enforces this. */
+/** Defensive guard for an unexpected cross-account record at the write boundary. */
 export class InboundSenderAlreadyRoutedError extends Error {
   constructor() {
-    super("This email address is already authorized elsewhere and cannot be added here.");
+    super("This email address is outside the current workspace and cannot be changed here.");
     this.name = "InboundSenderAlreadyRoutedError";
   }
 }
@@ -70,7 +69,7 @@ export class InboundSenderAlreadyRoutedError extends Error {
  * someone re-submitting "Add Authorized Sender" with the same address. */
 export class InboundSenderBlockedError extends Error {
   constructor() {
-    super("This sender is blocked for this account. Unblock it explicitly before re-adding.");
+    super("This sender is blocked for this destination. Unblock it explicitly before re-adding.");
     this.name = "InboundSenderBlockedError";
   }
 }
@@ -78,8 +77,8 @@ export class InboundSenderBlockedError extends Error {
 /**
  * Authorizes `email` to route inbound documents into `accountId`, going
  * forward. Shared by the Settings > Inbound Senders UI and the platform-admin
- * quarantine release flow -- both create the same kind of row and should
- * fail the same way on a sender someone else already claimed.
+ * quarantine release flow. Rules are unique within account/client scope;
+ * the same sender may be authorized for multiple destinations.
  */
 export async function createInboundSenderRoute(params: {
   accountId: string;

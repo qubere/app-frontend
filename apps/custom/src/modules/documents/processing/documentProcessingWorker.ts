@@ -517,6 +517,8 @@ async function finishRun(
 
   if (promoted) {
     await dispatchDownstream(run);
+  } else if (finalState === "NEEDS_REVIEW" && !ocrRetryQueued) {
+    await routeParsedInboundDocument(run.document.accountId, run.documentId, null, true);
   }
 
   return { completed: true, failed: false, retryScheduled: false, ocrRetryQueued };

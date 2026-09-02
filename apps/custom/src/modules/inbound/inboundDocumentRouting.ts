@@ -60,7 +60,7 @@ export async function routeParsedInboundDocument(accountId: string, documentId: 
   const document = await db.shipmentDocument.findFirst({ where: { id: documentId, accountId }, include: { inboundAttachment: { include: { inboundEmail: true } }, inboundDocumentReview: true } });
   const email = document?.inboundAttachment?.inboundEmail;
   if (!document || !email?.inboundAddressId || document.status === 'DISCARDED') return null;
-  if (document.shipmentId) { await refreshInboundEntryProof(accountId, documentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
+  if (document.shipmentId) { await attachInboundDocument(accountId, documentId, document.shipmentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
   if (document.inboundDocumentReview && document.inboundDocumentReview.status !== 'OPEN') return null;
   const unknownSender = document.inboundDocumentReview?.reason === 'UNKNOWN_SENDER';
   const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, parsedText, emailSubject: email.subject, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });

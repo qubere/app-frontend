@@ -47,7 +47,7 @@ const domain = () => {
 const audit = (tx: Prisma.TransactionClient, accountId: string, entityId: string, action: string, userId?: string, detail?: Prisma.InputJsonValue) =>
   tx.auditLog.create({ data: { accountId, entity: 'InboundAddress', entityId, action: `inbound_address.${action}`, source: userId ? 'UI' : 'SYSTEM', userId, newValue: detail } });
 
-async function issue(tx: Prisma.TransactionClient, p: AddressInput) {
+export async function issueClientInboundAddressInTransaction(tx: Prisma.TransactionClient, p: AddressInput) {
   if (p.clientId && !await tx.client.findFirst({ where: { id: p.clientId, accountId: p.accountId }, select: { id: true } })) throw new Error('CLIENT_NOT_FOUND');
   const activeKey = keyFor(p);
   const existing = await tx.inboundAddress.findUnique({ where: { activeKey } });
@@ -59,7 +59,7 @@ async function issue(tx: Prisma.TransactionClient, p: AddressInput) {
 }
 
 export async function issueClientInboundAddress(p: AddressInput, database: PrismaClient = db) {
-  try { return await database.$transaction(tx => issue(tx, p)); }
+  try { return await database.$transaction(tx => issueClientInboundAddressInTransaction(tx, p)); }
   catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const winner = await database.inboundAddress.findUnique({ where: { activeKey: keyFor(p) } });
@@ -85,7 +85,7 @@ export async function changeInboundAddress(accountId: string, id: string, action
     if (action === 'ROTATE') {
       const graceUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       await tx.inboundAddress.update({ where: { id }, data: { activeKey: null, status: 'SUSPENDED', graceUntil } });
-      const next = await issue(tx, { accountId, clientId: old.clientId, label: old.label ?? undefined, createdByUserId: userId, purpose: old.purpose as AddressPurpose, senderPolicy: old.senderPolicy as SenderPolicy });
+      const next = await issueClientInboundAddressInTransaction(tx, { accountId, clientId: old.clientId, label: old.label ?? undefined, createdByUserId: userId, purpose: old.purpose as AddressPurpose, senderPolicy: old.senderPolicy as SenderPolicy });
       await tx.inboundAddress.update({ where: { id: next.id }, data: { autoReplyEnabled: old.autoReplyEnabled, defaultAssignedToUserId: old.defaultAssignedToUserId } });
       await audit(tx, accountId, id, 'rotated', userId, { replacementId: next.id, graceUntil: graceUntil.toISOString() });
       return next;

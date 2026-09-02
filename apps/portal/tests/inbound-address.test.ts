@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 const m = vi.hoisted(() => ({ ctx: { accountId: 'target-workspace', userId: 'u', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read'] }, query: vi.fn() }));
-vi.mock('@qubere/db', () => ({ db: { inboundAddress: { findMany: m.query } }, withAccountIdContext: (_a: unknown, fn: Function) => fn(), withDataModeContext: (_a: unknown, fn: Function) => fn(), isDataMode: () => true }));
+vi.mock('@qubere/db', () => ({ db: { inboundAddress: { findMany: m.query } }, withAccountIdContext: (_a: unknown, fn: (...args: any[]) => any) => fn(), withDataModeContext: (_a: unknown, fn: (...args: any[]) => any) => fn(), isDataMode: () => true }));
 vi.mock('@qubere/auth', () => ({ getAccountContext: async () => m.ctx, hasRequiredPortalPermission: (ctx: typeof m.ctx, p: string) => ctx.permissions.includes(p), getPortalWorkspaceScope: () => ({}), resolvePortalClientScope: (_s: unknown, id?: string) => ({ forbidden: false, clientIds: id ? [id] : null }) }));
 import { GET } from '../src/app/api/inbound-address/route';
 import { documentClientWhere } from '../src/lib/client-ownership';

@@ -7,7 +7,7 @@ const m = vi.hoisted(() => ({
 vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: async () => m.ctx }));
 vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: async () => m.scope }));
 vi.mock('@qubere/auth', async () => ({ ...await import('../../../packages/auth/src/portal-auth'), getAccountContext: async () => m.ctx, getEffectiveUserScope: async () => m.scope }));
-vi.mock('@qubere/db', () => ({ db: m.db, mapPortalShipmentStatus: () => ({}), withAccountIdContext: (_: unknown, fn: Function) => fn(), withDataModeContext: (_: unknown, fn: Function) => fn(), isDataMode: () => true }));
+vi.mock('@qubere/db', () => ({ db: m.db, mapPortalShipmentStatus: () => ({}), withAccountIdContext: (_: unknown, fn: (...args: any[]) => any) => fn(), withDataModeContext: (_: unknown, fn: (...args: any[]) => any) => fn(), isDataMode: () => true }));
 vi.mock('@qubere/db/services/shared-upload-service', () => ({ processSharedDocumentUpload: vi.fn() }));
 vi.mock('@qubere/storage', () => ({ readStoredObject: m.read }));
 const shipments = await import('../src/app/api/shipments/route');

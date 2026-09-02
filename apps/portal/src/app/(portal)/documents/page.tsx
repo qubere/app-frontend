@@ -6,12 +6,10 @@ import { DocumentIcon } from "../icons";
 import { Card } from "@/components/ui/Card";
 import {
   Mail,
-  Check,
   UploadCloud,
   Loader2,
   FileText,
   X,
-  Eye,
   Download,
   Trash2,
 } from "lucide-react";

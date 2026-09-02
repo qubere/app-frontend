@@ -1,21 +1,21 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Check, FileText, RefreshCw, ShieldAlert } from 'lucide-react';
 type Review = { id: string; reason: string; clientId: string | null; client: { name: string } | null; createdAt: string; inboundEmail: { originalFromAddress: string; subject: string | null }; shipmentDocument: { id: string; fileName: string; status: string } | null; candidateSummary: { shipmentId: string; score: number; signals: { type: string; value: string }[] }[] | null };
 type Shipment = { id: string; shipmentNumber: string; importerName: string };
 const reasons: Record<string, string> = { UNKNOWN_SENDER: 'Check sender', MATCH_CONFLICT: 'Multiple shipment matches', LOW_CONFIDENCE: 'Confirm shipment', NO_MATCH: 'Choose shipment', EXTRACTION_FAILED: 'Document could not be read' };
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-muted disabled:opacity-40';
-export function InboundReviewTable() {
+export function InboundReviewTable({ filterClientId }: { filterClientId?: string } = {}) {
   const [rows, setRows] = useState<Review[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [busy, setBusy] = useState(''), [message, setMessage] = useState('');
   const [selected, setSelected] = useState<Review | null>(null), [shipments, setShipments] = useState<Shipment[]>([]), [candidateShipments, setCandidateShipments] = useState<Shipment[]>([]), [shipmentId, setShipmentId] = useState(''), [q, setQ] = useState('');
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]), [clientId, setClientId] = useState(''), [cursor, setCursor] = useState<string | null>(null), [confirm, setConfirm] = useState('');
-  const load = async (next?: string) => {
+  const load = useCallback(async (next?: string) => {
     setLoading(true); setError('');
-    try { const r = await fetch(`/api/broker/inbound-reviews${next ? `?cursor=${encodeURIComponent(next)}` : ''}`); if (!r.ok) throw new Error('Unable to load email review. Try again.'); const d = await r.json(); setRows(v => next ? [...v, ...d.items] : d.items); setCursor(d.nextCursor); }
+    try { const params = new URLSearchParams(); if (filterClientId) params.set('clientId', filterClientId); if (next) params.set('cursor', next); const r = await fetch(`/api/broker/inbound-reviews${params.size ? `?${params}` : ''}`); if (!r.ok) throw new Error('Unable to load email review. Try again.'); const d = await r.json(); setRows(v => next ? [...v, ...d.items] : d.items); setCursor(d.nextCursor); }
     catch (e) { setError((e as Error).message); } finally { setLoading(false); }
-  };
-  useEffect(() => { void load(); }, []);
+  }, [filterClientId]);
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     if (!selected) return;
     const controller = new AbortController();
