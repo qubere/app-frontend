@@ -2,40 +2,53 @@
 
 ## Current customer access model (supersedes client-filter assumptions below)
 
-Active account membership grants access to the customer workspace. Broker-A keeps
-Target, Amazon and DHL in separate accounts. Portal queries retain account and data
-mode predicates, but client assignments, null client links and legacy document
-visibility labels do not restrict reads within that workspace. Optional client filters
-are organizational views. Role permissions, filing publication, document lifecycle
-and other-workspace isolation remain enforced.
+The portal's read boundary is the **client workspace**, not the account. One
+broker account holds many `Client` records (Broker-A serves Target, Amazon and
+DHL in one account); a portal user is assigned to a client via
+`UserClientAssignment` and sees that whole client. `getPortalWorkspaceScope`
+resolves the caller's real scope through `getEffectiveUserScope` — broker/admin
+roles are all-clients, `CUSTOMER_*` roles are limited to their assignments (see
+`scope-engine.ts` P0-4). Every list query combines `ctx.accountId` with the
+per-client filter; `authorizePortalResource` re-checks the resource's client and
+resolves a null `clientId` only from an unambiguous importer-of-record link.
+Filing publication, document lifecycle, role permissions and account isolation
+apply on top.
 
-The September 2 follow-up makes Setup aggregate the account's importers and cases by
-default. It retrieves stored executed PoAs without requiring ClientDocument promotion,
-projects safe metadata and audits downloads. No live ownership repair or migration is
-needed. Documents include legacy INTERNAL files with uploader attribution, and uploads
-validate referenced client/shipment account membership before storing bytes. Default
-workspace shipment/document lists skip importer-ownership lookups.
+> **Correction (post-review):** an earlier revision of this branch made
+> `getPortalWorkspaceScope` return `{ isAllClients: true }` for every portal
+> user and dropped the client / visibility checks, treating the account as the
+> workspace. Because the demo seed places Target and Amazon as separate clients
+> in one account, that exposed every client's data to every portal user. Restored
+> to per-client scoping in commit 5b595c68; the inverted isolation tests were
+> reverted.
 
-The user-provided diagnostic explains the previous mismatch: 000001 has no client or
-importer link, Porter's assigned client has no onboarding, and the saved executed PoA
-belongs to a null-client importer under another client record in the **same Target
-account**. These links no longer hide records. No database records were changed.
+The September 2 Setup work makes **Your setup** aggregate every importer and case
+under the signed-in client by default. It retrieves stored executed PoAs without
+requiring ClientDocument promotion, projects safe metadata and audits downloads.
+No live ownership repair or migration is needed. Documents include legacy INTERNAL
+files on the client's own shipments with uploader attribution, and uploads reject
+a client/shipment outside the caller's scope before storing bytes.
 
-The portal header/sidebar display the authenticated workspace, replacing a client
-selector that only changed its label. Setup still offers an optional company filter.
-The read-only diagnostic reports workspace access separately from client assignments.
+The user-provided diagnostic explains the original mismatch: `SHP-2026-000001`
+had no client link, and the saved executed PoA belonged to a null-client importer
+whose onboarding case resolves to Target. Those records now surface for Target via
+the importer-link resolution rather than being hidden — while records that resolve
+elsewhere, or ambiguously, stay out of scope. No database records were changed.
 
-The user confirmed that Setup loads after the workspace-access change. The UI now
-uses the Customs shipment design language: a numbered progress ribbon, compact
-workspace heading, section links, status pills, importer detail panels, document
-rows and a broker-team card. Refresh preserves the current view; selecting another
-company hides previous-company data until the new response arrives. Backend access
-and document download routes are unchanged by this styling commit.
+The portal header/sidebar display the signed-in client. Setup offers an optional
+company filter only when the user is assigned to more than one client. The
+read-only diagnostic reports account membership and client assignments separately.
 
-Validation: real authorization-engine and route tests cover Target/Amazon/DHL workspace
-isolation, null-client shipments, INTERNAL documents, workspace uploads, importer
-aggregation, legacy signed downloads, role restrictions, data-mode contexts and loading
-budgets. Portal source TypeScript passed. This restored environment lacks PGlite and happy-dom, so the PostgreSQL
+The UI uses the Customs shipment design language: a numbered progress ribbon,
+compact client heading, section links, status pills, importer detail panels,
+document rows and a broker-team card. Refresh preserves the current view;
+selecting another company hides previous-company data until the new response
+arrives.
+
+Validation: real authorization-engine and route tests cover same-account
+Target/Amazon cross-client denial, null-client shipment resolution, ambiguous
+importer links, INTERNAL documents, scoped uploads, importer aggregation, legacy
+signed downloads, role restrictions, data-mode contexts and loading budgets. Portal source TypeScript passed. This restored environment lacks PGlite and happy-dom, so the PostgreSQL
 execution and DOM-interaction test files cannot run here; SQL parameterization and
 publication guards are covered in route tests. The other 117 portal tests and 14
 authorization tests pass. No authenticated live walkthrough or
