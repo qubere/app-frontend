@@ -25,10 +25,29 @@ interface DocItem {
   byteSize?: number;
   status: string;
   source?: string;
+  channel?: string | null;
+  uploadedAt?: string;
   fileUrl?: string | null;
   shipmentId?: string | null;
   shipmentNumber?: string;
   createdAt: string;
+}
+
+const CHANNEL_LABELS: Record<string, string> = {
+  WEB_APP: "Broker app",
+  CUSTOMER_PORTAL: "Portal upload",
+  EMAIL: "Emailed",
+  API: "API",
+  INTEGRATION: "Integration",
+  SYSTEM: "System",
+  CLIENT_SETUP: "Client setup",
+};
+
+function channelLabel(doc: DocItem): string {
+  if (doc.channel && CHANNEL_LABELS[doc.channel]) return CHANNEL_LABELS[doc.channel];
+  if (doc.source === "INBOUND_EMAIL" || doc.source === "EMAIL" || doc.source === "EMAIL_REQUEST") return "Emailed";
+  if (doc.source === "CLIENT_SETUP") return "Client setup";
+  return "Direct upload";
 }
 
 export default function DocumentsPage() {
@@ -131,7 +150,9 @@ export default function DocumentsPage() {
               </thead>
               <tbody className="divide-y divide-[#E5E5EA]">
                 {groupedDocuments.map((doc, index) => {
-                  const isEmail = doc.source === "INBOUND_EMAIL";
+                  const channel = doc.channel || doc.source;
+                  const isEmail = channel === "EMAIL" || doc.source === "INBOUND_EMAIL";
+                  const isSetup = channel === "CLIENT_SETUP" || doc.source === "CLIENT_SETUP";
 
                   return (
                     <React.Fragment key={doc.key}>{(index === 0 || groupedDocuments[index - 1].shipmentNumber !== doc.shipmentNumber) && <tr className="bg-blue-50/50"><td colSpan={6} className="px-6 py-2 text-xs font-semibold text-[#1D1D1F]">{doc.shipmentNumber || "With your broker / unassigned"}</td></tr>}<tr className="hover:bg-[#FAF9F6] transition group">
@@ -169,17 +190,17 @@ export default function DocumentsPage() {
                       </td>
 
                       <td className="py-4 px-4 text-[#86868B]">{doc.uploadedBy || "Not recorded"}</td>
-                      {/* Source {upload / email} */}
+                      {/* Channel the document arrived through */}
                       <td className="py-4 px-4 whitespace-nowrap">
-                        {doc.source === "CLIENT_SETUP" ? <span className="text-xs text-[#86868B]">Client setup</span> : isEmail ? (
+                        {isSetup ? <span className="text-xs text-[#86868B]">Client setup</span> : isEmail ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-50 text-[#0071E3] border border-blue-200 uppercase tracking-wider flex items-center space-x-1.5 w-fit">
                             <Mail className="w-3 h-3" />
-                            <span>Emailed</span>
+                            <span>{channelLabel(doc)}</span>
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300 uppercase tracking-wider flex items-center space-x-1.5 w-fit">
                             <UploadCloud className="w-3 h-3" />
-                            <span>Direct Upload</span>
+                            <span>{channelLabel(doc)}</span>
                           </span>
                         )}
                       </td>
@@ -238,9 +259,11 @@ export default function DocumentsPage() {
                       <span className="font-mono font-bold text-[#0071E3]">{previewDoc.shipmentNumber}</span>
                     )}
                     <span>&bull;</span>
-                    <span>Uploaded {new Date(previewDoc.createdAt).toLocaleDateString()}</span>
+                    <span>Uploaded {new Date(previewDoc.uploadedAt || previewDoc.createdAt).toLocaleDateString()}</span>
                     <span>&bull;</span>
-                    <span className="font-bold text-[#1D1D1F] uppercase">{previewDoc.source === "INBOUND_EMAIL" ? "Email Ingest" : "Direct Upload"}</span>
+                    <span>by {previewDoc.uploadedBy || "Not recorded"}</span>
+                    <span>&bull;</span>
+                    <span className="font-bold text-[#1D1D1F] uppercase">{channelLabel(previewDoc)}</span>
                   </div>
                 </div>
               </div>

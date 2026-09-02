@@ -3,7 +3,7 @@ const m=vi.hoisted(()=>({ctx:{accountId:'a1',userId:'u1',roleNames:['CUSTOMER_US
 vi.mock('../../../packages/auth/src/auth',()=>({getAccountContext:async()=>m.ctx}));
 vi.mock('../../../packages/auth/src/scope-engine',()=>({getEffectiveUserScope:async()=>m.scope}));
 vi.mock('@qubere/auth',async()=>({...await import('../../../packages/auth/src/portal-auth'),getAccountContext:async()=>m.ctx,getEffectiveUserScope:async()=>m.scope}));
-vi.mock('@qubere/db',async()=>({...await import('../../../packages/db/src/services/portal-status-mapper'),db:m.db,withAccountIdContext: (_account: unknown, fn: Function) => fn(), withDataModeContext:(_mode:unknown,fn:Function)=>fn(),isDataMode:()=>true}));
+vi.mock('@qubere/db',async()=>({...await import('../../../packages/db/src/services/portal-status-mapper'),db:m.db,withAccountIdContext: (_account: unknown, fn: () => unknown) => fn(), withDataModeContext:(_mode:unknown,fn:()=>unknown)=>fn(),isDataMode:()=>true}));
 const route=await import('../src/app/api/shipments/[id]/answers/route');
 const params={params:Promise.resolve({id:'s1'})};
 beforeEach(()=>{vi.clearAllMocks();m.ctx.permissions=['portal.shipments.read','portal.invoices.read'];m.db.invoice.findMany.mockResolvedValue([]);m.db.$queryRaw.mockResolvedValue([]);m.db.shipment.findFirst.mockResolvedValue({accountId:'a1',clientId:'target',importerName:'Target'});m.db.shipment.findUnique.mockResolvedValue({id:'s1',shipmentNumber:'SHP1',status:'In Progress',customsFilings:[],entryProofs:[],etaObservations:[],trackingEvents:[],legs:[],trackingIdentifiers:[],shipmentCharges:[],invoiceLines:[],customerRequests:[],complianceDeadlines:[],pgaHolds:[],demurrageExposureUsd:null,actualBuyCost:1234,expectedBuyCost:4321,grossProfit:222,grossMarginPct:50,humanNotes:'PRIVATE'})});

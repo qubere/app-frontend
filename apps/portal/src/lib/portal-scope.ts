@@ -10,7 +10,7 @@ export async function portalScope(req: Request, permission: string) {
         return { error: NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 }) } as const;
     if (!hasRequiredPortalPermission(ctx, permission))
         return { error: notFound() } as const;
-    const scope = getPortalWorkspaceScope(ctx);
+    const scope = await getPortalWorkspaceScope(ctx);
     const resolved = resolvePortalClientScope(scope, new URL(req.url).searchParams.get('clientId'));
     if (resolved.forbidden)
         return { error: notFound() } as const;

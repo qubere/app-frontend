@@ -7,7 +7,7 @@ const m = vi.hoisted(() => ({
 vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: async () => m.ctx }));
 vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: async () => m.scope }));
 vi.mock('@qubere/auth', async () => ({ ...await import('../../../packages/auth/src/portal-auth'), getAccountContext: async () => m.ctx, getEffectiveUserScope: async () => m.scope }));
-vi.mock('@qubere/db', () => ({ db: m.db, mapPortalShipmentStatus: () => ({}), withAccountIdContext: (_: unknown, fn: (...args: any[]) => any) => fn(), withDataModeContext: (_: unknown, fn: (...args: any[]) => any) => fn(), isDataMode: () => true }));
+vi.mock('@qubere/db', () => ({ db: m.db, mapPortalShipmentStatus: () => ({}), withAccountIdContext: (_: unknown, fn: () => unknown) => fn(), withDataModeContext: (_: unknown, fn: () => unknown) => fn(), isDataMode: () => true }));
 vi.mock('@qubere/db/services/shared-upload-service', () => ({ processSharedDocumentUpload: vi.fn() }));
 vi.mock('@qubere/storage', () => ({ readStoredObject: m.read }));
 const shipments = await import('../src/app/api/shipments/route');
@@ -30,10 +30,14 @@ beforeEach(() => {
   m.read.mockResolvedValue({ body: Buffer.from('%PDF-1.7 test') });
 });
 describe('Workspace ownership across importers', () => {
-  it('includes both workspace shipments even without client or importer links', async () => {
+  it('scopes the list to the assigned client plus its importer-owned records', async () => {
     const body = await (await shipments.GET(request('shipments'))).json();
     expect(body.items.map((s: any) => s.shipmentNumber)).toEqual(['SHP-2026-000002', 'SHP-2026-000001']);
-    expect(m.db.shipment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'target-workspace', deletedAt: null } }));
+    const where = m.db.shipment.findMany.mock.calls[0][0].where;
+    expect(where.accountId).toBe('target-workspace');
+    expect(where.deletedAt).toBeNull();
+    expect(where.OR).toContainEqual({ clientId: { in: ['target'] } });
+    expect(where.OR).toContainEqual({ clientId: null, importerOfRecordId: { in: ['ior-one', 'ior-two'] } });
     expect(m.db.shipment.findMany.mock.calls[0][0].select.extractedJson).toBeUndefined();
   });
   it('resolves legacy importer ownership only from an unambiguous case link', async () => {
@@ -46,16 +50,20 @@ describe('Workspace ownership across importers', () => {
     expect(await shipmentClientId('target-workspace', { clientId: 'amazon', importerOfRecordId: 'ior-one' })).toBe('amazon');
     expect(m.db.importerOfRecord.findFirst).not.toHaveBeenCalled();
   });
-  it('does not load importer ownership for default workspace lists', async () => {
+  it('only maps in-scope importers into the ownership filter', async () => {
     m.db.importerOfRecord.findMany.mockResolvedValue([importer('other', 'amazon'), importer('unlinked', null)]);
     await shipments.GET(request('shipments'));
-    expect(m.db.importerOfRecord.findMany).not.toHaveBeenCalled();
-    expect(m.db.shipment.findMany.mock.calls[0][0].where).toEqual({ accountId: 'target-workspace', deletedAt: null });
+    expect(m.db.importerOfRecord.findMany).toHaveBeenCalled();
+    // 'other' belongs to amazon, 'unlinked' resolves to no client -> neither is included.
+    expect(m.db.shipment.findMany.mock.calls[0][0].where.OR).toContainEqual({ clientId: null, importerOfRecordId: { in: [] } });
   });
-  it('keeps optional client filtering inside the current workspace', async () => {
-    expect((await shipments.GET(request('shipments?clientId=amazon'))).status).toBe(200);
-    expect(m.db.shipment.findMany.mock.calls[0][0].where.accountId).toBe('target-workspace');
-    expect(m.db.shipment.findMany.mock.calls[0][0].where.OR[0]).toEqual({ clientId: { in: ['amazon'] } });
+  it('rejects an optional client filter outside the caller scope', async () => {
+    expect((await shipments.GET(request('shipments?clientId=amazon'))).status).toBe(403);
+    expect(m.db.shipment.findMany).not.toHaveBeenCalled();
+  });
+  it('accepts an in-scope optional client filter', async () => {
+    expect((await shipments.GET(request('shipments?clientId=target'))).status).toBe(200);
+    expect(m.db.shipment.findMany.mock.calls[0][0].where.OR).toContainEqual({ clientId: { in: ['target'] } });
   });
 });
 describe('Shared documents and upload attribution', () => {
@@ -69,7 +77,7 @@ describe('Shared documents and upload attribution', () => {
     const query = m.db.shipmentDocument.findMany.mock.calls[0][0];
     expect(query.where.portalVisibility).toBeUndefined();
     expect(query.where.AND[0].accountId).toBe('target-workspace');
-    expect(JSON.stringify(query.where)).not.toContain('clientId');
+    expect(JSON.stringify(query.where.AND[0])).toContain('"clientId":{"in":["target"]}');
     expect(query.select.extractedJson).toBeUndefined();
     expect(query.select.fileUrl).toBeUndefined();
     expect(response.headers.get('Cache-Control')).toBe('no-store');
@@ -93,7 +101,6 @@ describe('Shared documents and upload attribution', () => {
     await documents.GET(request('documents'));
     m.ctx.accountId = 'amazon-workspace';
     await documents.GET(request('documents'));
-    expect(m.db.importerOfRecord.findMany).not.toHaveBeenCalled();
     expect(m.db.clientDocument.findMany.mock.calls.at(-1)![0].where.accountId).toBe('amazon-workspace');
   });
   it('requires document permission and rejects malformed cursors', async () => {

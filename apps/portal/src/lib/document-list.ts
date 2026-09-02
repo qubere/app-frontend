@@ -26,6 +26,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
       where: { AND: [documentClientWhere(accountId, clientIds, owners), afterCursor(cursor, 'S')], ...(shipmentId ? { shipmentId } : {}), ...(docType ? { docType } : {}) },
       take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true, fileName: true, docType: true, byteSize: true, mimeType: true, source: true, status: true, activeParseVersionId: true, inboundDocumentReview: { select: { status: true } }, shipmentId: true, createdAt: true,
+        channel: true, uploadedByName: true, uploadedByEmail: true, uploadedByType: true, uploadedAt: true,
         shipment: { select: { id: true, shipmentNumber: true } },
         inboundAttachment: { select: { inboundEmail: { select: { accountId: true, normalizedFromAddress: true } } } },
       },
@@ -39,19 +40,27 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
   const rows = [
     ...shipmentDocuments.map(d => ({ kind: 'S' as const, id: d.id, createdAt: d.createdAt, model: 'ShipmentDocument', sourceId: d.id,
       fileName: d.fileName, docType: d.docType, byteSize: d.byteSize, mimeType: d.mimeType, source: d.source,
+      channel: d.channel ?? normalizeLegacyChannel(d.source),
+      uploadedAt: (d.uploadedAt ?? d.createdAt).toISOString(),
       status: d.source === 'INBOUND_EMAIL' ? d.inboundDocumentReview?.status === 'OPEN' ? 'With your broker' : d.shipmentId ? `Attached to ${d.shipment?.shipmentNumber || 'shipment'}` : 'Processing' : d.status === 'Received' ? 'Ready' : d.status, shipmentId: d.shipmentId, shipmentNumber: d.shipment?.shipmentNumber ?? null,
+      // Prefer the immutable snapshot recorded at upload; fall back to the
+      // inbound sender, then (for legacy rows) an upload audit event.
+      storedUploadedBy: d.uploadedByName || d.uploadedByEmail || null,
       sender: d.inboundAttachment?.inboundEmail.accountId === accountId ? d.inboundAttachment.inboundEmail.normalizedFromAddress : null,
-      downloadUrl: `/api/documents/${d.id}/download`, canDelete: input.canDelete && d.source === 'PORTAL_UPLOAD' && !d.shipmentId,
+      downloadUrl: `/api/documents/${d.id}/download`,
+      canDelete: input.canDelete && (d.channel === 'CUSTOMER_PORTAL' || d.source === 'PORTAL_UPLOAD') && !d.shipmentId,
     })),
     ...clientDocuments.map(d => ({ kind: 'C' as const, id: d.id, createdAt: d.createdAt, model: d.sourceModel, sourceId: d.sourceId,
-      fileName: d.title, docType: d.kind, byteSize: null, mimeType: d.contentType, source: 'CLIENT_SETUP', status: 'Ready', shipmentId: null, shipmentNumber: null, sender: null,
+      fileName: d.title, docType: d.kind, byteSize: null, mimeType: d.contentType, source: 'CLIENT_SETUP',
+      channel: 'CLIENT_SETUP' as const, uploadedAt: d.createdAt.toISOString(),
+      status: 'Ready', shipmentId: null, shipmentNumber: null, storedUploadedBy: null, sender: null,
       downloadUrl: `/api/setup/documents/${d.id}/download`, canDelete: false,
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.kind === b.kind ? (a.id === b.id ? 0 : a.id < b.id ? 1 : -1) : a.kind < b.kind ? 1 : -1));
   const page = rows.slice(0, limit);
-  const auditWhere: Prisma.AuditLogWhereInput[] = page.flatMap(d => d.model && d.sourceId ? [{ entity: d.model, entityId: d.sourceId }] : []);
-  // An assignee can change; uploader attribution comes only from upload audit
-  // events or the original inbound sender, never the document's current owner.
+  // Only reach for the audit trail on rows that lack a stored uploader snapshot
+  // (documents created before ingestion metadata was captured).
+  const auditWhere: Prisma.AuditLogWhereInput[] = page.flatMap(d => !d.storedUploadedBy && !d.sender && d.model && d.sourceId ? [{ entity: d.model, entityId: d.sourceId }] : []);
   const audits = auditWhere.length ? await db.auditLog.findMany({
     where: { accountId, success: true, action: { in: ['DOCUMENT_UPLOADED', 'CUSTOMER_PORTAL_DOCUMENT_UPLOAD', 'POA_EXECUTED', 'poa.create'] }, OR: auditWhere },
     distinct: ['entity', 'entityId'], orderBy: { createdAt: 'asc' },
@@ -60,7 +69,20 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
   const uploadedBy = new Map(audits.map(a => { const u = a.actorUser ?? a.user; return [`${a.entity}:${a.entityId}`, u ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email : null]; }));
   const last = page.at(-1);
   return {
-    items: page.map(({ model, sourceId, sender, kind, ...d }) => ({ ...d, key: `${kind}:${d.id}`, uploadedBy: sender || uploadedBy.get(`${model}:${sourceId}`) || null })),
+    items: page.map(({ model, sourceId, sender, storedUploadedBy, kind, ...d }) => ({ ...d, key: `${kind}:${d.id}`,
+      uploadedBy: storedUploadedBy || sender || uploadedBy.get(`${model}:${sourceId}`) || null })),
     nextCursor: rows.length > limit && last ? Buffer.from(JSON.stringify({ at: last.createdAt.toISOString(), id: last.id, kind: last.kind })).toString('base64url') : null,
   };
+}
+
+/** Map the legacy free-text `source` onto the normalized channel for rows
+ *  written before `ShipmentDocument.channel` existed. */
+function normalizeLegacyChannel(source: string | null): string | null {
+  switch (source) {
+    case 'PORTAL_UPLOAD': return 'CUSTOMER_PORTAL';
+    case 'INBOUND_EMAIL': case 'EMAIL': case 'EMAIL_REQUEST': return 'EMAIL';
+    case 'API': return 'API';
+    case 'UI': case 'UPLOAD': return 'WEB_APP';
+    default: return null;
+  }
 }

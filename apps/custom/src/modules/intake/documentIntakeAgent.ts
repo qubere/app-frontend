@@ -4,6 +4,7 @@ import path from "path";
 import { db } from "@/lib/db";
 import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { createAuditLog, AuditAction } from "@/lib/audit";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 import { meterGeminiCall } from "@/lib/ai/aiMeter";
 import { aiModel } from "@/lib/ai/aiModel";
 import { hashPromptVersion } from "@/lib/ai/promptVersion";
@@ -398,6 +399,12 @@ Target File Name: "${input.fileName}"`;
             fileUrl: input.fileUrl,
             confidence: overallConfidence,
             status: status === "Completed" ? "Processed" : "Review Required",
+            ...(await buildDocumentProvenance({
+              channel: "WEB_APP",
+              uploadedByType: "INTERNAL_USER",
+              uploadedByUserId: input.userId,
+              channelMeta: { createdBy: "documentIntakeAgent" },
+            })),
           },
         });
       }

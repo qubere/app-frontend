@@ -41,12 +41,14 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
       entryType: true,
       accountId: true,
       customerVisibleAt: true,
+      importerOfRecordId: true,
       importerOfRecord: { select: { name: true, cbpImporterNumber: true } },
       bond: { select: { bondNumber: true } },
       snapshot: { select: { snapshotData: true } },
       shipment: {
         select: {
           clientId: true,
+          importerOfRecordId: true,
           importerName: true,
           portOfEntry: true,
           carrierName: true,
@@ -68,6 +70,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
     permission: "portal.entries.download",
     resourceAccountId: filing.accountId,
     resourceClientId: filing.shipment?.clientId,
+    importerOfRecordId: filing.shipment?.importerOfRecordId ?? filing.importerOfRecordId,
     customerVisibleAt: filing.customerVisibleAt,
   });
 

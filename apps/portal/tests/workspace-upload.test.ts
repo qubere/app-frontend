@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const m = vi.hoisted(() => ({ store: vi.fn(), db: { client: { findFirst: vi.fn() }, shipment: { findFirst: vi.fn() }, shipmentDocument: { findFirst: vi.fn(), create: vi.fn() } } }));
+const m = vi.hoisted(() => ({ store: vi.fn(), db: { client: { findFirst: vi.fn() }, shipment: { findFirst: vi.fn() }, shipmentDocument: { findFirst: vi.fn(), create: vi.fn() }, user: { findUnique: vi.fn() } } }));
 vi.mock('../../../packages/db/src/index', () => ({ db: m.db }));
 vi.mock('@qubere/storage', () => ({ storeDocumentBytes: m.store }));
 import { processSharedDocumentUpload } from '../../../packages/db/src/services/shared-upload-service';
@@ -16,6 +16,14 @@ describe('Workspace document upload ownership', () => {
     await processSharedDocumentUpload({ ...input, shipmentId: '000001' });
     expect(m.db.shipment.findFirst).toHaveBeenCalledWith({ where: { id: '000001', accountId: 'target', deletedAt: null }, select: { clientId: true } });
     expect(m.db.shipmentDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({ accountId: 'target', clientId: null, shipmentId: '000001' }) });
+  });
+  it('records normalized ingestion provenance and snapshots the portal uploader', async () => {
+    m.db.user.findUnique.mockResolvedValue({ firstName: 'Dana', lastName: 'Okafor', email: 'dana@target.com' });
+    await processSharedDocumentUpload({ ...input, source: 'PORTAL_UPLOAD', channel: 'CUSTOMER_PORTAL', uploadedByType: 'CUSTOMER_USER', uploadedByUserId: 'u1' });
+    expect(m.db.shipmentDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      channel: 'CUSTOMER_PORTAL', uploadedByType: 'CUSTOMER_USER', uploadedByUserId: 'u1',
+      uploadedByName: 'Dana Okafor', uploadedByEmail: 'dana@target.com', uploadedAt: expect.any(Date),
+    }) });
   });
   it('rejects a foreign client before storing bytes or creating a document', async () => {
     m.db.client.findFirst.mockResolvedValue(null);

@@ -25,7 +25,7 @@ beforeEach(() => {
     mock('entryProofEvent', 'findFirst', async () => null);
     mock('entryProofEvent', 'create', async ({ data }: any) => data);
     mock('auditLog', 'create', async ({ data }: any) => data);
-    vi.spyOn(db, '$transaction').mockImplementation((async (fn: (...args: any[]) => any) => fn(db)) as any);
+    vi.spyOn(db, '$transaction').mockImplementation((async (fn: (tx: any) => any) => fn(db)) as any);
     vi.spyOn(db, '$queryRaw').mockResolvedValue([]);
 });
 describe('Entry Proof lifecycle through the actual assembler and tariff engine', () => {

@@ -47,7 +47,7 @@ describe("authorizePortalResource Engine", () => {
     expect(result.errorResponse?.status).toBe(404);
   });
 
-  it("allows a workspace shipment without a client link", async () => {
+  it("should fail closed with 404 when resource has null/unresolved clientId", async () => {
     vi.mocked(authModule.getAccountContext).mockResolvedValueOnce(mockAccountContext as any);
     vi.mocked(scopeModule.getEffectiveUserScope).mockResolvedValueOnce({
       isAllClients: false,
@@ -61,11 +61,11 @@ describe("authorizePortalResource Engine", () => {
       resourceClientId: null,
     });
 
-    expect(result.authorized).toBe(true);
-    expect(result.errorResponse).toBeNull();
+    expect(result.authorized).toBe(false);
+    expect(result.errorResponse?.status).toBe(404);
   });
 
-  it("allows other client metadata inside the same workspace", async () => {
+  it("should fail closed with 404 when clientId is outside user's authorizedClientIds", async () => {
     vi.mocked(authModule.getAccountContext).mockResolvedValueOnce(mockAccountContext as any);
     vi.mocked(scopeModule.getEffectiveUserScope).mockResolvedValueOnce({
       isAllClients: false,
@@ -79,8 +79,8 @@ describe("authorizePortalResource Engine", () => {
       resourceClientId: "cli_OTHER_CLIENT",
     });
 
-    expect(result.authorized).toBe(true);
-    expect(result.errorResponse).toBeNull();
+    expect(result.authorized).toBe(false);
+    expect(result.errorResponse?.status).toBe(404);
   });
 
   it("should succeed when accountId matches and clientId is within scope", async () => {

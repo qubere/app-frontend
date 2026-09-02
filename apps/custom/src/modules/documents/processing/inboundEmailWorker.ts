@@ -31,6 +31,7 @@ import { assertParseableFormat } from "./documentSource";
 import { isDocumentParserError } from "../parser/contracts";
 import { enqueueDocumentParse } from "./documentProcessingWorker";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 import { resolveBlockedInboundRoute, resolveInboundRoute } from "@/modules/inbound/senderRouting";
 import { notify } from "@/modules/notifications/notify";
 import {
@@ -230,7 +231,7 @@ const NOT_STORED: AttachmentOutcome = { stored: false, crossShipmentDuplicateCou
 
 async function processOneAttachment(params: {
   accountId: string | null;
-  email: { id: string; providerEmailId: string; clientId?: string | null; inboundAddressId?: string | null };
+  email: { id: string; providerEmailId: string; clientId?: string | null; inboundAddressId?: string | null; normalizedFromAddress?: string; originalFromAddress?: string; subject?: string | null };
   provider: InboundEmailProvider;
   purpose?: string;
   senderNeedsReview?: boolean;
@@ -402,6 +403,7 @@ async function processOneAttachment(params: {
     const { DocumentTypeCatalog } = await import("@/modules/intake/documentTypeCatalog");
     const docType = DocumentTypeCatalog.matchDocumentType(filename).name;
 
+    const senderAddress = email.originalFromAddress || email.normalizedFromAddress || null;
     const document = await db.$transaction(async tx => {
       const created = await tx.shipmentDocument.create({
       data: {
@@ -417,6 +419,17 @@ async function processOneAttachment(params: {
         checksum: storageResult.checksum,
         byteSize: bytes.byteLength,
         mimeType: file.type || null,
+        ...(await buildDocumentProvenance({
+          channel: "EMAIL",
+          uploadedByType: "EMAIL_SENDER",
+          uploadedByName: senderAddress,
+          uploadedByEmail: senderAddress,
+          channelMeta: {
+            fromAddress: senderAddress,
+            subject: email.subject ?? null,
+            inboundEmailId: email.id,
+          },
+        })),
       },
     });
 

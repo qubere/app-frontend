@@ -15,7 +15,7 @@ export const GET = withPortalAccount(async (ctx, _req: Request, { params }: {
         const resource = await db.shipment.findFirst({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: { accountId: true, clientId: true, importerOfRecordId: true, productWorkspaces: { select: { product: true, status: true } } } });
         if (!resource)
             return notFound();
-        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces || []), resourceAccountId: resource.accountId, resourceClientId: resource.clientId });
+        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces || []), resourceAccountId: resource.accountId, resourceClientId: resource.clientId, importerOfRecordId: resource.importerOfRecordId });
         if (!auth.authorized)
             return auth.errorResponse ?? notFound();
         const canReadInvoices = hasRequiredPortalPermission(ctx, 'portal.invoices.read');

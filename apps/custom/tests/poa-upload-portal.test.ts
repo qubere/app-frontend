@@ -6,7 +6,7 @@ const m = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ db: m.db }));
 vi.mock('@/lib/storage', () => ({ storeDocumentFile: m.store }));
 vi.mock('@/lib/audit', () => ({ createAuditLog: m.audit }));
-vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: Function, options: any) => {
+vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: (...a: any[]) => any, options: any) => {
   m.options = options;
   return (req: Request) => handler({ req, ctx: { accountId: 'broker', userId: 'staff' }, params: { id: 'target-ior' }, requestId: 'test' });
 } }));
@@ -21,7 +21,7 @@ beforeEach(() => {
   m.db.importerOfRecord.findFirst.mockResolvedValue({ id: 'target-ior', name: 'Target', clientId: 'target', client: { accountId: 'broker' } });
   m.db.powerOfAttorney.create.mockImplementation(async ({ data }) => ({ id: 'poa-new', ...data, signedDate: new Date('2026-09-02') }));
   m.db.clientDocument.upsert.mockResolvedValue({ id: 'portal-document' });
-  m.db.$transaction.mockImplementation(async (fn: Function) => fn(m.db));
+  m.db.$transaction.mockImplementation(async (fn: (tx: any) => any) => fn(m.db));
   m.store.mockResolvedValue({ url: 'stored://poa/target-signed.pdf' });
 });
 describe('Broker signed-POA upload to client portal', () => {

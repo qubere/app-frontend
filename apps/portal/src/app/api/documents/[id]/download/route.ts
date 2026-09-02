@@ -57,7 +57,8 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   const auth = await authorizePortalResource({
     permission: "portal.documents.read",
     resourceAccountId: document.accountId,
-    resourceClientId: document.clientId,
+    resourceClientId: document.clientId ?? document.shipment?.clientId ?? null,
+    importerOfRecordId: document.shipment?.importerOfRecordId,
     portalVisibility: document.portalVisibility,
   });
 

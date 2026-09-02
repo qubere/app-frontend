@@ -23,6 +23,7 @@ import { generateRequestId } from "@/lib/api/error";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { readStoredObject, resolveStorageOrigin, StorageValidationError } from "@/lib/storage";
 import { matchShipmentForDocument } from "@/modules/shipments/shipmentMatching";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 
 const MAX_BATCH = 25;
 
@@ -53,7 +54,7 @@ interface ItemResult {
   error?: string;
 }
 
-async function ingestOne(accountId: string, item: Item, index: number): Promise<ItemResult> {
+async function ingestOne(accountId: string, item: Item, index: number, apiKeyId: string): Promise<ItemResult> {
   try {
     resolveStorageOrigin(item.url);
   } catch (err) {
@@ -88,6 +89,11 @@ async function ingestOne(accountId: string, item: Item, index: number): Promise<
       fileUrl: item.url,
       status: "Received",
       source: "API",
+      ...(await buildDocumentProvenance({
+        channel: "API",
+        uploadedByType: "API_CLIENT",
+        channelMeta: { apiKeyId, sourceUrl: item.url },
+      })),
     },
     select: { id: true },
   });
@@ -212,7 +218,7 @@ export async function POST(req: Request): Promise<Response> {
   return withAccountIdContext(apiCtx.accountId, async () => {
     const results: ItemResult[] = [];
     for (let i = 0; i < items.length; i++) {
-      results.push(await ingestOne(apiCtx.accountId, items[i], i));
+      results.push(await ingestOne(apiCtx.accountId, items[i], i, apiCtx.keyId));
     }
 
     if (!isBatch) {

@@ -2,7 +2,9 @@
 
 Issue #297 adds opaque client destination addresses, explainable shipment matching,
 and a broker decision queue. Apply after the document-intake changes and Entry Proof
-PR #295. PR #298 is stacked on #295; merge #295 before retargeting #298 to `main`.
+PR #295. Both prerequisites are merged into `main`; PR #298 includes that base.
+The merge preserves ingestion channel/uploader snapshots and the current assigned-client
+portal access checks, including for receipt notifications.
 
 ## Configuration and deployment
 
