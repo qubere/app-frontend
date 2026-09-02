@@ -1004,3 +1004,12 @@ Default password for all seeded test users: **`QuberePass2026!`**
 ## 📄 License
 
 © 2026 Qubere Inc. All rights reserved. Trade Compliance AI Platform.
+
+### Client-specific inbound document email
+
+Issue #297 introduces audited client addresses, client-scoped matching, and a broker
+Email review queue. Both rollout flags default off. See the
+[deployment and rollback guide](docs/operations/CLIENT-EMAIL-INGESTION-ROLLOUT.md) and
+[synthetic partner demo](docs/sales/CLIENT-EMAIL-INGESTION-DEMO.md). Backfill addresses
+with `npm --workspace @qubere/custom run backfill:inbound-addresses -- --account-id ID`
+(dry-run; add `--apply` after review). Safe example configuration is in `.env.example`.

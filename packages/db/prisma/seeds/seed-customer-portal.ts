@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { clientInboundEnabled, issueClientInboundAddress } from "../../src/services/inbound-address-service";
 
 export async function seedCustomerPortalDemoData(db: PrismaClient, accountId?: string) {
   console.log("🌱 Seeding Qubere Customer Portal demo data with Target & Amazon onboarding workflows...");
@@ -58,8 +59,14 @@ export async function seedCustomerPortalDemoData(db: PrismaClient, accountId?: s
     });
   }
 
+  if (clientInboundEnabled()) {
+    for (const client of [targetClient, amazonClient]) {
+      await issueClientInboundAddress({ accountId: account.id, clientId: client.id, label: client.name, senderPolicy: client.id === targetClient.id ? 'ALLOWLIST' : 'REVIEW' }, db);
+    }
+  }
+
   // 4. Resolve or create Roles
-  let adminRole = await db.role.findFirst({
+  const _adminRole = await db.role.findFirst({
     where: { accountId: account.id, name: "CUSTOMER_ADMIN" },
   }) || await db.role.create({
     data: {
@@ -69,7 +76,7 @@ export async function seedCustomerPortalDemoData(db: PrismaClient, accountId?: s
     },
   });
 
-  let userRole = await db.role.findFirst({
+  const _userRole = await db.role.findFirst({
     where: { accountId: account.id, name: "CUSTOMER_USER" },
   }) || await db.role.create({
     data: {
@@ -80,7 +87,7 @@ export async function seedCustomerPortalDemoData(db: PrismaClient, accountId?: s
   });
 
   // 5. Seed Target Admin & Shipment Contact Users
-  let targetAdminUser = await db.user.findFirst({
+  const targetAdminUser = await db.user.findFirst({
     where: { email: "customs-admin@target.com" },
   }) || await db.user.create({
     data: {

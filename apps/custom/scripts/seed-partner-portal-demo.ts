@@ -1,3 +1,4 @@
+import { issueClientInboundAddress } from '@qubere/db/services/inbound-address-service';
 /** npx tsx --tsconfig apps/custom/tsconfig.json apps/custom/scripts/seed-partner-portal-demo.ts */
 import { seedPartnerPortalJourney } from './seed-partner-portal-journey';
 import { PrismaClient } from '@prisma/client';
@@ -78,6 +79,9 @@ async function main() {
             const permission = await db.permission.upsert({ where: { name }, update: {}, create: { name, description: definition.description } });
             await db.rolePermission.upsert({ where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } }, update: {}, create: { roleId: role.id, permissionId: permission.id } });
         }
+        await runWithAccountId(accountId, () => runWithDataMode(account.dataMode, () => issueClientInboundAddress({ accountId, clientId: client.id, senderPolicy: target ? "ALLOWLIST" : "REVIEW" })));
+        const approvedSender = target ? 'porter@target.com' : 'trade@amazon-import.test';
+        await db.inboundSenderRoute.upsert({ where: { accountId_scopeKey_normalizedSenderEmail: { accountId, scopeKey: client.id, normalizedSenderEmail: approvedSender } }, update: {}, create: { accountId, clientId: client.id, scopeKey: client.id, normalizedSenderEmail: approvedSender, displaySenderEmail: approvedSender, status: 'ACTIVE', createdByUserId: user.id } });
         const shipment = await db.shipment.upsert({ where: { accountId_shipmentNumber: { accountId, shipmentNumber: target ? 'SHP-TGT-2026-001' : 'SHP-ACME-2026-002' } }, update: { clientId: client.id, promiseState: target ? 'ON_PROMISE' : 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: target ? 0 : 1850 }, create: { accountId, clientId: client.id, shipmentNumber: 'SHP-ACME-2026-002', importerName: name, countryOfExport: 'CN', countryOfOrigin: 'CN', destinationCountry: 'US', transportMode: 'Ocean', portOfEntry: '2704', status: 'In Progress', estimatedArrival: day(4), promiseState: 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: 1850 } });
         await seedPartnerPortalJourney(db, accountId, shipment.id, target, now);
         const bond = await db.bond.upsert({ where: { id: `${prefix}-bond` }, update: {}, create: { id: `${prefix}-bond`, accountId, bondNumber: `DEMO-${client.id}`, bondAmount: 50000, suretyName: 'Demo Surety', status: target ? 'verified' : 'unverified', expirationDate: day(250) } });

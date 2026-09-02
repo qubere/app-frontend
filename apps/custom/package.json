@@ -21,7 +21,9 @@
     "typecheck:product-help": "tsc --noEmit -p tsconfig.product-help.json",
     "validate:product-help": "tsx scripts/validate-product-help.ts",
     "presync:product-help": "npm --workspace @qubere/db run db:generate",
-    "sync:product-help": "tsx scripts/sync-product-help.ts"
+    "sync:product-help": "tsx scripts/sync-product-help.ts",
+    "backfill:inbound-addresses": "tsx scripts/backfill-inbound-addresses.ts",
+    "seed:inbound-email": "tsx scripts/seed-inbound-email-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
