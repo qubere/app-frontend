@@ -48,6 +48,30 @@ async function apiFetch(path: string, init?: RequestInit): Promise<unknown> {
   return body;
 }
 
+// OpenSign's v1.2 REST API reports lifecycle via a `status` string
+// ("sent" | "partial" | "completed" | "declined" | "expired"), while its Parse
+// afterSave webhook payload uses boolean class fields (IsCompleted/IsDeclined).
+// Accept both shapes so polling and webhooks agree.
+function docStatus(doc: Record<string, unknown>): string {
+  return String(doc.status ?? doc.Status ?? "").toLowerCase();
+}
+function isCompletedDoc(doc: Record<string, unknown>): boolean {
+  return Boolean(doc.IsCompleted ?? doc.is_completed) || docStatus(doc) === "completed";
+}
+function isDeclinedDoc(doc: Record<string, unknown>): boolean {
+  return Boolean(doc.IsDeclined ?? doc.is_declined) || docStatus(doc) === "declined";
+}
+function executedUrlFromDoc(doc: Record<string, unknown>): string | undefined {
+  const url = doc.SignedUrl ?? doc.signed_url ?? doc.signedUrl ?? doc.file ?? doc.URL ?? doc.url;
+  return typeof url === "string" && url ? url : undefined;
+}
+function completedAtFromDoc(doc: Record<string, unknown>): Date | undefined {
+  const trail = (doc.audit_trail ?? doc.AuditTrail ?? []) as Array<Record<string, unknown>>;
+  const signed = trail.map((t) => t.signed).filter((v): v is string => typeof v === "string").sort().pop();
+  const raw = signed ?? doc.updatedAt ?? doc.UpdatedAt;
+  return typeof raw === "string" ? new Date(raw) : undefined;
+}
+
 export class OpenSignProvider implements EsignProvider {
   readonly name = "OPEN_SIGN" as const;
 
@@ -95,35 +119,40 @@ export class OpenSignProvider implements EsignProvider {
 
   async getEnvelope(providerEnvelopeId: string): Promise<EsignEnvelopeState> {
     const doc = await apiFetch(`/document/${providerEnvelopeId}`) as Record<string, unknown>;
-
-    const isCompleted = Boolean(doc.IsCompleted ?? doc.is_completed);
+    const isCompleted = isCompletedDoc(doc);
+    const isDeclined = isDeclinedDoc(doc);
     const signers = (doc.Signers ?? doc.signers ?? []) as Array<Record<string, unknown>>;
     const firstSigner = signers[0] ?? {};
+    const signedUrl = executedUrlFromDoc(doc);
 
     return {
       providerEnvelopeId,
-      status: isCompleted ? "completed" : "sent",
+      status: isCompleted ? "completed" : isDeclined ? "declined" : "sent",
       signerName: String(firstSigner.name ?? firstSigner.Name ?? ""),
       signerEmail: String(firstSigner.email ?? firstSigner.Email ?? ""),
-      completedAt: isCompleted && doc.updatedAt ? new Date(String(doc.updatedAt)) : undefined,
-      executedDocumentUrl: typeof doc.SignedUrl === "string" ? doc.SignedUrl : undefined,
+      completedAt: isCompleted ? completedAtFromDoc(doc) : undefined,
+      executedDocumentUrl: signedUrl,
     };
   }
 
   async downloadExecutedDocument(providerEnvelopeId: string): Promise<Buffer> {
     const doc = await apiFetch(`/document/${providerEnvelopeId}`) as Record<string, unknown>;
-    const url = doc.SignedUrl ?? doc.signed_url ?? doc.URL ?? doc.url;
-    if (typeof url !== "string" || !url) {
-      throw new Error(`OpenSign document ${providerEnvelopeId} has no download URL`);
+    const url = executedUrlFromDoc(doc);
+    if (!url) {
+      throw new Error(`OpenSign document ${providerEnvelopeId} has no signed-document URL`);
     }
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to download executed document: ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   }
 
-  async downloadCertificate(_providerEnvelopeId: string): Promise<null> {
-    // OpenSign generates a completion certificate — not available via stable REST endpoint yet.
-    return null;
+  async downloadCertificate(providerEnvelopeId: string): Promise<Buffer | null> {
+    const doc = await apiFetch(`/document/${providerEnvelopeId}`) as Record<string, unknown>;
+    const url = doc.certificate ?? doc.Certificate ?? doc.CertificateUrl;
+    if (typeof url !== "string" || !url) return null;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
   }
 
   parseWebhook(headers: Record<string, string>, rawBody: Buffer): EsignWebhookEvent {
@@ -138,8 +167,8 @@ export class OpenSignProvider implements EsignProvider {
     const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
 
     const envelopeId = String(payload.objectId ?? payload.id ?? "");
-    const isCompleted = Boolean(payload.IsCompleted ?? payload.is_completed);
-    const isDeclined = Boolean(payload.IsDeclined ?? payload.is_declined);
+    const isCompleted = isCompletedDoc(payload);
+    const isDeclined = isDeclinedDoc(payload);
 
     const eventType: EsignWebhookEvent["eventType"] = isCompleted
       ? "completed"
@@ -151,9 +180,7 @@ export class OpenSignProvider implements EsignProvider {
       providerEnvelopeId: envelopeId,
       eventType,
       rawPayload: payload,
-      completedAt: isCompleted && payload.updatedAt
-        ? new Date(String(payload.updatedAt))
-        : undefined,
+      completedAt: isCompleted ? completedAtFromDoc(payload) : undefined,
     };
   }
 }

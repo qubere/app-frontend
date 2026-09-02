@@ -24,6 +24,7 @@ const patchSchema = z.object({
       })
     )
     .optional(),
+  programIndicator: z.literal("IR").optional(),
   physicalAddress: z
     .object({
       line1: z.string(),
@@ -32,6 +33,16 @@ const patchSchema = z.object({
       postalCode: z.string(),
       country: z.string(),
     })
+    .optional(),
+  mailingAddress: z
+    .object({
+      line1: z.string(),
+      city: z.string(),
+      stateProvince: z.string(),
+      postalCode: z.string(),
+      country: z.string(),
+    })
+    .nullable()
     .optional(),
   contact: z
     .object({ name: z.string(), phone: z.string(), email: z.string() })
