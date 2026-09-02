@@ -1,3 +1,4 @@
+vi.mock('@/modules/inbound/inboundNotifications', () => ({ summarizeInboundReceipt: vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const dbMock = {

@@ -1,6 +1,8 @@
+import { summarizeInboundReceipt } from './inboundNotifications';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
-import { matchShipmentForDocument, isMatchConflict } from '@/modules/shipments/shipmentMatching';
+import { parseArtifactIndex, loadNormalizedResult } from '@/modules/documents/parser/artifactStore';
+import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from '@/modules/shipments/shipmentMatching';
 import { createAuditLog, AuditAction } from '@/lib/audit';
 import { linkDocument } from '@/modules/documentAssociations/service';
 import { notifyAccountRoleHolders } from '@/modules/notifications/notifyAccount';
@@ -26,12 +28,16 @@ export async function openInboundReview(input: { accountId: string; clientId: st
 
 export async function refreshInboundEntryProof(accountId: string, documentId: string) {
   const document = await db.shipmentDocument.findFirst({ where: { id: documentId, accountId }, select: { shipmentId: true, clientId: true } });
-  if (!document?.shipmentId || !document.clientId) return;
+  if (!document?.shipmentId || !document.clientId) {
+    await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundProofPending: false } });
+    return;
+  }
   const filings = await db.customsFiling.findMany({ where: { accountId, shipmentId: document.shipmentId, entryProofs: { some: { status: 'PUBLISHED', clientId: document.clientId } } }, select: { id: true } });
   for (const filing of filings) {
     await generateEntryProof(filing.id, { accountId }, { inboundDocumentId: documentId });
     await notifyAccountRoleHolders({ accountId, permission: 'filing.approve', type: 'INBOUND_EMAIL_DOCUMENTS', message: 'Proof out of date — new document received. Review the new draft before publishing.', entityType: 'CustomsFiling', entityId: filing.id, dedupe: true });
   }
+  await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundProofPending: false } });
 }
 
 export async function attachInboundDocument(accountId: string, documentId: string, shipmentId: string, userId?: string) {
@@ -42,7 +48,7 @@ export async function attachInboundDocument(accountId: string, documentId: strin
     const shipment = await tx.shipment.findFirst({ where: { id: shipmentId, accountId, deletedAt: null, clientId: document.clientId }, select: { id: true } });
     if (!shipment) throw new Error('SHIPMENT_CLIENT_MISMATCH');
     if (document.shipmentId && document.shipmentId !== shipmentId) throw new Error('DOCUMENT_ALREADY_ATTACHED');
-    await tx.shipmentDocument.update({ where: { id: documentId }, data: { shipmentId } });
+    await tx.shipmentDocument.update({ where: { id: documentId }, data: { shipmentId, inboundProofPending: true } });
   });
   await linkDocument({ accountId, documentId, entityType: 'SHIPMENT', entityId: shipmentId, relationshipType: 'SOURCE_DOCUMENT', source: 'DOCUMENT_INTELLIGENCE', linkedBy: userId || 'SYSTEM', auditSource: userId ? 'UI' : 'SYSTEM' });
   await refreshInboundEntryProof(accountId, documentId);
@@ -54,15 +60,32 @@ export async function routeParsedInboundDocument(accountId: string, documentId: 
   const document = await db.shipmentDocument.findFirst({ where: { id: documentId, accountId }, include: { inboundAttachment: { include: { inboundEmail: true } }, inboundDocumentReview: true } });
   const email = document?.inboundAttachment?.inboundEmail;
   if (!document || !email?.inboundAddressId || document.status === 'DISCARDED') return null;
-  if (document.shipmentId) { await refreshInboundEntryProof(accountId, documentId); return document.shipmentId; }
+  if (document.shipmentId) { await refreshInboundEntryProof(accountId, documentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
   if (document.inboundDocumentReview && document.inboundDocumentReview.status !== 'OPEN') return null;
   const unknownSender = document.inboundDocumentReview?.reason === 'UNKNOWN_SENDER';
   const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, parsedText, emailSubject: email.subject, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
   if (result.matchedShipmentId) {
     await attachInboundDocument(accountId, documentId, result.matchedShipmentId);
     await db.inboundDocumentReview.updateMany({ where: { shipmentDocumentId: documentId, accountId, status: 'OPEN' }, data: { status: 'RESOLVED', resolvedShipmentId: result.matchedShipmentId, resolvedAt: new Date() } });
+    await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
+    await summarizeInboundReceipt(accountId, email.id);
     return result.matchedShipmentId;
   }
   await openInboundReview({ accountId, clientId: document.clientId, inboundEmailId: email.id, shipmentDocumentId: documentId, reason: unknownSender ? 'UNKNOWN_SENDER' : extractionFailed ? 'EXTRACTION_FAILED' : isMatchConflict(result) ? 'MATCH_CONFLICT' : result.candidates.length ? 'LOW_CONFIDENCE' : 'NO_MATCH', candidateSummary: result.candidates.map(c => ({ shipmentId: c.shipmentId, score: c.score, signals: c.breakdown.signals })) });
+  await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
+  await summarizeInboundReceipt(accountId, email.id);
   return null;
+}
+
+/** Cron recovery when a parser finished but downstream dispatch was interrupted. */
+export async function resumeInboundDocumentRouting() {
+  const documents = await db.shipmentDocument.findMany({ where: { source: 'INBOUND_EMAIL', status: { not: 'DISCARDED' }, OR: [{ inboundProofPending: true }, { inboundRoutedAt: null, activeParseVersionId: { not: null } }] }, orderBy: { createdAt: 'asc' }, take: 10, select: { id: true, accountId: true, shipmentId: true, activeParseVersionId: true } });
+  for (const d of documents) {
+    try {
+      if (d.shipmentId) { await routeParsedInboundDocument(d.accountId, d.id, null); continue; }
+      const version = d.activeParseVersionId ? await db.documentParseVersion.findUnique({ where: { id: d.activeParseVersionId }, select: { artifactsJson: true } }) : null;
+      const index = parseArtifactIndex(version?.artifactsJson ?? null);
+      if (index) await routeParsedInboundDocument(d.accountId, d.id, plainTextFromParsedResult(await loadNormalizedResult(index)));
+    } catch (error) { console.error('[InboundRouting] Deferred for retry', { documentId: d.id, error: error instanceof Error ? error.message : 'unknown' }); }
+  }
 }

@@ -4,9 +4,7 @@ import { resolveInboundRoute, type InboundRouteLookup, type ResolvedInboundRoute
 const ACCOUNT_A = "acct_a";
 const ACCOUNT_B = "acct_b";
 
-// Routing table the fake lookup enforces, mirroring the
-// `normalizedSenderEmail @unique` constraint the real Prisma schema applies:
-// a given normalized email can appear at most once across all accounts.
+// Legacy shared-inbox lookup returns only one unambiguous account.
 const ROUTES: Record<string, ResolvedInboundRoute> = {
   "jane@acme.com": { id: "route_1", accountId: ACCOUNT_A, defaultAssignedToUserId: "user_jane" },
   "accounts@target.com": { id: "route_2", accountId: ACCOUNT_B, defaultAssignedToUserId: null },
@@ -42,21 +40,5 @@ describe("inbound sender routing", () => {
     expect(route).toEqual({ id: "route_2", accountId: ACCOUNT_B, defaultAssignedToUserId: null });
   });
 
-  it("a sender can only ever resolve to one account (uniqueness lives in the DB constraint, not here)", async () => {
-    // The lookup itself can only return a single route per normalized email
-    // by construction (a Record key), which is the same guarantee
-    // `normalizedSenderEmail @unique` gives the real implementation: two
-    // accounts racing to claim the same sender cannot both win, because the
-    // second `create` hits the unique constraint and fails. This test
-    // documents that expectation at the resolver boundary.
-    const lookup = makeLookup({
-      async findActiveByNormalizedEmail(normalizedEmail) {
-        const route = ROUTES[normalizedEmail];
-        return route ? { ...route } : null;
-      },
-    });
-    const first = await resolveInboundRoute("jane@acme.com", lookup);
-    const second = await resolveInboundRoute("jane@acme.com", lookup);
-    expect(first?.accountId).toBe(second?.accountId);
-  });
+
 });

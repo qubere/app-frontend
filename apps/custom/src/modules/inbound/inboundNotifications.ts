@@ -6,6 +6,8 @@ export async function summarizeInboundReceipt(accountId: string, emailId: string
   if (!email?.inboundAddressId) return;
   const docs = email.attachments.flatMap(a => a.shipmentDocument && a.shipmentDocument.status !== 'DISCARDED' ? [a.shipmentDocument] : []);
   const attached = docs.filter(d => d.shipmentId).length;
+  // Reconcile the envelope after the last broker decision without releasing a held email.
+  if (docs.length) await db.inboundEmail.updateMany({ where: { id: email.id, accountId, routingStatus: { in: ['ACCEPTED', 'NEEDS_REVIEW'] } }, data: { routingStatus: email.reviews.length ? 'NEEDS_REVIEW' : 'ACCEPTED' } });
   const message = `${docs.length} documents from ${email.client?.name || 'operations inbox'} — ${attached} attached, ${email.reviews.length} need review${docs.length > attached + email.reviews.length ? ', remaining documents processing' : ''}.`;
   await notifyAccountRoleHolders({ accountId, permission: 'document.update', type: 'INBOUND_EMAIL_DOCUMENTS', message, entityType: 'InboundEmail', entityId: email.id, dedupe: true });
   await db.notification.updateMany({ where: { accountId, entityType: 'InboundEmail', entityId: email.id, type: 'INBOUND_EMAIL_DOCUMENTS' }, data: { message } });

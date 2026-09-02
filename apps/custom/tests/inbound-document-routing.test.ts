@@ -1,5 +1,6 @@
+vi.mock('@/modules/inbound/inboundNotifications', () => ({ summarizeInboundReceipt: vi.fn() }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const { db, match, proof, link } = vi.hoisted(() => ({ db: { $transaction: vi.fn(), $queryRaw: vi.fn(), shipmentDocument: { findFirst: vi.fn(), update: vi.fn() }, shipment: { findFirst: vi.fn() }, inboundDocumentReview: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() }, inboundAttachment: { updateMany: vi.fn() }, inboundEmail: { updateMany: vi.fn() }, customsFiling: { findMany: vi.fn() } }, match: vi.fn(), proof: vi.fn(), link: vi.fn() }));
+const { db, match, proof, link } = vi.hoisted(() => ({ db: { $transaction: vi.fn(), $queryRaw: vi.fn(), shipmentDocument: { findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn() }, shipment: { findFirst: vi.fn() }, inboundDocumentReview: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() }, inboundAttachment: { updateMany: vi.fn() }, inboundEmail: { updateMany: vi.fn() }, customsFiling: { findMany: vi.fn() } }, match: vi.fn(), proof: vi.fn(), link: vi.fn() }));
 vi.mock('@/lib/db', () => ({ db }));
 vi.mock('@/modules/shipments/shipmentMatching', () => ({ matchShipmentForDocument: match, isMatchConflict: (r: { candidates: unknown[] }) => r.candidates.length > 1 }));
 vi.mock('@/modules/documentAssociations/service', () => ({ linkDocument: link }));

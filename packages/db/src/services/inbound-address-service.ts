@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { db, withDataModeContext } from '../index';
 
 export const clientInboundEnabled = () => process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === 'true';
@@ -58,11 +58,11 @@ async function issue(tx: Prisma.TransactionClient, p: AddressInput) {
   return address;
 }
 
-export async function issueClientInboundAddress(p: AddressInput) {
-  try { return await db.$transaction(tx => issue(tx, p)); }
+export async function issueClientInboundAddress(p: AddressInput, database: PrismaClient = db) {
+  try { return await database.$transaction(tx => issue(tx, p)); }
   catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      const winner = await db.inboundAddress.findUnique({ where: { activeKey: keyFor(p) } });
+      const winner = await database.inboundAddress.findUnique({ where: { activeKey: keyFor(p) } });
       if (winner) return winner;
     }
     throw error;

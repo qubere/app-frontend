@@ -1276,6 +1276,8 @@ model ComplianceDeadline {
 }
 
 model ShipmentDocument {
+  inboundRoutedAt DateTime?
+  inboundProofPending Boolean @default(false)
   inboundDocumentReview  InboundDocumentReview?
   id                     String                 @id @default(cuid())
   // Nullable: a document can be detached from its shipment (keeping the

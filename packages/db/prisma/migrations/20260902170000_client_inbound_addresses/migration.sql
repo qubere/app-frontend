@@ -150,3 +150,6 @@ ALTER TABLE "InboundDocumentReview" ADD CONSTRAINT "InboundDocumentReview_shipme
 -- Keep the nullable relation and the uniqueness key in agreement.
 ALTER TABLE "InboundSenderRoute" ADD CONSTRAINT "InboundSenderRoute_scope_matches_client"
 CHECK ("scopeKey" = COALESCE("clientId", ''));
+
+ALTER TABLE "ShipmentDocument" ADD COLUMN "inboundRoutedAt" TIMESTAMP(3), ADD COLUMN "inboundProofPending" BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX "ShipmentDocument_inbound_pending_idx" ON "ShipmentDocument" ("createdAt") WHERE "source" = 'INBOUND_EMAIL' AND ("inboundRoutedAt" IS NULL OR "inboundProofPending" = true);

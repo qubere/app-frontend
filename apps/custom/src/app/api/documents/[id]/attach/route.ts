@@ -1,3 +1,4 @@
+import { refreshInboundEntryProof } from "@/modules/inbound/inboundDocumentRouting";
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { validatePathParams, parseAndValidateBody } from "@/lib/api/validation";
@@ -40,7 +41,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
   }
 
   const targetShipment = await db.shipment.findFirst({
-    where: { id: shipmentId, accountId: ctx.accountId, deletedAt: null },
+    where: { id: shipmentId, accountId: ctx.accountId, deletedAt: null, ...(doc.source === "INBOUND_EMAIL" ? { clientId: doc.clientId } : {}) },
     select: { id: true },
   });
 
@@ -50,8 +51,13 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
 
   const updated = await db.shipmentDocument.update({
     where: { id },
-    data: { shipmentId },
+    data: { shipmentId, ...(doc.source === "INBOUND_EMAIL" ? { inboundProofPending: true } : {}) },
   });
+
+  if (doc.source === "INBOUND_EMAIL") {
+    await db.inboundDocumentReview.updateMany({ where: { shipmentDocumentId: id, accountId: ctx.accountId, status: "OPEN" }, data: { status: "RESOLVED", resolvedShipmentId: shipmentId, resolvedByUserId: ctx.userId, resolvedAt: new Date() } });
+    await refreshInboundEntryProof(ctx.accountId, id);
+  }
 
   // The document now has a shipment -- clear any "pick the right shipment"
   // conflict notifications that were raised for it.

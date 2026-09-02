@@ -1,6 +1,7 @@
+import { summarizeInboundReceipt } from "@/modules/inbound/inboundNotifications";
 import { runInboundAutoReplies } from "@/modules/inbound/inboundAutoReply";
 import { acceptsInboundAddress, evaluateSenderPolicy } from "@/modules/inbound/inboundAddressService";
-import { openInboundReview } from "@/modules/inbound/inboundDocumentRouting";
+import { openInboundReview, resumeInboundDocumentRouting } from "@/modules/inbound/inboundDocumentRouting";
 import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
 /**
  * Inbound email ingestion worker.
@@ -40,6 +41,9 @@ import {
 } from "@/lib/inbound/resendClient";
 
 const MAX_EMAILS_PER_TICK = 10;
+export type InboundEmailProvider = { getReceivedEmail: typeof getReceivedEmail; getAttachmentDownloadInfo: typeof getAttachmentDownloadInfo; downloadAttachmentBytes: typeof downloadAttachmentBytes };
+const resendProvider: InboundEmailProvider = { getReceivedEmail, getAttachmentDownloadInfo, downloadAttachmentBytes };
+type TickOptions = { emailIds?: string[]; provider?: InboundEmailProvider };
 
 export interface InboundEmailTickResult {
   claimed: number;
@@ -53,7 +57,7 @@ function log(event: string, fields: Record<string, string | number | boolean | n
   console.log(`[InboundEmailWorker] ${event}`, fields);
 }
 
-export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResult> {
+export async function runInboundEmailWorkerTick(options: TickOptions = {}): Promise<InboundEmailTickResult> {
   // InboundEmail has an optional `account` relation, and the shared `db`
   // client auto-filters every read through that relation by dataMode unless
   // told otherwise (see packages/db/src/index.ts, buildIsolatedQueryArgs) --
@@ -63,12 +67,19 @@ export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResul
   // email, before routing has even had a chance to run. This worker is
   // explicitly cross-tenant/pre-attribution by design, so it has to opt out
   // of that filter itself rather than rely on a caller to.
-  return withDataModeContext(null, async () => runTickWithBypass());
+  return withDataModeContext(null, async () => runTickWithBypass(options));
 }
 
-async function runTickWithBypass(): Promise<InboundEmailTickResult> {
+async function runTickWithBypass(options: TickOptions): Promise<InboundEmailTickResult> {
+  if (!options.provider && process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === 'true') {
+    const expired = await db.inboundAddress.findMany({ where: { status: 'SUSPENDED', graceUntil: { lte: new Date() }, activeKey: null }, select: { id: true, accountId: true }, take: 50 });
+    for (const address of expired) await db.$transaction(async tx => {
+      const changed = await tx.inboundAddress.updateMany({ where: { id: address.id, status: 'SUSPENDED' }, data: { status: 'REVOKED', revokedAt: new Date() } });
+      if (changed.count) await tx.auditLog.create({ data: { accountId: address.accountId, entity: 'InboundAddress', entityId: address.id, action: 'inbound_address.grace_expired', source: 'SYSTEM' } });
+    });
+  }
   const dueEmails = await db.inboundEmail.findMany({
-    where: { routingStatus: { in: ["RECEIVED", "ROUTED"] } },
+    where: { routingStatus: { in: ["RECEIVED", "ROUTED"] }, ...(options.emailIds ? { id: { in: options.emailIds } } : {}) },
     orderBy: { createdAt: "asc" },
     take: MAX_EMAILS_PER_TICK,
   });
@@ -82,7 +93,7 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
     const claimed = await db.inboundEmail.updateMany({ where: { id: email.id, routingStatus: { in: ['RECEIVED', 'ROUTED'] }, OR: [{ processingLeaseUntil: null }, { processingLeaseUntil: { lt: new Date() } }] }, data: { processingLeaseUntil: new Date(Date.now() + 10 * 60_000), processingLeaseToken: leaseToken } });
     if (!claimed.count) continue;
     try {
-      const outcome = await runWithAccountId(email.accountId ?? undefined, () => processOneEmail(email.id));
+      const outcome = await runWithAccountId(email.accountId ?? undefined, () => processOneEmail(email.id, options.provider ?? resendProvider));
       if (outcome === "QUARANTINED") result.quarantined += 1;
       else if (outcome === "REJECTED") result.rejected += 1;
       else result.accepted += 1;
@@ -96,12 +107,13 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
     }
   }
 
-  await runInboundAutoReplies();
+  if (!options.provider && process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === "true") await resumeInboundDocumentRouting();
+  if (!options.provider) await runInboundAutoReplies();
   log("tick.finished", { ...result });
   return result;
 }
 
-async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | "ACCEPTED" | "REJECTED"> {
+async function processOneEmail(inboundEmailId: string, provider: InboundEmailProvider): Promise<"QUARANTINED" | "ACCEPTED" | "REJECTED"> {
   let email = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
   log("email.processing_started", {
     inboundEmailId: email.id,
@@ -142,7 +154,7 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
   const accountId = email.accountId;
   const defaultAssigneeId = destination?.defaultAssignedToUserId ?? route?.defaultAssignedToUserId ?? null;
 
-  const remote = await getReceivedEmail(email.providerEmailId);
+  const remote = await provider.getReceivedEmail(email.providerEmailId);
   log("email.fetched_from_provider", {
     inboundEmailId: email.id,
     providerEmailId: email.providerEmailId,
@@ -159,7 +171,7 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
   let storedCount = 0;
   let duplicateCount = 0;
   for (const attachment of remote.attachments) {
-    const outcome = await processOneAttachment({ accountId, email, attachment, defaultAssigneeId, purpose: destination?.purpose, senderNeedsReview: senderDecision === "REVIEW" });
+    const outcome = await processOneAttachment({ accountId, email, attachment, defaultAssigneeId, provider, purpose: destination?.purpose, senderNeedsReview: senderDecision === "REVIEW" });
     if (outcome.stored) storedCount += 1;
     duplicateCount += outcome.crossShipmentDuplicateCount;
   }
@@ -204,6 +216,7 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
   const needsReview = destination ? await db.inboundDocumentReview.count({ where: { inboundEmailId: email.id, status: 'OPEN' } }) : 0;
   if (destination && storedCount > 0) await notifyAccountRoleHolders({ accountId, permission: 'document.update', type: 'INBOUND_EMAIL_DOCUMENTS', message: `${storedCount} documents received by email${needsReview ? ` — ${needsReview} need review` : ' — processing shipment matches'}.`, entityType: 'InboundEmail', entityId: email.id, dedupe: true });
   await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: needsReview ? 'NEEDS_REVIEW' : storedCount === 0 && remote.attachments.length ? 'REJECTED' : 'ACCEPTED' } });
+  if (destination) await summarizeInboundReceipt(accountId, email.id);
   log("email.accepted", { inboundEmailId: email.id, accountId, attachmentCount: remote.attachments.length, storedCount });
   return "ACCEPTED";
 }
@@ -218,6 +231,7 @@ const NOT_STORED: AttachmentOutcome = { stored: false, crossShipmentDuplicateCou
 async function processOneAttachment(params: {
   accountId: string | null;
   email: { id: string; providerEmailId: string; clientId?: string | null; inboundAddressId?: string | null };
+  provider: InboundEmailProvider;
   purpose?: string;
   senderNeedsReview?: boolean;
   attachment: ReceivedEmailAttachmentMeta;
@@ -295,8 +309,8 @@ async function processOneAttachment(params: {
   const folder = accountId ? `documents/${accountId}/${email.clientId ?? "ops"}` : "quarantine";
 
   try {
-    const download = await getAttachmentDownloadInfo(email.providerEmailId, attachment.id);
-    const bytes = await downloadAttachmentBytes(download.downloadUrl);
+    const download = await params.provider.getAttachmentDownloadInfo(email.providerEmailId, attachment.id);
+    const bytes = await params.provider.downloadAttachmentBytes(download.downloadUrl);
     log("attachment.downloaded", {
       inboundEmailId: email.id,
       providerAttachmentId: attachment.id,
