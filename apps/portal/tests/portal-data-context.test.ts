@@ -6,6 +6,7 @@ const m = vi.hoisted(() => ({
   scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] },
   db: {
     shipmentDocument: { findMany: vi.fn() }, invoice: { findMany: vi.fn() }, user: { findUnique: vi.fn() }, client: { findMany: vi.fn() },
+    importerOfRecord: { findMany: vi.fn(), findFirst: vi.fn() },
     shipment: { findMany: vi.fn(), findUnique: vi.fn() },
     entryProof: { findMany: vi.fn(), aggregate: vi.fn() },
     complianceDeadline: { findMany: vi.fn() }, onboardingCase: { findMany: vi.fn() },
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.resetAllMocks(); vi.spyOn(console, 'error').mockImplementation(() => {}); me.invalidateMeCache(); dashboard.invalidateDashboardCache();
   m.ctx = { accountId: 'broker-demo', userId: 'porter', email: 'porter@target.com', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.shipments.read', 'portal.requests.read', 'portal.requests.respond'] };
   m.scope.authorizedClientIds = ['target'];
+  m.db.importerOfRecord.findMany.mockResolvedValue([]);
   m.db.shipment.findMany.mockImplementation(async args => { checkContext('Shipment', 'findMany', args); return [{ ...shipment, customerRequests: [{ id: 'r1' }] }]; });
   m.db.shipment.findUnique.mockImplementation(async args => { checkContext('Shipment', 'findUnique', args); return { ...shipment, customerRequests: [action] }; });
   m.db.customerRequest.findMany.mockImplementation(async args => { checkContext('CustomerRequest', 'findMany', args); return [action]; });
@@ -122,7 +124,7 @@ describe('Freight and proof access', () => {
   it('filters Freight to active TMS shipments in the assigned client', async () => {
     m.ctx.permissions = ['portal.orders.read'];
     expect((await shipments.GET(req('shipments?workspace=TMS'))).status).toBe(200);
-    expect(m.db.shipment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ accountId: 'broker-demo', clientId: { in: ['target'] }, productWorkspaces: { some: { product: 'TMS', status: 'ACTIVE' } } }) }));
+    expect(m.db.shipment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ accountId: 'broker-demo', OR: [{ clientId: { in: ['target'] } }, { clientId: null, importerOfRecordId: { in: [] } }], productWorkspaces: { some: { product: 'TMS', status: 'ACTIVE' } } }) }));
     m.db.shipment.findUnique.mockResolvedValue({ ...shipment, productWorkspaces: [{ product: 'TMS', status: 'ACTIVE' }] });
     const body = await (await detail.GET(req('shipments/s1'), params('s1'))).json();
     expect(body.overview.shipmentNumber).toBe(shipment.shipmentNumber);
