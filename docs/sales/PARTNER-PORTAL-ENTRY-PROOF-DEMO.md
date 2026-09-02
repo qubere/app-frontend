@@ -7,6 +7,7 @@ The seed refuses production mode, the production app hostname, and existing acco
 DEMO/SANDBOX. It writes synthetic reference data, so use an isolated demo database.
 
 ```bash
+npm --workspace @qubere/db run db:migrate:deploy
 npm --workspace @qubere/db run db:generate
 npx tsx --tsconfig apps/custom/tsconfig.json apps/custom/scripts/seed-partner-portal-demo.ts
 # Reconcile existing onboarding contacts/documents without sending invitations:
@@ -20,8 +21,47 @@ Supply DATABASE_URL/DIRECT_URL for that database and the usual Clerk/storage con
 A database user record does not create a Clerk identity: use existing matching identities or
 accept a broker-issued portal invitation. Target uses porter@target.com; Amazon uses
 porter@amazon.example. Use separate browser profiles for the two clients.
+The seed adds an active TMS workspace so the same assigned shipment is also visible in
+Freight. For shipments without an existing journey, it creates a synthetic four-leg route
+with completed, in-transit, and planned legs, carrier references, and milestone events.
+Existing routes and workflow progress are preserved.
+
 The seed uses the same proof generation/publication and setup services as the API. Rerunning
 creates another immutable proof version. It disables demo stakeholder email delivery.
+
+## Open the shipment workspace
+
+In either **Shipments** or **Freight**, click the shipment number. The separate Action
+column is removed. Show **Filing progress**, the **Shipment milestones** route stepper,
+and leg cards. Choose **Tracking** (or **View tracking details**) for references,
+planned/estimated/actual dates, carriers, and milestone history. Choose **Filing data**
+for entry identity and broker-published entries and line items. Requests, documents,
+invoices, and Entry Proof remain on this same shipment page.
+
+## If porter@target.com sees empty data or a loading error
+
+1. Pull this branch, apply any pending migrations, regenerate Prisma, and restart the dev processes.
+   Existing assigned actions do **not** need reseeding. The reported `db.entryProof.aggregate`
+   failure means the running Prisma client did not contain the new model. Optional summary
+   failures no longer prevent `/api/dashboard` from returning existing actions.
+   The `/api/proofs` endpoint returns
+   `503 PORTAL_SCHEMA_OUTDATED` for a stale client or missing proof tables/columns, rather than silently appearing as an empty list.
+2. While signed in, open `/api/me` on the **portal** origin. Its `account.id` is the active
+   account and `clients` lists the permitted clients. Match that account to the demo seed;
+   the seed defaults to `demo-account`, which may differ from an existing user's account.
+3. For a different existing DEMO/SANDBOX account, use:
+   `npx tsx --tsconfig apps/custom/tsconfig.json apps/custom/scripts/seed-partner-portal-demo.ts --account-id <account.id>`.
+   Use only an isolated demo database. The seed grants the Target identity access to the
+   Target client in that account; it does not bypass login or change the active account.
+4. Confirm `/api/dashboard` contains `actionItems`, `/api/shipments` contains Target's
+   shipment, and `/api/proofs` returns published entries. A successful empty array means
+   no records have been published in that scope. For a failure, capture the HTTP status
+   and JSON error code; the server log contains database-update details.
+
+The portal now establishes the account's DEMO/SANDBOX/PRODUCTION context before reading
+shipments, actions, conversations, documents, or invoices. This fixes demo data being
+filtered out by the default production context. Authenticated access and client scope
+are still enforced.
 
 ## 0:00–1:15 — Proof alongside your broker
 

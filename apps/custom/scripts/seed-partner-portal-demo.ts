@@ -1,4 +1,5 @@
 /** npx tsx --tsconfig apps/custom/tsconfig.json apps/custom/scripts/seed-partner-portal-demo.ts */
+import { seedPartnerPortalJourney } from './seed-partner-portal-journey';
 import { PrismaClient } from '@prisma/client';
 import { runWithDataMode, runWithAccountId } from '@qubere/db';
 import { seedCustomerPortalDemoData } from '../../../packages/db/prisma/seeds/seed-customer-portal';
@@ -78,6 +79,7 @@ async function main() {
             await db.rolePermission.upsert({ where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } }, update: {}, create: { roleId: role.id, permissionId: permission.id } });
         }
         const shipment = await db.shipment.upsert({ where: { accountId_shipmentNumber: { accountId, shipmentNumber: target ? 'SHP-TGT-2026-001' : 'SHP-ACME-2026-002' } }, update: { clientId: client.id, promiseState: target ? 'ON_PROMISE' : 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: target ? 0 : 1850 }, create: { accountId, clientId: client.id, shipmentNumber: 'SHP-ACME-2026-002', importerName: name, countryOfExport: 'CN', countryOfOrigin: 'CN', destinationCountry: 'US', transportMode: 'Ocean', portOfEntry: '2704', status: 'In Progress', estimatedArrival: day(4), promiseState: 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: 1850 } });
+        await seedPartnerPortalJourney(db, accountId, shipment.id, target, now);
         const bond = await db.bond.upsert({ where: { id: `${prefix}-bond` }, update: {}, create: { id: `${prefix}-bond`, accountId, bondNumber: `DEMO-${client.id}`, bondAmount: 50000, suretyName: 'Demo Surety', status: target ? 'verified' : 'unverified', expirationDate: day(250) } });
         const importer = await db.importerOfRecord.upsert({ where: { id: `${prefix}-ior` }, update: {}, create: { id: `${prefix}-ior`, accountId, clientId: client.id, name, irsEin: '12-3456789', cbpImporterNumber: target ? `DEMO-${client.id}` : null, registrationStatus: target ? 'registered' : 'pending_5106', address: { city: 'Demo City' }, bondId: bond.id } });
         const pdf = await storeDocumentBytes({ buffer: demoPdf(`${target ? 'Target' : 'Amazon'} setup document`), fileName: `${prefix}-setup.pdf`, contentType: 'application/pdf', folder: `portal/${accountId}/demo` });

@@ -103,3 +103,26 @@ with Escape, keyboard focus containment, and automatic close after navigation.
 
 Validated with the portal TypeScript check and server-render smoke checks for seven
 route/active-state combinations, customs/freight visibility, and client-only links.
+
+## Shipment workspace and demo visibility follow-up
+
+Shipment numbers link to a shared detail workspace from Shipments and Freight; both
+lists omit the separate Action column. Freight reads assigned shipments with an active
+TMS workspace instead of hard-coded orders. The detail workspace adds customer-safe
+filing progress, route milestones, Tracking, and Filing data. Published line items come
+from the immutable Entry Proof. Actual, estimated, and planned events stay distinct;
+missing history is not presented as completed work. Existing transport-leg records are
+supported alongside the newer journey legs.
+
+Legacy portal APIs now establish both account and data-mode context before any query.
+Missing database updates produce a 503 error with an actionable server log, while API
+and network failures no longer render as successful empty dashboards. The reported log confirmed that an outdated running Prisma client lacked the
+`entryProof` delegate. Optional summaries now load separately at `/api/dashboard/summary`,
+so they cannot crash the core action list. Shipment proof failures likewise leave
+tracking and existing requests available. Regenerate Prisma and restart the dev processes
+to activate the new model; apply migrations if they have not already run.
+
+Validation: 57 portal tests and four demo journey seed tests plus the portal TypeScript check pass, including mode
+isolation, shipment and freight access, proof-list errors, redaction, milestone state,
+and rendered identifier links/panels. The isolated demo seed includes journey examples
+and preserves existing routes. Deployment/migration/Clerk walkthrough remain pending.
