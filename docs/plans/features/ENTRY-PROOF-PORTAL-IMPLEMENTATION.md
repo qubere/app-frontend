@@ -126,3 +126,43 @@ Validation: 57 portal tests and four demo journey seed tests plus the portal Typ
 isolation, shipment and freight access, proof-list errors, redaction, milestone state,
 and rendered identifier links/panels. The isolated demo seed includes journey examples
 and preserves existing routes. Deployment/migration/Clerk walkthrough remain pending.
+
+
+## Shipment loading and top-tab follow-up
+
+The old detail route selected every Shipment scalar, all request message bodies,
+documents, invoice lines, and each published proof payload. Once it completed, At a
+glance made a second overlapping request. The updated route selects the fields used
+by the header, milestone stepper, request titles, and published-entry metadata.
+Documents/invoices are requested on tab selection in 50-record pages; Tracking loads
+its history on selection. Request conversations stay on their existing thread route.
+Published proof lines load only when expanded in Filing data. Component-local caches
+reuse tab/page responses and reset on shipment navigation; aborted responses cannot
+overwrite the active panel. Overview and answers fetch concurrently.
+
+The answers route selects named fields, fetches unique issued invoices instead of all
+invoice lines, and computes duty completeness within PostgreSQL so proof JSON never
+crosses the database connection just to summarize costs. Its parameterized SQL repeats
+account, client, data-mode, shipment, and publication checks explicitly because raw SQL
+does not use Prisma's query-isolation extension. No migration or new stored field is
+needed for this optimization.
+
+Tabs now sit directly under the shipment heading. Overview lands on Filing progress;
+other tabs replace the overview panel. View tracking details selects Tracking and
+scrolls/focuses its panel, instead of changing content below the old long overview.
+The portal maps @qubere/entry-proof to workspace source and includes it in package
+transpilation. Run npm install after pulling a branch that adds workspace packages.
+
+Verification: the portal's 84 tests pass, including React DOM interaction tests for
+initial parallel loading, top-tab order, Tracking navigation/focus, tab caching,
+pagination, lazy proof lines, and retry. An embedded PostgreSQL (PGlite) test executes
+the actual cost-summary SQL against published/unpublished, other-client/account/mode,
+and incomplete-duty fixtures. Portal TypeScript passes. Next.js 16.3.0 Turbopack
+compile-mode build succeeds for all portal routes, including shipment answers.
+
+Commands: npm --workspace @qubere/portal run test; npm --workspace @qubere/portal run
+typecheck; npm exec --workspace @qubere/portal -- next build --experimental-build-mode compile.
+Compile mode is compilation verification, not a deployed/authenticated walkthrough.
+No live production latency claim is made. Use the browser Network panel to compare a
+warm Overview load, first tab access, and repeat tab access against the same shipment
+on the same database; repeat access should not refetch cached tab data.

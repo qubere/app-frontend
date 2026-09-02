@@ -32,11 +32,28 @@ creates another immutable proof version. It disables demo stakeholder email deli
 ## Open the shipment workspace
 
 In either **Shipments** or **Freight**, click the shipment number. The separate Action
-column is removed. Show **Filing progress**, the **Shipment milestones** route stepper,
-and leg cards. Choose **Tracking** (or **View tracking details**) for references,
+column is removed. Tabs sit directly below the shipment heading. **Overview** is the
+landing tab, with **Filing progress**, the **Shipment milestones** route stepper, and leg
+cards first. Choose **Tracking** (or **View tracking details**, which opens and focuses
+the Tracking panel) for references,
 planned/estimated/actual dates, carriers, and milestone history. Choose **Filing data**
-for entry identity and broker-published entries and line items. Requests, documents,
+for entry identity and broker-published entries. Expand **Show published line items**
+on an entry to load its lines. Requests, documents,
 invoices, and Entry Proof remain on this same shipment page.
+
+### Shipment navigation and loading demo
+
+| Feature | Customer benefit | How to demo |
+| --- | --- | --- |
+| Top tabs and Filing progress landing | Find the shipment's current stage immediately | Click a shipment number; Overview shows Filing progress below the tab bar. |
+| Working Tracking shortcut | Reach carrier references and events without searching down the page | Click View tracking details; Tracking becomes selected and its panel receives focus. |
+| On-demand tab data | Open shipment progress without waiting for every document, invoice, or proof | Open Documents or Invoices; each fetches 50 records per page. Use Next/Previous and switch away/back. Loaded pages are reused while the shipment is open. |
+| Published lines on demand | Inspect a filing without loading every entry's evidence upfront | Open Filing data, then Show published line items for one entry. |
+
+The initial page and At a glance start in parallel. Neither transfers full proof JSON
+from the database. Cost summaries use published totals plus a database-computed duty
+completeness flag. Actual latency depends on authentication and database/network time;
+no production latency improvement has been measured in this environment.
 
 ## If porter@target.com sees empty data or a loading error
 
