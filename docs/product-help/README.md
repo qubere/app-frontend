@@ -14,6 +14,19 @@ Qubere keeps customer-facing how-to content as a reviewed, versioned corpus. Han
 
 The generator never writes to Postgres. `sync:product-help` never invents content. This keeps generation automatic while publication remains reviewable and auditable.
 
+## Client email help
+
+The hand-authored corpus includes `email-document`, `review-client-email` and
+`manage-client-email-address`. These explain destination-based client routing,
+explicit broker decisions, sender policies, address changes and the distinction
+between receipt, attachment and filing approval. The existing quarantine guide
+also covers legacy intake; it is separate from the client **Email review** queue.
+
+Use the [customer and broker reference](../apps/customs/support/CLIENT-EMAIL-DOCUMENTS.md)
+when reviewing these articles. Client addresses default off, so instructions must
+remain conditional on enablement. Content changes in this PR are reviewable source
+updates; database publication and embeddings follow the release lifecycle above.
+
 ## Commands
 
 Run commands from the repository root.

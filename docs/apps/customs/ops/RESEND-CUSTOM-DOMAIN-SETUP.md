@@ -2,6 +2,11 @@
 
 Follow this 5-minute guide to configure **`mail.qubere.ai`** as the official sending domain for all Qubere platform emails.
 
+For receiving client documents, use the
+[client email rollout guide](../../../operations/CLIENT-EMAIL-INGESTION-ROLLOUT.md).
+It covers the inbound domain, signed webhook, client addresses and scanner/worker
+requirements. Configuring a sending domain alone does not enable client intake.
+
 ---
 
 ## Step 1: Add Domain in Resend Dashboard

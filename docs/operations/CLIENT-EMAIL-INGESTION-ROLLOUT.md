@@ -6,6 +6,9 @@ PR #295. Both prerequisites are merged into `main`; PR #298 includes that base.
 The merge preserves ingestion channel/uploader snapshots and the current assigned-client
 portal access checks, including for receipt notifications.
 
+For daily use, see [customer and broker instructions](../apps/customs/support/CLIENT-EMAIL-DOCUMENTS.md).
+For a synthetic demonstration, see [fixture setup and expected outcomes](../sales/CLIENT-EMAIL-INGESTION-DEMO.md).
+
 ## Configuration and deployment
 
 1. Keep `INBOUND_CLIENT_ADDRESSES_ENABLED=false` and `INBOUND_AUTO_REPLY_ENABLED=false`
@@ -90,6 +93,15 @@ parser worker must also be running. Inspect InboundEmail routing states,
 InboundAttachment rejection reasons, InboundDocumentReview OPEN counts, and
 ShipmentDocument `inboundProofPending` when diagnosing a stalled intake.
 
+| Symptom | Inspect | Recovery |
+| --- | --- | --- |
+| Client address card absent | Feature flag in both apps, current address status and the user's client assignments/permissions | Correct configuration or access; copy the active address after verifying the intended client. |
+| Unknown email has no stored attachment | Sender policy and an open email-level UNKNOWN_SENDER review | Under ALLOWLIST this is expected. A broker approves the email for scanning after verifying the sender. |
+| Attachment rejected before storage | Attachment rejection reason and ClamAV availability | Restore the scanner if unavailable; request a safe replacement for an infected file. Broker approval cannot bypass the clean-scan requirement. |
+| Stored file remains in Processing | Processing run, worker availability, email lease and `inboundRoutedAt` | Restore the parser and inbound recovery jobs. Let durable retries resume; do not manufacture a successful extraction status. |
+| New evidence has no refreshed proof | Published proof, attachment link and `inboundProofPending` | Restore inbound recovery and verify a draft is generated once. Keep publication as a broker decision. |
+| Expected sender receipt absent | Global/address reply flags, suppression and attempted timestamp | A claimed send is not retried automatically after failure or timeout. Verify document state separately from receipt delivery. |
+
 Turn off automatic replies first if needed. Turning off the address flag restores
 legacy webhook recipient/sender routing and hides the new address cards; existing
 client-address emails already accepted can finish processing safely. New emails to
@@ -102,6 +114,6 @@ Local verification covers routing/review service boundaries, sender and address
 lifecycle, malware rejection, matching, Entry Proof draft/idempotency, and portal
 read/download predicates. A live Resend delivery, live database migration, real
 ClamAV/storage/parser run, and authenticated browser smoke checks require a configured
-sandbox and must be completed before enabling production. The fixture demo below
+sandbox and must be completed before enabling production. The linked fixture demo
 uses the real worker and scanner/storage; its PDF text is supplied deterministically
 for the matching step so the demo does not depend on an external OCR response.
