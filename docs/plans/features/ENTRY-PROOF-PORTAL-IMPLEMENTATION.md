@@ -25,6 +25,13 @@ The portal header/sidebar display the authenticated workspace, replacing a clien
 selector that only changed its label. Setup still offers an optional company filter.
 The read-only diagnostic reports workspace access separately from client assignments.
 
+The user confirmed that Setup loads after the workspace-access change. The UI now
+uses the Customs shipment design language: a numbered progress ribbon, compact
+workspace heading, section links, status pills, importer detail panels, document
+rows and a broker-team card. Refresh preserves the current view; selecting another
+company hides previous-company data until the new response arrives. Backend access
+and document download routes are unchanged by this styling commit.
+
 Validation: real authorization-engine and route tests cover Target/Amazon/DHL workspace
 isolation, null-client shipments, INTERNAL documents, workspace uploads, importer
 aggregation, legacy signed downloads, role restrictions, data-mode contexts and loading
