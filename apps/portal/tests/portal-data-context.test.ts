@@ -1,0 +1,104 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const m = vi.hoisted(() => ({
+  ctx: { accountId: 'broker-demo', userId: 'porter', email: 'porter@target.com', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.shipments.read', 'portal.requests.read', 'portal.requests.respond'] } as any,
+  scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] },
+  db: {
+    user: { findUnique: vi.fn() }, client: { findMany: vi.fn() },
+    shipment: { findMany: vi.fn(), findUnique: vi.fn() },
+    customerRequest: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    customerRequestMessage: { create: vi.fn() }, auditLog: { create: vi.fn() },
+    $transaction: vi.fn(),
+  },
+}));
+vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: async () => m.ctx }));
+vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: async () => m.scope }));
+vi.mock('@qubere/auth', async () => ({
+  ...await import('../../../packages/auth/src/portal-auth'),
+  getAccountContext: async () => m.ctx,
+  getEffectiveUserScope: async () => m.scope,
+}));
+// Retain the real AsyncLocalStorage and Prisma isolation rule builder. No database connection is used.
+vi.mock('@qubere/db', async (original) => ({ ...await original<object>(), db: m.db }));
+const { getDataModeContext, getAccountIdContext, buildIsolatedQueryArgs } = await import('@qubere/db');
+const shipments = await import('../src/app/api/shipments/route');
+const detail = await import('../src/app/api/shipments/[id]/route');
+const dashboard = await import('../src/app/api/dashboard/route');
+const requests = await import('../src/app/api/requests/route');
+const request = await import('../src/app/api/requests/[id]/route');
+const messages = await import('../src/app/api/requests/[id]/messages/route');
+const me = await import('../src/app/api/me/route');
+const params = (id: string) => ({ params: Promise.resolve({ id }) });
+const req = (path: string) => new Request(`http://portal/api/${path}`);
+
+function checkContext(model: string, operation: string, args: any) {
+  expect(getAccountIdContext()).toBe(m.ctx.accountId);
+  const { newArgs } = buildIsolatedQueryArgs(model, operation, args, getDataModeContext());
+  // Previously these handlers silently queried account.dataMode = PRODUCTION for DEMO users.
+  expect(newArgs.where.account.dataMode).toBe(m.ctx.dataMode);
+}
+const shipment = { id: 's1', accountId: 'broker-demo', clientId: 'target', importerName: 'Target', shipmentNumber: 'SHP-TGT-2026-001', status: 'In Progress', customsFilings: [], customerRequests: [], documents: [], invoiceLines: [] };
+const action = { id: 'r1', accountId: 'broker-demo', clientId: 'target', shipmentId: 's1', shipment, title: 'Confirm manufacturer address', type: 'QUESTION', domain: 'CUSTOMS', status: 'OPEN', version: 1, createdAt: new Date(), messages: [], documents: [] };
+
+beforeEach(() => {
+  vi.resetAllMocks(); me.invalidateMeCache(); dashboard.invalidateDashboardCache();
+  m.ctx = { accountId: 'broker-demo', userId: 'porter', email: 'porter@target.com', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.shipments.read', 'portal.requests.read', 'portal.requests.respond'] };
+  m.scope.authorizedClientIds = ['target'];
+  m.db.shipment.findMany.mockImplementation(async args => { checkContext('Shipment', 'findMany', args); return [{ ...shipment, customerRequests: [{ id: 'r1' }] }]; });
+  m.db.shipment.findUnique.mockImplementation(async args => { checkContext('Shipment', 'findUnique', args); return { ...shipment, customerRequests: [action] }; });
+  m.db.customerRequest.findMany.mockImplementation(async args => { checkContext('CustomerRequest', 'findMany', args); return [action]; });
+  m.db.customerRequest.findUnique.mockImplementation(async args => { checkContext('CustomerRequest', 'findUnique', args); return action; });
+  m.db.user.findUnique.mockResolvedValue({ id: 'porter', email: 'porter@target.com' });
+  m.db.client.findMany.mockImplementation(async args => { checkContext('Client', 'findMany', args); return [{ id: 'target', name: 'Target' }]; });
+  m.db.customerRequestMessage.create.mockImplementation(async () => { expect(getDataModeContext()).toBe(m.ctx.dataMode); return { id: 'msg1' }; });
+  m.db.customerRequest.update.mockResolvedValue({ status: 'CUSTOMER_RESPONDED', version: 2 });
+  m.db.$transaction.mockImplementation(async values => Promise.all(values));
+});
+
+describe('Portal account data mode', () => {
+  it.each(['DEMO', 'SANDBOX', 'PRODUCTION'])('loads Target actions and shipment details in %s mode', async mode => {
+    m.ctx.dataMode = mode;
+    expect((await (await dashboard.GET(req('dashboard'))).json()).actionItems[0].title).toBe(action.title);
+    expect((await (await shipments.GET(req('shipments'))).json()).items[0].actionRequiredCount).toBe(1);
+    const response = await detail.GET(req('shipments/s1'), params('s1'));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.overview.shipmentNumber).toBe(shipment.shipmentNumber);
+    expect(body.requests[0].id).toBe('r1');
+    expect(m.db.customerRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'broker-demo', clientId: { in: ['target'] } } }));
+    expect(getDataModeContext()).toBeUndefined();
+    expect(getAccountIdContext()).toBeUndefined();
+  });
+
+  it('loads a request and accepts a reply in the same demo context', async () => {
+    expect((await (await requests.GET(req('requests'))).json()).items[0].id).toBe('r1');
+    expect((await (await request.GET(req('requests/r1'), params('r1'))).json()).request.id).toBe('r1');
+    const response = await messages.POST(new Request('http://portal/api/requests/r1/messages', { method: 'POST', body: JSON.stringify({ body: 'Confirmed manufacturer address', version: 1 }) }), params('r1'));
+    expect(response.status).toBe(200);
+    expect((await response.json()).requestStatus).toBe('CUSTOMER_RESPONDED');
+  });
+
+  it('loads the assigned company and separates cached profiles by data mode', async () => {
+    expect((await (await me.GET(req('me'))).json()).clients[0].id).toBe('target');
+    m.ctx.dataMode = 'SANDBOX';
+    await me.GET(req('me'));
+    expect(m.db.client.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('still rejects another client before loading shipment content', async () => {
+    m.db.shipment.findUnique.mockResolvedValue({ ...shipment, clientId: 'amazon' });
+    expect((await detail.GET(req('shipments/s1'), params('s1'))).status).toBe(404);
+    expect(m.db.shipment.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects anonymous detail requests before database access', async () => {
+    m.ctx = null;
+    expect((await detail.GET(req('shipments/s1'), params('s1'))).status).toBe(401);
+    expect(m.db.shipment.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unauthorized client filter before querying shipments', async () => {
+    expect((await shipments.GET(req('shipments?clientId=amazon'))).status).toBe(403);
+    expect(m.db.shipment.findMany).not.toHaveBeenCalled();
+  });
+});

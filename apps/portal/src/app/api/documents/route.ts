@@ -1,5 +1,6 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, authorizePortalResource, resolvePortalClientScope } from "@qubere/auth";
+import { getEffectiveUserScope, authorizePortalResource, resolvePortalClientScope } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { processSharedDocumentUpload } from "@qubere/db/services/shared-upload-service";
 
@@ -11,11 +12,7 @@ export function invalidateDocumentsCache() {
   inFlightDocumentPromises.clear();
 }
 
-export async function GET(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
+export const GET = withPortalAccount(async (ctx, req: Request) => {
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
   const url = new URL(req.url);
@@ -30,7 +27,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const cacheKey = `${ctx.userId}:${ctx.accountId}:${clientId}:${shipmentId}:${docType}:${cursor}:${limit}`;
+  const cacheKey = `${ctx.userId}:${ctx.accountId}:${ctx.dataMode}:${clientId}:${shipmentId}:${docType}:${cursor}:${limit}`;
   const now = Date.now();
 
   if (cachedDocuments && cachedDocuments.cacheKey === cacheKey && now - cachedDocuments.time < 5000) {
@@ -94,13 +91,9 @@ export async function GET(req: Request) {
   } finally {
     inFlightDocumentPromises.delete(cacheKey);
   }
-}
+});
 
-export async function POST(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
+export const POST = withPortalAccount(async (ctx, req: Request) => {
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
@@ -206,4 +199,4 @@ export async function POST(req: Request) {
   } catch (err: any) {
     return NextResponse.json({ error: "UPLOAD_FAILED", message: err.message || "Failed to process document" }, { status: 500 });
   }
-}
+});

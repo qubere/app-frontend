@@ -1,5 +1,6 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, hasRequiredPortalPermission } from "@qubere/auth";
+import { getEffectiveUserScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const meCache = new Map<string, { data: any; time: number }>();
@@ -15,15 +16,11 @@ export function invalidateMeCache(userId?: string) {
   }
 }
 
-export async function GET(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
+export const GET = withPortalAccount(async (ctx, req: Request) => {
 
   const canReadSetup = hasRequiredPortalPermission(ctx, "portal.setup.read");
   const forceRefresh = new URL(req.url).searchParams.get("refresh") === "1";
-  const cacheKey = `${ctx.userId}:${ctx.accountId}`;
+  const cacheKey = `${ctx.userId}:${ctx.accountId}:${ctx.dataMode}`;
   const cached = meCache.get(cacheKey);
   if (!forceRefresh && cached && Date.now() - cached.time < CACHE_TTL_MS) {
     return NextResponse.json({ ...cached.data, capabilities: { ...cached.data.capabilities, canReadSetup } }, {
@@ -99,4 +96,4 @@ export async function GET(req: Request) {
       "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
     },
   });
-}
+});

@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleName
 vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: vi.fn(async () => mocks.ctx) }));
 vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: vi.fn(async () => mocks.scope) }));
 vi.mock('@qubere/auth', async () => { const real = await import('../../../packages/auth/src/portal-auth'); return { ...real, getAccountContext: async () => mocks.ctx, getEffectiveUserScope: async () => mocks.scope }; });
-vi.mock('@qubere/db', () => ({ db: mocks.db, withDataModeContext: (_mode: unknown, fn: () => unknown) => fn(), isDataMode: () => true }));
+vi.mock('@qubere/db', () => ({ db: mocks.db, withAccountIdContext: (_account: unknown, fn: Function) => fn(), withDataModeContext: (_mode: unknown, fn: () => unknown) => fn(), isDataMode: () => true }));
 const proofRoute = await import('../src/app/api/entries/[id]/proof/route');
 const commentRoute = await import('../src/app/api/entries/[id]/proof/comments/route');
 const params = { params: Promise.resolve({ id: 'f1' }) };

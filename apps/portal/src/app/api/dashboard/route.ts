@@ -1,5 +1,6 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission } from "@qubere/auth";
+import { getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const inFlightDashboardPromises = new Map<string, Promise<any>>();
@@ -8,11 +9,7 @@ export function invalidateDashboardCache() {
   inFlightDashboardPromises.clear();
 }
 
-export async function GET(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
+export const GET = withPortalAccount(async (ctx, req: Request) => {
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
   const url = new URL(req.url);
@@ -23,7 +20,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const cacheKey = `${ctx.userId}:${ctx.accountId}:${clientId}`;
+  const cacheKey = `${ctx.userId}:${ctx.accountId}:${ctx.dataMode}:${clientId}`;
 
   if (inFlightDashboardPromises.has(cacheKey)) {
     const data = await inFlightDashboardPromises.get(cacheKey);
@@ -185,4 +182,4 @@ export async function GET(req: Request) {
   } finally {
     inFlightDashboardPromises.delete(cacheKey);
   }
-}
+});

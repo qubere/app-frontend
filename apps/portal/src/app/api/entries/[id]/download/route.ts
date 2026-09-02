@@ -1,11 +1,9 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db } from "@qubere/db";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   const filing = await db.customsFiling.findUnique({
@@ -61,4 +59,4 @@ export async function GET(
       "Cache-Control": "private, max-age=300",
     },
   });
-}
+});

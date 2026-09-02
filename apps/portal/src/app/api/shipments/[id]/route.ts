@@ -1,16 +1,14 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   // Fetch target shipment metadata for authorization check
   const rawShipment = await db.shipment.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId, deletedAt: null },
     select: { id: true, accountId: true, clientId: true, importerName: true },
   });
 
@@ -30,7 +28,7 @@ export async function GET(
   }
 
   const shipment = await db.shipment.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId, deletedAt: null },
     include: {
       customsFilings: {
         where: { customerVisibleAt: { not: null } },
@@ -160,4 +158,4 @@ export async function GET(
     })),
     invoices: Array.from(invoicesMap.values()),
   });
-}
+});

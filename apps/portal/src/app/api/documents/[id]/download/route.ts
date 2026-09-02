@@ -1,3 +1,4 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { readStoredObject } from "@qubere/storage";
@@ -27,10 +28,7 @@ function sniffInlineMime(buf: Buffer): string | null {
   return null;
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   const document = await db.shipmentDocument.findUnique({
@@ -112,4 +110,4 @@ export async function GET(
   }
 
   return new Response(new Uint8Array(body), { status: 200, headers });
-}
+});

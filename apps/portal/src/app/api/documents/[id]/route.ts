@@ -1,17 +1,11 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { authorizePortalResource, getAccountContext } from "@qubere/auth";
+import { authorizePortalResource } from "@qubere/auth";
 import { deleteStoredObject } from "@qubere/storage";
 import { db } from "@qubere/db";
 
-export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
 
   const document = await db.shipmentDocument.findUnique({
     where: { id },
@@ -82,4 +76,4 @@ export async function DELETE(
   });
 
   return NextResponse.json({ success: true, message: `Document "${document.fileName}" deleted successfully.` });
-}
+});
