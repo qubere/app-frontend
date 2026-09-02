@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, hasPermission } from "@qubere/auth";
+import { getAccountContext, getEffectiveUserScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const meCache = new Map<string, { data: any; time: number }>();
@@ -21,11 +21,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
+  const canReadSetup = hasRequiredPortalPermission(ctx, "portal.setup.read");
   const forceRefresh = new URL(req.url).searchParams.get("refresh") === "1";
   const cacheKey = `${ctx.userId}:${ctx.accountId}`;
   const cached = meCache.get(cacheKey);
   if (!forceRefresh && cached && Date.now() - cached.time < CACHE_TTL_MS) {
-    return NextResponse.json(cached.data, {
+    return NextResponse.json({ ...cached.data, capabilities: { ...cached.data.capabilities, canReadSetup } }, {
       headers: {
         "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
       },
@@ -86,6 +87,7 @@ export async function GET(req: Request) {
       hasTmsAccess,
       canUploadDocuments,
       canRespondRequests,
+      canReadSetup,
     },
     clients: authorizedClients,
   };

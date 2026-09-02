@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const m = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read', 'portal.users.manage'], dataMode: 'DEMO' }, scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] }, read: vi.fn(), db: { client: { findMany: vi.fn(), findFirst: vi.fn() }, clientDocument: { findFirst: vi.fn() }, accountMembership: { findFirst: vi.fn() }, auditLog: { create: vi.fn() }, customerRequest: { create: vi.fn() } } }));
+const m = vi.hoisted(() => ({ ctx: { accountId: 'a1', userId: 'u1', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.setup.read', 'portal.users.manage'], dataMode: 'DEMO' }, scope: { isAllClients: false, authorizedClientIds: ['target'], teamIds: [] }, read: vi.fn(), db: { user: { findUnique: vi.fn() }, client: { findMany: vi.fn(), findFirst: vi.fn() }, clientDocument: { findFirst: vi.fn() }, accountMembership: { findFirst: vi.fn() }, auditLog: { create: vi.fn() }, customerRequest: { create: vi.fn() } } }));
 vi.mock('../../../packages/auth/src/auth', () => ({ getAccountContext: async () => m.ctx }));
 vi.mock('../../../packages/auth/src/scope-engine', () => ({ getEffectiveUserScope: async () => m.scope }));
 vi.mock('@qubere/auth', async () => ({ ...await import('../../../packages/auth/src/portal-auth'), getAccountContext: async () => m.ctx, getEffectiveUserScope: async () => m.scope }));
 vi.mock('@qubere/db', () => ({ db: m.db, withDataModeContext: (_mode: unknown, fn: Function) => fn(), isDataMode: () => true }));
 vi.mock('@qubere/storage', () => ({ readStoredObject: m.read }));
+const me = await import('../src/app/api/me/route');
 const setup = await import('../src/app/api/setup/route');
 const download = await import('../src/app/api/setup/documents/[id]/download/route');
 const invite = await import('../src/app/api/setup/stakeholders/invite-request/route');
-beforeEach(() => { vi.clearAllMocks(); m.ctx.permissions = ['portal.setup.read', 'portal.users.manage']; m.scope.authorizedClientIds = ['target']; m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }]); m.db.client.findFirst.mockResolvedValue({ id: 'target', name: 'Target', account: { name: 'Broker' }, onboardingCases: [], importersOfRecord: [{ name: 'Target', irsEin: '12-3456789', cbpImporterNumber: 'DEMO123', registrationStatus: 'registered', powersOfAttorney: [], bond: null }], clientDocuments: [], clientStakeholders: [], internalNotes: 'PRIVATE' }); m.db.clientDocument.findFirst.mockResolvedValue({ id: 'doc1', clientId: 'target', title: 'Signed POA', storageUrl: 'stored://poa' }); m.read.mockResolvedValue({ body: Buffer.from('%PDF-1.7 DEMO') }); m.db.customerRequest.create.mockResolvedValue({ id: 'r1' }); });
+beforeEach(() => { vi.clearAllMocks(); me.invalidateMeCache(); m.ctx.roleNames = ['CUSTOMER_ADMIN']; m.db.user.findUnique.mockResolvedValue({ id: 'u1', email: 'client@example.com', firstName: 'Client', lastName: 'User' }); m.ctx.permissions = ['portal.setup.read', 'portal.users.manage']; m.scope.authorizedClientIds = ['target']; m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }]); m.db.client.findFirst.mockResolvedValue({ id: 'target', name: 'Target', account: { name: 'Broker' }, onboardingCases: [], importersOfRecord: [{ name: 'Target', irsEin: '12-3456789', cbpImporterNumber: 'DEMO123', registrationStatus: 'registered', powersOfAttorney: [], bond: null }], clientDocuments: [], clientStakeholders: [], internalNotes: 'PRIVATE' }); m.db.clientDocument.findFirst.mockResolvedValue({ id: 'doc1', clientId: 'target', title: 'Signed POA', storageUrl: 'stored://poa' }); m.read.mockResolvedValue({ body: Buffer.from('%PDF-1.7 DEMO') }); m.db.customerRequest.create.mockResolvedValue({ id: 'r1' }); });
 describe('Setup scope and content safety', () => {
     it('masks EIN and excludes raw notes and screening details', async () => { const r = await setup.GET(new Request('http://portal/api/setup')); expect(r.status).toBe(200); const body = JSON.stringify(await r.json()); expect(body).toContain('6789'); expect(body).not.toMatch(/12-345|PRIVATE|storageUrl/); expect(r.headers.get('Cache-Control')).toBe('no-store'); });
     it('rejects another client before reading any setup', async () => { const r = await setup.GET(new Request('http://portal/api/setup?clientId=amazon')); expect(r.status).toBe(404); expect(m.db.client.findFirst).not.toHaveBeenCalled(); });
@@ -17,4 +18,39 @@ describe('Setup scope and content safety', () => {
     it('does not touch storage for an inaccessible or revoked document', async () => { m.db.clientDocument.findFirst.mockResolvedValue(null); expect((await download.GET(new Request('http://portal/api/setup/documents/other/download'), { params: Promise.resolve({ id: 'other' }) })).status).toBe(404); expect(m.read).not.toHaveBeenCalled(); });
     it('records an access request rather than creating a login', async () => { const r = await invite.POST(new Request('http://portal/api/setup/stakeholders/invite-request', { method: 'POST', body: JSON.stringify({ clientId: 'target', name: 'Billing contact', email: 'billing@example.com', role: 'BILLING_CONTACT' }) })); expect(r.status).toBe(201); expect(m.db.customerRequest.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'CONFIRMATION', clientId: 'target', metadata: { name: 'Billing contact', email: 'billing@example.com', role: 'BILLING_CONTACT' } }) }); });
     it('denies access requests without the management permission', async () => { m.ctx.permissions = ['portal.setup.read']; expect((await invite.POST(new Request('http://portal/api/setup/stakeholders/invite-request', { method: 'POST', body: '{}' }))).status).toBe(404); expect(m.db.customerRequest.create).not.toHaveBeenCalled(); });
+});
+
+describe('Setup navigation and API access agree', () => {
+    it.each([
+        ['CUSTOMER_ADMIN', ['portal.porter', 'portal.setup.read'], true],
+        ['CUSTOMER_VIEWER', ['portal.porter', 'portal.setup.read'], true],
+        ['CUSTOMER_TMS_USER', ['portal.porter', 'portal.tms.read'], false],
+        ['SUPER_ADMIN_READ', ['portal.porter'], false],
+        ['TMS_ADMIN', ['portal.porter'], true],
+        ['BROKER_ADMIN', ['portal.porter'], true],
+    ])('%s reports Setup access only when the endpoint permits access', async (role, permissions, allowed) => {
+        m.ctx.roleNames = [role];
+        m.ctx.permissions = permissions;
+        const profile = await (await me.GET(new Request('http://portal/api/me'))).json();
+        expect(profile.capabilities.canReadSetup).toBe(allowed);
+        const response = await setup.GET(new Request('http://portal/api/setup'));
+        expect(response.status).toBe(allowed ? 200 : 404);
+        if (!allowed) expect(m.db.client.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('refreshes Setup access even when the profile is cached', async () => {
+        await me.GET(new Request('http://portal/api/me'));
+        m.ctx.permissions = ['portal.porter'];
+        const profile = await (await me.GET(new Request('http://portal/api/me'))).json();
+        expect(profile.capabilities.canReadSetup).toBe(false);
+        expect((await setup.GET(new Request('http://portal/api/setup'))).status).toBe(404);
+        expect(m.db.user.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps administrator access within the assigned client scope', async () => {
+        m.ctx.roleNames = ['TMS_ADMIN'];
+        m.ctx.permissions = [];
+        expect((await setup.GET(new Request('http://portal/api/setup?clientId=amazon'))).status).toBe(404);
+        expect(m.db.client.findFirst).not.toHaveBeenCalled();
+    });
 });

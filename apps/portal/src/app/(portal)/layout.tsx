@@ -24,6 +24,7 @@ interface Capability {
   hasTmsAccess: boolean;
   canUploadDocuments: boolean;
   canRespondRequests: boolean;
+  canReadSetup: boolean;
 }
 
 interface ClientScope {
@@ -44,13 +45,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     hasTmsAccess: false,
     canUploadDocuments: false,
     canRespondRequests: false,
+    canReadSetup: false,
   });
   const [clients, setClients] = useState<ClientScope[]>([]);
   const [selectedClient, setSelectedClient] = useState<ClientScope | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  const SESSION_CACHE_KEY = "qubere_portal_user_session_v1";
+  const SESSION_CACHE_KEY = "qubere_portal_user_session_v2";
   const SESSION_CACHE_TTL = 300 * 1000; // 300s (5 minutes)
 
   useEffect(() => {
@@ -73,7 +75,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     } catch {}
 
     // 2. Background fetch to revalidate HTML5 cache
-    fetch("/api/me")
+    fetch("/api/me", { cache: "no-store" })
       .then(async (res) => {
         // No valid session -> this is not a logged-in portal. Clear any stale
         // cache and send the visitor to sign-in rather than rendering the shell
@@ -115,6 +117,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <PortalSidebar
         hasCustomsAccess={capabilities.hasCustomsAccess}
         hasTmsAccess={capabilities.hasTmsAccess}
+        canReadSetup={capabilities.canReadSetup}
         clients={clients}
         userName={userName}
         userEmail={userEmail}

@@ -176,7 +176,7 @@ export function resolvePortalClientScope(
  * True when the context holds `permission`, or is an account owner/admin or platform
  * admin (who implicitly hold every portal permission).
  */
-function hasRequiredPortalPermission(ctx: AccountContext, permission: string): boolean {
+export function hasRequiredPortalPermission(ctx: AccountContext, permission: string): boolean {
   if (ctx.isPlatformAdmin) return true;
   const roleNames = ctx.roleNames || [];
   if (roleNames.some((r) => ["OWNER", "ADMIN", "BROKER_ADMIN", "TMS_ADMIN"].includes(r.toUpperCase()))) {

@@ -1,4 +1,4 @@
-import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope } from '@qubere/auth';
+import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission } from '@qubere/auth';
 import { withDataModeContext, isDataMode } from '@qubere/db';
 import { NextResponse } from 'next/server';
 export const noStore = { headers: { 'Cache-Control': 'no-store' } };
@@ -7,7 +7,7 @@ export async function portalScope(req: Request, permission: string) {
     const ctx = await getAccountContext();
     if (!ctx)
         return { error: NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 }) } as const;
-    if (!ctx.isPlatformAdmin && !ctx.roleNames?.some(r => ['OWNER', 'ADMIN', 'BROKER_ADMIN'].includes(r)) && !ctx.permissions?.includes(permission))
+    if (!hasRequiredPortalPermission(ctx, permission))
         return { error: notFound() } as const;
     const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames ?? []);
     const resolved = resolvePortalClientScope(scope, new URL(req.url).searchParams.get('clientId'));

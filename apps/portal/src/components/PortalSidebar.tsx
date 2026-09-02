@@ -16,6 +16,7 @@ type NavSection = { id: string; label: string; items: NavItem[] };
 interface PortalSidebarProps {
   hasCustomsAccess: boolean;
   hasTmsAccess: boolean;
+  canReadSetup: boolean;
   clients: { id: string; name: string }[];
   userName: string;
   userEmail: string;
@@ -26,7 +27,7 @@ const profile: NavItem = { label: "Profile & security", href: "/settings/profile
 const matches = (pathname: string, item: NavItem) =>
   [item.href, ...(item.activePaths ?? [])].some(path => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`)));
 
-export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, clients, userName, userEmail }: PortalSidebarProps) {
+export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, canReadSetup, clients, userName, userEmail }: PortalSidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -48,7 +49,7 @@ export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, clients, userNam
       ],
     }] : []),
     { id: "billing", label: "Billing", items: [{ label: "Invoices", href: "/invoices", icon: ReceiptText }] },
-    ...(hasCustomsAccess ? [{
+    ...(canReadSetup ? [{
       id: "company", label: "Your company", items: [
         { label: "Your setup", href: "/setup", icon: Building2, activePaths: ["/onboarding"] },
       ],
