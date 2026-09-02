@@ -55,6 +55,22 @@ describe('Setup scope and content safety', () => {
     it('masks EIN and excludes raw notes and screening details', async () => { const r = await setup.GET(new Request('http://portal/api/setup')); expect(r.status).toBe(200); const body = JSON.stringify(await r.json()); expect(body).toContain('6789'); expect(body).not.toMatch(/12-345|PRIVATE|storageUrl/); expect(r.headers.get('Cache-Control')).toBe('no-store'); });
     it('rejects another client before reading any setup', async () => { const r = await setup.GET(new Request('http://portal/api/setup?clientId=amazon')); expect(r.status).toBe(404); expect(m.db.client.findFirst).not.toHaveBeenCalled(); });
     it('requires a choice when more than one client is assigned', async () => { m.scope.authorizedClientIds = ['target', 'amazon']; m.db.client.findMany.mockResolvedValue([{ id: 'target', name: 'Target' }, { id: 'amazon', name: 'Amazon' }]); const r = await setup.GET(new Request('http://portal/api/setup')); expect((await r.json()).selectClient).toBe(true); expect(m.db.client.findFirst).not.toHaveBeenCalled(); });
+    it('keeps all authorized choices after selecting an empty client so another setup is reachable', async () => {
+        m.scope.authorizedClientIds = ['target', 'target-retail'];
+        const choices = [{ id: 'target', name: 'Target' }, { id: 'target-retail', name: 'Target Retail' }];
+        m.db.client.findMany.mockImplementation(async ({ where }) => choices.filter(c => where.id.in.includes(c.id)));
+        m.db.client.findFirst.mockResolvedValueOnce({ id: 'target', name: 'Target', account: { name: 'Broker' }, onboardingCases: [], importersOfRecord: [], clientDocuments: [], clientStakeholders: [] });
+        const body = await (await setup.GET(new Request('http://portal/api/setup?clientId=target'))).json();
+        expect(body.importers).toEqual([]);
+        expect(body.clients).toEqual(choices);
+        expect(m.db.client.findFirst.mock.calls[0][0].where).toEqual({ id: 'target', accountId: 'a1' });
+    });
+    it('does not load setup for a selected client outside the current account', async () => {
+        m.scope.authorizedClientIds = ['target', 'client-in-another-account'];
+        const response = await setup.GET(new Request('http://portal/api/setup?clientId=client-in-another-account'));
+        expect(response.status).toBe(404);
+        expect(m.db.client.findFirst).not.toHaveBeenCalled();
+    });
     it('downloads only active visible documents in the scoped client and audits access', async () => { const r = await download.GET(new Request('http://portal/api/setup/documents/doc1/download'), { params: Promise.resolve({ id: 'doc1' }) }); expect(r.status).toBe(200); expect(await r.text()).toContain('%PDF'); expect(r.headers.get('X-Content-Type-Options')).toBe('nosniff'); expect(m.db.clientDocument.findFirst).toHaveBeenCalledWith({ where: { id: 'doc1', accountId: 'a1', clientId: { in: ['target'] }, portalVisible: true, status: 'ACTIVE' } }); expect(m.db.auditLog.create).toHaveBeenCalled(); });
     it('does not touch storage for an inaccessible or revoked document', async () => { m.db.clientDocument.findFirst.mockResolvedValue(null); expect((await download.GET(new Request('http://portal/api/setup/documents/other/download'), { params: Promise.resolve({ id: 'other' }) })).status).toBe(404); expect(m.read).not.toHaveBeenCalled(); });
     it('records an access request rather than creating a login', async () => { const r = await invite.POST(new Request('http://portal/api/setup/stakeholders/invite-request', { method: 'POST', body: JSON.stringify({ clientId: 'target', name: 'Billing contact', email: 'billing@example.com', role: 'BILLING_CONTACT' }) })); expect(r.status).toBe(201); expect(m.db.customerRequest.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'CONFIRMATION', clientId: 'target', metadata: { name: 'Billing contact', email: 'billing@example.com', role: 'BILLING_CONTACT' } }) }); });

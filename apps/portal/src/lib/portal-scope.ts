@@ -14,7 +14,7 @@ export async function portalScope(req: Request, permission: string) {
     const resolved = resolvePortalClientScope(scope, new URL(req.url).searchParams.get('clientId'));
     if (resolved.forbidden)
         return { error: notFound() } as const;
-    return { ctx, clientIds: resolved.clientIds } as const;
+    return { ctx, clientIds: resolved.clientIds, availableClientIds: resolvePortalClientScope(scope).clientIds } as const;
 }
 export async function portalData<T>(ctx: {
     accountId: string;

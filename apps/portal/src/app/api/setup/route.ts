@@ -7,12 +7,14 @@ export const GET = withPortalAccount(async (_ctx, req: Request) => {
     if (s.error)
         return s.error;
     return portalData(s.ctx, async () => {
-        const clients = await db.client.findMany({ where: { accountId: s.ctx.accountId, ...(s.clientIds === null ? {} : { id: { in: s.clientIds } }) }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
+        // Keep the switcher populated after a selection. The requested client's
+        // authorization was already checked by portalScope above.
+        const clients = await db.client.findMany({ where: { accountId: s.ctx.accountId, ...(s.availableClientIds === null ? {} : { id: { in: s.availableClientIds } }) }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
         const requested = new URL(req.url).searchParams.get('clientId');
         if (clients.length !== 1 && !requested)
             return NextResponse.json({ clients, selectClient: true }, noStore);
         const clientId = requested || clients[0]?.id;
-        if (!clientId)
+        if (!clientId || !clients.some(client => client.id === clientId))
             return notFound();
         const summary = await loadClientSetup(s.ctx.accountId, clientId);
         return summary ? NextResponse.json({ ...summary, clients }, noStore) : notFound();
