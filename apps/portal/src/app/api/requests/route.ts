@@ -1,14 +1,11 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
+import { getPortalWorkspaceScope, resolvePortalClientScope } from "@qubere/auth";
 import { db } from "@qubere/db";
 
-export async function GET(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
+export const GET = withPortalAccount(async (ctx, req: Request) => {
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
   const url = new URL(req.url);
   const status = url.searchParams.get("status") || undefined;
   const clientId = url.searchParams.get("clientId");
@@ -65,4 +62,4 @@ export async function GET(req: Request) {
   }));
 
   return NextResponse.json({ items, nextCursor });
-}
+});

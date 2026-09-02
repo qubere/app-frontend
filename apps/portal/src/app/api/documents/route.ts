@@ -1,107 +1,35 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, authorizePortalResource, resolvePortalClientScope } from "@qubere/auth";
+import { getPortalWorkspaceScope, authorizePortalResource, resolvePortalClientScope } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { processSharedDocumentUpload } from "@qubere/db/services/shared-upload-service";
 
-const inFlightDocumentPromises = new Map<string, Promise<any>>();
-let cachedDocuments: { cacheKey: string; time: number; data: any } | null = null;
+import { hasRequiredPortalPermission } from "@qubere/auth";
+import { decodeDocumentCursor, loadDocumentPage } from "@/lib/document-list";
 
-export function invalidateDocumentsCache() {
-  cachedDocuments = null;
-  inFlightDocumentPromises.clear();
-}
+// Retained for upload callers; document lists now always use current ownership.
+export function invalidateDocumentsCache() {}
 
-export async function GET(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
-
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+export const GET = withPortalAccount(async (ctx, req: Request) => {
+  if (!hasRequiredPortalPermission(ctx, 'portal.documents.read')) return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });
+  const scope = await getPortalWorkspaceScope(ctx);
   const url = new URL(req.url);
-  const shipmentId = url.searchParams.get("shipmentId") || "";
-  const docType = url.searchParams.get("docType") || "";
-  const clientId = url.searchParams.get("clientId") || "";
-  const cursor = url.searchParams.get("cursor") || "";
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
+  const clientScope = resolvePortalClientScope(scope, url.searchParams.get('clientId'));
+  if (clientScope.forbidden) return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 });
+  const limit = Math.min(Number(url.searchParams.get('limit')) || 25, 50);
+  if (!Number.isSafeInteger(limit) || limit < 1) return NextResponse.json({ error: 'INVALID_LIMIT' }, { status: 400 });
+  let cursor;
+  try { cursor = decodeDocumentCursor(url.searchParams.get('cursor')); }
+  catch { return NextResponse.json({ error: 'INVALID_CURSOR' }, { status: 400 }); }
+  return NextResponse.json(await loadDocumentPage({ accountId: ctx.accountId, clientIds: clientScope.clientIds, limit, cursor,
+    shipmentId: url.searchParams.get('shipmentId') || '', docType: url.searchParams.get('docType') || '',
+    includeSetup: hasRequiredPortalPermission(ctx, 'portal.setup.read'), canDelete: hasRequiredPortalPermission(ctx, 'portal.documents.create'),
+  }));
+});
 
-  const clientScope = resolvePortalClientScope(scope, clientId);
-  if (clientScope.forbidden) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
+export const POST = withPortalAccount(async (ctx, req: Request) => {
 
-  const cacheKey = `${ctx.userId}:${ctx.accountId}:${clientId}:${shipmentId}:${docType}:${cursor}:${limit}`;
-  const now = Date.now();
-
-  if (cachedDocuments && cachedDocuments.cacheKey === cacheKey && now - cachedDocuments.time < 5000) {
-    return NextResponse.json(cachedDocuments.data);
-  }
-
-  if (inFlightDocumentPromises.has(cacheKey)) {
-    const data = await inFlightDocumentPromises.get(cacheKey);
-    return NextResponse.json(data);
-  }
-
-  const fetchPromise = (async () => {
-    const clientFilter =
-      clientScope.clientIds === null ? {} : { clientId: { in: clientScope.clientIds } };
-
-    const documents = await db.shipmentDocument.findMany({
-      take: limit + 1,
-      cursor: cursor ? { id: cursor } : undefined,
-      orderBy: { createdAt: "desc" },
-      where: {
-        accountId: ctx.accountId,
-        ...clientFilter,
-        portalVisibility: "CUSTOMER",
-        ...(shipmentId ? { shipmentId } : {}),
-        ...(docType ? { docType } : {}),
-      },
-      include: {
-        shipment: {
-          select: { id: true, shipmentNumber: true },
-        },
-      },
-    });
-
-    let nextCursor: string | undefined = undefined;
-    if (documents.length > limit) {
-      const nextItem = documents.pop();
-      nextCursor = nextItem?.id;
-    }
-
-    const items = documents.map((d) => ({
-      id: d.id,
-      fileName: d.fileName,
-      docType: d.docType,
-      byteSize: d.byteSize,
-      mimeType: d.mimeType,
-      source: d.source || "PORTAL_UPLOAD",
-      status: d.status === "Received" ? "Ready" : "Processing",
-      shipmentId: d.shipmentId,
-      shipmentNumber: d.shipment?.shipmentNumber || null,
-      createdAt: d.createdAt,
-    }));
-
-    return { items, nextCursor };
-  })();
-
-  inFlightDocumentPromises.set(cacheKey, fetchPromise);
-  try {
-    const data = await fetchPromise;
-    cachedDocuments = { cacheKey, time: Date.now(), data };
-    return NextResponse.json(data);
-  } finally {
-    inFlightDocumentPromises.delete(cacheKey);
-  }
-}
-
-export async function POST(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
-
+  if (!hasRequiredPortalPermission(ctx, "portal.documents.create")) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const shipmentId = (formData.get("shipmentId") as string) || undefined;
@@ -113,22 +41,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "MISSING_FILE", message: "File is required" }, { status: 400 });
   }
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
-
-  // A caller-supplied clientId must be one the caller is authorized for.
-  if (
-    clientIdInput &&
-    !scope.isAllClients &&
-    !scope.authorizedClientIds.includes(clientIdInput)
-  ) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  // A scoped customer user may only upload into their own client workspace(s).
+  const scope = await getPortalWorkspaceScope(ctx);
+  if (!scope.isAllClients) {
+    if (clientIdInput && !scope.authorizedClientIds.includes(clientIdInput)) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (shipmentId) {
+      const target = await db.shipment.findFirst({
+        where: { id: shipmentId, accountId: ctx.accountId, deletedAt: null },
+        select: { clientId: true },
+      });
+      if (!target || !target.clientId || !scope.authorizedClientIds.includes(target.clientId)) {
+        return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+      }
+    }
   }
 
-  const effectiveClientId = clientIdInput || scope.authorizedClientIds[0];
-
-  if (!effectiveClientId && !scope.isAllClients) {
-    return NextResponse.json({ error: "MISSING_CLIENT_SCOPE", message: "Client ID required" }, { status: 400 });
-  }
+  const effectiveClientId = clientIdInput;
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -144,12 +74,15 @@ export async function POST(req: Request) {
       source: "PORTAL_UPLOAD",
       portalVisibility: "CUSTOMER",
       userId: ctx.userId,
+      channel: "CUSTOMER_PORTAL",
+      uploadedByType: "CUSTOMER_USER",
+      uploadedByUserId: ctx.userId,
     });
 
     // Link to request if uploaded as part of a customer request
     if (requestId) {
       const request = await db.customerRequest.findUnique({
-        where: { id: requestId },
+        where: { id: requestId, accountId: ctx.accountId },
         select: { id: true, accountId: true, clientId: true },
       });
       if (request) {
@@ -206,4 +139,4 @@ export async function POST(req: Request) {
   } catch (err: any) {
     return NextResponse.json({ error: "UPLOAD_FAILED", message: err.message || "Failed to process document" }, { status: 500 });
   }
-}
+});

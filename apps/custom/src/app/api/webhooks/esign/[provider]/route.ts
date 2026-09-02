@@ -1,13 +1,9 @@
-// E-sign webhook handler — called by Dropbox Sign or OpenSign when the
-// signature status changes. The INTERNAL provider completes via
-// /api/sign/[token] instead, so only externally-hosted providers reach this
-// route.
-//
-// Security: request authenticity verified inside provider.parseWebhook()
-//           before any DB writes — Dropbox Sign via HMAC-SHA256 header,
-//           OpenSign via a shared secret in the webhook URL's query string
-//           (it has no header-based signing). Returns 200 early for Dropbox
-//           Sign's mandatory handshake response.
+import { storeDocumentBytes } from "@qubere/storage";
+import { promoteSetupForPoa } from "@/lib/portal/clientSetup";
+// Authenticate provider callbacks before database writes. OpenSign supports its
+// configured query secret and the legacy header configuration. Completed bytes
+// are confirmed through the provider API, stored and promoted to customer setup.
+
 
 import { NextResponse } from "next/server";
 import { db, runWithAccountId } from "@/lib/db";
@@ -60,6 +56,10 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
   await runWithAccountId(envelope.powerOfAttorney.accountId, async () => {
     if (event.eventType === "completed") {
       const poa = envelope.powerOfAttorney;
+      if (['revoked', 'expired'].includes(poa.status) || envelope.status === 'completed') {
+        await promoteSetupForPoa(poa.accountId, poa.id);
+        return;
+      }
       let expirationDate = poa.expirationDate;
       if (!expirationDate && poa.templateId) {
         const tpl = await db.poaTemplate.findUnique({ where: { id: poa.templateId } });
@@ -69,11 +69,17 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
         }
       }
 
+      // Fetch signed bytes through the authenticated provider, then keep an owned copy.
+      const esign = getEsignProvider(providerName);
+      const state = await esign.getEnvelope(envelope.providerEnvelopeId!);
+      if (!["signed", "completed"].includes(state.status)) throw new Error("Provider has not completed this signature");
+      const executed = await storeDocumentBytes({buffer:await esign.downloadExecutedDocument(envelope.providerEnvelopeId!),fileName:`executed-poa-${poa.id}.pdf`,contentType:"application/pdf",folder:`portal/${poa.accountId}/setup`});
       await db.$transaction([
         db.poaEnvelope.update({
           where: { id: envelope.id },
           data: {
             status: "completed",
+            executedDocumentUrl: executed.url,
             completedAt,
             webhookEventsRaw: [
               ...(envelope.webhookEventsRaw as unknown[]),
@@ -86,12 +92,19 @@ export const POST = async (req: Request, { params }: { params: Promise<{ provide
           where: { id: poa.id },
           data: {
             status: "executed",
+            executedDocumentUrl: executed.url,
             signedDate: completedAt,
             expirationDate: expirationDate ?? null,
             updatedAt: new Date(),
           },
         }),
       ]);
+
+      await promoteSetupForPoa(poa.accountId, poa.id);
+      const onboardingEntities = await db.onboardingEntity.findMany({ where: { accountId: poa.accountId, poaId: poa.id }, select: { caseId: true } });
+      for (const entity of onboardingEntities) {
+        await db.onboardingEvent.upsert({ where: { id: `portal-poa-${envelope.id}-${entity.caseId}` }, update: {}, create: { id: `portal-poa-${envelope.id}-${entity.caseId}`, accountId: poa.accountId, caseId: entity.caseId, type: 'POA_EXECUTED', actorType: 'SYSTEM', detail: { poaId: poa.id, provider: providerName } } });
+      }
 
       await createAuditLog({
         accountId: poa.accountId,

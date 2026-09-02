@@ -50,7 +50,7 @@ function req(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  authenticateApiKey.mockResolvedValue({ accountId: "acct_A" });
+  authenticateApiKey.mockResolvedValue({ accountId: "acct_A", keyId: "key_A" });
   apiKeyHasScope.mockReturnValue(true);
   dbMock.shipment.findFirst.mockResolvedValue(null);
   let n = 0;
@@ -70,6 +70,16 @@ describe("POST /api/v1/intake/document", () => {
     const json = await res.json();
     expect(json.documentId).toBe("doc_1");
     expect(json.candidates).toEqual([{ shipmentId: "shp_1", score: 0.6, matchedOn: "PO_REFERENCE:PO778899" }]);
+    // Ingestion provenance is recorded on the row.
+    const createArg = dbMock.shipmentDocument.create.mock.calls[0][0];
+    expect(createArg.data).toMatchObject({
+      source: "API",
+      channel: "API",
+      uploadedByType: "API_CLIENT",
+      uploadedByUserId: null,
+      channelMeta: { apiKeyId: "key_A", sourceUrl: "https://storage.qubere.ai/inv.pdf" },
+    });
+    expect(createArg.data.uploadedAt).toBeInstanceOf(Date);
   });
 
   it("rejects a batch over the cap with 422", async () => {

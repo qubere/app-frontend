@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // The e-sign webhook route previously only accepted DROPBOX_SIGN, even though
 // OpenSign is the only provider with a working createEnvelope/getEnvelope
@@ -9,6 +9,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const dbMock = {
   poaEnvelope: { findFirst: vi.fn(), update: vi.fn() },
   powerOfAttorney: { update: vi.fn() },
+  onboardingEntity: { findMany: vi.fn().mockResolvedValue([]) },
+  onboardingEvent: { upsert: vi.fn() },
   poaTemplate: { findUnique: vi.fn() },
   $transaction: vi.fn(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
 };
@@ -19,13 +21,23 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: vi.fn() }));
 
+vi.mock('@qubere/storage', () => ({ storeDocumentBytes: vi.fn(async () => ({ url: 'stored://executed-poa' })) }));
+vi.mock('@/lib/portal/clientSetup', () => ({ promoteSetupForPoa: vi.fn() }));
+import { OpenSignProvider } from '@/lib/esign/providers/openSignProvider';
+import { storeDocumentBytes } from '@qubere/storage';
+import { promoteSetupForPoa } from '@/lib/portal/clientSetup';
+
 const WEBHOOK_SECRET = "test-open-sign-secret";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(OpenSignProvider.prototype, 'getEnvelope').mockResolvedValue({ providerEnvelopeId: 'doc_1', status: 'completed', signerName: 'Signer', signerEmail: 'signer@example.com' });
+  vi.spyOn(OpenSignProvider.prototype, 'downloadExecutedDocument').mockResolvedValue(Buffer.from('%PDF signed'));
   vi.stubEnv("OPEN_SIGN_WEBHOOK_SECRET", WEBHOOK_SECRET);
   dbMock.$transaction.mockImplementation(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[]));
 });
+
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 const { POST } = await import("@/app/api/webhooks/esign/[provider]/route");
 
@@ -69,6 +81,8 @@ describe("e-sign webhook — OpenSign", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(storeDocumentBytes).toHaveBeenCalled();
+    expect(promoteSetupForPoa).toHaveBeenCalledWith('acc_1', 'poa_1');
     expect(dbMock.$transaction).toHaveBeenCalledTimes(1);
     expect(dbMock.poaEnvelope.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "env_1" }, data: expect.objectContaining({ status: "completed" }) }),

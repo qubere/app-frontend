@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope } from "@qubere/auth";
+import { getAccountContext } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { processSharedDocumentUpload } from "@qubere/db/services/shared-upload-service";
 
@@ -31,8 +31,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "MISSING_FILE", message: "Attachment file is required" }, { status: 400 });
   }
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
-  const effectiveClientId = scope.authorizedClientIds[0];
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -40,7 +38,7 @@ export async function POST(req: Request) {
     // 1. Ensure or register an InboundSenderRoute for sender email
     const normalizedSender = senderEmail.toLowerCase().trim();
     const existingRoute = await db.inboundSenderRoute.findFirst({
-      where: { normalizedSenderEmail: normalizedSender },
+      where: { accountId: ctx.accountId, normalizedSenderEmail: normalizedSender },
     });
 
     if (!existingRoute) {
@@ -58,7 +56,6 @@ export async function POST(req: Request) {
     // 2. Process & ingest inbound email attachment directly into Customer Vault
     const result = await processSharedDocumentUpload({
       accountId: ctx.accountId,
-      clientId: effectiveClientId,
       shipmentId,
       fileName: file.name,
       fileBuffer: buffer,
@@ -67,6 +64,11 @@ export async function POST(req: Request) {
       source: "INBOUND_EMAIL",
       portalVisibility: "CUSTOMER",
       userId: ctx.userId,
+      channel: "EMAIL",
+      uploadedByType: "EMAIL_SENDER",
+      uploadedByName: senderEmail,
+      uploadedByEmail: senderEmail,
+      channelMeta: { fromAddress: senderEmail, toAddress: recipientEmail },
     });
 
     return NextResponse.json({

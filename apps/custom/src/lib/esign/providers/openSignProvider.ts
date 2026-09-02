@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 // OpenSign e-sign provider (sandbox.opensignlabs.com).
 // API v1.2 — JSON transport, x-api-token auth.
 // Docs: https://docs.opensignlabs.com/docs/API-docs/v1.2/createdocument
@@ -9,7 +10,6 @@ import type {
   EsignEnvelopeState,
   EsignWebhookEvent,
 } from "../types";
-import { timingSafeEqual } from "crypto";
 
 const BASE_URL = (process.env.OPEN_SIGN_BASE_URL ?? "https://sandbox.opensignlabs.com").replace(/\/$/, "");
 const API_TOKEN = process.env.OPEN_SIGN_API_TOKEN ?? "";
@@ -46,6 +46,30 @@ async function apiFetch(path: string, init?: RequestInit): Promise<unknown> {
     throw new Error(`OpenSign API ${path}: ${res.status} — ${msg}`);
   }
   return body;
+}
+
+// OpenSign's v1.2 REST API reports lifecycle via a `status` string
+// ("sent" | "partial" | "completed" | "declined" | "expired"), while its Parse
+// afterSave webhook payload uses boolean class fields (IsCompleted/IsDeclined).
+// Accept both shapes so polling and webhooks agree.
+function docStatus(doc: Record<string, unknown>): string {
+  return String(doc.status ?? doc.Status ?? "").toLowerCase();
+}
+function isCompletedDoc(doc: Record<string, unknown>): boolean {
+  return Boolean(doc.IsCompleted ?? doc.is_completed) || docStatus(doc) === "completed";
+}
+function isDeclinedDoc(doc: Record<string, unknown>): boolean {
+  return Boolean(doc.IsDeclined ?? doc.is_declined) || docStatus(doc) === "declined";
+}
+function executedUrlFromDoc(doc: Record<string, unknown>): string | undefined {
+  const url = doc.SignedUrl ?? doc.signed_url ?? doc.signedUrl ?? doc.file ?? doc.URL ?? doc.url;
+  return typeof url === "string" && url ? url : undefined;
+}
+function completedAtFromDoc(doc: Record<string, unknown>): Date | undefined {
+  const trail = (doc.audit_trail ?? doc.AuditTrail ?? []) as Array<Record<string, unknown>>;
+  const signed = trail.map((t) => t.signed).filter((v): v is string => typeof v === "string").sort().pop();
+  const raw = signed ?? doc.updatedAt ?? doc.UpdatedAt;
+  return typeof raw === "string" ? new Date(raw) : undefined;
 }
 
 export class OpenSignProvider implements EsignProvider {
@@ -95,49 +119,54 @@ export class OpenSignProvider implements EsignProvider {
 
   async getEnvelope(providerEnvelopeId: string): Promise<EsignEnvelopeState> {
     const doc = await apiFetch(`/document/${providerEnvelopeId}`) as Record<string, unknown>;
-
-    const isCompleted = Boolean(doc.IsCompleted ?? doc.is_completed);
+    const isCompleted = isCompletedDoc(doc);
+    const isDeclined = isDeclinedDoc(doc);
     const signers = (doc.Signers ?? doc.signers ?? []) as Array<Record<string, unknown>>;
     const firstSigner = signers[0] ?? {};
+    const signedUrl = executedUrlFromDoc(doc);
 
     return {
       providerEnvelopeId,
-      status: isCompleted ? "completed" : "sent",
+      status: isCompleted ? "completed" : isDeclined ? "declined" : "sent",
       signerName: String(firstSigner.name ?? firstSigner.Name ?? ""),
       signerEmail: String(firstSigner.email ?? firstSigner.Email ?? ""),
-      completedAt: isCompleted && doc.updatedAt ? new Date(String(doc.updatedAt)) : undefined,
-      executedDocumentUrl: typeof doc.SignedUrl === "string" ? doc.SignedUrl : undefined,
+      completedAt: isCompleted ? completedAtFromDoc(doc) : undefined,
+      executedDocumentUrl: signedUrl,
     };
   }
 
   async downloadExecutedDocument(providerEnvelopeId: string): Promise<Buffer> {
     const doc = await apiFetch(`/document/${providerEnvelopeId}`) as Record<string, unknown>;
-    const url = doc.SignedUrl ?? doc.signed_url ?? doc.URL ?? doc.url;
-    if (typeof url !== "string" || !url) {
-      throw new Error(`OpenSign document ${providerEnvelopeId} has no download URL`);
+    const url = executedUrlFromDoc(doc);
+    if (!url) {
+      throw new Error(`OpenSign document ${providerEnvelopeId} has no signed-document URL`);
     }
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to download executed document: ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   }
 
-  async downloadCertificate(_providerEnvelopeId: string): Promise<null> {
-    // OpenSign generates a completion certificate — not available via stable REST endpoint yet.
-    return null;
+  async downloadCertificate(providerEnvelopeId: string): Promise<Buffer | null> {
+    const doc = await apiFetch(`/document/${providerEnvelopeId}`) as Record<string, unknown>;
+    const url = doc.certificate ?? doc.Certificate ?? doc.CertificateUrl;
+    if (typeof url !== "string" || !url) return null;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
   }
 
-  parseWebhook(_headers: Record<string, string>, rawBody: Buffer, url: string): EsignWebhookEvent {
-    // OpenSign delivers webhooks as Parse afterSave payloads with no built-in
-    // request signing. Authenticate instead via a shared secret embedded in
-    // the webhook URL's query string when it's registered in the OpenSign
-    // dashboard (?secret=...), checked against OPEN_SIGN_WEBHOOK_SECRET.
-    const configuredSecret = (process.env.OPEN_SIGN_WEBHOOK_SECRET ?? "").trim();
-    if (!configuredSecret) throw new Error("OPEN_SIGN_WEBHOOK_SECRET is not configured");
-    const providedSecret = new URL(url).searchParams.get("secret") ?? "";
-    const expectedBuf = Buffer.from(configuredSecret, "utf8");
-    const providedBuf = Buffer.from(providedSecret, "utf8");
-    if (expectedBuf.length !== providedBuf.length || !timingSafeEqual(expectedBuf, providedBuf)) {
-      throw new Error("OpenSign webhook secret verification failed");
+  parseWebhook(headers: Record<string, string>, rawBody: Buffer, url = ''): EsignWebhookEvent {
+    // Prefer main's OpenSign dashboard configuration. Older installations may
+    // still use OPENSIGN_WEBHOOK_SECRET with a trusted header delivery adapter.
+    // When both are set, only the canonical URL-secret configuration is accepted.
+    const configuredSecret = (process.env.OPEN_SIGN_WEBHOOK_SECRET ?? '').trim();
+    const secret = configuredSecret || process.env.OPENSIGN_WEBHOOK_SECRET || '';
+    const supplied = configuredSecret
+      ? (url ? new URL(url).searchParams.get('secret') ?? '' : '')
+      : headers['x-qubere-webhook-secret'] ?? '';
+    if (!secret || Buffer.byteLength(secret) !== Buffer.byteLength(supplied) ||
+        !timingSafeEqual(Buffer.from(secret), Buffer.from(supplied))) {
+      throw new Error('Invalid OpenSign webhook authentication');
     }
 
     // OpenSign delivers webhooks as Parse afterSave payloads — the body is the
@@ -145,8 +174,8 @@ export class OpenSignProvider implements EsignProvider {
     const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
 
     const envelopeId = String(payload.objectId ?? payload.id ?? "");
-    const isCompleted = Boolean(payload.IsCompleted ?? payload.is_completed);
-    const isDeclined = Boolean(payload.IsDeclined ?? payload.is_declined);
+    const isCompleted = isCompletedDoc(payload);
+    const isDeclined = isDeclinedDoc(payload);
 
     const eventType: EsignWebhookEvent["eventType"] = isCompleted
       ? "completed"
@@ -158,9 +187,7 @@ export class OpenSignProvider implements EsignProvider {
       providerEnvelopeId: envelopeId,
       eventType,
       rawPayload: payload,
-      completedAt: isCompleted && payload.updatedAt
-        ? new Date(String(payload.updatedAt))
-        : undefined,
+      completedAt: isCompleted ? completedAtFromDoc(payload) : undefined,
     };
   }
 }

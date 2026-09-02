@@ -16,6 +16,7 @@
     "@qubere/auth": "*",
     "@qubere/billing": "*",
     "@qubere/db": "*",
+    "@qubere/entry-proof": "*",
     "@qubere/storage": "*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -27,12 +28,14 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "happy-dom": "^20.12.2",
     "tailwindcss": "^4",
     "tsx": "^4.23.5",
     "typescript": "^5",

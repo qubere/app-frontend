@@ -1,16 +1,14 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { generateSimplePdfBuffer } from "@qubere/billing/pdfGenerator";
 import { db } from "@qubere/db";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   const invoice = await db.invoice.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
     select: {
       id: true,
       invoiceNumber: true,
@@ -112,4 +110,4 @@ export async function GET(
       "Cache-Control": "private, max-age=300",
     },
   });
-}
+});

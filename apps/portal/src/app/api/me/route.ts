@@ -1,5 +1,6 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getAccountContext, getEffectiveUserScope, hasPermission } from "@qubere/auth";
+import { getPortalWorkspaceScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db } from "@qubere/db";
 
 const meCache = new Map<string, { data: any; time: number }>();
@@ -15,24 +16,21 @@ export function invalidateMeCache(userId?: string) {
   }
 }
 
-export async function GET(req: Request) {
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
+export const GET = withPortalAccount(async (ctx, req: Request) => {
 
+  const canReadSetup = hasRequiredPortalPermission(ctx, "portal.setup.read");
   const forceRefresh = new URL(req.url).searchParams.get("refresh") === "1";
-  const cacheKey = `${ctx.userId}:${ctx.accountId}`;
+  const cacheKey = `${ctx.userId}:${ctx.accountId}:${ctx.dataMode}`;
   const cached = meCache.get(cacheKey);
   if (!forceRefresh && cached && Date.now() - cached.time < CACHE_TTL_MS) {
-    return NextResponse.json(cached.data, {
+    return NextResponse.json({ ...cached.data, capabilities: { ...cached.data.capabilities, canReadSetup } }, {
       headers: {
         "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
       },
     });
   }
 
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
 
   const [user, authorizedClients] = await Promise.all([
     db.user.findUnique({
@@ -66,8 +64,8 @@ export async function GET(req: Request) {
   const isOwnerOrAdmin = ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN");
 
   const hasPorterView = isOwnerOrAdmin || perms.has("portal.porter") || perms.has("portal.access");
-  const hasCustomsAccess = hasPorterView || perms.has("portal.customs.read") || perms.has("portal.shipments.read");
-  const hasTmsAccess = hasPorterView || perms.has("portal.tms.read") || perms.has("portal.orders.read");
+  const hasCustomsAccess = hasRequiredPortalPermission(ctx, "portal.customs.read") || hasRequiredPortalPermission(ctx, "portal.shipments.read");
+  const hasTmsAccess = hasRequiredPortalPermission(ctx, "portal.tms.read") || hasRequiredPortalPermission(ctx, "portal.orders.read");
   const canUploadDocuments = isOwnerOrAdmin || perms.has("portal.documents.create");
   const canRespondRequests = isOwnerOrAdmin || perms.has("portal.requests.respond");
 
@@ -79,6 +77,8 @@ export async function GET(req: Request) {
     },
     account: {
       id: ctx.accountId,
+      name: ctx.accountName,
+      dataMode: ctx.dataMode,
     },
     capabilities: {
       hasPorterView,
@@ -86,6 +86,7 @@ export async function GET(req: Request) {
       hasTmsAccess,
       canUploadDocuments,
       canRespondRequests,
+      canReadSetup,
     },
     clients: authorizedClients,
   };
@@ -97,4 +98,4 @@ export async function GET(req: Request) {
       "Cache-Control": "private, max-age=300, stale-while-revalidate=60",
     },
   });
-}
+});

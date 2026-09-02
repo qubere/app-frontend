@@ -1,20 +1,14 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { authorizePortalResource, getAccountContext } from "@qubere/auth";
+import { authorizePortalResource } from "@qubere/auth";
 import { deleteStoredObject } from "@qubere/storage";
 import { db } from "@qubere/db";
 
-export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-  const ctx = await getAccountContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  }
 
   const document = await db.shipmentDocument.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
     select: {
       id: true,
       accountId: true,
@@ -23,6 +17,7 @@ export async function DELETE(
       fileUrl: true,
       shipmentId: true,
       portalVisibility: true,
+      source: true,
     },
   });
 
@@ -40,6 +35,8 @@ export async function DELETE(
   if (!auth.authorized || auth.errorResponse) {
     return auth.errorResponse || NextResponse.json({ error: "UNAUTHORIZED" }, { status: 403 });
   }
+
+  if (document.source !== "PORTAL_UPLOAD") return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   // Check if attached to a shipment
   if (document.shipmentId) {
@@ -59,7 +56,7 @@ export async function DELETE(
 
   // Delete document record, then best-effort remove the stored object.
   await db.shipmentDocument.delete({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
   });
   if (document.fileUrl) {
     await deleteStoredObject(document.fileUrl);
@@ -82,4 +79,4 @@ export async function DELETE(
   });
 
   return NextResponse.json({ success: true, message: `Document "${document.fileName}" deleted successfully.` });
-}
+});

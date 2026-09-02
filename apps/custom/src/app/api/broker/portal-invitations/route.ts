@@ -1,3 +1,4 @@
+import { syncClientStakeholder } from "@qubere/db/services/client-setup-service";
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
@@ -52,6 +53,8 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       createdByUserId: ctx.userId,
     },
   });
+
+  await syncClientStakeholder({accountId:ctx.accountId,clientId,email,name:email,role:roleName === "CUSTOMER_ADMIN" ? "IMPORTER_ADMIN" : roleName === "CUSTOMER_VIEWER" ? "VIEWER" : "CUSTOMS_CONTACT",invitationId:invitation.id,loginStatus:"INVITED",sourceEvent:"PORTAL_INVITE"});
 
   // Audit log
   await db.auditLog.create({

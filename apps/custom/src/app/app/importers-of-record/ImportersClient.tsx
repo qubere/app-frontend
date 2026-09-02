@@ -131,10 +131,12 @@ export function ImportersClient({
         method: "POST",
         body: formData,
       });
+      const result = await res.json().catch(() => ({}));
       if (res.ok) {
-        fetchImporters();
+        await fetchImporters();
+        if (result.portalVisible === false) alert("POA saved. Link this importer to a client to make it available in their partner portal.");
       } else {
-        alert("Failed to upload Power of Attorney document.");
+        alert(typeof result.error === "string" ? result.error : result.error?.message || "Failed to upload Power of Attorney document.");
       }
     } catch {
       alert("Error uploading POA document.");
@@ -151,7 +153,7 @@ export function ImportersClient({
   );
 
   const poaGrantedCount = importers.filter((i) =>
-    i.powersOfAttorney?.some((p) => p.status === "GRANTED" || p.status === "ACTIVE")
+    i.powersOfAttorney?.some((p) => ["executed", "granted", "active"].includes(p.status.toLowerCase()))
   ).length;
 
   const bondActiveCount = importers.filter((i) => i.bond || i.bondId).length;
@@ -249,7 +251,7 @@ export function ImportersClient({
               <tbody className="divide-y divide-border">
                 {filteredImporters.map((importer) => {
                   const hasPoa = importer.powersOfAttorney?.some(
-                    (p) => p.status === "GRANTED" || p.status === "ACTIVE"
+                    (p) => ["executed", "granted", "active"].includes(p.status.toLowerCase())
                   );
                   return (
                     <tr key={importer.id} className="hover:bg-surface-hover/50 transition-colors">

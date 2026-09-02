@@ -1,3 +1,4 @@
+import { promoteSetupForBond } from "@/lib/portal/clientSetup";
 // Bond verification service for the onboarding wizard.
 // Three methods in priority order (§7.1):
 //   1. CBP_IMPORTER_BOND_QUERY (KI/KR) — real CBP query via RealAceProvider.
@@ -255,6 +256,7 @@ export class BondVerificationService {
       metadata: { method, result, verificationId: verification.id },
     });
 
+    await promoteSetupForBond(accountId, bondId);
     return verification;
   }
 
@@ -307,6 +309,7 @@ export class BondVerificationService {
       metadata: { method: "MANUAL_ATTESTATION", verificationId: verification.id },
     });
 
+    await promoteSetupForBond(accountId, bondId);
     return verification;
   }
 

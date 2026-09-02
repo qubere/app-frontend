@@ -1,3 +1,4 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { generateForm7501PdfBuffer, type Form7501FieldResult, type Form7501LineItem, type Form7501Result } from "@qubere/billing/form7501";
@@ -29,26 +30,25 @@ function field<T>(block: string, label: string, value: T | null, sourced: boolea
   };
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   const filing = await db.customsFiling.findUnique({
-    where: { id },
+    where: { id, accountId: ctx.accountId },
     select: {
       id: true,
       entryNumber: true,
       entryType: true,
       accountId: true,
       customerVisibleAt: true,
+      importerOfRecordId: true,
       importerOfRecord: { select: { name: true, cbpImporterNumber: true } },
       bond: { select: { bondNumber: true } },
       snapshot: { select: { snapshotData: true } },
       shipment: {
         select: {
           clientId: true,
+          importerOfRecordId: true,
           importerName: true,
           portOfEntry: true,
           carrierName: true,
@@ -70,6 +70,7 @@ export async function GET(
     permission: "portal.entries.download",
     resourceAccountId: filing.accountId,
     resourceClientId: filing.shipment?.clientId,
+    importerOfRecordId: filing.shipment?.importerOfRecordId ?? filing.importerOfRecordId,
     customerVisibleAt: filing.customerVisibleAt,
   });
 
@@ -145,4 +146,4 @@ export async function GET(
       "Cache-Control": "private, max-age=300",
     },
   });
-}
+});

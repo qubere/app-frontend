@@ -1,3 +1,4 @@
+import { syncClientStakeholder } from "@qubere/db/services/client-setup-service";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
@@ -143,6 +144,8 @@ export default async function InviteAcceptancePage({
         create: { userId: user.id, clientId: invitation.clientId },
       });
     }
+
+    if (invitation.clientId) await syncClientStakeholder({accountId:invitation.accountId,clientId:invitation.clientId,email:invitedEmail,name:[user.firstName,user.lastName].filter(Boolean).join(" ")||invitedEmail,role:"CUSTOMS_CONTACT",userId:user.id,invitationId:invitation.id,loginStatus:"ACTIVE",sourceEvent:"PORTAL_INVITE"},tx);
 
     await tx.invitation.update({
       where: { id: invitation.id },

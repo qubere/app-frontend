@@ -23,6 +23,7 @@
     "product-help:report": "npm --workspace @qubere/custom run generate:product-help:report --",
     "product-help:validate": "npm --workspace @qubere/custom run validate:product-help",
     "product-help:sync": "npm --workspace @qubere/custom run sync:product-help",
+    "portal:diagnose": "node apps/portal/scripts/diagnose-setup.mjs",
     "seed": "npm run db:seed --workspace=packages/db"
   },
   "devDependencies": {

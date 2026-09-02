@@ -1,3 +1,4 @@
+import { syncClientSetup } from "@qubere/db/services/client-setup-service";
 import { NextResponse } from "next/server";
 import { db } from "@qubere/db";
 import type { Prisma } from "@prisma/client";
@@ -46,5 +47,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ token:
     },
   });
 
+  await syncClientSetup(ctx.accountId, ctx.invitation.clientId!);
   return NextResponse.json({ ok: true });
 }

@@ -12,6 +12,7 @@ import StepPoa from "./steps/StepPoa";
 import { StepBilling } from "./steps/StepBilling";
 import { StepScreening } from "./steps/StepScreening";
 import { StepReviewActivate } from "./steps/StepReviewActivate";
+import { CaseClientLink } from "./CaseClientLink";
 import type { ChecklistItem, ChecklistStatus } from "@/modules/onboarding/readiness";
 
 interface ReadinessResult {
@@ -283,6 +284,8 @@ export function OnboardingWizardClient({ initialCase, initialStep }: Props) {
           Save &amp; exit
         </Button>
       </div>
+
+      <CaseClientLink caseId={caseData.id} client={caseData.client} onSaved={refreshCase} />
 
       {/* Readiness footer strip */}
       <div className="border-b px-6 py-2 bg-surface-muted flex items-center gap-4 overflow-x-auto">

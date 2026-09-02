@@ -1,3 +1,4 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db } from "@qubere/db";
@@ -8,10 +9,7 @@ const messageSchema = z.object({
   version: z.number().optional(),
 });
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const json = await req.json();
   const parseVal = messageSchema.safeParse(json);
@@ -89,4 +87,4 @@ export async function POST(
     requestStatus: updatedRequest.status,
     version: updatedRequest.version,
   });
-}
+});

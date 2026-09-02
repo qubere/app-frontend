@@ -924,6 +924,53 @@ npx vitest run tests/assistant-tools.test.ts tests/assistant-tools-rbac.test.ts 
   tests/assistant-rate-limit.test.ts tests/ai-quota.test.ts tests/ai-meter.test.ts
 ```
 
+### Diagnose empty partner-portal Setup or missing shipments
+
+Run this from the repository root on the machine that has the portal's database
+environment configured:
+
+```bash
+npm run portal:diagnose -- --email porter@target.com
+```
+
+If the user has multiple active accounts, the command lists their IDs. Run it again
+with the same account selected in the portal:
+
+```bash
+npm run portal:diagnose -- --email porter@target.com --account-id <account-id>
+```
+
+The command uses a PostgreSQL **READ ONLY** transaction. It reports direct/team
+client assignments, importer and onboarding links, PoA statuses, document counts,
+and requests assigned to that user. By default it also checks `SHP-2026-000001` and
+`SHP-2026-000002`; use `--shipments <number,number>` for other shipments.
+It loads the portal app's development environment first, with the root environment
+as fallback, and prints the database host and account data mode so you can confirm
+the target. Explicit environment variables take precedence.
+
+Portal customers have access to an **account/workspace** through active membership.
+For example, Broker-A manages Target, Amazon and DHL in separate workspaces. A
+Target member can read Target's shipments, documents, importers and onboarding,
+including records with missing or different client links. Role permissions still
+control actions. Other workspaces remain inaccessible. `clientAssignments` in the
+report is organizational metadata, not a second portal access boundary.
+
+Compare `account.id` with the workspace selected in Customs and `/api/me` in the
+portal. `PRODUCTION` is the account's data mode, independent of running localhost.
+Do not relink records or change data mode to make them appear. Your setup opens
+**All workspace setup** by default and shows every importer, including an existing
+executed PoA without a promoted ClientDocument. Stored signed files can be downloaded;
+placeholder URLs are not reconstructed as documents.
+
+Document lists include legacy INTERNAL files in the owning workspace and an
+**Uploaded by** column from audit history or the inbound sender. Pagination keeps
+responses bounded. Upload and response permissions remain enforced; access to a
+workspace does not grant broker administration or editing of broker-uploaded files.
+
+The diagnostic has explicit limits and a `truncated` indicator. Keep the operator
+report within your admin team. It excludes passwords, EINs, file contents, storage
+URLs and request message bodies. It does not change records or send notifications.
+
 ### Production Build Verification
 
 ```bash

@@ -1,14 +1,13 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db } from "@qubere/db";
+import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
 import { storeDocumentBytes } from "@qubere/storage";
 import { createHash } from "crypto";
 import path from "path";
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   const request = await db.customerRequest.findUnique({
@@ -183,6 +182,12 @@ export async function POST(
         status: "QUARANTINED",
         portalVisibility: "CUSTOMER",
         source: "PORTAL_UPLOAD",
+        ...(await buildDocumentProvenance({
+          channel: "CUSTOMER_PORTAL",
+          uploadedByType: "CUSTOMER_USER",
+          uploadedByUserId: auth.ctx.userId,
+          channelMeta: { requestId: id },
+        })),
       },
     });
 
@@ -218,4 +223,4 @@ export async function POST(
     console.error("Error processing document upload:", err);
     return NextResponse.json({ error: "UPLOAD_FAILED", message: err.message }, { status: 500 });
   }
-}
+});

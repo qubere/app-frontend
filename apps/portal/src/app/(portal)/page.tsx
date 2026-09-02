@@ -1,5 +1,7 @@
 "use client";
 
+import { portalResponseError } from "@/lib/portal-response-error";
+import { PortalOverview } from "@/components/PortalOverview";
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import {
@@ -87,6 +89,7 @@ interface PortalDocument {
 }
 
 export default function DashboardPage() {
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -126,13 +129,17 @@ export default function DashboardPage() {
 
   const fetchDashboardData = () => {
     fetch("/api/dashboard", { cache: "no-store" })
-      .then((res) => res.json())
+      .then(async res => {
+        if (!res.ok) throw new Error(await portalResponseError(res, "Could not load your actions. Please try again."));
+        return res.json();
+      })
       .then((data) => {
         if (data.actionItems) {
           setActionItems(data.actionItems);
+          setError("");
         }
       })
-      .catch(() => {})
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   };
 
@@ -257,6 +264,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      <PortalOverview />
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-[#E5E5EA] shadow-xs">
         <div>
@@ -346,7 +354,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Actions List View */}
-      {loading ? (
+      {error ? <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800"><p>{error}</p><button onClick={fetchDashboardData} className="mt-3 underline">Try again</button></div> : loading ? (
         <div className="bg-white p-12 text-center rounded-3xl border border-[#E5E5EA] text-[#86868B] text-sm animate-pulse">
           Loading action items...
         </div>
@@ -360,7 +368,7 @@ export default function DashboardPage() {
           </h3>
           <p className="text-xs text-[#86868B] mt-1 max-w-md mx-auto">
             {activeTab === "active"
-              ? "You have no active action items requiring input. All active shipments and filings are progressing smoothly."
+              ? "No active requests are assigned to your company. Check Shipments for tracking and filing updates."
               : "Resolved and completed action items will appear here for historical reference."}
           </p>
         </div>

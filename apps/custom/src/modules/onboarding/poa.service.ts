@@ -1,3 +1,4 @@
+import { promoteSetupForPoa } from "@/lib/portal/clientSetup";
 // POA service for the onboarding wizard — creates and drives PowerOfAttorney
 // records through the full e-sign lifecycle (§7.3, §8.4).
 //
@@ -399,6 +400,7 @@ export class PoaService {
       metadata: { method: "WET_INK", attestationNote: input.attestation.note, executedDocumentUrl: stored.url },
     });
 
+    await promoteSetupForPoa(accountId, updatedPoa.id);
     return updatedPoa;
   }
 
@@ -442,6 +444,7 @@ export class PoaService {
       metadata: { reason },
     });
 
+    await promoteSetupForPoa(accountId, updatedPoa.id);
     return updatedPoa;
   }
 
@@ -507,6 +510,7 @@ export class PoaService {
       metadata: { method: "E_SIGN", provider: "INTERNAL", ipAddress, signerNameAttestation },
     });
 
+    await promoteSetupForPoa(poa.accountId, poa.id);
     return { signed: true, poaId: poa.id, completedAt };
   }
 

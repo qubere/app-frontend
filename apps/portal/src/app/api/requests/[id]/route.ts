@@ -1,11 +1,9 @@
+import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
 import { authorizePortalResource } from "@qubere/auth";
 import { db } from "@qubere/db";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withPortalAccount(async (_ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
 
   // 1. Fetch raw request for scope & authorization check
@@ -107,4 +105,4 @@ export async function GET(
       documents: request.documents,
     },
   });
-}
+});

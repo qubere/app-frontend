@@ -121,8 +121,11 @@ export default function OnboardingPortalPage() {
   async function finishDocuments() {
     setSaving(true);
     try {
-      await fetch(`/api/portal/onboarding/${token}/complete`, { method: "POST" });
-      setDone(true);
+      const response = await fetch(`/api/portal/onboarding/${token}/complete`, { method: "POST" });
+      if (!response.ok) throw new Error("Could not complete onboarding. Please try again.");
+      const session = await fetch("/api/me");
+      if (session.ok) router.push("/setup");
+      else setDone(true);
     } catch (e: unknown) {
       setError((e as Error).message);
     } finally {

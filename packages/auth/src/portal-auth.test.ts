@@ -148,3 +148,15 @@ describe("resolvePortalClientScope", () => {
     expect(r).toEqual({ clientIds: null, forbidden: false });
   });
 });
+
+describe('Entry Proof and setup permissions',()=>{
+ it.each(['portal.entries.comment','portal.setup.read'])('rejects cross-workspace %s with the real authorization engine',async permission=>{
+  vi.mocked(authModule.getAccountContext).mockResolvedValue({accountId:'a',userId:'u',roleNames:['CUSTOMER_USER'],permissions:[permission]} as any);
+  vi.mocked(scopeModule.getEffectiveUserScope).mockResolvedValue({isAllClients:false,authorizedClientIds:['target'],teamIds:[]} as any);
+  expect((await authorizePortalResource({permission,resourceAccountId:'amazon-workspace',resourceClientId:'amazon'})).errorResponse?.status).toBe(404);
+ });
+ it('does not let a viewer submit line questions',async()=>{
+  vi.mocked(authModule.getAccountContext).mockResolvedValue({accountId:'a',userId:'u',roleNames:['CUSTOMER_VIEWER'],permissions:['portal.setup.read','portal.entries.read']} as any);
+  expect((await authorizePortalResource({permission:'portal.entries.comment',resourceAccountId:'a',resourceClientId:'target',customerVisibleAt:new Date()})).errorResponse?.status).toBe(404);
+ });
+});

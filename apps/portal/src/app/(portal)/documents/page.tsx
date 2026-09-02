@@ -23,20 +23,46 @@ import {
 
 interface DocItem {
   id: string;
+  key: string;
+  uploadedBy: string | null;
+  downloadUrl: string;
+  canDelete: boolean;
   fileName: string;
   docType: string;
   byteSize?: number;
   status: string;
   source?: string;
+  channel?: string | null;
+  uploadedAt?: string;
   fileUrl?: string | null;
   shipmentId?: string | null;
   shipmentNumber?: string;
   createdAt: string;
 }
 
+const CHANNEL_LABELS: Record<string, string> = {
+  WEB_APP: "Broker app",
+  CUSTOMER_PORTAL: "Portal upload",
+  EMAIL: "Email ingest",
+  API: "API",
+  INTEGRATION: "Integration",
+  SYSTEM: "System",
+  CLIENT_SETUP: "Client setup",
+};
+
+function channelLabel(doc: DocItem): string {
+  if (doc.channel && CHANNEL_LABELS[doc.channel]) return CHANNEL_LABELS[doc.channel];
+  if (doc.source === "INBOUND_EMAIL" || doc.source === "EMAIL" || doc.source === "EMAIL_REQUEST") return "Email ingest";
+  if (doc.source === "CLIENT_SETUP") return "Client setup";
+  return "Direct upload";
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<DocItem | null>(null);
@@ -53,17 +79,19 @@ export default function DocumentsPage() {
 
   const inboundEmailEndpoint = "target-docs@inbound.qubere.ai";
 
-  const fetchDocuments = (showLoading = false) => {
+  const fetchDocuments = async (showLoading = false, cursor: string | null = null) => {
     if (showLoading) setLoading(true);
-    fetch("/api/documents")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.items) setDocuments(data.items);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (showLoading) setLoading(false);
-      });
+    if (cursor) setLoadingMore(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/documents${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Could not load documents. Please try again.');
+      const data = await response.json();
+      if (!Array.isArray(data.items)) throw new Error('Could not load documents. Please try again.');
+      setDocuments(previous => cursor ? [...previous, ...data.items] : data.items);
+      setNextCursor(data.nextCursor ?? null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not load documents.'); }
+    finally { setLoading(false); setLoadingMore(false); }
   };
 
   useEffect(() => {
@@ -205,6 +233,8 @@ export default function DocumentsPage() {
         </div>
       </div>
 
+      {error && <div role="alert" className="rounded-xl border border-red-200 p-4 text-sm text-red-700">{error}<button className="ml-3 underline" onClick={() => fetchDocuments(true)}>Try again</button></div>}
+      <div className="flex justify-between items-center text-sm"><p className="text-[#86868B]">Shared shipment files and setup documents across your client workspace.</p><button disabled={loading || loadingMore} onClick={() => fetchDocuments(true)} className="text-[#0071E3] disabled:opacity-40">Refresh documents</button></div>
       {/* Main Documents Table View */}
       {loading ? (
         <Card className="p-8 text-center text-[#86868B] text-sm animate-pulse">Loading documents vault...</Card>
@@ -225,16 +255,19 @@ export default function DocumentsPage() {
                   <th className="py-3.5 px-6">Document Name</th>
                   <th className="py-3.5 px-4">Shipment ID</th>
                   <th className="py-3.5 px-4">Uploaded Date</th>
+                  <th className="py-3.5 px-4">Uploaded by</th>
                   <th className="py-3.5 px-4">Source</th>
                   <th className="py-3.5 px-6 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E5E5EA]">
                 {documents.map((doc) => {
-                  const isEmail = doc.source === "INBOUND_EMAIL";
+                  const channel = doc.channel || doc.source;
+                  const isEmail = channel === "EMAIL" || doc.source === "INBOUND_EMAIL";
+                  const isSetup = channel === "CLIENT_SETUP" || doc.source === "CLIENT_SETUP";
 
                   return (
-                    <tr key={doc.id} className="hover:bg-[#FAF9F6] transition group">
+                    <tr key={doc.key} className="hover:bg-[#FAF9F6] transition group">
                       {/* Document Name (Clickable to open Reader Modal) */}
                       <td className="py-4 px-6 font-bold">
                         <button
@@ -268,27 +301,28 @@ export default function DocumentsPage() {
                         })}
                       </td>
 
-                      {/* Source {upload / email} */}
+                      <td className="py-4 px-4 text-[#86868B]">{doc.uploadedBy || "Not recorded"}</td>
+                      {/* Channel the document arrived through */}
                       <td className="py-4 px-4 whitespace-nowrap">
-                        {isEmail ? (
+                        {isSetup ? <span className="text-xs text-[#86868B]">Client setup</span> : isEmail ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-50 text-[#0071E3] border border-blue-200 uppercase tracking-wider flex items-center space-x-1.5 w-fit">
                             <Mail className="w-3 h-3" />
-                            <span>Email Ingest</span>
+                            <span>{channelLabel(doc)}</span>
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300 uppercase tracking-wider flex items-center space-x-1.5 w-fit">
                             <UploadCloud className="w-3 h-3" />
-                            <span>Direct Upload</span>
+                            <span>{channelLabel(doc)}</span>
                           </span>
                         )}
                       </td>
 
                       {/* Actions */}
                       <td className="py-4 px-6 text-right whitespace-nowrap">
-                        {doc.shipmentId || doc.shipmentNumber ? (
+                        {!doc.canDelete ? (
                           <button
                             disabled
-                            title={`Cannot delete: Attached to Shipment ${doc.shipmentNumber || doc.shipmentId}`}
+                            title="This document is managed by your service provider or linked to a shipment."
                             className="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold inline-flex items-center space-x-1.5 cursor-not-allowed opacity-60"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-slate-400" />
@@ -318,6 +352,8 @@ export default function DocumentsPage() {
         </div>
       )}
 
+      {nextCursor && <div className="text-center"><button disabled={loadingMore} onClick={() => fetchDocuments(false, nextCursor)} className="rounded-xl border px-5 py-2 text-sm text-[#0071E3] disabled:opacity-40">{loadingMore ? "Loading…" : "Load more documents"}</button></div>}
+
       {/* Document Reader / Preview Modal */}
       {previewDoc && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -335,16 +371,18 @@ export default function DocumentsPage() {
                       <span className="font-mono font-bold text-[#0071E3]">{previewDoc.shipmentNumber}</span>
                     )}
                     <span>&bull;</span>
-                    <span>Uploaded {new Date(previewDoc.createdAt).toLocaleDateString()}</span>
+                    <span>Uploaded {new Date(previewDoc.uploadedAt || previewDoc.createdAt).toLocaleDateString()}</span>
                     <span>&bull;</span>
-                    <span className="font-bold text-[#1D1D1F] uppercase">{previewDoc.source === "INBOUND_EMAIL" ? "Email Ingest" : "Direct Upload"}</span>
+                    <span>by {previewDoc.uploadedBy || "Not recorded"}</span>
+                    <span>&bull;</span>
+                    <span className="font-bold text-[#1D1D1F] uppercase">{channelLabel(previewDoc)}</span>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center space-x-3 shrink-0">
                 <a
-                  href={`/api/documents/${previewDoc.id}/download`}
+                  href={previewDoc.downloadUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-4 py-2 rounded-xl bg-[#0071E3] text-white text-xs font-bold hover:bg-[#0071E3]/90 transition flex items-center space-x-1.5 shadow-2xs"
@@ -364,7 +402,7 @@ export default function DocumentsPage() {
             {/* Modal Document Viewer Body */}
             <div className="flex-1 bg-[#F5F5F7] p-4 overflow-auto flex items-center justify-center">
               <iframe
-                src={`/api/documents/${previewDoc.id}/download`}
+                src={previewDoc.downloadUrl}
                 className="w-full h-full rounded-2xl bg-white border border-[#E5E5EA] shadow-inner"
                 title={previewDoc.fileName}
               />

@@ -3,22 +3,12 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getTenantScopedModelNames } from "@qubere/db";
 
-/**
- * apps/portal counterpart to apps/custom/tests/tenant-context-adoption.test.ts.
- *
- * Unlike apps/custom and apps/tms, apps/portal does not use the shared
- * AsyncLocalStorage tenant-context safety net (runWithAccountId /
- * withAccountIdContext / withAuthenticatedRoute) anywhere -- every route
- * scopes its Prisma calls with a hand-written `where: { accountId }` filter
- * instead. That means the fail-closed net in packages/db is never active for
- * portal, so every current route is allowlisted below rather than fixed here
- * (see the discussion that added this file). This test's job going forward
- * is to stop that gap from silently growing: any *new* route touching a
- * tenant-scoped model must either adopt the shared context or be added to
- * the allowlist with a reason, not slip through unnoticed.
+/** Portal routes use withPortalAccount or portalData to establish the shared
+ * account/data-mode context. This guard recognizes those wrappers as well as
+ * direct context helpers, and tracks the remaining legacy token/demo routes.
  */
 
-const CONTEXT_MARKERS = /\b(withAuthenticatedRoute|runWithAccountId|withAccountIdContext)\b/;
+const CONTEXT_MARKERS = /\b(withAuthenticatedRoute|runWithAccountId|withAccountIdContext|withPortalAccount|portalData)\b/;
 
 const TENANT_SCOPED_MODELS = getTenantScopedModelNames();
 const MODEL_CALL_PATTERNS = TENANT_SCOPED_MODELS.map((model) => {
@@ -42,30 +32,11 @@ function findFiles(dir: string, matchName: (name: string) => boolean, found: str
   return found;
 }
 
-// Every entry here is a route/page that touches a tenant-scoped model without
-// establishing the ALS context, because apps/portal has not adopted that
-// safety net yet (see file header). Tenant isolation for these files relies
-// entirely on their own explicit `where: { accountId }` filters -- do not add
-// new files here without checking they actually filter by accountId
-// themselves first.
+// Remaining legacy routes require their own explicit account/token guards.
+// New routes must adopt a shared context wrapper instead of growing this list.
 const ALLOWLIST = new Set<string>(
   [
-    "src/app/api/dashboard/route.ts",
-    "src/app/api/documents/route.ts",
-    "src/app/api/documents/[id]/route.ts",
-    "src/app/api/documents/[id]/download/route.ts",
     "src/app/api/documents/inbound-email/route.ts",
-    "src/app/api/entries/route.ts",
-    "src/app/api/entries/[id]/download/route.ts",
-    "src/app/api/invoices/route.ts",
-    "src/app/api/invoices/[id]/download/route.ts",
-    "src/app/api/me/route.ts",
-    "src/app/api/requests/route.ts",
-    "src/app/api/requests/[id]/route.ts",
-    "src/app/api/requests/[id]/documents/route.ts",
-    "src/app/api/requests/[id]/messages/route.ts",
-    "src/app/api/shipments/route.ts",
-    "src/app/api/shipments/[id]/route.ts",
     "src/app/api/portal/onboarding/[token]/route.ts",
     "src/app/api/portal/onboarding/[token]/entity/route.ts",
     "src/app/api/portal/onboarding/[token]/officers/route.ts",

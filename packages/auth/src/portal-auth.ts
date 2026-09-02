@@ -1,14 +1,20 @@
 import { db } from "@qubere/db";
 import { getAccountContext, AccountContext } from "./auth";
-import { getEffectiveUserScope, UserScope } from "./scope-engine";
+import { getEffectiveUserScope, type UserScope } from "./scope-engine";
 import { buildErrorResponse } from "./error";
 
 export interface PortalAuthOptions {
   permission: string;
   resourceAccountId: string;
   resourceClientId?: string | null;
+  /**
+   * Importer of record for the target resource. Used to resolve the owning
+   * client when the resource itself has no `clientId` (legacy shipments /
+   * documents). Ownership is only inferred from an unambiguous link.
+   */
+  importerOfRecordId?: string | null;
   importerName?: string | null;
-  portalVisibility?: string | null; // e.g. "CUSTOMER" vs "INTERNAL"
+  portalVisibility?: string | null; // Legacy document metadata; workspace membership governs reads.
   customerVisibleAt?: Date | null;   // for published filings/entries
 }
 
@@ -21,14 +27,48 @@ export interface PortalAuthResult {
 }
 
 /**
- * Fail-closed portal resource authorization engine.
- * Ensures the target resource:
- * 1. Matches active user's accountId.
- * 2. Resolves to a non-null clientId (or resolves via importerName/authorizedClientIds).
- * 3. Fall within user's assigned client scope (authorizedClientIds).
- * 4. Meets customer visibility requirements (not internal-only or draft/unpublished).
- * Returns uniform 404 response on any authorization failure to prevent data enumeration.
+ * The customer's portal workspace is the Client (or Clients) they are assigned
+ * to via UserClientAssignment / TeamClientAssignment — resolved by
+ * getEffectiveUserScope. One broker Account holds many client workspaces, so
+ * account membership alone is NOT the read boundary: a CUSTOMER_* user must
+ * only ever see the clients in their scope (scope-engine P0-4). Broker / admin
+ * roles resolve to all-clients. Callers still combine the result with
+ * ctx.accountId on every query.
  */
+export async function getPortalWorkspaceScope(
+  ctx: Pick<AccountContext, 'accountId' | 'userId' | 'roleNames'>,
+): Promise<UserScope> {
+  if (!ctx.accountId) throw new Error('Authenticated workspace is required');
+  return getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+}
+
+/**
+ * Resolve the owning client for a resource that has no explicit clientId, using
+ * its importer of record. Returns null when the importer is unlinked or its
+ * onboarding cases point at more than one client (conflicting links need a
+ * broker correction, not a guess).
+ */
+async function resolveImporterClientId(
+  accountId: string,
+  importerOfRecordId: string,
+): Promise<string | null> {
+  const importer = await db.importerOfRecord.findFirst({
+    where: { id: importerOfRecordId, accountId },
+    select: {
+      clientId: true,
+      onboardingEntities: {
+        where: { case: { status: { not: 'withdrawn' }, clientId: { not: null } } },
+        select: { case: { select: { clientId: true } } },
+      },
+    },
+  });
+  if (!importer) return null;
+  if (importer.clientId) return importer.clientId;
+  const ids = [...new Set(importer.onboardingEntities.flatMap((e) => (e.case.clientId ? [e.case.clientId] : [])))];
+  return ids.length === 1 ? ids[0] : null;
+}
+
+/** Enforce workspace membership, action permission and filing publication. */
 export async function authorizePortalResource(
   options: PortalAuthOptions
 ): Promise<PortalAuthResult> {
@@ -67,47 +107,16 @@ export async function authorizePortalResource(
     };
   }
 
-  // 2. Resolve effective user scope
-  const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
+  const scope = await getPortalWorkspaceScope(ctx);
 
-  // 3. Client ownership check - if resource has no explicit clientId, attempt resolution from importerName
-  let resourceClientId = options.resourceClientId;
-  if (!resourceClientId && options.importerName) {
-    const matchingClient = await db.client.findFirst({
-      where: {
-        accountId: ctx.accountId,
-        name: { contains: options.importerName, mode: "insensitive" },
-      },
-      select: { id: true },
-    });
-    if (matchingClient) {
-      resourceClientId = matchingClient.id;
-    }
+  // 3. Client workspace check. Resolve the owning client (directly, or from the
+  // importer of record for legacy null-client records) and confirm it is in the
+  // caller's scope. Broker / admin (all-clients) skip this.
+  let resourceClientId = options.resourceClientId ?? null;
+  if (!resourceClientId && options.importerOfRecordId) {
+    resourceClientId = await resolveImporterClientId(ctx.accountId, options.importerOfRecordId);
   }
-
-  if (!resourceClientId) {
-    return {
-      authorized: false,
-      ctx,
-      scope,
-      effectiveClientId: null,
-      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
-    };
-  }
-
-  // 4. Verify client scope authorization
-  if (!scope.isAllClients && !scope.authorizedClientIds.includes(resourceClientId)) {
-    return {
-      authorized: false,
-      ctx,
-      scope,
-      effectiveClientId: resourceClientId,
-      errorResponse: buildErrorResponse(404, "NOT_FOUND", "Resource not found"),
-    };
-  }
-
-  // 5. Visibility check
-  if (options.portalVisibility && options.portalVisibility !== "CUSTOMER") {
+  if (!scope.isAllClients && (!resourceClientId || !scope.authorizedClientIds.includes(resourceClientId))) {
     return {
       authorized: false,
       ctx,
@@ -148,11 +157,10 @@ export interface PortalClientScopeResult {
 }
 
 /**
- * Resolves the effective client filter for a portal LIST endpoint, given the caller's
- * scope and an optional caller-supplied `clientId`. Callers MUST treat `forbidden` as
- * a hard 403 and MUST apply `clientIds` as `{ clientId: { in: clientIds } }` when it is
- * not null. A caller-supplied `clientId` is never trusted on its own.
- * See docs/plans/review/CUSTOMER-PORTAL-PR97-REVIEW.md (P0-3/P0-5/P0-6).
+ * Optional client filtering. Portal callers supply getPortalWorkspaceScope(ctx),
+ * then always combine the result with ctx.accountId. Legacy scoped callers still
+ * fail closed for unassigned client filters. Never use a requested client ID as
+ * a substitute for the authenticated workspace predicate.
  */
 export function resolvePortalClientScope(
   scope: { isAllClients: boolean; authorizedClientIds: string[] },
@@ -176,7 +184,7 @@ export function resolvePortalClientScope(
  * True when the context holds `permission`, or is an account owner/admin or platform
  * admin (who implicitly hold every portal permission).
  */
-function hasRequiredPortalPermission(ctx: AccountContext, permission: string): boolean {
+export function hasRequiredPortalPermission(ctx: AccountContext, permission: string): boolean {
   if (ctx.isPlatformAdmin) return true;
   const roleNames = ctx.roleNames || [];
   if (roleNames.some((r) => ["OWNER", "ADMIN", "BROKER_ADMIN", "TMS_ADMIN"].includes(r.toUpperCase()))) {

@@ -1,6 +1,6 @@
 # Entry Proof (Partner Portal) — build epic
 
-**Status:** Ready for implementation (Codex)
+**Status:** Implementation published in [PR #295](https://github.com/qubere/app-frontend/pull/295). See [implementation and validation notes](ENTRY-PROOF-PORTAL-IMPLEMENTATION.md).
 **Owner area:** `apps/portal`, `apps/custom`, `packages/db`, new `packages/entry-proof`
 **Related issues:** #155 (portal is more than upload + status), #165 (customer portal), #211 / #219 (validated 7501 draft + provenance), #234 (F07 Filing & Entry), #168 (Section 301/232), #169 (AD/CVD), #215 (PGA-by-HTS), #172 (restricted-party), #174 (bond sufficiency), #185 (CF-28 / duty recovery), #288 / #139 / #156 (customer onboarding F16), #162 (shipment visibility), #151 (notification / SLA engine)
 

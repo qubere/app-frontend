@@ -1,6 +1,7 @@
 import type { ComplianceNotificationType } from "@prisma/client";
 
 export const NOTIFICATION_TYPE_LABELS: Record<ComplianceNotificationType, string> = {
+  PORTAL_UPDATE: "Customer portal update",
   ASSIST_AMORTIZATION_ALERT: "Assist Nearing Full Amortization",
   RPS_HIT: "Restricted Party Match",
   RPS_REVIEW_REQUIRED: "Restricted Party Review Required",

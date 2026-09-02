@@ -1,11 +1,20 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { ShipmentMilestones, ShipmentTracking } from "@/components/ShipmentProgress";
+import { ShipmentFilingData, type PortalFilingData, type PortalEntry } from "@/components/ShipmentFilingData";
+import type { ShipmentProgress } from "@/lib/shipment-progress";
+import { portalResponseError } from "@/lib/portal-response-error";
+import { AtAGlance } from "@/components/shipment-answers/AtAGlance";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ShipmentIcon, DocumentIcon, InvoiceIcon, BellIcon } from "../../icons";
+import { usePortalData } from "@/lib/use-portal-data";
+import type { ShipmentAnswerSet } from "@qubere/entry-proof";
 
 interface ShipmentData {
+  unavailableSections?: string[];
+  progress: ShipmentProgress;
+  filingData: PortalFilingData | null;
   overview: {
     id: string;
     shipmentNumber: string;
@@ -23,10 +32,8 @@ interface ShipmentData {
     id: string;
     type: string;
     title: string;
-    description?: string;
     status: string;
     dueAt?: string;
-    messages: Array<{ id: string; authorType: string; body: string; createdAt: string }>;
   }>;
   documents: Array<{
     id: string;
@@ -34,14 +41,11 @@ interface ShipmentData {
     docType: string;
     status: string;
     createdAt: string;
+    channel?: string | null;
+    uploadedBy?: string | null;
+    uploadedAt?: string;
   }>;
-  entries: Array<{
-    id: string;
-    entryNumber: string;
-    status: string;
-    dutyTotal?: number;
-    publishedAt: string;
-  }>;
+  entries: PortalEntry[];
   invoices: Array<{
     id: string;
     invoiceNumber: string;
@@ -54,19 +58,47 @@ interface ShipmentData {
 export default function ShipmentDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  return <ShipmentDetails key={id} id={id} />;
+}
+
+function ShipmentDetails({ id }: { id: string }) {
   const [data, setData] = useState<ShipmentData | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "requests" | "documents" | "entries" | "invoices">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "requests" | "documents" | "entries" | "invoices" | "proof" | "tracking" | "filing">("overview");
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [documentPage, setDocumentPage] = useState(0);
+  const [invoicePage, setInvoicePage] = useState(0);
+  // Start answers alongside the overview instead of waiting for its full response.
+  const answers = usePortalData<ShipmentAnswerSet>(`/api/shipments/${id}/answers`, activeTab === "overview");
+  const tracking = usePortalData<{ progress: ShipmentProgress }>(`/api/shipments/${id}?section=tracking`, activeTab === "tracking");
+  const documentResult = usePortalData<{ documents: ShipmentData['documents']; hasMore: boolean }>(`/api/shipments/${id}?section=documents&page=${documentPage}`, activeTab === "documents");
+  const invoiceResult = usePortalData<{ invoices: ShipmentData['invoices']; hasMore: boolean }>(`/api/shipments/${id}?section=invoices&page=${invoicePage}`, activeTab === "invoices");
 
   useEffect(() => {
-    fetch(`/api/shipments/${id}`)
-      .then((res) => res.json())
-      .then((resData) => {
-        if (resData.overview) setData(resData);
+    if (activeTab !== "overview") {
+      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      panelRef.current?.focus({ preventScroll: true });
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setError(""); setData(null);
+    fetch(`/api/shipments/${id}`, { signal: controller.signal, cache: "no-store" })
+      .then(async res => {
+        if (!res.ok) throw new Error(await portalResponseError(res, "Could not load shipment details. Please try again."));
+        const result = await res.json();
+        if (!result.overview) throw new Error("Could not load shipment details. Please try again.");
+        return result;
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+      .then(result => { if (!controller.signal.aborted) setData(result); })
+      .catch(e => { if (!controller.signal.aborted) setError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [id, retry]);
 
   if (loading) {
     return <div className="qubere-card p-12 text-center text-[#86868B] text-sm animate-pulse">Loading shipment details...</div>;
@@ -75,8 +107,9 @@ export default function ShipmentDetailPage() {
   if (!data) {
     return (
       <div className="qubere-card p-12 text-center rounded-2xl">
-        <h2 className="text-xl font-bold text-[#1D1D1F]">Shipment Not Found</h2>
-        <p className="text-[#86868B] text-xs mt-2">The requested shipment does not exist or you lack permission to view it.</p>
+        <h2 className="text-xl font-bold text-[#1D1D1F]">Shipment details unavailable</h2>
+        <p className="text-[#86868B] text-xs mt-2">{error || "The requested shipment is not available to your login."}</p>
+        <button onClick={() => setRetry(n => n + 1)} className="block mx-auto mt-4 text-sm text-[#0071E3] underline">Try again</button>
         <Link href="/shipments" className="inline-block mt-4 text-xs text-[#0071E3] hover:underline font-medium">
           &larr; Back to Shipments
         </Link>
@@ -84,7 +117,9 @@ export default function ShipmentDetailPage() {
     );
   }
 
-  const { overview, requests, documents, entries, invoices } = data;
+  const { overview, requests, entries } = data;
+  const documents = documentResult.data?.documents ?? [];
+  const invoices = invoiceResult.data?.invoices ?? [];
 
   return (
     <div className="space-y-8">
@@ -120,11 +155,17 @@ export default function ShipmentDetailPage() {
         </div>
       </div>
 
+      {!!data.unavailableSections?.length && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{data.unavailableSections.join(", ")} is temporarily unavailable. Tracking, requests, and documents remain available.</p>}
+
       {/* Tabs */}
-      <div className="flex space-x-2 border-b border-[#E5E5EA] pb-3">
-        {(["overview", "requests", "documents", "entries", "invoices"] as const).map((tab) => (
+      <div role="tablist" aria-label="Shipment sections" className="flex overflow-x-auto space-x-2 border-b border-[#E5E5EA] pb-3">
+        {(["overview", "tracking", ...(data.filingData ? ["filing" as const] : []), "requests", "documents", "entries", "invoices", ...(entries.some(e=>e.proof?.available)?["proof" as const]:[])] as const).map((tab) => (
           <button
             key={tab}
+            role="tab"
+            id={`shipment-tab-${tab}`}
+            aria-selected={activeTab === tab}
+            aria-controls={`shipment-panel-${tab}`}
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize transition ${
               activeTab === tab
@@ -132,11 +173,19 @@ export default function ShipmentDetailPage() {
                 : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F5F5F7]"
             }`}
           >
-            {tab} {tab === "requests" && requests.length > 0 && `(${requests.length})`}
+            {tab === "filing" ? "Filing data" : tab === "proof" ? "Entry Proof" : tab} {tab === "requests" && requests.length > 0 && `(${requests.length})`}
           </button>
         ))}
       </div>
 
+      <div ref={panelRef} role="tabpanel" id={`shipment-panel-${activeTab}`} aria-labelledby={`shipment-tab-${activeTab}`} tabIndex={-1} className="space-y-6 scroll-mt-4 outline-none">
+      {activeTab === "overview" && <>
+        <ShipmentMilestones progress={data.progress} onTracking={() => setActiveTab("tracking")} />
+        <AtAGlance data={answers.data} error={answers.error} onRetry={answers.retry} />
+      </>}
+      {activeTab === "proof" && <div className="grid gap-4 md:grid-cols-2">{entries.filter(e=>e.proof?.available).map(e=><Link key={e.id} href={`/entries/${e.id}`} className="qubere-card rounded-2xl p-6"><strong>{e.entryNumber}</strong><p className="text-sm mt-2">Compliance score {e.proof!.scoreOverall} · {e.proof!.scoreBand.replaceAll('_',' ')}</p><p className="text-sm text-[#0071E3] mt-3">View line-by-line proof →</p></Link>)}</div>}
+      {activeTab === "tracking" && (tracking.data ? <ShipmentTracking progress={tracking.data.progress} /> : <SectionLoading error={tracking.error} retry={tracking.retry} />)}
+      {activeTab === "filing" && data.filingData && <ShipmentFilingData data={data.filingData} entries={entries} />}
       {/* Tab Panels */}
       {activeTab === "overview" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -203,13 +252,19 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {activeTab === "documents" && (
+      {activeTab === "documents" && !documentResult.data && <SectionLoading error={documentResult.error} retry={documentResult.retry} />}
+      {activeTab === "documents" && documentResult.data && (
         <div className="qubere-card rounded-2xl overflow-hidden divide-y divide-[#E5E5EA]">
+          {!documents.length && <p className="p-6 text-sm text-slate-500">No documents shared for this shipment.</p>}
           {documents.map((d) => (
             <div key={d.id} className="p-4 flex items-center justify-between">
               <div>
                 <h4 className="text-sm font-semibold text-[#1D1D1F]">{d.fileName}</h4>
-                <span className="text-xs text-[#86868B]">{d.docType}</span>
+                <span className="text-xs text-[#86868B]">
+                  {d.docType}
+                  {" · "}Uploaded by {d.uploadedBy || "Not recorded"}
+                  {d.uploadedAt ? ` on ${new Date(d.uploadedAt).toLocaleDateString()}` : ""}
+                </span>
               </div>
               <a
                 href={`/api/documents/${d.id}/download`}
@@ -221,6 +276,8 @@ export default function ShipmentDetailPage() {
           ))}
         </div>
       )}
+
+      {activeTab === "documents" && documentResult.data && <PageNavigation page={documentPage} hasMore={documentResult.data.hasMore} onPage={setDocumentPage} />}
 
       {activeTab === "entries" && (
         <div className="qubere-card rounded-2xl overflow-hidden divide-y divide-[#E5E5EA]">
@@ -241,8 +298,10 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {activeTab === "invoices" && (
+      {activeTab === "invoices" && !invoiceResult.data && <SectionLoading error={invoiceResult.error} retry={invoiceResult.retry} />}
+      {activeTab === "invoices" && invoiceResult.data && (
         <div className="qubere-card rounded-2xl overflow-hidden divide-y divide-[#E5E5EA]">
+          {!invoices.length && <p className="p-6 text-sm text-slate-500">No issued invoices for this shipment.</p>}
           {invoices.map((inv) => (
             <div key={inv.id} className="p-4 flex items-center justify-between">
               <div>
@@ -259,6 +318,21 @@ export default function ShipmentDetailPage() {
           ))}
         </div>
       )}
+      {activeTab === "invoices" && invoiceResult.data && <PageNavigation page={invoicePage} hasMore={invoiceResult.data.hasMore} onPage={setInvoicePage} />}
+      </div>
     </div>
   );
+}
+
+function SectionLoading({ error, retry }: { error: string; retry: () => void }) {
+  return error ? <div role="alert" className="qubere-card p-6 text-sm text-amber-800">{error} <button onClick={retry} className="underline">Try again</button></div>
+    : <p role="status" className="qubere-card p-6 text-sm text-slate-500">Loading shipment information…</p>;
+}
+function PageNavigation({ page, hasMore, onPage }: { page: number; hasMore: boolean; onPage: (page: number) => void }) {
+  if (page === 0 && !hasMore) return null;
+  return <nav aria-label="Page navigation" className="flex items-center justify-between text-sm">
+    <button disabled={page === 0} onClick={() => onPage(page - 1)} className="text-[#0071E3] disabled:opacity-40">Previous</button>
+    <span>Page {page + 1}</span>
+    <button disabled={!hasMore} onClick={() => onPage(page + 1)} className="text-[#0071E3] disabled:opacity-40">Next</button>
+  </nav>;
 }

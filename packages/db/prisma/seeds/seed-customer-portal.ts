@@ -1,22 +1,21 @@
 import { PrismaClient } from "@prisma/client";
 
-export async function seedCustomerPortalDemoData(db: PrismaClient) {
+export async function seedCustomerPortalDemoData(db: PrismaClient, accountId?: string) {
   console.log("🌱 Seeding Qubere Customer Portal demo data with Target & Amazon onboarding workflows...");
 
   // 1. Resolve or create active Account
   let account = await db.account.findFirst({
-    where: { slug: "demo-account" },
+    where: accountId ? { id: accountId } : { slug: "demo-account" },
   });
 
-  if (!account) {
-    account = await db.account.findFirst();
-  }
+  if (!account && accountId) throw new Error("Requested demo account not found");
 
   if (!account) {
     account = await db.account.create({
       data: {
         name: "Qubere Demo Customs & TMS Brokerage",
         slug: "demo-account",
+        dataMode: "DEMO",
         type: "ENTERPRISE",
         status: "ACTIVE",
       },

@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import { Button, Input, Label, Card, CardHeader, Badge } from "@/components/ui";
@@ -56,6 +57,7 @@ interface FiveOhSixRecord {
   deliveryMethod: string | null;
   transmissionRef: string | null;
   submittedAt: string | null;
+  onboardingEntityId: string | null;
   payload: FiveOhSixPayload;
 }
 
@@ -234,10 +236,12 @@ function RecordRow({
   record,
   caseId,
   onFiled,
+  onEdit,
 }: {
   record: FiveOhSixRecord;
   caseId: string;
   onFiled: (updated: FiveOhSixRecord) => void;
+  onEdit: (record: FiveOhSixRecord) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -289,6 +293,7 @@ function RecordRow({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message ?? "Failed");
       setShowFiledModal(false);
+      setFiling(false);
       onFiled(data.record);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -314,12 +319,102 @@ function RecordRow({
         <Badge variant={info.variant} className="shrink-0 text-xs">
           {info.label}
         </Badge>
-        <button
-          onClick={() => setExpanded((x) => !x)}
-          className="text-ink-muted hover:text-ink"
-        >
-          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
+      </div>
+
+      <div className="border-t px-4 py-3 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={downloading}
+          >
+            <FileDown className="h-3.5 w-3.5 mr-1" />
+            {downloading ? "Generating…" : "Download 5106 PDF"}
+          </Button>
+
+          {canMarkFiled && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onEdit(record)}
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              Edit
+            </Button>
+          )}
+
+          {canMarkFiled && (
+            <Button
+              size="sm"
+              onClick={() => setShowFiledModal(true)}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+              Mark filed with CBP
+            </Button>
+          )}
+
+          <Button variant="secondary" size="sm" disabled title="ABI transmission requires certified 5106 chapter + filer credential">
+            <ExternalLink className="h-3.5 w-3.5 mr-1" />
+            Transmit via ABI
+            <span className="ml-1 text-xs opacity-60">(not yet certified)</span>
+          </Button>
+
+          <button
+            onClick={() => setExpanded((x) => !x)}
+            className="ml-auto text-xs text-ink-muted hover:text-ink flex items-center gap-1"
+          >
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {expanded ? "Hide" : "Details"}
+          </button>
+        </div>
+
+        {canMarkFiled && !showFiledModal && (
+          <p className="text-xs text-ink-muted">
+            This step completes once the 5106 is on file with CBP. Download the PDF, submit it via the
+            ACE Portal (<span className="font-mono">ace.cbp.dhs.gov</span>) or by paper, then click
+            <span className="font-medium"> Mark filed with CBP</span>.
+          </p>
+        )}
+
+        {showFiledModal && (
+          <div className="border rounded-xl p-4 bg-white space-y-3">
+            <p className="text-sm font-medium">Mark 5106 as filed with CBP</p>
+            <div className="flex gap-3">
+              {(["ACE_PORTAL", "PAPER"] as DeliveryMethod[]).map((m) => (
+                <label key={m} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm cursor-pointer ${filedMethod === m ? "border-brand bg-brand/5" : ""}`}>
+                  <input
+                    type="radio"
+                    name={`deliveryMethod-${record.id}`}
+                    checked={filedMethod === m}
+                    onChange={() => setFiledMethod(m)}
+                  />
+                  {m === "ACE_PORTAL" ? "Filed via ACE Portal" : "Filed via paper / mail"}
+                </label>
+              ))}
+            </div>
+            {filedMethod === "ACE_PORTAL" && (
+              <div className="space-y-1">
+                <Label htmlFor={`confirmNum-${record.id}`}>ACE submission confirmation number *</Label>
+                <Input
+                  id={`confirmNum-${record.id}`}
+                  placeholder="ACE-XXXXXXXXXX"
+                  value={confirmationNumber}
+                  onChange={(e) => setConfirmationNumber(e.target.value)}
+                />
+              </div>
+            )}
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex gap-2 justify-end">
+              <Button variant="secondary" size="sm" onClick={() => { setShowFiledModal(false); setError(null); }}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleMarkFiled} disabled={filing}>
+                {filing ? "Saving…" : "Confirm filed"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {expanded && (
@@ -342,74 +437,6 @@ function RecordRow({
               {record.payload.officers.length}
             </div>
           </div>
-
-          <div className="flex items-center gap-2 pt-1 flex-wrap">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleDownloadPdf}
-              disabled={downloading}
-            >
-              <FileDown className="h-3.5 w-3.5 mr-1" />
-              {downloading ? "Generating…" : "Download 5106 PDF"}
-            </Button>
-
-            {canMarkFiled && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowFiledModal(true)}
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                Mark filed
-              </Button>
-            )}
-
-            <Button variant="secondary" size="sm" disabled title="ABI transmission requires certified 5106 chapter + filer credential">
-              <ExternalLink className="h-3.5 w-3.5 mr-1" />
-              Transmit via ABI
-              <span className="ml-1 text-xs opacity-60">(not yet certified)</span>
-            </Button>
-          </div>
-
-          {showFiledModal && (
-            <div className="border rounded-xl p-4 bg-white space-y-3">
-              <p className="text-sm font-medium">Mark 5106 as filed</p>
-              <div className="flex gap-3">
-                {(["ACE_PORTAL", "PAPER"] as DeliveryMethod[]).map((m) => (
-                  <label key={m} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm cursor-pointer ${filedMethod === m ? "border-brand bg-brand/5" : ""}`}>
-                    <input
-                      type="radio"
-                      name="deliveryMethod"
-                      checked={filedMethod === m}
-                      onChange={() => setFiledMethod(m)}
-                    />
-                    {m === "ACE_PORTAL" ? "Filed via ACE Portal" : "Filed via paper / mail"}
-                  </label>
-                ))}
-              </div>
-              {filedMethod === "ACE_PORTAL" && (
-                <div className="space-y-1">
-                  <Label htmlFor="confirmNum">ACE submission confirmation number *</Label>
-                  <Input
-                    id="confirmNum"
-                    placeholder="ACE-XXXXXXXXXX"
-                    value={confirmationNumber}
-                    onChange={(e) => setConfirmationNumber(e.target.value)}
-                  />
-                </div>
-              )}
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <div className="flex gap-2 justify-end">
-                <Button variant="secondary" size="sm" onClick={() => setShowFiledModal(false)}>
-                  Cancel
-                </Button>
-                <Button size="sm" onClick={handleMarkFiled} disabled={filing}>
-                  {filing ? "Saving…" : "Confirm filed"}
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -422,6 +449,8 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
   const [selectedEntityId, setSelectedEntityId] = useState(entities[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
 
   const selectedEntity = entities.find((e) => e.id === selectedEntityId) ?? entities[0];
   const [payload, setPayload] = useState<FiveOhSixPayload>(
@@ -434,31 +463,67 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
     setPayload((p) => ({ ...p, [key]: value }));
   }
 
+  function startEdit(record: FiveOhSixRecord) {
+    setEditingId(record.id);
+    setPayload(record.payload);
+    setSelectedEntityId(record.onboardingEntityId ?? selectedEntityId);
+    setError(null);
+    setJustSaved(false);
+    setShowForm(true);
+  }
+
+  function startNew() {
+    setEditingId(null);
+    setPayload(selectedEntity ? buildInitialPayload(selectedEntity) : payload);
+    setError(null);
+    setJustSaved(false);
+    setShowForm(true);
+  }
+
   async function handleSave() {
     if (!payload.legalName.trim()) {
       setError("Legal name is required");
       return;
     }
-    if (payload.officers.some((o) => !o.name || !o.ssnLast4 || o.ssnLast4.length !== 4)) {
-      setError("Each officer must have a name and 4-digit SSN last 4");
+    if (payload.officers.some((o) => !o.name || !o.title || !o.ssnLast4 || o.ssnLast4.length !== 4 || !o.dobLast4 || o.dobLast4.length !== 4)) {
+      setError("Each officer needs a name, title, 4-digit SSN last 4 and 4-digit DOB (MMDD)");
       return;
     }
-    if (!payload.physicalAddress.line1 || !payload.physicalAddress.city) {
-      setError("Physical address is required");
+    if (!payload.physicalAddress.line1 || !payload.physicalAddress.city || !payload.physicalAddress.postalCode) {
+      setError("Physical address needs a street, city and postal code");
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/onboarding/cases/${caseId}/5106`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ onboardingEntityId: selectedEntityId || null, payload }),
-      });
+      // Update an existing draft in place rather than piling up duplicate records.
+      const existing =
+        editingId ??
+        records.find(
+          (r) =>
+            (r.status === "draft" || r.status === "generated") &&
+            (r.onboardingEntityId ?? null) === (selectedEntityId || null),
+        )?.id ??
+        null;
+
+      const res = await fetch(
+        existing
+          ? `/api/onboarding/cases/${caseId}/5106/${existing}`
+          : `/api/onboarding/cases/${caseId}/5106`,
+        {
+          method: existing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(existing ? payload : { onboardingEntityId: selectedEntityId || null, payload }),
+        },
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message ?? "Failed to save");
-      setRecords((r) => [...r, data.record]);
+      setRecords((r) =>
+        existing ? r.map((x) => (x.id === data.record.id ? { ...x, ...data.record } : x)) : [...r, data.record],
+      );
+      setEditingId(null);
       setShowForm(false);
+      setJustSaved(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -479,7 +544,17 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
       {anySubmitted && (
         <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          At least one 5106 has been submitted — this step is complete. You can proceed to Step 3.
+          At least one 5106 has been filed with CBP — this step is complete. You can proceed to Step 3.
+        </div>
+      )}
+
+      {justSaved && !anySubmitted && !showForm && (
+        <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+          <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            5106 draft saved. It is <strong>not yet complete</strong> — download the PDF, file it with CBP
+            (ACE Portal or paper), then use <strong>Mark filed with CBP</strong> on the record below.
+          </span>
         </div>
       )}
 
@@ -490,6 +565,7 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
               key={r.id}
               record={r}
               caseId={caseId}
+              onEdit={startEdit}
               onFiled={(updated) =>
                 setRecords((rs) => rs.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
               }
@@ -499,7 +575,7 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
       )}
 
       {!showForm && (
-        <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>
+        <Button variant="secondary" size="sm" onClick={startNew}>
           <Plus className="h-4 w-4 mr-1" />
           {records.length > 0 ? "Add another 5106 (additional entity)" : "Create 5106"}
         </Button>
@@ -508,7 +584,7 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
       {showForm && (
         <Card>
           <CardHeader>
-            {records.length > 0 ? "Additional 5106" : "Complete CBP Form 5106"}
+            {editingId ? "Edit 5106 draft" : records.length > 0 ? "Additional 5106" : "Complete CBP Form 5106"}
           </CardHeader>
           <div className="px-6 pb-6 space-y-5">
             {entities.length > 1 && (
@@ -517,10 +593,11 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
                 <select
                   id="entitySelect"
                   value={selectedEntityId}
+                  disabled={!!editingId}
                   onChange={(e) => {
                     setSelectedEntityId(e.target.value);
                     const ent = entities.find((x) => x.id === e.target.value);
-                    if (ent) setPayload(buildInitialPayload(ent));
+                    if (ent && !editingId) setPayload(buildInitialPayload(ent));
                   }}
                   className="w-full h-9 rounded-xl border border-border bg-white px-3 text-sm"
                 >
@@ -721,11 +798,11 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
             )}
 
             <div className="flex justify-between items-center">
-              <Button variant="secondary" onClick={() => setShowForm(false)}>
+              <Button variant="secondary" onClick={() => { setShowForm(false); setEditingId(null); setError(null); }}>
                 Cancel
               </Button>
               <Button onClick={handleSave} disabled={saving}>
-                {saving ? "Saving…" : "Save 5106 draft"}
+                {saving ? "Saving…" : editingId ? "Save changes" : "Save 5106 draft"}
               </Button>
             </div>
           </div>
@@ -740,7 +817,7 @@ export function StepFiveOhSix({ caseId, path, entities, initialRecords, onSaved 
 
       {records.length > 0 && !anySubmitted && (
         <p className="text-xs text-ink-muted">
-          Download the PDF, submit it to CBP via ACE Portal or paper, then click "Mark filed" to advance this step.
+          Download the PDF, submit it to CBP via ACE Portal or paper, then click "Mark filed with CBP" to advance this step.
           You can waive this step from the Review step if needed (requires compliance-override authority).
         </p>
       )}

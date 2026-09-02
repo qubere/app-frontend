@@ -23,6 +23,8 @@ describe("Customer Portal Roles and Permissions Catalogue", () => {
       "portal.shipments.read",
       "portal.entries.read",
       "portal.entries.download",
+      "portal.entries.comment",
+      "portal.setup.read",
       "portal.tms.read",
       "portal.orders.read",
       "portal.loads.read",
@@ -65,6 +67,8 @@ describe("Customer Portal Roles and Permissions Catalogue", () => {
     const permissions = defaultPermissionsForRole("CUSTOMER_VIEWER");
     expect(permissions).toContain("portal.access");
     expect(permissions).toContain("portal.shipments.read");
+    expect(permissions).toContain("portal.setup.read");
+    expect(permissions).not.toContain("portal.entries.comment");
     expect(permissions).not.toContain("portal.documents.create");
     expect(permissions).not.toContain("portal.requests.respond");
     expect(permissions).not.toContain("portal.users.manage");
