@@ -47,7 +47,9 @@ suppliers is a shared mailbox and a spreadsheet."
 | **Invoices** | The customer sees their invoices in the portal with the shipment context behind each one. | Portal → **Invoices**. (Original documents download; generated-PDF download is stubbed — see maturity note.) |
 | **Freight view** | A freight/movement summary for forwarding-style relationships. | Portal → **Freight**. |
 | **Passwordless invite & onboarding** | The broker sends a scoped invitation (`/invite/<token>`); the customer accepts and is provisioned with access limited to their client and, optionally, specific product scopes. | `/app/clients` → invite a portal user with a client + product scope. Show the invite acceptance flow. |
-| **Inbound email to the portal** | Customers can also just email documents to a per-tenant address; they land against the right shipment. | Explain the inbound-email path (shares the intake pipeline from [document-management.md](document-management.md)). |
+| **Client document email address** | When enabled, customers copy the address for their assigned client from Setup or Documents. The destination routes the file to that client; a sender's other client relationships do not decide where it belongs. | Portal → **Setup** or **Documents** → copy the labeled client address. Users assigned multiple clients choose the correct client's address. |
+| **Emailed document status** | Customer-visible emailed files show whether they are Processing, Attached to a shipment, or With your broker. Internal and discarded inbound files remain hidden; access follows the customer's assigned clients. | Portal → **Documents** → show the emailed label, sender/date and shipment group. Open the unknown-sender fixture with **With your broker** status. |
+| **Published proof stays under broker control** | A new emailed document attached to a shipment with published Entry Proof creates a broker draft. The customer keeps seeing the previous publication until the broker publishes the update. | Broker → attach the fixture and inspect the draft. Portal → confirm the previous published proof remains visible. |
 
 ---
 
@@ -65,6 +67,14 @@ suppliers is a shared mailbox and a spreadsheet."
 
 ## Objection handling
 
+- **"Does 'received' mean ready for filing?"** No. Receipt, processing, shipment
+  attachment and broker approval are separate. **With your broker** means a
+  decision is still needed. Under Approved senders only, an unknown email is held
+  before attachment download, so its files do not appear until approved and scanned.
+- **"Will every sender get an email receipt?"** Replies default off and need
+  both deployment and address-level enablement. Loop suppression can skip a reply,
+  and failed or timed-out attempts are not automatically retried. Show the portal
+  document status instead of promising delivery of a receipt.
 - **"Is this production-ready?"** It's pilot-ready. The security model (auth,
   client scoping, object storage) is real and was hardened through a formal
   review. The remaining gap is polished generated-PDF downloads and broader
@@ -80,6 +90,13 @@ suppliers is a shared mailbox and a spreadsheet."
   and origin-data collection rather than importer status visibility.
 
 ## Demo setup
+
+For the client email story, follow the
+[client email demo](../../../sales/CLIENT-EMAIL-INGESTION-DEMO.md) after the
+[Entry Proof partner demo](../../../sales/PARTNER-PORTAL-ENTRY-PROOF-DEMO.md).
+Client addresses must be enabled in both apps. Use the
+[customer instructions](../support/CLIENT-EMAIL-DOCUMENTS.md#send-documents-as-a-customer)
+for the handoff after the demo.
 
 The portal deploys as a separate app (`apps/portal`). On the hosted demo it's
 available; locally, run it alongside the customs app. Seed portal users and

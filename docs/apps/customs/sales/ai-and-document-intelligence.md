@@ -40,7 +40,7 @@ action through the exact same permission and audit checks as the UI.
 | **Four separate confidence signals, never merged** | Parser confidence, OCR confidence, the extraction model's own confidence, deterministic validation status, and human review status are five distinct things. "Not measured" is never shown as zero. | Show a field where parser confidence is high but the model flagged low extraction confidence — the two don't get averaged into a fake number. |
 | **Quality gate with bounded escalation** | A parse becomes the document's active version only if it passes an objective gate (text coverage, blank-page counts, parser warnings). Insufficient text → automatic OCR retry (STANDARD → OCR_FALLBACK → FULL_PAGE_OCR) → then a person. No invented score. | Show a scanned/image PDF driving the OCR escalation path and landing in **Needs Review**. |
 | **Reconciliation across documents** | Extracted facts from the commercial invoice, packing list, and bill of lading are cross-checked; conflicts become `ReconciliationIssue` / `ExceptionItem` records that block filing until resolved. | Open a shipment with a value mismatch between two documents → the reconciliation issue and its blocking status. |
-| **Inbound email intake** | Forward or CC documents to a per-tenant mailbox; they land as attachments, get classified, and attach to the right shipment — the same pipeline as a manual upload. | `/app/admin/settings` → **Document Email**. Show the tenant's inbound address and the allow-list. |
+| **Client email intake with explainable matching** | With client addresses enabled, the destination identifies the client. Clean attachments enter the existing parsing pipeline; one confident shipment match can attach, while unknown senders, conflicting identifiers and unreadable files wait for broker review. | **Document Email** → copy a client address, then `/app/documents/inbound-review` → compare the candidate shipment identifiers before choosing **Attach document**. No shipment is preselected. |
 | **Immutable, auditable, malware-screened** | Original bytes are never mutated, every read re-verifies the hash, uploads are malware-scanned (configurable block vs advisory), and every step writes to `AuditLog`. | Explain the SHA-256-on-every-read guarantee; show the audit trail on a document. |
 
 ### Ask Qubere (the assistant)
@@ -92,6 +92,13 @@ action through the exact same permission and audit checks as the UI.
   an internal API, the page DOM, or an account ID.
 
 ## Demo setup
+
+For email intake, use the [client email demo](../../../sales/CLIENT-EMAIL-INGESTION-DEMO.md).
+Its synthetic fixtures exercise clear, conflicting and unknown-sender cases.
+The seed supplies known text to the matcher; completed extraction requires the
+real parser worker. A shipment match does not approve extracted fields, publish
+Entry Proof or submit a filing. Client email requires a clean malware scan even
+when other upload paths use advisory policy.
 
 `GEMINI_API_KEY` must be set for the assistant and agents; `DOCUMENT_PARSER_PROVIDER=ibm-docling`
 (+ Docling creds) for real parsing — the hosted demo has these. Have one shipment
