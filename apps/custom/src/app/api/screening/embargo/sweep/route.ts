@@ -53,74 +53,93 @@ export const POST = withAuthenticatedRoute(async ({ ctx, requestId }) => {
     select: { id: true, shipmentNumber: true, countryOfOrigin: true, countryOfExport: true },
   });
 
-  const openFindings = await db.complianceScreeningFinding.findMany({
-    where: { accountId, category: "COUNTRY_EMBARGO", status: "OPEN" },
-    select: { shipmentId: true, ruleId: true },
-  });
   const openKey = (shipmentId: string, ruleId: string) => `${shipmentId}::${ruleId}`;
-  const openKeys = new Set(openFindings.map((f) => openKey(f.shipmentId, f.ruleId)));
 
-  let shipmentsWithHits = 0;
-  let findingsReused = 0;
-  const toCreate: {
-    accountId: string;
-    shipmentId: string;
-    lineNumber: null;
-    category: "COUNTRY_EMBARGO";
-    ruleId: string;
-    ruleName: string;
-    severity: "CRITICAL";
-    details: string;
-  }[] = [];
+  // Concurrent sweep requests for the same account (e.g. a double-submitted
+  // trigger, or an overlapping scheduled + manual run) each read openFindings
+  // before any of them commits its insert -- without serialization every one
+  // of them sees "no existing row" and creates its own, producing duplicate
+  // OPEN findings for the same (shipmentId, ruleId). Hold a transaction-scoped
+  // Postgres advisory lock keyed on accountId so concurrent sweeps for the
+  // same account run this read-then-write section one at a time. Lock key
+  // namespace 1 is reserved for this account-wide dedup lock -- namespace 0
+  // is the per-shipment dedup lock in screeningFindings.ts, and namespace 2
+  // is the per-shipment dedup lock in app/api/pga/screen/route.ts; keeping
+  // them on separate namespaces means an accountId hash can never collide
+  // with a shipmentId hash.
+  const { toCreate, shipmentsWithHits, findingsReused } = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(1, hashtext(${accountId}))`;
 
-  for (const shipment of shipments) {
-    const matched = new Map<string, { rule: (typeof rules)[number]; signals: Set<string> }>();
+    const openFindings = await tx.complianceScreeningFinding.findMany({
+      where: { accountId, category: "COUNTRY_EMBARGO", status: "OPEN" },
+      select: { shipmentId: true, ruleId: true },
+    });
+    const openKeys = new Set(openFindings.map((f) => openKey(f.shipmentId, f.ruleId)));
 
-    for (const rule of screenValue(shipment.countryOfOrigin, rules)) {
-      matched.set(rule.countryCode, { rule, signals: new Set(["country of origin"]) });
-    }
-    for (const rule of screenValue(shipment.countryOfExport, rules)) {
-      const entry = matched.get(rule.countryCode);
-      if (entry) entry.signals.add("country of export");
-      else matched.set(rule.countryCode, { rule, signals: new Set(["country of export"]) });
-    }
+    let shipmentsWithHits = 0;
+    let findingsReused = 0;
+    const toCreate: {
+      accountId: string;
+      shipmentId: string;
+      lineNumber: null;
+      category: "COUNTRY_EMBARGO";
+      ruleId: string;
+      ruleName: string;
+      severity: "CRITICAL";
+      details: string;
+    }[] = [];
 
-    if (matched.size === 0) continue;
-    shipmentsWithHits += 1;
+    for (const shipment of shipments) {
+      const matched = new Map<string, { rule: (typeof rules)[number]; signals: Set<string> }>();
 
-    for (const { rule, signals } of matched.values()) {
-      const ruleId = ruleIdFor(rule.countryCode);
-      if (openKeys.has(openKey(shipment.id, ruleId))) {
-        findingsReused += 1;
-        continue;
+      for (const rule of screenValue(shipment.countryOfOrigin, rules)) {
+        matched.set(rule.countryCode, { rule, signals: new Set(["country of origin"]) });
       }
-      // Guard against two rules mapping to the same code within one run.
-      openKeys.add(openKey(shipment.id, ruleId));
+      for (const rule of screenValue(shipment.countryOfExport, rules)) {
+        const entry = matched.get(rule.countryCode);
+        if (entry) entry.signals.add("country of export");
+        else matched.set(rule.countryCode, { rule, signals: new Set(["country of export"]) });
+      }
 
-      const originValue = shipment.countryOfOrigin ?? "";
-      const exportValue = shipment.countryOfExport ?? "";
-      const signalText = [...signals]
-        .map((s) => (s === "country of origin" ? `country of origin "${originValue}"` : `country of export "${exportValue}"`))
-        .join(" and ");
+      if (matched.size === 0) continue;
+      shipmentsWithHits += 1;
 
-      toCreate.push({
-        accountId,
-        shipmentId: shipment.id,
-        lineNumber: null,
-        category: "COUNTRY_EMBARGO",
-        ruleId,
-        ruleName: "Country Embargo Screening",
-        severity: "CRITICAL",
-        details:
-          `${signalText} matched ${rule.countryName} (${rule.countryCode}) -- ${rule.regime}: ${rule.restriction}. ` +
-          `Authority: ${rule.authority}. Obtain specific OFAC/CBP authorization before entry filing.`,
-      });
+      for (const { rule, signals } of matched.values()) {
+        const ruleId = ruleIdFor(rule.countryCode);
+        if (openKeys.has(openKey(shipment.id, ruleId))) {
+          findingsReused += 1;
+          continue;
+        }
+        // Guard against two rules mapping to the same code within one run.
+        openKeys.add(openKey(shipment.id, ruleId));
+
+        const originValue = shipment.countryOfOrigin ?? "";
+        const exportValue = shipment.countryOfExport ?? "";
+        const signalText = [...signals]
+          .map((s) => (s === "country of origin" ? `country of origin "${originValue}"` : `country of export "${exportValue}"`))
+          .join(" and ");
+
+        toCreate.push({
+          accountId,
+          shipmentId: shipment.id,
+          lineNumber: null,
+          category: "COUNTRY_EMBARGO",
+          ruleId,
+          ruleName: "Country Embargo Screening",
+          severity: "CRITICAL",
+          details:
+            `${signalText} matched ${rule.countryName} (${rule.countryCode}) -- ${rule.regime}: ${rule.restriction}. ` +
+            `Authority: ${rule.authority}. Obtain specific OFAC/CBP authorization before entry filing.`,
+        });
+      }
     }
-  }
 
-  if (toCreate.length > 0) {
-    await db.complianceScreeningFinding.createMany({ data: toCreate });
-  }
+    if (toCreate.length > 0) {
+      await tx.complianceScreeningFinding.createMany({ data: toCreate });
+    }
+
+    return { toCreate, shipmentsWithHits, findingsReused };
+  });
 
   await createAuditLog({
     accountId,
