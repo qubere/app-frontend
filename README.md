@@ -948,24 +948,27 @@ It loads the portal app's development environment first, with the root environme
 as fallback, and prints the database host and account data mode so you can confirm
 the target. Explicit environment variables take precedence.
 
-Portal customers have access to an **account/workspace** through active membership.
-For example, Broker-A manages Target, Amazon and DHL in separate workspaces. A
-Target member can read Target's shipments, documents, importers and onboarding,
-including records with missing or different client links. Role permissions still
-control actions. Other workspaces remain inaccessible. `clientAssignments` in the
-report is organizational metadata, not a second portal access boundary.
+Each portal customer is assigned to a **client workspace** inside the broker's
+account. For example, Broker-A serves Target, Amazon and DHL as separate `Client`
+records in one account. A Target user reads Target's shipments, documents,
+importers and onboarding — including rows with a missing or duplicated `clientId`
+when their importer of record resolves unambiguously to Target — and nothing from
+Amazon or DHL. Role permissions apply on top of that boundary. `clientAssignments`
+in the report **is** the portal read boundary: a user with no assignment sees
+nothing.
 
-Compare `account.id` with the workspace selected in Customs and `/api/me` in the
+Compare `account.id` with the client selected in Customs and `/api/me` in the
 portal. `PRODUCTION` is the account's data mode, independent of running localhost.
-Do not relink records or change data mode to make them appear. Your setup opens
-**All workspace setup** by default and shows every importer, including an existing
-executed PoA without a promoted ClientDocument. Stored signed files can be downloaded;
+Do not relink records or change data mode to make them appear. Your setup defaults
+to every importer under the signed-in client, including an existing executed PoA
+without a promoted ClientDocument. Stored signed files can be downloaded;
 placeholder URLs are not reconstructed as documents.
 
-Document lists include legacy INTERNAL files in the owning workspace and an
+Document lists include legacy INTERNAL files on the client's own shipments and an
 **Uploaded by** column from audit history or the inbound sender. Pagination keeps
 responses bounded. Upload and response permissions remain enforced; access to a
-workspace does not grant broker administration or editing of broker-uploaded files.
+client workspace does not grant broker administration or editing of broker-uploaded
+files.
 
 The diagnostic has explicit limits and a `truncated` indicator. Keep the operator
 report within your admin team. It excludes passwords, EINs, file contents, storage
