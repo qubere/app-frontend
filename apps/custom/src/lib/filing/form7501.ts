@@ -7,67 +7,23 @@
  */
 
 import { Decimal, roundToCents } from "@/lib/tariff/decimal";
+import type {
+  FieldProvenance,
+  FieldStatus,
+  Form7501FieldResult,
+  Form7501LineItem,
+  Form7501CoverageStatus,
+  Form7501Result,
+} from "@qubere/billing/form7501";
 
-// ── Provenance ─────────────────────────────────────────────────────────────────
-
-export interface FieldProvenance {
-  value: unknown;
-  sourceModel: string;
-  sourceId: string | null;
-  sourceField: string;
-  approvedByUserId?: string | null;
-  approvedAt?: string | null;
-}
-
-/** "sourced_approved" = green; "sourced_unapproved" = amber; "missing" = red */
-export type FieldStatus = "sourced_approved" | "sourced_unapproved" | "missing";
-
-export interface Form7501FieldResult<T = unknown> {
-  block: string;
-  label: string;
-  value: T | null;
-  status: FieldStatus;
-  provenance: FieldProvenance;
-}
-
-// ── Per-line-item fields ───────────────────────────────────────────────────────
-
-export interface Form7501LineItem {
-  lineNumber: number;
-  description: Form7501FieldResult<string>;   // Block 28
-  htsCode: Form7501FieldResult<string>;       // Block 33
-  enteredValue: Form7501FieldResult<number>;  // Block 29
-  dutyRate: Form7501FieldResult<number>;      // Block 34 (decimal, e.g. 0.059)
-  dutyAmount: Form7501FieldResult<number>;    // Block 35 = Block29 × Block34
-  countryOfOrigin: Form7501FieldResult<string>; // Block 10
-  quantity: Form7501FieldResult<number>;      // Block 27
-}
-
-// ── Top-level result ───────────────────────────────────────────────────────────
-
-export interface Form7501CoverageStatus {
-  required: number;
-  sourced: number;
-  approved: number;
-  missing: number;
-}
-
-export interface Form7501Result {
-  entryType: Form7501FieldResult<string>;        // Block 1
-  entryNumber: Form7501FieldResult<string>;       // Block 2
-  portCode: Form7501FieldResult<string>;          // Block 45
-  importerName: Form7501FieldResult<string>;      // Block 25
-  importerNumber: Form7501FieldResult<string>;    // Block 23 (CBP number)
-  bondNumber: Form7501FieldResult<string>;        // Block 4
-  countryOfExport: Form7501FieldResult<string>;   // Block 14
-  carrier: Form7501FieldResult<string>;           // Block 8
-  totalEnteredValue: Form7501FieldResult<number>; // Block 40 = sum(Block29)
-  totalDuty: Form7501FieldResult<number>;         // Block 43 = sum(Block35)
-  lineItems: Form7501LineItem[];
-  generatedAt: string;
-  htsReleaseId: string | null;
-  coverageStatus: Form7501CoverageStatus;
-}
+export type {
+  FieldProvenance,
+  FieldStatus,
+  Form7501FieldResult,
+  Form7501LineItem,
+  Form7501CoverageStatus,
+  Form7501Result,
+};
 
 // ── Caller-supplied input shapes ───────────────────────────────────────────────
 
