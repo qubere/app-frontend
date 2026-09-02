@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, Button, Input, Label } from "@/components/ui";
+import { ClientPicker, type ClientOption } from "./ClientPicker";
 
 const PATHS = [
   { value: "STANDARD", label: "Standard", description: "Brand-new US importer, first time filing." },
@@ -17,14 +18,16 @@ interface Props {
 export function NewCaseModal({ onClose }: Props) {
   const router = useRouter();
   const [path, setPath] = useState<string>("STANDARD");
+  const [clientMode, setClientMode] = useState<"existing" | "new">("existing");
+  const [client, setClient] = useState<ClientOption | null>(null);
   const [clientName, setClientName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit() {
-    if (!clientName.trim()) {
-      setError("Client name is required");
+    if (clientMode === "existing" ? !client : !clientName.trim()) {
+      setError(clientMode === "existing" ? "Choose a client" : "Client name is required");
       return;
     }
     setSaving(true);
@@ -35,7 +38,7 @@ export function NewCaseModal({ onClose }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           path,
-          newClient: { name: clientName.trim(), contactEmail: contactEmail.trim() || undefined },
+          ...(clientMode === "existing" ? { clientId: client!.id } : { newClient: { name: clientName.trim(), contactEmail: contactEmail.trim() || undefined } }),
         }),
       });
       const data = await res.json();
@@ -52,6 +55,11 @@ export function NewCaseModal({ onClose }: Props) {
       <h2 id="new-case-modal-title" className="text-lg font-semibold">Onboard an importer</h2>
 
       <div className="space-y-4">
+        <div className="flex gap-4 text-sm">
+          <label><input type="radio" name="client-mode" checked={clientMode === "existing"} onChange={() => setClientMode("existing")} disabled={saving} /> Existing client</label>
+          <label><input type="radio" name="client-mode" checked={clientMode === "new"} onChange={() => setClientMode("new")} disabled={saving} /> New client</label>
+        </div>
+        {clientMode === "existing" ? <><ClientPicker value={client} onChange={setClient} disabled={saving} /><p className="text-xs text-ink-muted">Use the client already assigned to the customer’s portal login.</p></> : <>
         <div className="space-y-1">
           <Label htmlFor="clientName">Client name *</Label>
           <Input
@@ -71,6 +79,7 @@ export function NewCaseModal({ onClose }: Props) {
             onChange={(e) => setContactEmail(e.target.value)}
           />
         </div>
+        </>}
         <div className="space-y-2">
           <Label>Onboarding path</Label>
           {PATHS.map((p) => (

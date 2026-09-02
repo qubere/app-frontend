@@ -85,6 +85,13 @@ export class CaseService {
   static async createCase(accountId: string, userId: string, input: CaseCreateInput) {
     let clientId = input.clientId;
 
+    if (!!clientId === !!input.newClient) {
+      throw new Error("Choose an existing client or create a new client.");
+    }
+    if (clientId && !await db.client.findFirst({ where: { id: clientId, accountId }, select: { id: true } })) {
+      throw Object.assign(new Error("Client not found"), { code: "NOT_FOUND" });
+    }
+
     if (!clientId && input.newClient) {
       const newClient = await db.client.create({
         data: {

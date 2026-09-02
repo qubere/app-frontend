@@ -23,7 +23,7 @@ const entitySchema = z.object({
 export const POST = withAuthenticatedRoute(
   async ({ req, params, ctx, requestId }) => {
     const caseId = params.caseId as string;
-    const existingCase = await db.onboardingCase.findUnique({ where: { id: caseId }, select: { accountId: true, status: true } });
+    const existingCase = await db.onboardingCase.findUnique({ where: { id: caseId }, select: { accountId: true, status: true, clientId: true } });
     if (!existingCase || existingCase.accountId !== ctx.accountId) {
       return buildErrorResponse(404, "NOT_FOUND", "Case not found", undefined, requestId);
     }
@@ -69,6 +69,7 @@ export const POST = withAuthenticatedRoute(
         const ior = await tx.importerOfRecord.create({
           data: {
             accountId: ctx.accountId,
+            clientId: existingCase.clientId,
             name: data.legalName,
             irsEin: data.importerNumber ?? "",
             cbpImporterNumber: data.importerNumberType === "CBP_ASSIGNED" ? null : (data.importerNumber ?? null),
