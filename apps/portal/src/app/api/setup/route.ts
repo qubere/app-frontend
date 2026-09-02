@@ -1,3 +1,4 @@
+import { loadInboundAddresses } from '@/lib/inbound-addresses';
 import { NextResponse } from 'next/server';
 import { db } from '@qubere/db';
 import { withPortalAccount, portalScope, portalData, noStore, notFound } from '@/lib/portal-scope';
@@ -15,6 +16,7 @@ export const GET = withPortalAccount(async (_ctx, req: Request) => {
         const summary = requested
             ? await loadClientSetup(s.ctx.accountId, requested)
             : await loadWorkspaceSetup(s.ctx.accountId);
-        return summary ? NextResponse.json({ ...summary, clients }, noStore) : notFound();
+        const inboundAddresses = await loadInboundAddresses(s.ctx.accountId, requested ? [requested] : s.clientIds);
+        return summary ? NextResponse.json({ ...summary, clients, inboundAddresses, inboundAddress: inboundAddresses.length === 1 ? inboundAddresses[0] : null }, noStore) : notFound();
     });
 });

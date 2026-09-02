@@ -1,3 +1,4 @@
+import { loadInboundAddresses } from '@/lib/inbound-addresses';
 import { NextResponse } from "next/server";
 import { db } from "@qubere/db";
 
@@ -67,6 +68,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const addr = (ior?.address ?? {}) as Record<string, string>;
 
   return NextResponse.json({
+    inboundAddresses: await loadInboundAddresses(invitation.accountId, [invitation.clientId]),
     clientName: invitation.client?.name ?? "Your company",
     brokerName: invitation.account?.name ?? "Your broker",
     onboardingCaseId: onboardingCase.id,

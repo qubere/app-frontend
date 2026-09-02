@@ -39,6 +39,7 @@ interface ShipmentData {
     id: string;
     fileName: string;
     docType: string;
+    source?: string;
     status: string;
     createdAt: string;
   }>;
@@ -258,6 +259,7 @@ function ShipmentDetails({ id }: { id: string }) {
               <div>
                 <h4 className="text-sm font-semibold text-[#1D1D1F]">{d.fileName}</h4>
                 <span className="text-xs text-[#86868B]">{d.docType}</span>
+                {d.source === "INBOUND_EMAIL" && <p className="mt-1 text-xs text-[#86868B]">Received by email {new Date(d.createdAt).toLocaleDateString()}</p>}
               </div>
               <a
                 href={`/api/documents/${d.id}/download`}

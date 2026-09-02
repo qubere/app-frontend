@@ -7,16 +7,18 @@ export function renderPortalEmail(value: unknown): RenderedEmail {
     const p = value as {
         type: string;
         href: string;
+        inboundAddress?: string;
     };
     if (!p || !COPY[p.type] || typeof p.href !== 'string' || !p.href.startsWith('/') || p.href.startsWith('//') || p.href.includes('\\'))
         throw new Error('Invalid portal notification');
     const url = new URL(p.href, process.env.NEXT_PUBLIC_PORTAL_URL || 'http://localhost:3002').toString();
-    const message = COPY[p.type];
+    const message = COPY[p.type] + (p.type === "ACCOUNT_ACTIVATED" && p.inboundAddress ? ` Send documents to ${p.inboundAddress}.` : "");
     return { subject: message, text: message + '\n' + url, html: `<p>${escapeHtml(message)}</p><p><a href="${escapeHtml(url)}">Open your portal</a></p>` };
 }
 export async function queuePortalUpdate(accountId: string, clientId: string, type: string, sourceId: string, href: string) {
     if (!COPY[type])
         throw new Error('Unknown portal notification');
+    const inbox = type === "ACCOUNT_ACTIVATED" && process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === "true" ? await db.inboundAddress.findFirst({ where: { accountId, clientId, status: "ACTIVE", purpose: "CLIENT_DOCUMENTS" }, select: { address: true } }) : null;
     const recipients = await db.clientStakeholder.findMany({ where: { accountId, clientId, loginStatus: 'ACTIVE', userId: { not: null }, user: { deletedAt: null } } });
     for (const recipient of recipients) {
         const prefs = (recipient.notifyPrefs ?? {}) as Record<string, unknown>;
@@ -28,11 +30,11 @@ export async function queuePortalUpdate(accountId: string, clientId: string, typ
             continue;
         const portalEventKey = `${accountId}:${clientId}:${type}:${sourceId}:${recipient.id}`;
         await db.$transaction(async (tx) => {
-            const queued = await tx.complianceNotification.upsert({ where: { portalEventKey }, update: {}, create: { accountId, notificationType: 'PORTAL_UPDATE', portalEventKey, recipients: prefs.email === false ? [] : [recipient.email], payload: { type, href }, deliveryStatus: prefs.email === false ? 'SUPPRESSED' : 'PENDING', queuedAt: new Date() } });
+            const queued = await tx.complianceNotification.upsert({ where: { portalEventKey }, update: {}, create: { accountId, notificationType: 'PORTAL_UPDATE', portalEventKey, recipients: prefs.email === false ? [] : [recipient.email], payload: { type, href, ...(inbox ? { inboundAddress: inbox.address } : {}) }, deliveryStatus: prefs.email === false ? 'SUPPRESSED' : 'PENDING', queuedAt: new Date() } });
             await tx.$queryRaw `SELECT id FROM "ComplianceNotification" WHERE id = ${queued.id} FOR UPDATE`;
             const current = await tx.complianceNotification.findUniqueOrThrow({ where: { id: queued.id } });
             if (!current.bellDeliveredAt && prefs.portal !== false) {
-                await tx.notification.create({ data: { accountId, userId: recipient.userId!, type, message: COPY[type], entityType: 'PortalUpdate', entityId: clientId } });
+                await tx.notification.create({ data: { accountId, userId: recipient.userId!, type, message: COPY[type] + (inbox ? ` Send documents to ${inbox.address}.` : ""), entityType: 'PortalUpdate', entityId: clientId } });
                 await tx.complianceNotification.update({ where: { id: queued.id }, data: { bellDeliveredAt: new Date() } });
             }
         });

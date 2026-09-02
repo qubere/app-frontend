@@ -107,6 +107,20 @@ describe('Shared documents and upload attribution', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('%PDF');
   });
+  it.each([
+    { source: 'INBOUND_EMAIL', portalVisibility: 'INTERNAL', status: 'Received' },
+    { source: 'INBOUND_EMAIL', portalVisibility: 'CUSTOMER', status: 'DISCARDED' },
+  ])('denies hidden inbound documents before reading storage: %j', async (hidden) => {
+    const record = await m.db.shipmentDocument.findUnique();
+    m.db.shipmentDocument.findUnique.mockResolvedValue({ ...record, ...hidden });
+    expect((await download.GET(request('documents/doc/download'), { params: Promise.resolve({ id: 'doc' }) })).status).toBe(404);
+    expect(m.read).not.toHaveBeenCalled();
+  });
+  it('downloads customer-visible email documents', async () => {
+    const record = await m.db.shipmentDocument.findUnique();
+    m.db.shipmentDocument.findUnique.mockResolvedValue({ ...record, source: 'INBOUND_EMAIL' });
+    expect((await download.GET(request('documents/doc/download'), { params: Promise.resolve({ id: 'doc' }) })).status).toBe(200);
+  });
   it('allows legacy INTERNAL documents but denies other workspaces before storage access', async () => {
     const record = await m.db.shipmentDocument.findUnique();
     m.db.shipmentDocument.findUnique.mockResolvedValue({ ...record, portalVisibility: 'INTERNAL' });

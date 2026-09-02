@@ -44,7 +44,8 @@ export async function shipmentClientId(accountId: string, shipment: { clientId: 
 
 export function documentClientWhere(accountId: string, clientIds: string[] | null, owners: Map<string, string>): Prisma.ShipmentDocumentWhereInput {
   const shipment = { accountId, deletedAt: null, ...shipmentClientWhere(clientIds, owners) };
-  return { accountId, AND: [
+  return { accountId, status: { not: "DISCARDED" }, AND: [
+    { OR: [{ source: { not: "INBOUND_EMAIL" } }, { portalVisibility: "CUSTOMER" }] },
     ...(clientIds === null ? [] : [{ OR: [{ clientId: { in: clientIds } }, { clientId: null, shipment }] }]),
     // Don't expose a linked shipment's identity when it belongs outside scope.
     { OR: [{ shipmentId: null }, { shipment }] },

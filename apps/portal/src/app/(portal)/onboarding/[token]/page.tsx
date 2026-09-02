@@ -1,5 +1,6 @@
 "use client";
 
+import { InboundAddressCard } from '@/components/InboundAddressCard';
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -23,6 +24,7 @@ const STEPS: { id: StepId; label: string; icon: React.ComponentType<{ className?
 ];
 
 interface InvitationContext {
+  inboundAddresses?: { address: string; purpose: string; clientId: string; client: { name: string } }[];
   clientName: string;
   brokerName: string;
   onboardingCaseId: string;
@@ -160,6 +162,7 @@ export default function OnboardingPortalPage() {
         <div className="max-w-md text-center space-y-4">
           <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto" />
           <h1 className="text-2xl font-semibold">All done — thank you!</h1>
+          <InboundAddressCard initialAddresses={ctx?.inboundAddresses} />
           <p className="text-muted-foreground">
             Your information has been submitted to <strong>{ctx?.brokerName}</strong>. They will review and activate
             your account. You may close this window.

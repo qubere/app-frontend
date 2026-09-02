@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, ArrowDownToLine, Building2, CheckCircle2, FileCheck2, Files, Mail, RefreshCw, UserRound, UserRoundPlus, Users } from 'lucide-react';
 import type { SetupSummary } from '@qubere/entry-proof';
+import { InboundAddressCard } from '@/components/InboundAddressCard';
 import { ImporterSetupList } from '@/components/ImporterSetupList';
 import { SetupProgressRibbon, SetupStatusPill } from '@/components/SetupProgressRibbon';
 
@@ -61,6 +62,7 @@ export default function SetupPage() {
 
     {!shown && loading ? <div role="status" aria-label="Loading your setup" className="space-y-5"><span className="sr-only">Loading your setup…</span><div className="h-32 animate-pulse rounded-xl border border-slate-200 bg-white" /><div className="h-80 animate-pulse rounded-2xl border border-slate-200 bg-white" /></div> : !shown ? !error && <section className={`${panel} px-6 py-12 text-center`}><Building2 aria-hidden="true" className="mx-auto mb-3 size-8 text-slate-300" /><h2 className="text-sm font-semibold">No setup available</h2><p className="mt-2 text-xs text-ink-muted">Your service provider’s setup records will appear in this workspace.</p></section> : <div aria-busy={loading} className="space-y-5">
       <SetupProgressRibbon onboarding={shown.onboarding} />
+      <InboundAddressCard clientId={selected || undefined} />
 
       <section className={panel} aria-label="Workspace setup overview">
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-6">

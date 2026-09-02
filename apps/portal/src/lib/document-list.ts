@@ -25,7 +25,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
     db.shipmentDocument.findMany({
       where: { AND: [documentClientWhere(accountId, clientIds, owners), afterCursor(cursor, 'S')], ...(shipmentId ? { shipmentId } : {}), ...(docType ? { docType } : {}) },
       take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { id: true, fileName: true, docType: true, byteSize: true, mimeType: true, source: true, status: true, shipmentId: true, createdAt: true,
+      select: { id: true, fileName: true, docType: true, byteSize: true, mimeType: true, source: true, status: true, activeParseVersionId: true, inboundDocumentReview: { select: { status: true } }, shipmentId: true, createdAt: true,
         shipment: { select: { id: true, shipmentNumber: true } },
         inboundAttachment: { select: { inboundEmail: { select: { accountId: true, normalizedFromAddress: true } } } },
       },
@@ -39,7 +39,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
   const rows = [
     ...shipmentDocuments.map(d => ({ kind: 'S' as const, id: d.id, createdAt: d.createdAt, model: 'ShipmentDocument', sourceId: d.id,
       fileName: d.fileName, docType: d.docType, byteSize: d.byteSize, mimeType: d.mimeType, source: d.source,
-      status: d.status === 'Received' ? 'Ready' : d.status, shipmentId: d.shipmentId, shipmentNumber: d.shipment?.shipmentNumber ?? null,
+      status: d.source === 'INBOUND_EMAIL' ? d.inboundDocumentReview?.status === 'OPEN' ? 'With your broker' : d.shipmentId ? `Attached to ${d.shipment?.shipmentNumber || 'shipment'}` : 'Processing' : d.status === 'Received' ? 'Ready' : d.status, shipmentId: d.shipmentId, shipmentNumber: d.shipment?.shipmentNumber ?? null,
       sender: d.inboundAttachment?.inboundEmail.accountId === accountId ? d.inboundAttachment.inboundEmail.normalizedFromAddress : null,
       downloadUrl: `/api/documents/${d.id}/download`, canDelete: input.canDelete && d.source === 'PORTAL_UPLOAD' && !d.shipmentId,
     })),
