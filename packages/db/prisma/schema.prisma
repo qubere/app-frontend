@@ -5979,6 +5979,24 @@ model FilingActionCatalog {
   @@index([isActive])
 }
 
+/// Master catalog of filing status codes (DRAFT, SUBMITTED, APPROVED, etc.)
+/// with a base-language fallback description plus optional per-locale
+/// translations, so the UI can render a status description in whichever
+/// language the current user/tenant is configured for.
+model FilingStatusCatalog {
+  id                 String   @id @default(cuid())
+  statusCode         String   @unique // Business/system code, e.g. DRAFT, SUBMITTED, APPROVED
+  defaultDescription String // Fallback description (base language), shown when no locale-specific override exists
+  /// Key-value map of locale code -> translated description, e.g. { "en": "Draft", "fr": "Brouillon" }.
+  localeDescription  Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  createdBy          String?
+  updatedBy          String?
+
+  @@index([statusCode])
+}
+
 /// Lists valid message names for each country/procedure/transaction combination.
 /// Replaces the old FilingProcedureMapping which was US-centric (entryType-based).
 /// Example: (NL, NCTS, 5100, IE015) means Netherlands NCTS procedure 5100 uses message IE015.
