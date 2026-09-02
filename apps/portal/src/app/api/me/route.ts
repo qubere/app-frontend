@@ -64,8 +64,8 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
   const isOwnerOrAdmin = ctx.isPlatformAdmin || ctx.roleNames.includes("OWNER") || ctx.roleNames.includes("ADMIN");
 
   const hasPorterView = isOwnerOrAdmin || perms.has("portal.porter") || perms.has("portal.access");
-  const hasCustomsAccess = hasPorterView || perms.has("portal.customs.read") || perms.has("portal.shipments.read");
-  const hasTmsAccess = hasPorterView || perms.has("portal.tms.read") || perms.has("portal.orders.read");
+  const hasCustomsAccess = hasRequiredPortalPermission(ctx, "portal.customs.read") || hasRequiredPortalPermission(ctx, "portal.shipments.read");
+  const hasTmsAccess = hasRequiredPortalPermission(ctx, "portal.tms.read") || hasRequiredPortalPermission(ctx, "portal.orders.read");
   const canUploadDocuments = isOwnerOrAdmin || perms.has("portal.documents.create");
   const canRespondRequests = isOwnerOrAdmin || perms.has("portal.requests.respond");
 

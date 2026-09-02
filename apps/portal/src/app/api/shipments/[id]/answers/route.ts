@@ -1,5 +1,6 @@
+import { shipmentReadPermission } from "@/lib/shipment-access";
 import { NextResponse } from 'next/server';
-import { authorizePortalResource, getAccountContext } from '@qubere/auth';
+import { authorizePortalResource, getAccountContext, hasRequiredPortalPermission } from '@qubere/auth';
 import { db, mapPortalShipmentStatus } from '@qubere/db';
 import { assembleShipmentAnswers, type EntryProofPayload } from '@qubere/entry-proof';
 import { portalData, notFound, noStore } from '@/lib/portal-scope';
@@ -13,15 +14,16 @@ export async function GET(_req: Request, { params }: {
         return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 });
     return portalData(ctx, async () => {
         const { id } = await params;
-        const resource = await db.shipment.findFirst({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: { accountId: true, clientId: true, importerName: true } });
+        const resource = await db.shipment.findFirst({ where: { id, accountId: ctx.accountId, deletedAt: null }, select: { accountId: true, clientId: true, importerName: true, productWorkspaces: { select: { product: true, status: true } } } });
         if (!resource)
             return notFound();
-        const auth = await authorizePortalResource({ permission: 'portal.shipments.read', resourceAccountId: resource.accountId, resourceClientId: resource.clientId, importerName: resource.importerName });
+        const auth = await authorizePortalResource({ permission: shipmentReadPermission(ctx, resource.productWorkspaces), resourceAccountId: resource.accountId, resourceClientId: resource.clientId, importerName: resource.importerName });
         if (!auth.authorized)
             return auth.errorResponse ?? notFound();
+        const canReadEntries = hasRequiredPortalPermission(ctx, 'portal.entries.read');
         const s = await db.shipment.findUnique({ where: { id }, include: {
-                customsFilings: { where: { customerVisibleAt: { not: null } }, orderBy: { createdAt: 'desc' }, select: { filingStatus: true } },
-                entryProofs: { where: { status: 'PUBLISHED', clientId: auth.effectiveClientId!, filing: { customerVisibleAt: { not: null } } }, select: { payload: true, dutyAndFeesUsd: true } },
+                customsFilings: { where: { customerVisibleAt: { not: null }, ...(!canReadEntries ? { id: { in: [] } } : {}) }, orderBy: { createdAt: 'desc' }, select: { filingStatus: true } },
+                entryProofs: { where: { ...(!canReadEntries ? { id: { in: [] } } : {}), status: 'PUBLISHED', clientId: auth.effectiveClientId!, filing: { customerVisibleAt: { not: null } } }, select: { payload: true, dutyAndFeesUsd: true } },
                 etaObservations: { orderBy: { estimatedAt: 'desc' }, take: 1 },
                 trackingEvents: { orderBy: { occurredAt: 'desc' }, take: 20, select: { eventType: true, occurredAt: true, locationName: true } },
                 legs: { orderBy: { sequence: 'asc' }, select: { mode: true, status: true, actualDeparture: true, actualArrival: true, originStop: { select: { name: true } }, destinationStop: { select: { name: true } } } },

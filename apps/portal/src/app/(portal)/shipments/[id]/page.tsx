@@ -1,5 +1,9 @@
 "use client";
 
+import { ShipmentMilestones, ShipmentTracking } from "@/components/ShipmentProgress";
+import { ShipmentFilingData, type PortalFilingData, type PortalEntry } from "@/components/ShipmentFilingData";
+import type { ShipmentProgress } from "@/lib/shipment-progress";
+import { portalResponseError } from "@/lib/portal-response-error";
 import { AtAGlance } from "@/components/shipment-answers/AtAGlance";
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
@@ -7,6 +11,8 @@ import Link from "next/link";
 import { ShipmentIcon, DocumentIcon, InvoiceIcon, BellIcon } from "../../icons";
 
 interface ShipmentData {
+  progress: ShipmentProgress;
+  filingData: PortalFilingData | null;
   overview: {
     id: string;
     shipmentNumber: string;
@@ -36,14 +42,7 @@ interface ShipmentData {
     status: string;
     createdAt: string;
   }>;
-  entries: Array<{
-    id: string;
-    entryNumber: string;
-    status: string;
-    dutyTotal?: number;
-    publishedAt: string;
-    proof?: { available: boolean; scoreOverall: number; scoreBand: string };
-  }>;
+  entries: PortalEntry[];
   invoices: Array<{
     id: string;
     invoiceNumber: string;
@@ -57,18 +56,26 @@ export default function ShipmentDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const [data, setData] = useState<ShipmentData | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "requests" | "documents" | "entries" | "invoices" | "proof">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "requests" | "documents" | "entries" | "invoices" | "proof" | "tracking" | "filing">("overview");
 
   useEffect(() => {
-    fetch(`/api/shipments/${id}`)
-      .then((res) => res.json())
-      .then((resData) => {
-        if (resData.overview) setData(resData);
+    const controller = new AbortController();
+    setLoading(true); setError(""); setData(null);
+    fetch(`/api/shipments/${id}`, { signal: controller.signal, cache: "no-store" })
+      .then(async res => {
+        if (!res.ok) throw new Error(await portalResponseError(res, "Could not load shipment details. Please try again."));
+        const result = await res.json();
+        if (!result.overview) throw new Error("Could not load shipment details. Please try again.");
+        return result;
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+      .then(result => { if (!controller.signal.aborted) setData(result); })
+      .catch(e => { if (!controller.signal.aborted) setError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [id, retry]);
 
   if (loading) {
     return <div className="qubere-card p-12 text-center text-[#86868B] text-sm animate-pulse">Loading shipment details...</div>;
@@ -77,8 +84,9 @@ export default function ShipmentDetailPage() {
   if (!data) {
     return (
       <div className="qubere-card p-12 text-center rounded-2xl">
-        <h2 className="text-xl font-bold text-[#1D1D1F]">Shipment Not Found</h2>
-        <p className="text-[#86868B] text-xs mt-2">The requested shipment does not exist or you lack permission to view it.</p>
+        <h2 className="text-xl font-bold text-[#1D1D1F]">Shipment details unavailable</h2>
+        <p className="text-[#86868B] text-xs mt-2">{error || "The requested shipment is not available to your login."}</p>
+        <button onClick={() => setRetry(n => n + 1)} className="block mx-auto mt-4 text-sm text-[#0071E3] underline">Try again</button>
         <Link href="/shipments" className="inline-block mt-4 text-xs text-[#0071E3] hover:underline font-medium">
           &larr; Back to Shipments
         </Link>
@@ -122,11 +130,12 @@ export default function ShipmentDetailPage() {
         </div>
       </div>
 
+      <ShipmentMilestones progress={data.progress} onTracking={() => setActiveTab("tracking")} />
       <AtAGlance shipmentId={id} />
 
       {/* Tabs */}
-      <div className="flex space-x-2 border-b border-[#E5E5EA] pb-3">
-        {(["overview", "requests", "documents", "entries", "invoices", ...(entries.some(e=>e.proof?.available)?["proof" as const]:[])] as const).map((tab) => (
+      <div className="flex overflow-x-auto space-x-2 border-b border-[#E5E5EA] pb-3">
+        {(["overview", "tracking", ...(data.filingData ? ["filing" as const] : []), "requests", "documents", "entries", "invoices", ...(entries.some(e=>e.proof?.available)?["proof" as const]:[])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -136,12 +145,14 @@ export default function ShipmentDetailPage() {
                 : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F5F5F7]"
             }`}
           >
-            {tab} {tab === "requests" && requests.length > 0 && `(${requests.length})`}
+            {tab === "filing" ? "Filing data" : tab === "proof" ? "Entry Proof" : tab} {tab === "requests" && requests.length > 0 && `(${requests.length})`}
           </button>
         ))}
       </div>
 
       {activeTab === "proof" && <div className="grid gap-4 md:grid-cols-2">{entries.filter(e=>e.proof?.available).map(e=><Link key={e.id} href={`/entries/${e.id}`} className="qubere-card rounded-2xl p-6"><strong>{e.entryNumber}</strong><p className="text-sm mt-2">Compliance score {e.proof!.scoreOverall} · {e.proof!.scoreBand.replaceAll('_',' ')}</p><p className="text-sm text-[#0071E3] mt-3">View line-by-line proof →</p></Link>)}</div>}
+      {activeTab === "tracking" && <ShipmentTracking progress={data.progress} />}
+      {activeTab === "filing" && data.filingData && <ShipmentFilingData data={data.filingData} entries={entries} />}
       {/* Tab Panels */}
       {activeTab === "overview" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

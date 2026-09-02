@@ -1,3 +1,4 @@
+import { portalReadError } from "./portal-errors";
 import { getAccountContext, getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission, type AccountContext } from '@qubere/auth';
 import { withDataModeContext, withAccountIdContext, isDataMode } from '@qubere/db';
 import { NextResponse } from 'next/server';
@@ -30,9 +31,13 @@ export function withPortalAccount<Args extends unknown[]>(
         const ctx = await getAccountContext();
         if (!ctx) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401, ...noStore });
         return portalData(ctx, async () => {
-            const response = await handler(ctx, ...args);
-            response.headers.set('Cache-Control', 'no-store');
-            return response;
+            try {
+                const response = await handler(ctx, ...args);
+                response.headers.set('Cache-Control', 'no-store');
+                return response;
+            } catch (error) {
+                return portalReadError(error);
+            }
         });
     };
 }

@@ -1,6 +1,9 @@
+import type { EntryProofPayload } from "@qubere/entry-proof";
+import { buildShipmentProgress, shipmentProgressInclude } from "@/lib/shipment-progress";
+import { shipmentReadPermission } from "@/lib/shipment-access";
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { authorizePortalResource } from "@qubere/auth";
+import { authorizePortalResource, hasRequiredPortalPermission } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
 
 export const GET = withPortalAccount(async (ctx, req: Request, { params }: { params: Promise<{ id: string }> }) => {
@@ -9,7 +12,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   // Fetch target shipment metadata for authorization check
   const rawShipment = await db.shipment.findUnique({
     where: { id, accountId: ctx.accountId, deletedAt: null },
-    select: { id: true, accountId: true, clientId: true, importerName: true },
+    select: { id: true, accountId: true, clientId: true, importerName: true, productWorkspaces: { select: { product: true, status: true } } },
   });
 
   if (!rawShipment) {
@@ -17,7 +20,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   }
 
   const auth = await authorizePortalResource({
-    permission: "portal.shipments.read",
+    permission: shipmentReadPermission(ctx, rawShipment.productWorkspaces),
     resourceAccountId: rawShipment.accountId,
     resourceClientId: rawShipment.clientId,
     importerName: rawShipment.importerName,
@@ -27,20 +30,25 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
     return auth.errorResponse || NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
+  const canReadEntries = hasRequiredPortalPermission(ctx, "portal.entries.read");
   const shipment = await db.shipment.findUnique({
     where: { id, accountId: ctx.accountId, deletedAt: null },
     include: {
+      ...shipmentProgressInclude,
       customsFilings: {
-        where: { customerVisibleAt: { not: null } },
+        where: { customerVisibleAt: { not: null }, ...(!canReadEntries ? { id: { in: [] } } : {}) },
         select: {
           id: true,
           entryNumber: true,
           entryType: true,
+          country: true,
+          procedureCode: true,
+          filingType: true,
           filingStatus: true,
           totalDuties: true,
           totalTaxes: true,
           customerVisibleAt: true,
-          entryProofs: { where: { status: "PUBLISHED" }, orderBy: { version: "desc" }, take: 1, select: { scoreOverall: true, scoreBand: true, linesVerified: true, linesTotal: true, openFindingsCount: true, dutySavingsIdentifiedUsd: true } },
+          entryProofs: { where: { status: "PUBLISHED", accountId: ctx.accountId, clientId: auth.effectiveClientId! }, orderBy: { version: "desc" }, take: 1, select: { payload: true, scoreOverall: true, scoreBand: true, linesVerified: true, linesTotal: true, openFindingsCount: true, dutySavingsIdentifiedUsd: true } },
         },
       },
       documents: {
@@ -54,6 +62,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
         },
       },
       customerRequests: {
+        where: { accountId: ctx.accountId, clientId: auth.effectiveClientId! },
         orderBy: { createdAt: "desc" },
         include: {
           messages: {
@@ -68,6 +77,7 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
         },
       },
       invoiceLines: {
+        where: { invoice: { accountId: ctx.accountId, clientId: auth.effectiveClientId! } },
         include: {
           invoice: {
             select: {
@@ -114,13 +124,19 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   }
 
   return NextResponse.json({
+    progress: { ...buildShipmentProgress(shipment), ...(!canReadEntries ? { workflow: [], currentStage: null } : {}) },
+    filingData: canReadEntries ? {
+      importerName: shipment.importerName, countryOfOrigin: shipment.countryOfOrigin, countryOfExport: shipment.countryOfExport,
+      destinationCountry: shipment.destinationCountry, portOfEntry: shipment.portOfEntry, entryType: shipment.entryType,
+      incoterm: shipment.incoterm, invoiceCurrency: shipment.invoiceCurrency,
+    } : null,
     overview: {
       id: shipment.id,
       shipmentNumber: shipment.shipmentNumber,
       poReference: shipment.poReference,
       importerName: shipment.importerName,
-      origin: shipment.countryOfExport || shipment.portOfEntry || "Origin",
-      destination: shipment.destinationCountry || "USA",
+      origin: shipment.trackingStops[0]?.name || shipment.countryOfExport || shipment.portOfEntry || "Origin",
+      destination: shipment.trackingStops.at(-1)?.name || shipment.destinationCountry || "USA",
       transportMode: shipment.transportMode || "Ocean",
       carrierName: shipment.carrierName,
       estimatedArrival: shipment.estimatedArrival,
@@ -150,11 +166,15 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
       id: f.id,
       entryNumber: f.entryNumber,
       entryType: f.entryType,
-      status: f.filingStatus === "Released" ? "Released" : "Filed with customs",
+      country: f.country,
+      procedureCode: f.procedureCode,
+      filingType: f.filingType,
+      status: f.filingStatus,
       dutyTotal: f.totalDuties ? Number(f.totalDuties) : null,
       taxTotal: f.totalTaxes ? Number(f.totalTaxes) : null,
       publishedAt: f.customerVisibleAt,
-      proof: f.entryProofs[0] ? { available: true, ...f.entryProofs[0], dutySavingsIdentifiedUsd: Number(f.entryProofs[0].dutySavingsIdentifiedUsd) } : null,
+      proof: f.entryProofs[0] ? { available: true, scoreOverall: f.entryProofs[0].scoreOverall, scoreBand: f.entryProofs[0].scoreBand } : null,
+      lines: f.entryProofs[0] ? (f.entryProofs[0].payload as unknown as EntryProofPayload).lines.map(l => ({ lineNumber: l.lineNumber, description: l.description, htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin, quantity: l.quantity, enteredValueUsd: l.enteredValueUsd, lineDutyTotalUsd: l.lineDutyTotalUsd, dutyComplete: l.dutyStack.every(d => !['NOT_EVALUATED', 'DATA_UNAVAILABLE', 'REVIEW_REQUIRED'].includes(d.status)) })) : [],
     })),
     invoices: Array.from(invoicesMap.values()),
   });

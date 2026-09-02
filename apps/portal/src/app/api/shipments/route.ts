@@ -1,12 +1,17 @@
+import { freightReadPermission } from "@/lib/shipment-access";
 import { withPortalAccount } from "@/lib/portal-scope";
 import { NextResponse } from "next/server";
-import { getEffectiveUserScope, resolvePortalClientScope } from "@qubere/auth";
+import { getEffectiveUserScope, resolvePortalClientScope, hasRequiredPortalPermission } from "@qubere/auth";
 import { db, mapPortalShipmentStatus } from "@qubere/db";
 
 export const GET = withPortalAccount(async (ctx, req: Request) => {
 
   const scope = await getEffectiveUserScope(ctx.userId, ctx.accountId, ctx.roleNames || []);
   const url = new URL(req.url);
+  const workspace = url.searchParams.get("workspace");
+  if (workspace && workspace !== "TMS") return NextResponse.json({ error: "INVALID_WORKSPACE" }, { status: 400 });
+  const permission = workspace === "TMS" ? freightReadPermission(ctx) : "portal.shipments.read";
+  if (!hasRequiredPortalPermission(ctx, permission)) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   const query = url.searchParams.get("query") || "";
   const cursor = url.searchParams.get("cursor") || undefined;
   const limit = Math.min(Number(url.searchParams.get("limit")) || 25, 50);
@@ -20,6 +25,7 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
   const whereClause: any = {
     deletedAt: null,
     accountId: ctx.accountId,
+    ...(workspace === "TMS" ? { productWorkspaces: { some: { product: "TMS", status: "ACTIVE" } } } : {}),
   };
 
   if (clientScope.clientIds !== null) {
@@ -44,6 +50,7 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
     orderBy: { createdAt: "desc" },
     where: whereClause,
     include: {
+      trackingStops: { orderBy: { sequence: "asc" }, select: { name: true } },
       customsFilings: {
         take: 1,
         orderBy: { createdAt: "desc" },
@@ -74,8 +81,8 @@ export const GET = withPortalAccount(async (ctx, req: Request) => {
       id: shp.id,
       shipmentNumber: shp.shipmentNumber,
       poReference: shp.poReference,
-      origin: shp.countryOfExport || shp.portOfEntry || "Origin",
-      destination: shp.destinationCountry || "USA",
+      origin: shp.trackingStops[0]?.name || shp.countryOfExport || shp.portOfEntry || "Origin",
+      destination: shp.trackingStops.at(-1)?.name || shp.destinationCountry || "USA",
       mode: shp.transportMode || "Ocean",
       carrierName: shp.carrierName,
       estimatedArrival: shp.estimatedArrival,

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
   ctx: { accountId: 'broker-demo', userId: 'porter', email: 'porter@target.com', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.shipments.read', 'portal.requests.read', 'portal.requests.respond'] } as any,
@@ -6,7 +6,8 @@ const m = vi.hoisted(() => ({
   db: {
     user: { findUnique: vi.fn() }, client: { findMany: vi.fn() },
     shipment: { findMany: vi.fn(), findUnique: vi.fn() },
-    customerRequest: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    entryProof: { findMany: vi.fn() },
+    customerRequest: { groupBy: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     customerRequestMessage: { create: vi.fn() }, auditLog: { create: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -27,6 +28,7 @@ const dashboard = await import('../src/app/api/dashboard/route');
 const requests = await import('../src/app/api/requests/route');
 const request = await import('../src/app/api/requests/[id]/route');
 const messages = await import('../src/app/api/requests/[id]/messages/route');
+const proofs = await import('../src/app/api/proofs/route');
 const me = await import('../src/app/api/me/route');
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const req = (path: string) => new Request(`http://portal/api/${path}`);
@@ -37,23 +39,27 @@ function checkContext(model: string, operation: string, args: any) {
   // Previously these handlers silently queried account.dataMode = PRODUCTION for DEMO users.
   expect(newArgs.where.account.dataMode).toBe(m.ctx.dataMode);
 }
-const shipment = { id: 's1', accountId: 'broker-demo', clientId: 'target', importerName: 'Target', shipmentNumber: 'SHP-TGT-2026-001', status: 'In Progress', customsFilings: [], customerRequests: [], documents: [], invoiceLines: [] };
+const shipment = { id: 's1', accountId: 'broker-demo', clientId: 'target', importerName: 'Target', shipmentNumber: 'SHP-TGT-2026-001', status: 'In Progress', stageHistory: [], legs: [], transportLegs: [], trackingIdentifiers: [], trackingEvents: [], etaObservations: [], trackingStops: [], productWorkspaces: [], customsFilings: [], customerRequests: [], documents: [], invoiceLines: [] };
 const action = { id: 'r1', accountId: 'broker-demo', clientId: 'target', shipmentId: 's1', shipment, title: 'Confirm manufacturer address', type: 'QUESTION', domain: 'CUSTOMS', status: 'OPEN', version: 1, createdAt: new Date(), messages: [], documents: [] };
 
 beforeEach(() => {
-  vi.resetAllMocks(); me.invalidateMeCache(); dashboard.invalidateDashboardCache();
+  vi.resetAllMocks(); vi.spyOn(console, 'error').mockImplementation(() => {}); me.invalidateMeCache(); dashboard.invalidateDashboardCache();
   m.ctx = { accountId: 'broker-demo', userId: 'porter', email: 'porter@target.com', dataMode: 'DEMO', roleNames: ['CUSTOMER_ADMIN'], permissions: ['portal.shipments.read', 'portal.requests.read', 'portal.requests.respond'] };
   m.scope.authorizedClientIds = ['target'];
   m.db.shipment.findMany.mockImplementation(async args => { checkContext('Shipment', 'findMany', args); return [{ ...shipment, customerRequests: [{ id: 'r1' }] }]; });
   m.db.shipment.findUnique.mockImplementation(async args => { checkContext('Shipment', 'findUnique', args); return { ...shipment, customerRequests: [action] }; });
   m.db.customerRequest.findMany.mockImplementation(async args => { checkContext('CustomerRequest', 'findMany', args); return [action]; });
   m.db.customerRequest.findUnique.mockImplementation(async args => { checkContext('CustomerRequest', 'findUnique', args); return action; });
+  m.db.entryProof.findMany.mockImplementation(async args => { checkContext('EntryProof', 'findMany', args); return [{ filingId: 'f1', shipmentId: 's1', filing: { entryNumber: 'ENTRY-TGT-24001' }, shipment: { shipmentNumber: shipment.shipmentNumber }, scoreOverall: 80, dutyAndFeesUsd: 500, dutySavingsIdentifiedUsd: 50 }]; });
+  m.db.customerRequest.groupBy.mockImplementation(async args => { checkContext('CustomerRequest', 'groupBy', args); return []; });
   m.db.user.findUnique.mockResolvedValue({ id: 'porter', email: 'porter@target.com' });
   m.db.client.findMany.mockImplementation(async args => { checkContext('Client', 'findMany', args); return [{ id: 'target', name: 'Target' }]; });
   m.db.customerRequestMessage.create.mockImplementation(async () => { expect(getDataModeContext()).toBe(m.ctx.dataMode); return { id: 'msg1' }; });
   m.db.customerRequest.update.mockResolvedValue({ status: 'CUSTOMER_RESPONDED', version: 2 });
   m.db.$transaction.mockImplementation(async values => Promise.all(values));
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('Portal account data mode', () => {
   it.each(['DEMO', 'SANDBOX', 'PRODUCTION'])('loads Target actions and shipment details in %s mode', async mode => {
@@ -100,5 +106,49 @@ describe('Portal account data mode', () => {
   it('rejects an unauthorized client filter before querying shipments', async () => {
     expect((await shipments.GET(req('shipments?clientId=amazon'))).status).toBe(403);
     expect(m.db.shipment.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('Freight and proof access', () => {
+  it('filters Freight to active TMS shipments in the assigned client', async () => {
+    m.ctx.permissions = ['portal.orders.read'];
+    expect((await shipments.GET(req('shipments?workspace=TMS'))).status).toBe(200);
+    expect(m.db.shipment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ accountId: 'broker-demo', clientId: { in: ['target'] }, productWorkspaces: { some: { product: 'TMS', status: 'ACTIVE' } } }) }));
+    m.db.shipment.findUnique.mockResolvedValue({ ...shipment, productWorkspaces: [{ product: 'TMS', status: 'ACTIVE' }] });
+    const body = await (await detail.GET(req('shipments/s1'), params('s1'))).json();
+    expect(body.overview.shipmentNumber).toBe(shipment.shipmentNumber);
+    expect(body.filingData).toBeNull();
+    expect(body.progress.workflow).toEqual([]);
+    expect(m.db.shipment.findUnique).toHaveBeenLastCalledWith(expect.objectContaining({ include: expect.objectContaining({ customsFilings: expect.objectContaining({ where: { customerVisibleAt: { not: null }, id: { in: [] } } }) }) }));
+  });
+  it('does not widen a freight-only login to customs-only shipments', async () => {
+    m.ctx.permissions = ['portal.orders.read'];
+    expect((await detail.GET(req('shipments/s1'), params('s1'))).status).toBe(404);
+    expect(m.db.shipment.findUnique).toHaveBeenCalledTimes(1);
+  });
+  it('loads published proofs in the correct mode and client scope', async () => {
+    m.ctx.permissions.push('portal.entries.read');
+    const response = await proofs.GET(req('proofs'));
+    expect(response.status).toBe(200);
+    expect((await response.json())[0].entryNumber).toBe('ENTRY-TGT-24001');
+    expect(m.db.entryProof.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ accountId: 'broker-demo', clientId: { in: ['target'] }, status: 'PUBLISHED' }) }));
+    expect(m.db.customerRequest.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { notIn: ['RESOLVED', 'CLOSED', 'CANCELLED'] } }) }));
+  });
+  it.each(['P2021', 'P2022', 'PORTAL_SCHEMA_OUTDATED'])('reports an incomplete database update (%s) without exposing database details', async code => {
+    m.ctx.permissions.push('portal.entries.read');
+    m.db.entryProof.findMany.mockRejectedValue({ code, message: 'PRIVATE table definition' });
+    const response = await proofs.GET(req('proofs'));
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.error).toBe('PORTAL_SCHEMA_OUTDATED');
+    expect(JSON.stringify(body)).not.toContain('PRIVATE');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+  it('keeps a real empty proof list distinct from a failed request', async () => {
+    m.ctx.permissions.push('portal.entries.read');
+    m.db.entryProof.findMany.mockResolvedValue([]);
+    const response = await proofs.GET(req('proofs'));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
   });
 });
