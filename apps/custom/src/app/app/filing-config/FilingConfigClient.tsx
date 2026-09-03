@@ -498,7 +498,7 @@ function RowFormModal({
   const [selectOptionLabels, setSelectOptionLabels] = useState<Record<string, Record<string, string>>>({});
 
   // Fetch dropdown options for any field that declares an optionsSource (e.g.
-  // procedure-config's transactionType, sourced from the FilingTransactionType catalog).
+  // procedure-config's transactionType, sourced from the FilingProcedureCatalog catalog).
   // A transient 401 can happen right after sign-in while the auth session is
   // still settling, so failed/non-OK fetches are retried a couple of times
   // with a short backoff instead of silently leaving the field empty forever.

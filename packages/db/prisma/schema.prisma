@@ -5922,7 +5922,7 @@ model FilingMessage {
 // - FilingChildActionRule → replaced by FilingActionConfiguration.availableActions
 // - FilingAuthorityConfig → removed (authority names handled in UI layer)
 //
-// See new tables starting at line 4063 (FilingTransactionType, etc.)
+// See new tables starting at line 4063 (FilingProcedureCatalog, etc.)
 // ============================================================================
 
 /// Which extra data a given (country, procedure, messageName, action) needs
@@ -6037,6 +6037,17 @@ model FilingMasterDataSource {
 
 /// Universal transaction type catalog (IMPORT, EXPORT, NCTS, TEMP_STORAGE, etc.).
 /// These are global categories that transcend country-specific procedures.
+///
+/// DEPRECATED 2026-09-03: superseded by FilingProcedureCatalog below, which
+/// every application code path now reads/writes exclusively. This model (and
+/// its underlying table) is intentionally left in place, unmodified, with its
+/// existing rows untouched -- it is a shared database and this table cannot
+/// be renamed or dropped in place. It is retained here only so the table
+/// remains visible to tooling until a separate, deliberate migration drops it
+/// (see packages/db/prisma/pending-drops/DROP_FilingTransactionType.sql,
+/// which is NOT auto-applied and must be run manually once every environment
+/// has confirmed this table is unused). @@ignore keeps Prisma Client from
+/// generating a db.filingTransactionType accessor.
 model FilingTransactionType {
   id        String   @id @default(cuid())
   code      String   @unique // IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE
@@ -6047,6 +6058,27 @@ model FilingTransactionType {
   updatedBy String?
 
   @@index([code])
+  @@index([isActive])
+  @@ignore
+}
+
+/// Universal procedure catalog -- the replacement for FilingTransactionType
+/// above. It clones the old table's row identity/audit columns, but renames
+/// the business code column from `code` to `procedureCode` so the new model
+/// matches the filing domain language. Existing FilingTransactionType.code
+/// values are copied into FilingProcedureCatalog.procedureCode verbatim.
+/// All new reads/writes go here; FilingTransactionType is no longer
+/// referenced anywhere in application code.
+model FilingProcedureCatalog {
+  id            String   @id @default(cuid())
+  procedureCode String   @unique // IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  @@index([procedureCode])
   @@index([isActive])
 }
 
@@ -6218,7 +6250,7 @@ model FilingProcedureConfig {
   country            String // ISO 3166-1 alpha-2 (NL, IE, FR, IN, etc.)
   procedureCode      String // Country-specific procedure code (5100, 4000, etc.)
   messageName        String // Official customs message code (IE015, IE013, ICEGATE_BOE, etc.)
-  /// Transaction type code (IMPORT, EXPORT, NCTS, etc.) from FilingTransactionType.code.
+  /// Filing procedure catalog code (IMPORT, EXPORT, NCTS, etc.) from FilingProcedureCatalog.procedureCode.
   /// Restored 2026-08-21 -- bb8ad90 dropped the transactionTypeId FK that used to carry this,
   /// which left resolveMessageContext with no real source for transactionType and caused
   /// callers to pass the country-specific procedureCode value in its place instead.
@@ -10835,4 +10867,3 @@ model InboundDocumentReview {
   @@index([clientId, status])
   @@index([inboundEmailId])
 }
-

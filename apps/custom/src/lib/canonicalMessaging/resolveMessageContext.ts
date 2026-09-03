@@ -126,14 +126,14 @@ export async function resolveMessageContext(
 
   const transactionType = procedureConfig.transactionType ?? "IMPORT";
 
-  const txType = await db.filingTransactionType.findUnique({
-    where: { code: transactionType, isActive: true },
+  const procedureCatalogRow = await db.filingProcedureCatalog.findFirst({
+    where: { procedureCode: transactionType, isActive: true },
   });
-  if (!txType) {
+  if (!procedureCatalogRow) {
     throw new Error(
       `Transaction type "${transactionType}" (from FilingProcedureConfig for ` +
         `country "${country}", procedure "${procedureCode}") is not a valid, active ` +
-        `FilingTransactionType. Valid types: IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE, etc.`
+        `FilingProcedureCatalog procedure code. Valid codes: IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE, etc.`
     );
   }
 

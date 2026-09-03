@@ -2,7 +2,7 @@
  * Seeds NL Import filing configuration.
  * 
  * Tables seeded:
- * - FilingTransactionType (IMPORT transaction type - already exists)
+ * - FilingProcedureCatalog (IMPORT procedure - already exists)
  * - FilingActionCatalog (universal actions - already exists)
  * - FilingProcedureConfig (NL Import procedures and messages)
  * - FilingActionMessageMapping (NL Import action → message mapping)
@@ -16,21 +16,21 @@ import { PrismaClient } from "@prisma/client";
 const db = new PrismaClient({ log: ["warn", "error"] });
 
 /**
- * Ensure universal transaction types exist
+ * Ensure universal filing procedures exist
  * (This is idempotent - safe to run even if already seeded)
  */
-async function ensureTransactionTypes() {
-  const transactionTypes = [
-    { code: "IMPORT" },
-    { code: "EXPORT" },
+async function ensureProcedureCatalog() {
+  const procedures = [
+    { procedureCode: "IMPORT" },
+    { procedureCode: "EXPORT" },
   ];
 
-  for (const type of transactionTypes) {
-    await db.filingTransactionType.upsert({
-      where: { code: type.code },
+  for (const procedure of procedures) {
+    await db.filingProcedureCatalog.upsert({
+      where: { procedureCode: procedure.procedureCode },
       update: { isActive: true, updatedAt: new Date(), updatedBy: "system" },
       create: {
-        code: type.code,
+        procedureCode: procedure.procedureCode,
         isActive: true,
         createdBy: "system",
         updatedBy: "system",
@@ -38,7 +38,7 @@ async function ensureTransactionTypes() {
     });
   }
 
-  console.log(`  ✓ ${transactionTypes.length} FilingTransactionType rows ensured`);
+  console.log(`  ✓ ${procedures.length} FilingProcedureCatalog rows ensured`);
 }
 
 /**
@@ -76,69 +76,69 @@ async function ensureActionCatalog() {
  * Lists valid messages for Netherlands Import procedures
  */
 async function seedNlImportProcedures() {
-  // Get IMPORT transaction type ID
-  const importType = await db.filingTransactionType.findUnique({
-    where: { code: "IMPORT" },
+  // Get IMPORT procedure catalog code
+  const importType = await db.filingProcedureCatalog.findUnique({
+    where: { procedureCode: "IMPORT" },
   });
 
   if (!importType) {
-    throw new Error("IMPORT transaction type not found. Run ensureTransactionTypes first.");
+    throw new Error("IMPORT procedure catalog row not found. Run ensureProcedureCatalog first.");
   }
 
   const procedures = [
     // Standard Import Declaration - H1 Procedure
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H1",
       messageName: "IE501", // Import Declaration
     },
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H1",
       messageName: "IE503", // Amendment
     },
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H1",
       messageName: "IE504", // Cancellation
     },
     // Simplified Import Declaration - H4 Procedure
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H4",
       messageName: "IE501", // Simplified Import Declaration
     },
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H4",
       messageName: "IE503", // Amendment
     },
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H4",
       messageName: "IE504", // Cancellation
     },
     // Pre-Arrival Declaration - H7 Procedure
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H7",
       messageName: "IE501", // Pre-Arrival Declaration
     },
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H7",
       messageName: "IE503", // Amendment
     },
     {
-      transactionTypeId: importType.id,
+      transactionType: importType.procedureCode,
       country: "NL",
       procedureCode: "H7",
       messageName: "IE504", // Cancellation
@@ -155,13 +155,13 @@ async function seedNlImportProcedures() {
         },
       },
       update: {
-        transactionTypeId: proc.transactionTypeId,
+        transactionType: proc.transactionType,
         isActive: true,
         updatedAt: new Date(),
         updatedBy: "system",
       },
       create: {
-        transactionTypeId: proc.transactionTypeId,
+        transactionType: proc.transactionType,
         country: proc.country,
         procedureCode: proc.procedureCode,
         messageName: proc.messageName,
@@ -511,7 +511,7 @@ async function main() {
   console.log("\n🌍 Seeding NL Import Filing Configuration...\n");
 
   try {
-    await ensureTransactionTypes();
+    await ensureProcedureCatalog();
     await ensureActionCatalog();
     await seedNlImportProcedures();
     await seedNlImportActionMessageMapping();

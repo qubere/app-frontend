@@ -31,8 +31,8 @@ const dbMock = {
   shipmentParty: {
     findFirst: vi.fn(),
   },
-  filingTransactionType: {
-    findUnique: vi.fn(),
+  filingProcedureCatalog: {
+    findFirst: vi.fn(),
   },
   filingActionMessageMapping: {
     findUnique: vi.fn(),
@@ -109,7 +109,7 @@ beforeEach(() => {
   });
   dbMock.htsRelease.findFirst.mockResolvedValue({ id: "rel_published" });
   dbMock.shipmentParty.findFirst.mockResolvedValue(null);
-  dbMock.filingTransactionType.findUnique.mockResolvedValue({ id: "tx_import", code: "IMPORT", isActive: true });
+  dbMock.filingProcedureCatalog.findFirst.mockResolvedValue({ id: "tx_import", procedureCode: "IMPORT", isActive: true });
   // Legacy US filings legitimately use resolveMessageContext's documented
   // fallback when the newer action mapping has not been configured yet.
   dbMock.filingActionMessageMapping.findUnique.mockResolvedValue(null);
@@ -121,7 +121,7 @@ beforeEach(() => {
     status: "ACTIVE",
     schemaJson: { type: "object" },
   });
-  dbMock.filingTransactionType.findUnique.mockResolvedValue({ code: "IMPORT", isActive: true });
+  dbMock.filingProcedureCatalog.findFirst.mockResolvedValue({ procedureCode: "IMPORT", isActive: true });
   // No FilingActionMessageMapping/FilingProcedureConfig fixtures here -- resolveMessageContext
   // falls back to the legacy US CBP_ENTRY_7501 message for unmigrated US filings (see stderr warning).
   dbMock.filingActionMessageMapping.findUnique.mockResolvedValue(null);

@@ -3,7 +3,7 @@
  * This replaces the US-centric seed-canonical-messaging.ts approach.
  * 
  * Tables seeded:
- * - FilingTransactionType (universal transaction types)
+ * - FilingProcedureCatalog (universal filing procedures)
  * - FilingActionCatalog (universal actions)
  * - FilingProcedureConfig (NL NCTS procedures and messages)
  * - FilingActionMessageMapping (NL NCTS action → message mapping)
@@ -17,25 +17,25 @@ import { PrismaClient } from "@prisma/client";
 const db = new PrismaClient({ log: ["warn", "error"] });
 
 /**
- * Seed universal transaction types (country-agnostic categories)
+ * Seed universal filing procedures (country-agnostic categories)
  */
-async function seedTransactionTypes() {
-  const transactionTypes = [
-    { code: "IMPORT" },
-    { code: "EXPORT" },
-    { code: "NCTS" },
-    { code: "TEMP_STORAGE" },
-    { code: "BONDED_WAREHOUSE" },
-    { code: "TRANSIT" },
-    { code: "CUSTOMS_WAREHOUSE" },
+async function seedProcedureCatalog() {
+  const procedures = [
+    { procedureCode: "IMPORT" },
+    { procedureCode: "EXPORT" },
+    { procedureCode: "NCTS" },
+    { procedureCode: "TEMP_STORAGE" },
+    { procedureCode: "BONDED_WAREHOUSE" },
+    { procedureCode: "TRANSIT" },
+    { procedureCode: "CUSTOMS_WAREHOUSE" },
   ];
 
-  for (const type of transactionTypes) {
-    await db.filingTransactionType.upsert({
-      where: { code: type.code },
+  for (const procedure of procedures) {
+    await db.filingProcedureCatalog.upsert({
+      where: { procedureCode: procedure.procedureCode },
       update: { isActive: true, updatedAt: new Date(), updatedBy: "system" },
       create: {
-        code: type.code,
+        procedureCode: procedure.procedureCode,
         isActive: true,
         createdBy: "system",
         updatedBy: "system",
@@ -43,7 +43,7 @@ async function seedTransactionTypes() {
     });
   }
 
-  console.log(`  ✓ ${transactionTypes.length} FilingTransactionType rows seeded`);
+  console.log(`  ✓ ${procedures.length} FilingProcedureCatalog rows seeded`);
 }
 
 /**
@@ -84,30 +84,30 @@ async function seedActionCatalog() {
  * Lists valid messages for Netherlands NCTS procedure
  */
 async function seedNlNctsProcedures() {
-  // Get NCTS transaction type ID
-  const nctsType = await db.filingTransactionType.findUnique({
-    where: { code: "NCTS" },
+  // Get NCTS procedure catalog code
+  const nctsType = await db.filingProcedureCatalog.findUnique({
+    where: { procedureCode: "NCTS" },
   });
 
   if (!nctsType) {
-    throw new Error("NCTS transaction type not found. Run seedTransactionTypes first.");
+    throw new Error("NCTS procedure catalog row not found. Run seedProcedureCatalog first.");
   }
 
   const procedures = [
     {
-      transactionTypeId: nctsType.id,
+      transactionType: nctsType.procedureCode,
       country: "NL",
       procedureCode: "NCTS",
       messageName: "IE015", // Declaration
     },
     {
-      transactionTypeId: nctsType.id,
+      transactionType: nctsType.procedureCode,
       country: "NL",
       procedureCode: "NCTS",
       messageName: "IE013", // Amendment
     },
     {
-      transactionTypeId: nctsType.id,
+      transactionType: nctsType.procedureCode,
       country: "NL",
       procedureCode: "NCTS",
       messageName: "IE014", // Cancellation
@@ -124,13 +124,13 @@ async function seedNlNctsProcedures() {
         },
       },
       update: {
-        transactionTypeId: proc.transactionTypeId,
+        transactionType: proc.transactionType,
         isActive: true,
         updatedAt: new Date(),
         updatedBy: "system",
       },
       create: {
-        transactionTypeId: proc.transactionTypeId,
+        transactionType: proc.transactionType,
         country: proc.country,
         procedureCode: proc.procedureCode,
         messageName: proc.messageName,
@@ -349,7 +349,7 @@ async function main() {
 
   try {
     console.log("Step 1: Seeding transaction types...");
-    await seedTransactionTypes();
+    await seedProcedureCatalog();
 
     console.log("\nStep 2: Seeding action catalog...");
     await seedActionCatalog();
