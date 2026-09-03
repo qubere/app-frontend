@@ -1,3 +1,4 @@
+import { clientInboundEnabled, resolveInboundAddress, acceptsInboundAddress } from "@/modules/inbound/inboundAddressService";
 import { NextResponse, after } from "next/server";
 import { Prisma } from "@prisma/client";
 import { withPublicRoute } from "@/lib/api/auth-guards";
@@ -79,9 +80,17 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
   const { data } = payload;
   const allowed = allowedRecipients();
   const candidateRecipients = [...(data.to ?? []), ...(data.received_for ?? [])];
-  const isAddressedToUs = candidateRecipients.some((candidate) =>
-    allowed.some((expected) => recipientMatches(candidate, expected))
-  );
+  const destinationRouting = clientInboundEnabled();
+  const destinations = destinationRouting
+    ? (await Promise.all(candidateRecipients.map(resolveInboundAddress))).filter(d => d !== null)
+    : [];
+  const distinctDestinations = new Set(destinations.map(d => `${d.accountId}:${d.clientId ?? ''}:${d.purpose}`));
+  // Multiple clients in To/CC must never select the first recipient silently.
+  const destination = distinctDestinations.size === 1 ? destinations.find(d => acceptsInboundAddress(d)) ?? destinations[0] : null;
+  const isAddressedToUs = destinationRouting
+    ? !!destination && acceptsInboundAddress(destination)
+    : candidateRecipients.some(candidate => allowed.some(expected => recipientMatches(candidate, expected)));
+  const rejectionReason = distinctDestinations.size > 1 ? "multiple_destinations" : destination ? "recipient_inactive" : "recipient_not_recognised";
 
   const normalizedFrom = normalizeSenderEmail(data.from);
 
@@ -97,6 +106,10 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
   try {
     const created = await db.inboundEmail.create({
       data: {
+        accountId: destination?.accountId ?? null,
+        clientId: destination?.clientId ?? null,
+        inboundAddressId: destination?.id ?? null,
+        recipientAddress: destination?.address ?? null,
         provider: "resend",
         providerEventId: svixId,
         providerEmailId: data.email_id,
@@ -106,7 +119,7 @@ export const POST = withPublicRoute(async ({ req, requestId }) => {
         subject: data.subject ?? null,
         receivedAt: new Date(data.created_at),
         routingStatus: isAddressedToUs ? "RECEIVED" : "REJECTED",
-        quarantineReason: isAddressedToUs ? null : "recipient_not_allowed",
+        quarantineReason: isAddressedToUs ? null : destinationRouting ? rejectionReason : "recipient_not_allowed",
       },
     });
     inboundEmailId = created.id;

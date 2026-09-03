@@ -42,10 +42,12 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
       mimeType: true,
       fileUrl: true,
       portalVisibility: true,
+      source: true,
+      status: true,
     },
   });
 
-  if (!document) {
+  if (!document || document.status === "DISCARDED" || (document.source === "INBOUND_EMAIL" && document.portalVisibility !== "CUSTOMER")) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 

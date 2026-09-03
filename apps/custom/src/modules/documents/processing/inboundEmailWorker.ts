@@ -1,3 +1,8 @@
+import { summarizeInboundReceipt } from "@/modules/inbound/inboundNotifications";
+import { runInboundAutoReplies } from "@/modules/inbound/inboundAutoReply";
+import { acceptsInboundAddress, evaluateSenderPolicy } from "@/modules/inbound/inboundAddressService";
+import { openInboundReview, resumeInboundDocumentRouting } from "@/modules/inbound/inboundDocumentRouting";
+import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
 /**
  * Inbound email ingestion worker.
  *
@@ -37,6 +42,9 @@ import {
 } from "@/lib/inbound/resendClient";
 
 const MAX_EMAILS_PER_TICK = 10;
+export type InboundEmailProvider = { getReceivedEmail: typeof getReceivedEmail; getAttachmentDownloadInfo: typeof getAttachmentDownloadInfo; downloadAttachmentBytes: typeof downloadAttachmentBytes };
+const resendProvider: InboundEmailProvider = { getReceivedEmail, getAttachmentDownloadInfo, downloadAttachmentBytes };
+type TickOptions = { emailIds?: string[]; provider?: InboundEmailProvider };
 
 export interface InboundEmailTickResult {
   claimed: number;
@@ -50,7 +58,7 @@ function log(event: string, fields: Record<string, string | number | boolean | n
   console.log(`[InboundEmailWorker] ${event}`, fields);
 }
 
-export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResult> {
+export async function runInboundEmailWorkerTick(options: TickOptions = {}): Promise<InboundEmailTickResult> {
   // InboundEmail has an optional `account` relation, and the shared `db`
   // client auto-filters every read through that relation by dataMode unless
   // told otherwise (see packages/db/src/index.ts, buildIsolatedQueryArgs) --
@@ -60,12 +68,19 @@ export async function runInboundEmailWorkerTick(): Promise<InboundEmailTickResul
   // email, before routing has even had a chance to run. This worker is
   // explicitly cross-tenant/pre-attribution by design, so it has to opt out
   // of that filter itself rather than rely on a caller to.
-  return withDataModeContext(null, async () => runTickWithBypass());
+  return withDataModeContext(null, async () => runTickWithBypass(options));
 }
 
-async function runTickWithBypass(): Promise<InboundEmailTickResult> {
+async function runTickWithBypass(options: TickOptions): Promise<InboundEmailTickResult> {
+  if (!options.provider && process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === 'true') {
+    const expired = await db.inboundAddress.findMany({ where: { status: 'SUSPENDED', graceUntil: { lte: new Date() }, activeKey: null }, select: { id: true, accountId: true }, take: 50 });
+    for (const address of expired) await db.$transaction(async tx => {
+      const changed = await tx.inboundAddress.updateMany({ where: { id: address.id, status: 'SUSPENDED' }, data: { status: 'REVOKED', revokedAt: new Date() } });
+      if (changed.count) await tx.auditLog.create({ data: { accountId: address.accountId, entity: 'InboundAddress', entityId: address.id, action: 'inbound_address.grace_expired', source: 'SYSTEM' } });
+    });
+  }
   const dueEmails = await db.inboundEmail.findMany({
-    where: { routingStatus: { in: ["RECEIVED", "ROUTED"] } },
+    where: { routingStatus: { in: ["RECEIVED", "ROUTED"] }, ...(options.emailIds ? { id: { in: options.emailIds } } : {}) },
     orderBy: { createdAt: "asc" },
     take: MAX_EMAILS_PER_TICK,
   });
@@ -75,8 +90,11 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
   const result: InboundEmailTickResult = { claimed: dueEmails.length, quarantined: 0, accepted: 0, rejected: 0, failed: 0 };
 
   for (const email of dueEmails) {
+    const leaseToken = randomUUID();
+    const claimed = await db.inboundEmail.updateMany({ where: { id: email.id, routingStatus: { in: ['RECEIVED', 'ROUTED'] }, OR: [{ processingLeaseUntil: null }, { processingLeaseUntil: { lt: new Date() } }] }, data: { processingLeaseUntil: new Date(Date.now() + 10 * 60_000), processingLeaseToken: leaseToken } });
+    if (!claimed.count) continue;
     try {
-      const outcome = await runWithAccountId(email.accountId ?? undefined, () => processOneEmail(email.id));
+      const outcome = await runWithAccountId(email.accountId ?? undefined, () => processOneEmail(email.id, options.provider ?? resendProvider));
       if (outcome === "QUARANTINED") result.quarantined += 1;
       else if (outcome === "REJECTED") result.rejected += 1;
       else result.accepted += 1;
@@ -85,14 +103,18 @@ async function runTickWithBypass(): Promise<InboundEmailTickResult> {
       log("email.tick_error", { inboundEmailId: email.id, error: error instanceof Error ? error.message : String(error) });
       // Left as ROUTED/RECEIVED so the next tick retries -- no state was
       // corrupted, since every downstream write here is itself idempotent.
+    } finally {
+      await db.inboundEmail.updateMany({ where: { id: email.id, processingLeaseToken: leaseToken }, data: { processingLeaseUntil: null, processingLeaseToken: null } });
     }
   }
 
+  if (!options.provider && process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === "true") await resumeInboundDocumentRouting();
+  if (!options.provider) await runInboundAutoReplies();
   log("tick.finished", { ...result });
   return result;
 }
 
-async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | "ACCEPTED" | "REJECTED"> {
+async function processOneEmail(inboundEmailId: string, provider: InboundEmailProvider): Promise<"QUARANTINED" | "ACCEPTED" | "REJECTED"> {
   let email = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
   log("email.processing_started", {
     inboundEmailId: email.id,
@@ -100,49 +122,40 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
     normalizedFromAddress: email.normalizedFromAddress,
   });
 
-  const blockedRoute = await resolveBlockedInboundRoute(email.normalizedFromAddress);
-  if (blockedRoute) {
-    await db.inboundEmail.update({
-      where: { id: email.id },
-      data: {
-        accountId: blockedRoute.accountId,
-        routingStatus: "REJECTED",
-        quarantineReason: "blocked_sender",
-      },
-    });
-    log("email.rejected", {
-      inboundEmailId: email.id,
-      accountId: blockedRoute.accountId,
-      reason: "blocked_sender",
-    });
-    return "REJECTED";
-  }
-
   let route: Awaited<ReturnType<typeof resolveInboundRoute>> = null;
-  if (email.routingStatus === "RECEIVED") {
-    route = await resolveInboundRoute(email.normalizedFromAddress);
-    if (route) {
-      email = await db.inboundEmail.update({
-        where: { id: email.id },
-        data: { accountId: route.accountId, routingStatus: "ROUTED" },
-      });
-      log("email.routed", { inboundEmailId: email.id, accountId: route.accountId });
-    } else {
-      log("email.no_sender_route", { inboundEmailId: email.id, normalizedFromAddress: email.normalizedFromAddress });
+  let senderDecision: 'ACCEPT' | 'REVIEW' | 'HOLD' | 'REJECT' = 'ACCEPT';
+  let destination: Awaited<ReturnType<typeof db.inboundAddress.findUnique>> = null;
+  if (email.inboundAddressId) {
+    destination = await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } });
+    if (!destination || !acceptsInboundAddress(destination) || destination.accountId !== email.accountId || destination.clientId !== email.clientId) {
+      await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: 'REJECTED', quarantineReason: 'recipient_inactive' } });
+      return 'REJECTED';
     }
-    // No route: fall through instead of bailing out here. The attachments
-    // still get downloaded and stored below (into quarantine, since
-    // accountId stays null) -- an unrecognized sender should leave something
-    // a platform admin can see and release, not a dead-end DB row with no
-    // trace of what was actually sent.
-  } else if (email.accountId) {
+    const senders = await db.inboundSenderRoute.findMany({ where: { accountId: destination.accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: email.clientId }, { clientId: null }] } });
+    senderDecision = evaluateSenderPolicy(destination.senderPolicy, senders.map(s => s.status), !!email.senderApprovedAt);
+    if (senderDecision === 'REJECT') {
+      await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: 'REJECTED', quarantineReason: 'blocked_sender' } });
+      return 'REJECTED';
+    }
+    if (senderDecision === 'HOLD') {
+      await openInboundReview({ accountId: destination.accountId, clientId: destination.clientId, inboundEmailId: email.id, reason: 'UNKNOWN_SENDER' });
+      await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: 'NEEDS_REVIEW', quarantineReason: 'unknown_sender' } });
+      return 'QUARANTINED';
+    }
+    email = await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: 'ROUTED' } });
+  } else {
+    const blockedRoute = await resolveBlockedInboundRoute(email.normalizedFromAddress);
+    if (blockedRoute) {
+      await db.inboundEmail.update({ where: { id: email.id }, data: { accountId: blockedRoute.accountId, routingStatus: 'REJECTED', quarantineReason: 'blocked_sender' } });
+      return 'REJECTED';
+    }
     route = await resolveInboundRoute(email.normalizedFromAddress);
+    if (email.routingStatus === 'RECEIVED' && route) email = await db.inboundEmail.update({ where: { id: email.id }, data: { accountId: route.accountId, routingStatus: 'ROUTED' } });
   }
-
   const accountId = email.accountId;
-  const defaultAssigneeId = route?.defaultAssignedToUserId ?? null;
+  const defaultAssigneeId = destination?.defaultAssignedToUserId ?? route?.defaultAssignedToUserId ?? null;
 
-  const remote = await getReceivedEmail(email.providerEmailId);
+  const remote = await provider.getReceivedEmail(email.providerEmailId);
   log("email.fetched_from_provider", {
     inboundEmailId: email.id,
     providerEmailId: email.providerEmailId,
@@ -159,7 +172,7 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
   let storedCount = 0;
   let duplicateCount = 0;
   for (const attachment of remote.attachments) {
-    const outcome = await processOneAttachment({ accountId, email, attachment, defaultAssigneeId });
+    const outcome = await processOneAttachment({ accountId, email, attachment, defaultAssigneeId, provider, purpose: destination?.purpose, senderNeedsReview: senderDecision === "REVIEW" });
     if (outcome.stored) storedCount += 1;
     duplicateCount += outcome.crossShipmentDuplicateCount;
   }
@@ -201,7 +214,10 @@ async function processOneEmail(inboundEmailId: string): Promise<"QUARANTINED" | 
     });
   }
 
-  await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: "ACCEPTED" } });
+  const needsReview = destination ? await db.inboundDocumentReview.count({ where: { inboundEmailId: email.id, status: 'OPEN' } }) : 0;
+  if (destination && storedCount > 0) await notifyAccountRoleHolders({ accountId, permission: 'document.update', type: 'INBOUND_EMAIL_DOCUMENTS', message: `${storedCount} documents received by email${needsReview ? ` — ${needsReview} need review` : ' — processing shipment matches'}.`, entityType: 'InboundEmail', entityId: email.id, dedupe: true });
+  await db.inboundEmail.update({ where: { id: email.id }, data: { routingStatus: needsReview ? 'NEEDS_REVIEW' : storedCount === 0 && remote.attachments.length ? 'REJECTED' : 'ACCEPTED' } });
+  if (destination) await summarizeInboundReceipt(accountId, email.id);
   log("email.accepted", { inboundEmailId: email.id, accountId, attachmentCount: remote.attachments.length, storedCount });
   return "ACCEPTED";
 }
@@ -215,7 +231,10 @@ const NOT_STORED: AttachmentOutcome = { stored: false, crossShipmentDuplicateCou
 
 async function processOneAttachment(params: {
   accountId: string | null;
-  email: { id: string; providerEmailId: string; normalizedFromAddress?: string; originalFromAddress?: string; subject?: string | null };
+  email: { id: string; providerEmailId: string; clientId?: string | null; inboundAddressId?: string | null; normalizedFromAddress?: string; originalFromAddress?: string; subject?: string | null };
+  provider: InboundEmailProvider;
+  purpose?: string;
+  senderNeedsReview?: boolean;
   attachment: ReceivedEmailAttachmentMeta;
   defaultAssigneeId: string | null;
 }): Promise<AttachmentOutcome> {
@@ -241,6 +260,10 @@ async function processOneAttachment(params: {
       filename: attachmentLabel,
       processingStatus: existing.processingStatus,
     });
+    if (existing.processingStatus === 'STORED' && existing.shipmentDocumentId && accountId && existing.checksum) {
+      if (params.senderNeedsReview) await openInboundReview({ accountId, clientId: email.clientId ?? null, inboundEmailId: email.id, shipmentDocumentId: existing.shipmentDocumentId, reason: 'UNKNOWN_SENDER' });
+      await enqueueDocumentParse({ accountId, documentId: existing.shipmentDocumentId, contentSha256: existing.checksum, profile: 'STANDARD', reason: 'INITIAL', correlationId: randomUUID() });
+    }
     return existing.processingStatus === "STORED" || existing.processingStatus === "QUARANTINED"
       ? { stored: true, crossShipmentDuplicateCount: 0 }
       : NOT_STORED;
@@ -284,11 +307,11 @@ async function processOneAttachment(params: {
   // Unrecognized senders still get their files downloaded, scanned, and
   // stored -- just under a separate blob prefix, since nothing here is
   // attributed to a tenant yet.
-  const folder = accountId ? "documents" : "quarantine";
+  const folder = accountId ? `documents/${accountId}/${email.clientId ?? "ops"}` : "quarantine";
 
   try {
-    const download = await getAttachmentDownloadInfo(email.providerEmailId, attachment.id);
-    const bytes = await downloadAttachmentBytes(download.downloadUrl);
+    const download = await params.provider.getAttachmentDownloadInfo(email.providerEmailId, attachment.id);
+    const bytes = await params.provider.downloadAttachmentBytes(download.downloadUrl);
     log("attachment.downloaded", {
       inboundEmailId: email.id,
       providerAttachmentId: attachment.id,
@@ -312,7 +335,9 @@ async function processOneAttachment(params: {
       verdict: scan.verdict,
       reason: scan.reason ?? null,
     });
-    if (scan.verdict === "QUARANTINE") {
+    // Public destination addresses must never accept an unscanned attachment,
+    // even when ordinary manual uploads use the legacy advisory policy.
+    if (scan.verdict === "QUARANTINE" || (email.inboundAddressId && scan.verdict !== "CLEAN")) {
       await rejectAttachment(attachmentRow.id, scan.reason, { inboundEmailId: email.id, providerAttachmentId: attachment.id, filename: attachmentLabel });
       if (accountId) {
         await createAuditLog({
@@ -379,11 +404,14 @@ async function processOneAttachment(params: {
     const docType = DocumentTypeCatalog.matchDocumentType(filename).name;
 
     const senderAddress = email.originalFromAddress || email.normalizedFromAddress || null;
-    const document = await db.shipmentDocument.create({
+    const document = await db.$transaction(async tx => {
+      const created = await tx.shipmentDocument.create({
       data: {
         accountId,
         shipmentId: null,
-        source: "EMAIL",
+        source: email.inboundAddressId ? "INBOUND_EMAIL" : "EMAIL",
+        clientId: email.clientId ?? null,
+        portalVisibility: email.clientId && params.purpose === "CLIENT_DOCUMENTS" ? "CUSTOMER" : "INTERNAL",
         assignedToUserId: defaultAssigneeId,
         docType,
         fileName: filename,
@@ -405,10 +433,14 @@ async function processOneAttachment(params: {
       },
     });
 
-    await db.inboundAttachment.update({
+    await tx.inboundAttachment.update({
       where: { id: attachmentRow.id },
-      data: { processingStatus: "STORED", checksum: storageResult.checksum, shipmentDocumentId: document.id },
+      data: { processingStatus: "STORED", checksum: storageResult.checksum, shipmentDocumentId: created.id },
     });
+    return created;
+    });
+
+    if (params.senderNeedsReview) await openInboundReview({ accountId, clientId: email.clientId ?? null, inboundEmailId: email.id, shipmentDocumentId: document.id, reason: 'UNKNOWN_SENDER' });
 
     const crossShipmentDuplicates = await findCrossShipmentDuplicates(
       accountId,
@@ -456,6 +488,8 @@ async function processOneAttachment(params: {
     });
     return { stored: true, crossShipmentDuplicateCount: crossShipmentDuplicates.length };
   } catch (error) {
+    const latest = await db.inboundAttachment.findUnique({ where: { id: attachmentRow.id } });
+    if (latest?.shipmentDocumentId) throw error;
     await rejectAttachment(
       attachmentRow.id,
       error instanceof Error ? error.message : "Unexpected error while processing this attachment.",

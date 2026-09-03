@@ -1,7 +1,13 @@
+vi.mock('@/modules/inbound/inboundNotifications', () => ({ summarizeInboundReceipt: vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const dbMock = {
+  $transaction: (fn: (tx: unknown) => unknown) => fn(dbMock),
+  inboundAddress: { findUnique: vi.fn() },
+  inboundSenderRoute: { findMany: vi.fn() },
+  inboundDocumentReview: { count: vi.fn().mockResolvedValue(0) },
   inboundEmail: {
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     findMany: vi.fn(),
     findUniqueOrThrow: vi.fn(),
     update: vi.fn(),
@@ -38,6 +44,8 @@ vi.mock("@/lib/db", () => ({
   runWithDataMode: (_mode: string | null | undefined, fn: () => unknown) => fn(),
   withDataModeContext: (_mode: string | null | undefined, fn: () => Promise<unknown>) => fn(),
 }));
+vi.mock("@/modules/inbound/inboundDocumentRouting", () => ({ openInboundReview: vi.fn() }));
+vi.mock("@/modules/notifications/notifyAccount", () => ({ notifyAccountRoleHolders: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
   createAuditLog: createAuditLogMock,
   AuditAction: { DOCUMENT_STORED: "document.stored", INBOUND_EMAIL_ATTACHMENT_QUARANTINED: "inbound_email.attachment_quarantined" },
@@ -397,5 +405,64 @@ describe("inbound email worker", () => {
     });
     expect(dbMock.shipmentDocument.create).toHaveBeenCalledTimes(1);
     expect(enqueueDocumentParseMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('client-address worker routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.inboundEmail.updateMany.mockResolvedValue({ count: 1 });
+    dbMock.inboundEmail.findMany.mockResolvedValue([{ ...RECEIVED_EMAIL, accountId: 'acct_a' }]);
+    dbMock.inboundEmail.findUniqueOrThrow.mockResolvedValue({ ...RECEIVED_EMAIL, accountId: 'acct_a', clientId: 'target', inboundAddressId: 'target-address' });
+    dbMock.inboundEmail.update.mockImplementation(async ({ data }) => ({ ...RECEIVED_EMAIL, accountId: 'acct_a', clientId: 'target', inboundAddressId: 'target-address', ...data }));
+    dbMock.inboundAddress.findUnique.mockResolvedValue({ id: 'target-address', accountId: 'acct_a', clientId: 'target', status: 'ACTIVE', senderPolicy: 'ALLOWLIST' });
+    dbMock.inboundSenderRoute.findMany.mockResolvedValue([]);
+  });
+  it.each(['NOT_SCANNED', 'QUARANTINE'])('rejects %s client attachments before storage', async verdict => {
+    dbMock.inboundAddress.findUnique.mockResolvedValue({ accountId: 'acct_a', clientId: 'target', status: 'ACTIVE', senderPolicy: 'OPEN', purpose: 'CLIENT_DOCUMENTS' });
+    getReceivedEmailMock.mockResolvedValue({ id: 'resend_email_1', headers: {}, attachments: [{ id: 'new_att', filename: 'invoice.pdf', contentType: 'application/pdf', contentDisposition: 'attachment', size: 20 }] });
+    dbMock.inboundAttachment.findUnique.mockResolvedValue(null);
+    dbMock.inboundAttachment.upsert.mockResolvedValue({ id: 'new_row' });
+    getAttachmentDownloadInfoMock.mockResolvedValue({ downloadUrl: 'https://signed.example/download', contentType: 'application/pdf' });
+    downloadAttachmentBytesMock.mockResolvedValue(Buffer.from('%PDF-1.4\n...\n%%EOF'));
+    screenUploadForMalwareMock.mockResolvedValue({ verdict, reason: 'Scan not clean', scannerName: null });
+    const { runInboundEmailWorkerTick } = await import('@/modules/documents/processing/inboundEmailWorker');
+    await runInboundEmailWorkerTick();
+    expect(storeDocumentFileMock).not.toHaveBeenCalled();
+    expect(dbMock.shipmentDocument.create).not.toHaveBeenCalled();
+    expect(dbMock.inboundAttachment.update).toHaveBeenCalledWith({ where: { id: 'new_row' }, data: { processingStatus: 'REJECTED', rejectionReason: 'Scan not clean' } });
+  });
+  it('stores clean REVIEW attachments under the recipient client and opens a sender review', async () => {
+    dbMock.inboundAddress.findUnique.mockResolvedValue({ accountId: 'acct_a', clientId: 'target', status: 'ACTIVE', senderPolicy: 'REVIEW', purpose: 'CLIENT_DOCUMENTS' });
+    getReceivedEmailMock.mockResolvedValue({ id: 'resend_email_1', headers: {}, attachments: [{ id: 'new_att', filename: 'invoice.pdf', contentType: 'application/pdf', contentDisposition: 'attachment', size: 20 }] });
+    dbMock.inboundAttachment.findUnique.mockResolvedValue(null);
+    dbMock.inboundAttachment.upsert.mockResolvedValue({ id: 'new_row' });
+    getAttachmentDownloadInfoMock.mockResolvedValue({ downloadUrl: 'https://signed.example/download', contentType: 'application/pdf' });
+    downloadAttachmentBytesMock.mockResolvedValue(Buffer.from('%PDF-1.4\n...\n%%EOF'));
+    screenUploadForMalwareMock.mockResolvedValue({ verdict: 'CLEAN', reason: 'Scanned clean', scannerName: 'clamav' });
+    storeDocumentFileMock.mockResolvedValue({ url: 'stored://fixture', checksum: 'hash', provider: 'test' });
+    dbMock.shipmentDocument.create.mockResolvedValue({ id: 'new_doc' });
+    dbMock.shipmentDocument.findMany.mockResolvedValue([]);
+    const { runInboundEmailWorkerTick } = await import('@/modules/documents/processing/inboundEmailWorker');
+    const { openInboundReview } = await import('@/modules/inbound/inboundDocumentRouting');
+    await runInboundEmailWorkerTick();
+    expect(storeDocumentFileMock).toHaveBeenCalledWith(expect.any(File), 'invoice.pdf', 'documents/acct_a/target');
+    expect(dbMock.shipmentDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({ accountId: 'acct_a', clientId: 'target', source: 'INBOUND_EMAIL', portalVisibility: 'CUSTOMER', shipmentId: null }) });
+    expect(openInboundReview).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'target', shipmentDocumentId: 'new_doc', reason: 'UNKNOWN_SENDER' }));
+    expect(enqueueDocumentParseMock).toHaveBeenCalledWith(expect.objectContaining({ documentId: 'new_doc' }));
+    expect(screenUploadForMalwareMock.mock.invocationCallOrder[0]).toBeLessThan(storeDocumentFileMock.mock.invocationCallOrder[0]);
+  });
+  it('holds an unknown ALLOWLIST sender without fetching or storing attachments', async () => {
+    const { runInboundEmailWorkerTick } = await import('@/modules/documents/processing/inboundEmailWorker');
+    await runInboundEmailWorkerTick();
+    expect(getReceivedEmailMock).not.toHaveBeenCalled(); expect(storeDocumentFileMock).not.toHaveBeenCalled();
+    expect(resolveInboundRouteMock).not.toHaveBeenCalled();
+    expect(dbMock.inboundEmail.update).toHaveBeenCalledWith({ where: { id: 'in_1' }, data: expect.objectContaining({ routingStatus: 'NEEDS_REVIEW' }) });
+  });
+  it('rejects blocked senders before storage even if the destination is open', async () => {
+    dbMock.inboundAddress.findUnique.mockResolvedValue({ accountId: 'acct_a', clientId: 'target', status: 'ACTIVE', senderPolicy: 'OPEN' });
+    dbMock.inboundSenderRoute.findMany.mockResolvedValue([{ status: 'BLOCKED' }]);
+    const { runInboundEmailWorkerTick } = await import('@/modules/documents/processing/inboundEmailWorker'); await runInboundEmailWorkerTick();
+    expect(getReceivedEmailMock).not.toHaveBeenCalled(); expect(storeDocumentFileMock).not.toHaveBeenCalled();
   });
 });

@@ -254,7 +254,7 @@ describe('Shipment loading budget and deferred sections', () => {
     const body = await response.json();
     expect(body.documents).toHaveLength(50);
     expect(body.hasMore).toBe(true);
-    expect(m.db.shipmentDocument.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'target-workspace', shipmentId: 's1' }, skip: 50, take: 51 }));
+    expect(m.db.shipmentDocument.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ accountId: 'target-workspace', shipmentId: 's1', status: { not: 'DISCARDED' }, OR: [{ source: { not: 'INBOUND_EMAIL' } }, { portalVisibility: 'CUSTOMER' }] }), skip: 50, take: 51 }));
     expect(m.db.shipment.findUnique).toHaveBeenCalledTimes(1);
     expect(m.db.entryProof.findMany).not.toHaveBeenCalled();
   });

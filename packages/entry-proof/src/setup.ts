@@ -1,4 +1,5 @@
 export interface SetupSummary {
+  inboundAddress?: { address: string; purpose: string } | null;
     clientId: string | null;
     clientName: string;
     brokerName: string;

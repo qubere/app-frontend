@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { ClientInboundAddresses } from "./ClientInboundAddresses";
 import { Mail, Copy, Check, Trash2, Plus, Building2 } from "lucide-react";
 import { PanelHeading } from "@/components/PanelHeading";
 import { Badge } from "@/components/ui/Badge";
@@ -37,7 +38,7 @@ function statusVariant(status: string): "success" | "warning" | "danger" | "neut
   return "neutral";
 }
 
-export function DocumentEmailPanel({
+function LegacyDocumentEmailPanel({
   publicDocumentAddress,
   accountName,
   initialRoutes,
@@ -200,4 +201,13 @@ export function DocumentEmailPanel({
       </div>
     </div>
   );
+}
+
+export function DocumentEmailPanel(props: DocumentEmailPanelProps) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { fetch('/api/settings/inbound-addresses').then(async r => { if (!r.ok) throw new Error(); return r.json(); }).then(d => setEnabled(d.enabled)).catch(() => setFailed(true)); }, []);
+  if (failed) return <p role="alert" className="text-sm text-red-700">Document email settings could not load. Refresh to try again.</p>;
+  if (enabled === null) return <p className="text-sm text-ink-muted">Loading document email settings…</p>;
+  return enabled ? <ClientInboundAddresses /> : <LegacyDocumentEmailPanel {...props} />;
 }

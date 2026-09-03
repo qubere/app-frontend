@@ -37,7 +37,7 @@ product does breaks that promise in the room.
 | [work-management.md](work-management.md) | Autonomous stage pipeline, routed queues, SLA clocks, escalation, human approval gates | Broker |
 | [billing-and-revenue.md](billing-and-revenue.md) | Usage ledger, versioned rate cards, margin visibility, revenue-leakage detection, rate simulation | Broker |
 | [partner-portal.md](partner-portal.md) | Client self-service: document requests, shipment visibility, invoices, branded access | Broker, enterprise |
-| [document-management.md](document-management.md) | Immutable vault, SHA-256 provenance, inbound-email intake, audit-room export, 19 U.S.C. § 1509 recordkeeping | Both |
+| [document-management.md](document-management.md) | Immutable vault, SHA-256 provenance, client email addresses and broker review, audit-room export, 19 U.S.C. § 1509 recordkeeping | Both |
 | [product-and-party-master.md](product-and-party-master.md) | One global product/party record, per-jurisdiction classifications, origin as a fact not an inference, change detection | Enterprise |
 | [duty-and-landed-cost.md](duty-and-landed-cost.md) | Tariff & sourcing simulator, duty-recovery / drawback / PSC readiness, regulatory-change impact assessment | Enterprise, broker |
 | [multi-leg-shipments.md](multi-leg-shipments.md) | One canonical leg model, per-leg document checklists, rule-based route inference, the journey ribbon | Forwarder, broker |
@@ -48,6 +48,12 @@ Deeper reference (not seller-facing, but useful prep):
 [Billing.md](Billing.md) and
 [BILLING-QE-PM-SALES-ASSESSMENT-AND-DEMO-PLAYBOOK.md](BILLING-QE-PM-SALES-ASSESSMENT-AND-DEMO-PLAYBOOK.md),
 plus [WORK-MANAGEMENT-SALES-DEMO.md](WORK-MANAGEMENT-SALES-DEMO.md).
+
+For client document email, use the
+[five-minute walkthrough](../../../sales/CLIENT-EMAIL-INGESTION-DEMO.md) and
+[broker/customer instructions](../support/CLIENT-EMAIL-DOCUMENTS.md). The capability
+defaults off until configured; demonstrate clear matches, broker review and the
+unchanged published proof rather than promising every email attaches automatically.
 
 ---
 
@@ -79,7 +85,8 @@ plus [WORK-MANAGEMENT-SALES-DEMO.md](WORK-MANAGEMENT-SALES-DEMO.md).
 | `npx tsx apps/custom/scripts/seed-multileg-demo.ts` | Multi-leg journey on `SHP-TGT-2026-001` (non-destructive) |
 | `npx tsx apps/custom/scripts/seed-canonical-messaging.ts` | Filing procedure/authority/message config — required before any filing |
 | `npx tsx apps/custom/scripts/seed-target-users.ts` | Target brokerage users + shipments |
-| `npx tsx apps/custom/scripts/seed-inbound-demo.ts` | Inbound-email document intake mailboxes |
+| `npx tsx apps/custom/scripts/seed-partner-portal-demo.ts --account-id DEMO_ACCOUNT_ID` | Prerequisite client/shipment and published Entry Proof demo data |
+| `npm --workspace @qubere/custom run seed:inbound-email -- --account-id DEMO_ACCOUNT_ID` | Three synthetic client-email scenarios in a configured DEMO/SANDBOX account; see the walkthrough for flags, scanner/storage and parser requirements; sends no email |
 | `npx tsx prisma/import-hts.ts` | HTS tariff schedule — required before classification / duty math works |
 
 ---

@@ -718,7 +718,11 @@ feature's linked doc for what "unconfigured" looks like in the UI.
 | `DOCLING_API_BASE_URL`, `DOCLING_API_KEY`, `DOCLING_AUTH_HEADER_NAME`, `DOCLING_AUTH_HEADER_SCHEME`, `DOCLING_SUBMIT_PATH`, `DOCLING_STATUS_PATH`, `DOCLING_RESULT_PATH`, `DOCLING_SOURCE_DELIVERY`, `DOCLING_SUBMIT_ENCODING`, `DOCLING_ARTIFACT_HOSTS`, `DOCLING_SOURCE_ENVELOPE` | IBM-hosted Docling connection, only read when `DOCUMENT_PARSER_PROVIDER=ibm-docling` | All but base URL and API key have working defaults |
 | `DOCUMENT_PARSER_REQUEST_TIMEOUT_MS` | Docling request timeout | Defaults to 60000 |
 | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` | Inbound email → document intake | Required to receive documents by email |
-| `RESEND_ALLOWED_INBOUND_RECIPIENTS`, `RESEND_PUBLIC_DOCUMENT_ADDRESS` | Inbound email allow-list / displayed address | Optional even with Resend configured |
+| `RESEND_ALLOWED_INBOUND_RECIPIENTS`, `RESEND_PUBLIC_DOCUMENT_ADDRESS` | Legacy inbound recipient list / displayed address | Used by legacy routing while client addresses are disabled; the new path uses issued destination addresses |
+| `INBOUND_CLIENT_ADDRESSES_ENABLED` | Client document addresses, routing and portal address cards | Defaults `false`; enable in both Custom and Portal after migration, backfill and sandbox checks |
+| `INBOUND_EMAIL_DOMAIN`, `INBOUND_ADDRESS_TOKEN_BYTES` | Domain and random-token size for issued addresses | Defaults `inbound.qubere.ai` and 10 bytes (80 bits); configure the domain before issuance |
+| `INBOUND_AUTO_ATTACH_THRESHOLD` | Minimum score for an unambiguous shipment match within the destination client | Defaults 0.75; accepted range 0.75–1; conflicts and sender review still prevent automatic attachment |
+| `INBOUND_AUTO_REPLY_ENABLED` | Enables optional inbound sender receipts | Defaults `false`; also requires the address's receipt option and a verified `RESEND_FROM_ADDRESS` |
 | `RESEND_FROM_ADDRESS` | From-address on outbound document-request emails | Defaults to `noreply@qubere.ai` |
 | `TRADE_GOV_API_KEY` | BIS Consolidated Screening List ingestion (`api.trade.gov`) | No default; requests are unauthenticated and likely rate-limited/fail without it |
 | `CURRENCYFREAKS_API_KEY` | `ExchangeRateService` — powers automatic filing exchange-rate resolution when no manual rate is on file. See [Customs Filing — Canonical Messaging](#10-customs-filing--canonical-messaging) | No default; rate fetches are unauthenticated and likely fail without it |
@@ -1007,3 +1011,20 @@ Default password for all seeded test users: **`QuberePass2026!`**
 ## 📄 License
 
 © 2026 Qubere Inc. All rights reserved. Trade Compliance AI Platform.
+
+### Client-specific inbound document email
+
+Issue #297 introduces audited client addresses, client-scoped matching, and a broker
+Email review queue. Client-address attachments require a clean malware scan before
+storage, even when manual uploads use advisory mode. Sender checks and matching
+evidence stay beside the broker's decision; no shipment is preselected. Attaching
+new evidence to a shipment with published Entry Proof generates a draft and leaves
+publication under broker control.
+
+Both rollout flags default off. See the
+[deployment and rollback guide](docs/operations/CLIENT-EMAIL-INGESTION-ROLLOUT.md) and
+[synthetic partner demo](docs/sales/CLIENT-EMAIL-INGESTION-DEMO.md). Customer and broker
+steps are in [Send and review client documents](docs/apps/customs/support/CLIENT-EMAIL-DOCUMENTS.md),
+with matching Q&A in the in-app Help Center. Backfill addresses
+with `npm --workspace @qubere/custom run backfill:inbound-addresses -- --account-id ID`
+(dry-run; add `--apply` after review). Safe example configuration is in `.env.example`.

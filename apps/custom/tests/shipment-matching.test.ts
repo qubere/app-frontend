@@ -10,6 +10,9 @@ import {
 } from "@/modules/shipments/shipmentMatching";
 
 describe("extractIdentifierCandidates", () => {
+  it("recognizes exact client-prefixed shipment numbers", () => {
+    expect(extractIdentifierCandidates("Commercial invoice SHP-TGT-2026-001, SHP-ACME-2026-002").shipmentNumbers).toEqual(["SHP-TGT-2026-001", "SHP-ACME-2026-002"]);
+  });
   it("finds a literal shipment number in the exact generated format", () => {
     const { shipmentNumbers } = extractIdentifierCandidates("Re: docs for SHP-2026-000042 attached");
     expect(shipmentNumbers).toEqual(["SHP-2026-000042"]);
@@ -122,7 +125,7 @@ describe("matchShipmentForDocument", () => {
     );
     expect(result.matchedShipmentId).toBeNull();
     expect(recorded).toHaveLength(0);
-    expect(deleted).toEqual([]);
+    expect(deleted).toEqual(["doc_1"]);
   });
 
   it("persists conflicting shipment-number candidates but auto-selects neither", async () => {

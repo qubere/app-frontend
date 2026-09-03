@@ -7,7 +7,7 @@
  * match the same route.
  */
 export function normalizeSenderEmail(raw: string): string {
-  return raw.trim().toLowerCase();
+  return (raw.match(/<([^<>]+)>/)?.[1] ?? raw).trim().toLowerCase();
 }
 
 /**

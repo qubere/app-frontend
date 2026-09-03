@@ -40,15 +40,15 @@ export const GET = withPortalAccount(async (ctx, req: Request, { params }: { par
   if (section === "documents") {
     if (!hasRequiredPortalPermission(ctx, "portal.documents.read")) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
     const documents = await db.shipmentDocument.findMany({
-      where: { shipmentId: id, accountId: ctx.accountId },
+      where: { shipmentId: id, accountId: ctx.accountId, status: { not: "DISCARDED" }, OR: [{ source: { not: "INBOUND_EMAIL" } }, { portalVisibility: "CUSTOMER" }] },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: page * pageSize, take: pageSize + 1,
-      select: { id: true, fileName: true, docType: true, status: true, createdAt: true,
+      select: { id: true, fileName: true, docType: true, status: true, source: true, createdAt: true,
         channel: true, uploadedByName: true, uploadedByEmail: true, uploadedAt: true },
     });
     return NextResponse.json({
       documents: documents.slice(0, pageSize).map(({ uploadedByName, uploadedByEmail, uploadedAt, ...d }) => ({
         ...d,
-        status: d.status === "Received" ? "Ready" : "Processing",
+        status: d.source === "INBOUND_EMAIL" ? "Attached" : d.status === "Received" ? "Ready" : "Processing",
         uploadedBy: uploadedByName || uploadedByEmail || null,
         uploadedAt: (uploadedAt ?? d.createdAt).toISOString(),
       })),

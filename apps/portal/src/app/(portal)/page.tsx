@@ -1,6 +1,7 @@
 "use client";
 
 import { portalResponseError } from "@/lib/portal-response-error";
+import { InboundReceipts } from "@/components/InboundReceipts";
 import { PortalOverview } from "@/components/PortalOverview";
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
@@ -17,9 +18,6 @@ import {
   Eye,
   Loader2,
   X,
-  ExternalLink,
-  ShieldAlert,
-  FolderCheck,
   FolderOpen,
   Plus,
   Search,
@@ -265,6 +263,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <PortalOverview />
+      <InboundReceipts />
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-[#E5E5EA] shadow-xs">
         <div>

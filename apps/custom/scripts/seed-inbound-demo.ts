@@ -129,7 +129,7 @@ async function main() {
 
   // Sender route: the one thing this demo is actually testing.
   const normalizedSenderEmail = normalizeSenderEmail(senderEmail);
-  const existingRoute = await db.inboundSenderRoute.findUnique({ where: { normalizedSenderEmail } });
+  const existingRoute = await db.inboundSenderRoute.findUnique({ where: { accountId_scopeKey_normalizedSenderEmail: { accountId: account.id, scopeKey: "", normalizedSenderEmail } } });
   if (existingRoute && existingRoute.accountId !== account.id) {
     throw new Error(
       `"${normalizedSenderEmail}" is already routed to a different account (${existingRoute.accountId}). ` +
@@ -137,7 +137,7 @@ async function main() {
     );
   }
   const route = await db.inboundSenderRoute.upsert({
-    where: { normalizedSenderEmail },
+    where: { accountId_scopeKey_normalizedSenderEmail: { accountId: account.id, scopeKey: "", normalizedSenderEmail } },
     update: { status: "ACTIVE", defaultAssignedToUserId: assignee.id },
     create: {
       accountId: account.id,

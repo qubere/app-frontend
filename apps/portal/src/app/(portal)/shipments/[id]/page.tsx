@@ -39,6 +39,7 @@ interface ShipmentData {
     id: string;
     fileName: string;
     docType: string;
+    source?: string;
     status: string;
     createdAt: string;
     channel?: string | null;
@@ -265,6 +266,7 @@ function ShipmentDetails({ id }: { id: string }) {
                   {" · "}Uploaded by {d.uploadedBy || "Not recorded"}
                   {d.uploadedAt ? ` on ${new Date(d.uploadedAt).toLocaleDateString()}` : ""}
                 </span>
+                {d.source === "INBOUND_EMAIL" && <p className="mt-1 text-xs text-[#86868B]">Received by email {new Date(d.createdAt).toLocaleDateString()}</p>}
               </div>
               <a
                 href={`/api/documents/${d.id}/download`}

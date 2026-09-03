@@ -1,6 +1,8 @@
 # Qubere Docs
 
-All docs live under `docs/apps/<app>/` organized by type.
+App reference docs live under `docs/apps/<app>/`, organized by type. Shared
+release guidance, operations runbooks and demo walkthroughs also live under
+`docs/product-help/`, `docs/operations/` and `docs/sales/`.
 
 ## Structure
 
@@ -57,6 +59,9 @@ ADRs, customs-filing module docs, UI-config framework, sales decks, TMS architec
 - [OpenAPI spec](apps/customs/data/openapi.yaml)
 - [ADRs](apps/customs/planning/adr/)
 - [Sales decks](apps/customs/sales/)
+- [Client email: customer and broker instructions](apps/customs/support/CLIENT-EMAIL-DOCUMENTS.md)
+- [Client email: sales walkthrough](sales/CLIENT-EMAIL-INGESTION-DEMO.md)
+- [Client email: rollout and rollback](operations/CLIENT-EMAIL-INGESTION-ROLLOUT.md)
 
 ### TMS
 - [Modular agent architecture](apps/tms/feature/TMS-MODULAR-AGENT-ARCHITECTURE.md)

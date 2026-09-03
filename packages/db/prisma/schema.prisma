@@ -225,14 +225,16 @@ enum DeadlineClass {
 }
 
 model Account {
-  entryProofs EntryProof[]
-  clientStakeholders ClientStakeholder[]
-  clientDocuments ClientDocument[]
-  pgaHolds PgaHold[]
-  pgaHoldSubmissions PgaHoldSubmission[]
-  assists Assist[]
-  assistDecisions AssistDecision[]
-  assistDeclarations AssistDeclaration[]
+  inboundAddresses       InboundAddress[]
+  inboundDocumentReviews InboundDocumentReview[]
+  entryProofs            EntryProof[]
+  clientStakeholders     ClientStakeholder[]
+  clientDocuments        ClientDocument[]
+  pgaHolds               PgaHold[]
+  pgaHoldSubmissions     PgaHoldSubmission[]
+  assists                Assist[]
+  assistDecisions        AssistDecision[]
+  assistDeclarations     AssistDeclaration[]
 
   id          String    @id @default(cuid())
   name        String
@@ -465,16 +467,17 @@ model ShipmentSequence {
 }
 
 model User {
-  clientStakeholders ClientStakeholder[]
-  id                  String    @id @default(cuid())
-  clerkUserId         String    @unique
-  email               String    @unique
-  firstName           String?
-  lastName            String?
-  brokerLicenseNumber String? // License number for licensed customs brokers
-  deletedAt           DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  assignedInboundAddresses InboundAddress[]    @relation("InboundAddressAssignee")
+  clientStakeholders       ClientStakeholder[]
+  id                       String              @id @default(cuid())
+  clerkUserId              String              @unique
+  email                    String              @unique
+  firstName                String?
+  lastName                 String?
+  brokerLicenseNumber      String? // License number for licensed customs brokers
+  deletedAt                DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
   ownedAccounts                 Account[]                @relation("AccountOwner")
   createdInvitations            Invitation[]             @relation("InvitationCreator")
@@ -1297,14 +1300,17 @@ model ComplianceDeadline {
 }
 
 model ShipmentDocument {
-  id                     String        @id @default(cuid())
+  inboundRoutedAt DateTime?
+  inboundProofPending Boolean @default(false)
+  inboundDocumentReview  InboundDocumentReview?
+  id                     String                 @id @default(cuid())
   // Nullable: a document can be detached from its shipment (keeping the
   // row and extractedJson intact) and later reattached to a different
   // shipment without redoing AI vision extraction.
   shipmentId             String?
-  shipment               Shipment?     @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  shipment               Shipment?              @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   accountId              String
-  account                Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account                Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
   docType                String // Commercial Invoice, Packing List, Bill of Lading, Arrival Notice, Insurance Certificate, Certificate of Origin
   /// Structured enum equivalent of docType, written by the classification
   /// pipeline. Null until classification runs. Distinct from docType so the
@@ -1317,18 +1323,18 @@ model ShipmentDocument {
   pageCount              Int? // null until the document has been parsed
   fileUrl                String?
   checksum               String? // SHA-256 hash for duplicate detection
-  version                String        @default("1.0")
+  version                String                 @default("1.0")
   confidence             Int? // extraction confidence, null until extraction runs
-  status                 String        @default("Received") // Received, Missing, Review Required, NEEDS_CLASSIFICATION
-  required               Boolean       @default(true)
+  status                 String                 @default("Received") // Received, Missing, Review Required, NEEDS_CLASSIFICATION
+  required               Boolean                @default(true)
   /// Display order within the shipment's document list. Lower = earlier.
   /// Null until the broker reorders; documents without an explicit order
   /// are sorted by createdAt (the existing default).
   displayOrder           Int?
-  extractedJson          String?       @db.Text
-  rawContent             String?       @db.Text
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
+  extractedJson          String?                @db.Text
+  rawContent             String?                @db.Text
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
 
   /// Byte size and detected media type of the immutable original, recorded at
   /// upload. `checksum` above is its SHA-256.
@@ -1464,15 +1470,15 @@ model DocumentAssociation {
 }
 
 /// Authorizes one normalized sender email to route inbound documents into
-/// exactly one organization. The unique constraint on normalizedSenderEmail
-/// is the actual tenant-isolation boundary here: it is what makes it
-/// impossible for two accounts to claim the same sender, not application
-/// logic layered on top.
+/// Sender rules are scoped to a destination; recipients determine ownership.
 model InboundSenderRoute {
   id                      String   @id @default(cuid())
   accountId               String
   account                 Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  normalizedSenderEmail   String   @unique // trim + lowercase; never alias-collapsed
+  normalizedSenderEmail   String // trim + lowercase; never alias-collapsed
+  clientId                String?
+  client                  Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  scopeKey                String   @default("") // clientId or empty for account scope
   displaySenderEmail      String
   defaultAssignedToUserId String?
   defaultAssignedToUser   User?    @relation("InboundRouteAssignee", fields: [defaultAssignedToUserId], references: [id], onDelete: SetNull)
@@ -1481,6 +1487,9 @@ model InboundSenderRoute {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
+  @@unique([accountId, scopeKey, normalizedSenderEmail])
+  @@index([normalizedSenderEmail, status])
+  @@index([clientId])
   @@index([accountId])
 }
 
@@ -1488,10 +1497,21 @@ model InboundSenderRoute {
 /// the sender is routed -- an email can exist here and still never touch a
 /// tenant's document library.
 model InboundEmail {
-  id                    String   @id @default(cuid())
+  autoReplyAttemptedAt DateTime?
+  clientId              String?
+  client                Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  inboundAddressId      String?
+  inboundAddress        InboundAddress?         @relation(fields: [inboundAddressId], references: [id], onDelete: SetNull)
+  recipientAddress      String?
+  senderApprovedAt      DateTime?
+  autoReplySentAt       DateTime?
+  processingLeaseUntil  DateTime?
+  processingLeaseToken  String?
+  reviews               InboundDocumentReview[]
+  id                    String                  @id @default(cuid())
   accountId             String?
-  account               Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  provider              String   @default("resend")
+  account               Account?                @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  provider              String                  @default("resend")
   providerEventId       String
   providerEmailId       String
   normalizedFromAddress String
@@ -1499,17 +1519,19 @@ model InboundEmail {
   toAddresses           String // comma-joined, as reported by the provider
   subject               String?
   receivedAt            DateTime
-  routingStatus         String   @default("RECEIVED") // RECEIVED, ROUTED, ACCEPTED, QUARANTINED, REJECTED, FAILED
+  routingStatus         String                  @default("RECEIVED") // RECEIVED, ROUTED, ACCEPTED, QUARANTINED, REJECTED, FAILED
   quarantineReason      String?
   authHeaders           Json? // raw headers fetched from the provider, for audit/manual review only
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
   attachments          InboundAttachment[]
   transportationOrders TransportationOrder[]
 
   @@unique([provider, providerEventId])
   @@unique([provider, providerEmailId])
+  @@index([clientId])
+  @@index([inboundAddressId, receivedAt])
   @@index([accountId])
   @@index([routingStatus])
 }
@@ -1518,9 +1540,11 @@ model InboundEmail {
 /// the attachment has been validated, scanned, and stored as a
 /// ShipmentDocument -- a rejected or inline attachment never gets one.
 model InboundAttachment {
-  id                   String            @id @default(cuid())
+  reviewId             String?
+  review               InboundDocumentReview? @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  id                   String                 @id @default(cuid())
   inboundEmailId       String
-  inboundEmail         InboundEmail      @relation(fields: [inboundEmailId], references: [id], onDelete: Cascade)
+  inboundEmail         InboundEmail           @relation(fields: [inboundEmailId], references: [id], onDelete: Cascade)
   providerAttachmentId String
   originalFilename     String
   declaredMimeType     String?
@@ -1531,18 +1555,19 @@ model InboundAttachment {
   /// means downloaded, scanned, and stored under quarantinedFileUrl, but not yet
   /// promoted to a ShipmentDocument because the sender wasn't recognized -- a
   /// platform admin has to manually release it to an account first.
-  processingStatus     String            @default("PENDING")
+  processingStatus     String                 @default("PENDING")
   rejectionReason      String?
   /// Set only while processingStatus is QUARANTINED: the blob location of the
   /// stored-but-unassigned file. Cleared once released (fileUrl on the
   /// resulting ShipmentDocument takes over as the source of truth).
   quarantinedFileUrl   String?
-  shipmentDocumentId   String?           @unique
-  shipmentDocument     ShipmentDocument? @relation(fields: [shipmentDocumentId], references: [id], onDelete: SetNull)
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  shipmentDocumentId   String?                @unique
+  shipmentDocument     ShipmentDocument?      @relation(fields: [shipmentDocumentId], references: [id], onDelete: SetNull)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   @@unique([inboundEmailId, providerAttachmentId])
+  @@index([reviewId])
 }
 
 /// One row per shipment considered as a match for an emailed document, kept
@@ -2688,22 +2713,26 @@ model ImporterOfRecord {
 // shipments are tagged with a Client rather than each customer being its
 // own separate tenant Account.
 model Client {
-  entryProofs EntryProof[]
-  clientStakeholders ClientStakeholder[]
-  clientDocuments ClientDocument[]
-  id                  String   @id @default(cuid())
-  accountId           String
-  account             Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name                String
-  contactName         String?
-  contactEmail        String?
-  contactPhone        String?
-  billingContactName  String?
-  billingContactEmail String?
-  paymentTermsDays    Int      @default(30)
-  status              String   @default("ACTIVE") // ACTIVE, INACTIVE
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  inboundAddresses       InboundAddress[]
+  inboundDocumentReviews InboundDocumentReview[]
+  inboundEmails          InboundEmail[]
+  inboundSenderRoutes    InboundSenderRoute[]
+  entryProofs            EntryProof[]
+  clientStakeholders     ClientStakeholder[]
+  clientDocuments        ClientDocument[]
+  id                     String                  @id @default(cuid())
+  accountId              String
+  account                Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                   String
+  contactName            String?
+  contactEmail           String?
+  contactPhone           String?
+  billingContactName     String?
+  billingContactEmail    String?
+  paymentTermsDays       Int                     @default(30)
+  status                 String                  @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   shipments            Shipment[]
   transportationOrders TransportationOrder[]
@@ -10575,4 +10604,61 @@ model ClientDocument {
   @@unique([clientId, kind, sourceModel, sourceId])
   @@index([accountId])
   @@index([clientId, kind, status])
+}
+
+
+model InboundAddress {
+  id                      String         @id @default(cuid())
+  accountId               String
+  account                 Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId                String?
+  client                  Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  token                   String         @unique
+  localPrefix             String         @default("docs")
+  address                 String         @unique
+  // One current address per destination and purpose, including suspended inboxes.
+  activeKey               String?        @unique
+  label                   String?
+  status                  String         @default("ACTIVE")
+  purpose                 String         @default("CLIENT_DOCUMENTS")
+  senderPolicy            String         @default("REVIEW")
+  autoReplyEnabled        Boolean        @default(true)
+  defaultAssignedToUserId String?
+  defaultAssignedToUser   User?          @relation("InboundAddressAssignee", fields: [defaultAssignedToUserId], references: [id], onDelete: SetNull)
+  createdByUserId         String?
+  graceUntil              DateTime?
+  revokedAt               DateTime?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  inboundEmails           InboundEmail[]
+
+  @@index([accountId, clientId])
+  @@index([clientId])
+  @@index([status, graceUntil])
+}
+
+model InboundDocumentReview {
+  id                 String              @id @default(cuid())
+  accountId          String
+  account            Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId           String?
+  client             Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  inboundEmailId     String
+  inboundEmail       InboundEmail        @relation(fields: [inboundEmailId], references: [id], onDelete: Cascade)
+  shipmentDocumentId String?             @unique
+  shipmentDocument   ShipmentDocument?   @relation(fields: [shipmentDocumentId], references: [id], onDelete: SetNull)
+  reviewKey          String              @unique
+  reason             String
+  candidateSummary   Json?
+  status             String              @default("OPEN")
+  resolvedByUserId   String?
+  resolvedShipmentId String?
+  resolvedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  attachments        InboundAttachment[]
+
+  @@index([accountId, status, createdAt])
+  @@index([clientId, status])
+  @@index([inboundEmailId])
 }

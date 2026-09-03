@@ -32,7 +32,7 @@ export interface IdentifierCandidates {
 }
 
 // System-generated, unique per account -- the strongest possible signal.
-const SHIPMENT_NUMBER_PATTERN = /\bSHP-\d{4}-\d{6}\b/gi;
+const SHIPMENT_NUMBER_PATTERN = /\bSHP-(?:\d{4}-\d{6}|[A-Z0-9]{2,12}-\d{4}-\d{3,8})\b/gi;
 
 // "PO-778899", "P.O. 778899", "PO#778899" -- capture the whole token so
 // normalization stays format-insensitive without losing the "PO" identity.

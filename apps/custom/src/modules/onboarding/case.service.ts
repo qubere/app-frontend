@@ -1,3 +1,4 @@
+import { clientInboundEnabled, issueClientInboundAddress } from "@/modules/inbound/inboundAddressService";
 import { promoteSetupForCase } from "@/lib/portal/clientSetup";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
@@ -104,6 +105,8 @@ export class CaseService {
       });
       clientId = newClient.id;
     }
+
+    if (clientInboundEnabled() && clientId) await issueClientInboundAddress({ accountId, clientId, createdByUserId: userId });
 
     const onboardingCase = await db.onboardingCase.create({
       data: {

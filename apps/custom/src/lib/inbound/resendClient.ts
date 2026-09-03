@@ -131,3 +131,9 @@ export async function downloadAttachmentBytes(downloadUrl: string): Promise<Buff
   }
   return Buffer.from(await response.arrayBuffer());
 }
+
+/** Generic one-shot receipt; no document contents or shipment identifiers leave the system. */
+export async function sendInboundReceipt(emailId: string, to: string, text: string) {
+  const { error } = await getClient().emails.send({ from: process.env.RESEND_FROM_ADDRESS || 'notifications@inbound.qubere.ai', to: [to], subject: 'Qubere document receipt', text, headers: { 'Auto-Submitted': 'auto-replied', 'X-Auto-Response-Suppress': 'All' } }, { idempotencyKey: `inbound-receipt/${emailId}` });
+  if (error) throw new Error(error.message);
+}

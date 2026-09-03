@@ -25,7 +25,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
     db.shipmentDocument.findMany({
       where: { AND: [documentClientWhere(accountId, clientIds, owners), afterCursor(cursor, 'S')], ...(shipmentId ? { shipmentId } : {}), ...(docType ? { docType } : {}) },
       take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { id: true, fileName: true, docType: true, byteSize: true, mimeType: true, source: true, status: true, shipmentId: true, createdAt: true,
+      select: { id: true, fileName: true, docType: true, byteSize: true, mimeType: true, source: true, status: true, activeParseVersionId: true, inboundDocumentReview: { select: { status: true } }, shipmentId: true, createdAt: true,
         channel: true, uploadedByName: true, uploadedByEmail: true, uploadedByType: true, uploadedAt: true,
         shipment: { select: { id: true, shipmentNumber: true } },
         inboundAttachment: { select: { inboundEmail: { select: { accountId: true, normalizedFromAddress: true } } } },
@@ -42,7 +42,7 @@ export async function loadDocumentPage(input: { accountId: string; clientIds: st
       fileName: d.fileName, docType: d.docType, byteSize: d.byteSize, mimeType: d.mimeType, source: d.source,
       channel: d.channel ?? normalizeLegacyChannel(d.source),
       uploadedAt: (d.uploadedAt ?? d.createdAt).toISOString(),
-      status: d.status === 'Received' ? 'Ready' : d.status, shipmentId: d.shipmentId, shipmentNumber: d.shipment?.shipmentNumber ?? null,
+      status: d.source === 'INBOUND_EMAIL' ? d.inboundDocumentReview?.status === 'OPEN' ? 'With your broker' : d.shipmentId ? `Attached to ${d.shipment?.shipmentNumber || 'shipment'}` : 'Processing' : d.status === 'Received' ? 'Ready' : d.status, shipmentId: d.shipmentId, shipmentNumber: d.shipment?.shipmentNumber ?? null,
       // Prefer the immutable snapshot recorded at upload; fall back to the
       // inbound sender, then (for legacy rows) an upload audit event.
       storedUploadedBy: d.uploadedByName || d.uploadedByEmail || null,

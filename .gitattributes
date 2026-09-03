@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# PDF xref records contain format-significant trailing spaces.
+apps/custom/scripts/fixtures/inbound/*.pdf binary
