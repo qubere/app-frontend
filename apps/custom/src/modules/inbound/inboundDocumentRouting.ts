@@ -62,7 +62,10 @@ export async function routeParsedInboundDocument(accountId: string, documentId: 
   if (!document || !email?.inboundAddressId || document.status === 'DISCARDED') return null;
   if (document.shipmentId) { await attachInboundDocument(accountId, documentId, document.shipmentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
   if (document.inboundDocumentReview && document.inboundDocumentReview.status !== 'OPEN') return null;
-  const unknownSender = document.inboundDocumentReview?.reason === 'UNKNOWN_SENDER';
+  const address = email.inboundAddressId ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
+  const senders = address ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
+  const senderDecision = address ? evaluateSenderPolicy(address.senderPolicy, senders.map(s => s.status), !!email.senderApprovedAt) : 'ACCEPT';
+  const unknownSender = senderDecision !== 'ACCEPT';
   const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, parsedText, emailSubject: email.subject, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
   if (result.matchedShipmentId) {
     await attachInboundDocument(accountId, documentId, result.matchedShipmentId);
