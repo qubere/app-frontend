@@ -1,4 +1,5 @@
 import { summarizeInboundReceipt } from './inboundNotifications';
+import { evaluateSenderPolicy } from './inboundAddressService';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { parseArtifactIndex, loadNormalizedResult } from '@/modules/documents/parser/artifactStore';
