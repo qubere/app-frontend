@@ -160,8 +160,10 @@ export async function clamdHttpScan(
   opts: { baseUrl: string; timeoutMs: number; fileName?: string }
 ): Promise<ClamavScanResult> {
   const url = opts.baseUrl.replace(/\/+$/, "") + "/scan";
+  const fileName = opts.fileName ?? "upload.bin";
   const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(bytes)]), opts.fileName ?? "upload.bin");
+  form.append("name", fileName);
+  form.append("file", new Blob([new Uint8Array(bytes)]), fileName);
 
   const res = await fetch(url, {
     method: "POST",
@@ -173,11 +175,20 @@ export async function clamdHttpScan(
     throw new Error(`clamd HTTP scanner returned ${res.status} ${res.statusText}`);
   }
 
+  const text = await res.text();
+  const lower = text.toLowerCase();
+  if (lower.includes("everything ok : false") || lower.includes("everything ok: false")) {
+    return { status: "CLEAN", scanner: "clamav" };
+  }
+  if (lower.includes("everything ok : true") || lower.includes("everything ok: true")) {
+    return { status: "INFECTED", detail: "ClamAV virus detected", scanner: "clamav" };
+  }
+
   let body: { status?: string; virus?: string } = {};
   try {
-    body = (await res.json()) as { status?: string; virus?: string };
+    body = JSON.parse(text) as { status?: string; virus?: string };
   } catch {
-    throw new Error("clamd HTTP scanner returned non-JSON body");
+    throw new Error(`clamd HTTP scanner returned unparseable body: ${text.slice(0, 100)}`);
   }
 
   const status = (body.status ?? "").toUpperCase();

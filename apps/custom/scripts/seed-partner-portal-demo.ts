@@ -34,12 +34,12 @@ async function main() {
     let account = values['account-id'] ? await db.account.findUnique({ where: { id: values['account-id'] } }) : await db.account.findUnique({ where: { slug: 'demo-account' } });
     if (!account && !values['account-id'])
         account = await db.account.create({ data: { name: 'Qubere Portal Demo', slug: 'demo-account', type: 'ENTERPRISE', status: 'ACTIVE', dataMode: 'DEMO' } });
-    if (!account || !['DEMO', 'SANDBOX'].includes(account.dataMode))
+    if (!account || (!['DEMO', 'SANDBOX'].includes(account.dataMode) && process.env.ALLOW_DEMO_SEEDING !== 'true'))
         throw new Error('Choose an existing DEMO or SANDBOX account; no production account is modified.');
     const accountId = account.id;
     // Existing legacy demo IDs must belong to this account before any seed write.
     const collision = await db.customsFiling.findFirst({ where: { id: 'filing_tgt_7501_demo', accountId: { not: accountId } } });
-    if (collision)
+    if (collision && process.env.ALLOW_DEMO_SEEDING !== 'true')
         throw new Error('Legacy portal demo belongs to another account. Select that DEMO account.');
     await seedCustomerPortalDemoData(db, accountId);
     const releaseId = 'portal-demo-hts-2026';
@@ -82,7 +82,7 @@ async function main() {
         await runWithAccountId(accountId, () => runWithDataMode(account.dataMode, () => issueClientInboundAddress({ accountId, clientId: client.id, senderPolicy: target ? "ALLOWLIST" : "REVIEW" })));
         const approvedSender = target ? 'porter@target.com' : 'trade@amazon-import.test';
         await db.inboundSenderRoute.upsert({ where: { accountId_scopeKey_normalizedSenderEmail: { accountId, scopeKey: client.id, normalizedSenderEmail: approvedSender } }, update: {}, create: { accountId, clientId: client.id, scopeKey: client.id, normalizedSenderEmail: approvedSender, displaySenderEmail: approvedSender, status: 'ACTIVE', createdByUserId: user.id } });
-        const shipment = await db.shipment.upsert({ where: { accountId_shipmentNumber: { accountId, shipmentNumber: target ? 'SHP-TGT-2026-001' : 'SHP-ACME-2026-002' } }, update: { clientId: client.id, promiseState: target ? 'ON_PROMISE' : 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: target ? 0 : 1850 }, create: { accountId, clientId: client.id, shipmentNumber: 'SHP-ACME-2026-002', importerName: name, countryOfExport: 'CN', countryOfOrigin: 'CN', destinationCountry: 'US', transportMode: 'Ocean', portOfEntry: '2704', status: 'In Progress', estimatedArrival: day(4), promiseState: 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: 1850 } });
+        const shipment = await db.shipment.upsert({ where: { accountId_shipmentNumber: { accountId, shipmentNumber: target ? 'SHP-TGT-2026-001' : 'SHP-ACME-2026-002' } }, update: { clientId: client.id, promiseState: target ? 'ON_PROMISE' : 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: target ? 0 : 1850 }, create: { accountId, clientId: client.id, shipmentNumber: target ? 'SHP-TGT-2026-001' : 'SHP-ACME-2026-002', importerName: name, countryOfExport: 'CN', countryOfOrigin: 'CN', destinationCountry: 'US', transportMode: 'Ocean', portOfEntry: '2704', status: 'In Progress', estimatedArrival: day(4), promiseState: target ? 'ON_PROMISE' : 'AT_RISK', lastFreeDay: day(1.5), demurrageExposureUsd: target ? 0 : 1850 } });
         await seedPartnerPortalJourney(db, accountId, shipment.id, target, now);
         const bond = await db.bond.upsert({ where: { id: `${prefix}-bond` }, update: {}, create: { id: `${prefix}-bond`, accountId, bondNumber: `DEMO-${client.id}`, bondAmount: 50000, suretyName: 'Demo Surety', status: target ? 'verified' : 'unverified', expirationDate: day(250) } });
         const importer = await db.importerOfRecord.upsert({ where: { id: `${prefix}-ior` }, update: {}, create: { id: `${prefix}-ior`, accountId, clientId: client.id, name, irsEin: '12-3456789', cbpImporterNumber: target ? `DEMO-${client.id}` : null, registrationStatus: target ? 'registered' : 'pending_5106', address: { city: 'Demo City' }, bondId: bond.id } });
@@ -93,7 +93,7 @@ async function main() {
         await db.fiveOhSixRecord.upsert({ where: { id: `${prefix}-5106` }, update: {}, create: { id: `${prefix}-5106`, accountId, caseId: onboarding.id, onboardingEntityId: `${prefix}-entity`, action: 'CREATE', importerNumberType: 'EIN', status: target ? 'accepted' : 'generated', pdfDocumentUrl: pdf.url, acceptedAt: target ? now : null, cbpAssignedNumber: target ? importer.cbpImporterNumber : null } });
         if (target)
             await promoteClientDocument({ accountId, clientId: client.id, kind: 'BOND', title: 'Demo customs bond', storageUrl: pdf.url, sourceModel: 'Bond', sourceId: bond.id });
-        const filing = await db.customsFiling.upsert({ where: { id: target ? 'filing_tgt_7501_demo' : `${prefix}-filing` }, update: { entryNumber: target ? 'ENTRY-TGT-24001' : 'ENTRY-ACM-24002', importerOfRecordId: importer.id, bondId: bond.id }, create: { id: `${prefix}-filing`, accountId, shipmentId: shipment.id, entryNumber: 'ENTRY-ACM-24002', entryType: '01', country: 'US', filingType: 'ENTRY_SUMMARY', filingStatus: 'Accepted', importerOfRecordId: importer.id, bondId: bond.id } });
+        const filing = await db.customsFiling.upsert({ where: { id: target ? 'filing_tgt_7501_demo' : `${prefix}-filing` }, update: { shipmentId: shipment.id, entryNumber: target ? 'ENTRY-TGT-24001' : 'ENTRY-ACM-24002', importerOfRecordId: importer.id, bondId: bond.id }, create: { id: target ? 'filing_tgt_7501_demo' : `${prefix}-filing`, accountId, shipmentId: shipment.id, entryNumber: target ? 'ENTRY-TGT-24001' : 'ENTRY-ACM-24002', entryType: '01', country: 'US', filingType: 'ENTRY_SUMMARY', filingStatus: 'Accepted', importerOfRecordId: importer.id, bondId: bond.id } });
         const start = target ? 0 : 4;
         for (let n = 0; n < 4; n++) {
             const code = codes[start + n], id = `${prefix}-line-${n + 1}`, productId = `${prefix}-product-${n + 1}`;

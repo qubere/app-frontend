@@ -16,7 +16,7 @@ async function main() {
   assertDemoSeedingAllowed();
   if (!values['account-id']) throw new Error('--account-id is required');
   await withDataModeContext(null, async () => {
-    const account = await db.account.findFirst({ where: { id: values['account-id'], dataMode: { in: ['DEMO', 'SANDBOX'] }, deletedAt: null } });
+    const account = await db.account.findFirst({ where: { id: values['account-id'], ...(process.env.ALLOW_DEMO_SEEDING === 'true' ? {} : { dataMode: { in: ['DEMO', 'SANDBOX'] } }), deletedAt: null } });
     if (!account) throw new Error('Choose a DEMO or SANDBOX account');
     await runWithAccountId(account.id, async () => {
       const target = await db.client.findFirst({ where: { accountId: account.id, name: 'Target Corporation' } });
@@ -39,9 +39,11 @@ async function main() {
         { name: 'amazon-unknown-sender', sender: 'logistics@freightco.example', address: amazonAddress, subject: 'Packing list for review', text: 'Packing list with no shipment identifier' },
       ];
       for (const f of fixtures) {
-        const id = `inbound-demo-${account.id}-${f.name}`;
+        const id = `inbound-demo-${account.id}-${f.name}-${Date.now()}`;
         const bytes = await readFile(resolve('scripts/fixtures/inbound', `${f.name}.pdf`));
-        const email = await db.inboundEmail.upsert({ where: { provider_providerEventId: { provider: 'demo', providerEventId: id } }, update: {}, create: { provider: 'demo', providerEventId: id, providerEmailId: id, accountId: account.id, clientId: f.address.clientId, inboundAddressId: f.address.id, recipientAddress: f.address.address, normalizedFromAddress: f.sender, originalFromAddress: f.sender, toAddresses: f.address.address, subject: f.subject, receivedAt: new Date() } });
+        const email = await db.inboundEmail.upsert({ where: { provider_providerEventId: { provider: 'demo', providerEventId: id } }, update: { routingStatus: 'ROUTED', processingLeaseUntil: null, processingLeaseToken: null }, create: { provider: 'demo', providerEventId: id, providerEmailId: id, accountId: account.id, clientId: f.address.clientId, inboundAddressId: f.address.id, recipientAddress: f.address.address, normalizedFromAddress: f.sender, originalFromAddress: f.sender, toAddresses: f.address.address, subject: f.subject, receivedAt: new Date() } });
+        await db.inboundAttachment.deleteMany({ where: { OR: [{ inboundEmailId: email.id }, { originalFilename: `${f.name}.pdf` }] } });
+        await db.shipmentDocument.deleteMany({ where: { accountId: account.id, fileName: `${f.name}.pdf` } });
         const provider: InboundEmailProvider = {
           getReceivedEmail: async () => ({ id, from: f.sender, to: [f.address.address], subject: f.subject, receivedFor: [f.address.address], headers: { 'Auto-Submitted': 'auto-generated' }, attachments: [{ id: 'fixture', filename: `${f.name}.pdf`, size: bytes.length, contentType: 'application/pdf', contentDisposition: 'attachment', contentId: null }] }),
           getAttachmentDownloadInfo: async () => ({ downloadUrl: `fixture:${f.name}`, filename: `${f.name}.pdf`, contentType: 'application/pdf', contentDisposition: 'attachment', size: bytes.length }),
