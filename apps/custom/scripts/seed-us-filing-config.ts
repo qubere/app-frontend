@@ -12,16 +12,16 @@ import { db } from "../src/lib/db";
 async function seedUSFilingConfig() {
   console.log("🇺🇸 Starting US CBP filing configuration seed...\n");
 
-  // 1. Get transaction type IDs (these should already exist from NL seed)
-  const importType = await db.filingTransactionType.findUnique({
-    where: { code: "IMPORT" },
+  // 1. Get procedure catalog code (this should already exist from NL seed)
+  const importType = await db.filingProcedureCatalog.findUnique({
+    where: { procedureCode: "IMPORT" },
   });
   
   if (!importType) {
-    throw new Error("IMPORT transaction type not found. Run seed-multi-country-filing.ts first.");
+    throw new Error("IMPORT procedure catalog row not found. Run seed-multi-country-filing.ts first.");
   }
 
-  console.log("✅ Found IMPORT transaction type");
+  console.log("✅ Found IMPORT procedure catalog row");
 
   // 2. US CBP Entry Types (from entryType.ts)
   // We'll map these as procedureCodes in the new system
@@ -66,7 +66,7 @@ async function seedUSFilingConfig() {
         country: "US",
         procedureCode: entryType.code,
         messageName: "CBP_ENTRY_7501",
-        transactionTypeId: importType.id,
+        transactionType: importType.procedureCode,
         isActive: true,
       },
       update: {

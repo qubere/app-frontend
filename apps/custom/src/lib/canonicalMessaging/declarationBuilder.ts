@@ -33,7 +33,7 @@ export function wrapDeclarationData(data: any, transactionType: string): Declara
   }
 
   // Determine wrapper based on transaction type (IMPORT, EXPORT, NCTS, etc. -- see
-  // FilingTransactionType). Only two wrapper shapes exist today, so anything that
+  // FilingProcedureCatalog). Only two wrapper shapes exist today, so anything that
   // isn't IMPORT falls back to ExportDeclaration; NCTS/TEMP_STORAGE/BONDED_WAREHOUSE
   // don't have their own wrapper yet.
   const isImport = transactionType.toUpperCase().includes("IMPORT");

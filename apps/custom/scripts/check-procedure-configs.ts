@@ -20,11 +20,11 @@ async function check() {
       console.log('\nExample for NL Import:');
       console.log(`
   INSERT INTO "FilingProcedureConfig" (
-    id, transactionTypeId, country, procedureCode, messageName, 
+    id, transactionType, country, procedureCode, messageName, 
     canCreateNewFiling, isActive, createdAt, updatedAt
   ) VALUES (
     'sample-nl-import', 
-    (SELECT id FROM "FilingTransactionType" WHERE code = 'IMPORT' LIMIT 1),
+    'IMPORT',
     'NL', 'NCTS', 'IE501', true, true, NOW(), NOW()
   );
       `);
@@ -34,17 +34,13 @@ async function check() {
           isActive: true,
           canCreateNewFiling: true
         },
-        include: {
-          transactionType: {
-            select: { code: true }
-          }
-        },
+        select: { country: true, procedureCode: true, messageName: true, transactionType: true },
         take: 10
       });
       
       console.log('✅ Available procedures:\n');
       records.forEach(rec => {
-        console.log(`  ${rec.country} | ${rec.procedureCode} | ${rec.messageName} | ${rec.transactionType?.code || 'N/A'}`);
+        console.log(`  ${rec.country} | ${rec.procedureCode} | ${rec.messageName} | ${rec.transactionType || 'N/A'}`);
       });
     }
     

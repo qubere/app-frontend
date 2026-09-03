@@ -16,7 +16,7 @@ import { z } from "zod";
  */
 export type FilingConfigTableKey =
   // NEW TABLES (multi-country design)
-  | "transaction-type"
+  | "procedure-catalog"
   | "action-catalog"
   | "procedure-config"
   | "action-message-mapping"
@@ -93,8 +93,8 @@ interface TableDef<TRow> {
 // NEW MULTI-COUNTRY SCHEMAS
 // ============================================================================
 
-const transactionTypeSchema = z.object({
-  code: z.string().trim().min(1).max(50),
+const procedureCatalogSchema = z.object({
+  procedureCode: z.string().trim().min(1).max(50),
   isActive: z.boolean(),
   createdBy: z.string().trim().max(100).optional(),
   updatedBy: z.string().trim().max(100).optional(),
@@ -345,20 +345,20 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
   // ============================================================================
   // NEW MULTI-COUNTRY TABLES (stubs - TODO: Implement full UI)
   // ============================================================================
-  "transaction-type": {
-    label: "Customs Procedures",
-    description: "Universal transaction types (IMPORT, EXPORT, NCTS, etc.)",
+  "procedure-catalog": {
+    label: "Procedure Catalog",
+    description: "Universal filing procedures (IMPORT, EXPORT, NCTS, etc.)",
     idField: "id",
     fields: [
-      { key: "code", label: "Code", type: "text" },
+      { key: "procedureCode", label: "Procedure Code", type: "text" },
       { key: "isActive", label: "Is Active", type: "boolean" },
     ],
-    list: () => db.filingTransactionType.findMany({ orderBy: { code: "asc" } }),
-    create: (data) => wrapPrismaErrors(() => db.filingTransactionType.create({ data: transactionTypeSchema.parse(data) })),
-    update: (id, data) => wrapPrismaErrors(() => db.filingTransactionType.update({ where: { id }, data: transactionTypeSchema.parse(data) })),
-    remove: (id) => wrapPrismaErrors(() => db.filingTransactionType.delete({ where: { id } })).then(() => undefined),
-    createSchema: transactionTypeSchema,
-    updateSchema: transactionTypeSchema,
+    list: () => db.filingProcedureCatalog.findMany({ orderBy: { procedureCode: "asc" } }),
+    create: (data) => wrapPrismaErrors(() => db.filingProcedureCatalog.create({ data: procedureCatalogSchema.parse(data) })),
+    update: (id, data) => wrapPrismaErrors(() => db.filingProcedureCatalog.update({ where: { id }, data: procedureCatalogSchema.parse(data) })),
+    remove: (id) => wrapPrismaErrors(() => db.filingProcedureCatalog.delete({ where: { id } })).then(() => undefined),
+    createSchema: procedureCatalogSchema,
+    updateSchema: procedureCatalogSchema,
   },
   "action-catalog": {
     label: "Action Catalog",
@@ -381,7 +381,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     idField: "id",
     fields: [
       { key: "country", label: "Country", type: "text" },
-      { key: "procedureCode", label: "Procedure Code", type: "select", optionsSource: "/api/filing-config/transaction-types" },
+      { key: "procedureCode", label: "Procedure Code", type: "select", optionsSource: "/api/filing-config/procedure-catalog" },
       { key: "messageName", label: "Message Name", type: "text" },
       { key: "isActive", label: "Is Active", type: "boolean" },
     ],

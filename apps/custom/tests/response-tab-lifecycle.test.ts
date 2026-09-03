@@ -29,11 +29,11 @@ describe("Customs Filing Response tab lifecycle", () => {
 
   beforeAll(async () => {
     try {
-      const existingTxType = await db.filingTransactionType.findUnique({ where: { code: "IMPORT" } });
+      const existingTxType = await db.filingProcedureCatalog.findUnique({ where: { procedureCode: "IMPORT" } });
       if (!existingTxType) {
-        await db.filingTransactionType.create({ data: { code: "IMPORT", isActive: true } });
+        await db.filingProcedureCatalog.create({ data: { procedureCode: "IMPORT", isActive: true } });
       } else if (!existingTxType.isActive) {
-        await db.filingTransactionType.update({ where: { id: existingTxType.id }, data: { isActive: true } });
+        await db.filingProcedureCatalog.update({ where: { id: existingTxType.id }, data: { isActive: true } });
       }
 
       const existing = await db.htsNode.findFirst({ where: { htsNumberNormalized: TEST_HTS_NORMALIZED } });
