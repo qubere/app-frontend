@@ -478,6 +478,8 @@ async function processOneAttachment(params: {
       reason: "INITIAL",
       correlationId,
     });
+    const { advanceDocumentProcessing } = await import("./advanceProcessing");
+    await advanceDocumentProcessing({ reason: "inbound.email.attachment" });
     log("attachment.stored_as_document", {
       inboundEmailId: email.id,
       providerAttachmentId: attachment.id,
