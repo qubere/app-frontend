@@ -63,6 +63,7 @@ ADRs, customs-filing module docs, UI-config framework, sales decks, TMS architec
 - [Client email: sales walkthrough](sales/CLIENT-EMAIL-INGESTION-DEMO.md)
 - [Client email: rollout and rollback](operations/CLIENT-EMAIL-INGESTION-ROLLOUT.md)
 - [End-to-end demo: inbound email to transmitted customs filing](sales/END-TO-END-EMAIL-TO-FILING-DEMO.md)
+- [Trade Repository & Trade Data](apps/customs/sales/TRADE-REPOSITORY-AND-TRADE-DATA.md)
 
 ### TMS
 - [Modular agent architecture](apps/tms/feature/TMS-MODULAR-AGENT-ARCHITECTURE.md)

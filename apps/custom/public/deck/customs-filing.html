@@ -293,10 +293,12 @@
         <ul class="feature-bullets">
           <li>Outbound / inbound messages validated against versioned JSON Schemas</li>
           <li>A new child action (e.g. AMEND) is one seed row</li>
+          <li>Country/authority code lists (Type/Header/Item/Translation) bulk-load from one CSV, no per-country code</li>
+          <li>Filing Status Catalog gives every response code a canonical label and locale translations</li>
         </ul>
         <div class="demo-tip">
           <div class="demo-tip-label">How to demo</div>
-          <div class="demo-tip-text">Open <strong>Filing Configuration</strong>. Show the procedure / authority / message-catalog tables. "A country is data. That's the enterprise-scale story &mdash; one platform, not one integration per authority."</div>
+          <div class="demo-tip-text">Open <strong>Filing Configuration</strong>. Show the procedure / authority / message-catalog tables, then <strong>Filing Code List</strong> &mdash; upload a CSV and the codes are live. "A country is data. That's the enterprise-scale story &mdash; one platform, not one integration per authority."</div>
         </div>
       </div>
       <div class="feature-right">
@@ -323,7 +325,7 @@
                   </tbody>
                 </table>
               </div>
-              <div style="display:flex;gap:8px;"><span class="evidence-tag">FilingAuthorityConfig</span><span class="evidence-tag">FilingMessageCatalog</span><span class="evidence-tag">FilingResponseStatusMapping</span><span class="evidence-tag">FilingChildActionRule</span></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;"><span class="evidence-tag">FilingAuthorityConfig</span><span class="evidence-tag">FilingMessageCatalog</span><span class="evidence-tag">FilingResponseStatusMapping</span><span class="evidence-tag">FilingChildActionRule</span><span class="evidence-tag">FilingCodeListHeader/Item</span><span class="evidence-tag">FilingStatusCatalog</span></div>
             </div></div>
           </div>
         </div>
