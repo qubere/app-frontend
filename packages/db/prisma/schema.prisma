@@ -6082,6 +6082,133 @@ model FilingStatusCatalog {
   @@index([statusCode])
 }
 
+// ============================================================================
+// CUSTOMS CODE LIST MASTERS (country/procedure-scoped reference codes, e.g.
+// package types, incoterms, container types -- sourced from customs
+// authorities and versioned per country/procedure/release).
+//
+// Hierarchy: FilingCodeListType (lookup) <- FilingCodeListHeader (one per
+// country+procedure+listType+version) <- FilingCodeListItem (the actual
+// codes) <- FilingCodeListItemTranslation (one per display language).
+//
+// Column/table names are lowercase and @@map/@map'd verbatim to match a
+// hand-specified DDL this schema was built from, rather than this repo's
+// usual camelCase-mapped-to-camelCase convention.
+// ============================================================================
+
+/// Lookup of code-list categories (e.g. "PACKAGE_TYPES", "INCOTERMS") that a
+/// FilingCodeListHeader can belong to. FK from header is ON DELETE RESTRICT,
+/// so a type in use can't be deleted out from under its headers.
+model FilingCodeListType {
+  listType     String    @id @map("listtype") @db.VarChar(50)
+  listTypeName String    @map("listtypename") @db.VarChar(150)
+  description  String?
+  isActive     Boolean   @default(true) @map("isactive")
+  createdBy    String    @map("createdby") @db.VarChar(100)
+  /// Null until the row is edited for the first time -- populated only by an
+  /// actual update, never by creation.
+  updatedBy    String?   @map("updatedby") @db.VarChar(100)
+  createdAt    DateTime  @default(now()) @map("createdat") @db.Timestamptz
+  /// Null until the row is edited for the first time. Deliberately NOT
+  /// @updatedAt: that directive stamps now() on every write including
+  /// create() (confirmed by testing), which would defeat the whole point --
+  /// this is set explicitly in codeListService.ts, only on genuine updates.
+  updatedAt    DateTime? @map("updatedat") @db.Timestamptz
+
+  headers FilingCodeListHeader[]
+
+  @@map("filingcodelisttype")
+}
+
+/// One versioned code list for a given country + customs procedure + list
+/// type (e.g. NL / 4000 / PACKAGE_TYPES / v2026.1), with its own validity
+/// window. Items live underneath a header, never directly under a type.
+model FilingCodeListHeader {
+  codeListId    String    @id @default(dbgenerated("gen_random_uuid()")) @map("codelistid") @db.Uuid
+  countryIso2   String    @map("countryiso2") @db.Char(2)
+  procedureCode String    @map("procedurecode") @db.VarChar(20)
+  listType      String    @map("listtype") @db.VarChar(50)
+  version       String    @db.VarChar(30)
+  effectiveFrom DateTime  @map("effectivefrom") @db.Timestamptz
+  effectiveTo   DateTime? @map("effectiveto") @db.Timestamptz
+  isActive      Boolean   @default(true) @map("isactive")
+  createdBy     String    @map("createdby") @db.VarChar(100)
+  /// Null until the row is edited for the first time -- populated only by an
+  /// actual update, never by creation.
+  updatedBy     String?   @map("updatedby") @db.VarChar(100)
+  createdAt     DateTime  @default(now()) @map("createdat") @db.Timestamptz
+  /// Null until the row is edited for the first time. Deliberately NOT
+  /// @updatedAt: that directive stamps now() on every write including
+  /// create() (confirmed by testing), which would defeat the whole point --
+  /// this is set explicitly in codeListService.ts, only on genuine updates.
+  updatedAt     DateTime? @map("updatedat") @db.Timestamptz
+
+  codeListType FilingCodeListType   @relation(fields: [listType], references: [listType], onDelete: Restrict)
+  items        FilingCodeListItem[]
+
+  // effectiveTo > effectiveFrom is additionally enforced by a CHECK
+  // constraint (chk_filingheader_dates) added directly in the migration --
+  // Prisma's schema language has no way to declare arbitrary CHECK
+  // constraints, so it isn't (and can't be) expressed here.
+  @@unique([countryIso2, procedureCode, listType, version], map: "uq_filingheader_country_proc_type_ver")
+  @@index([listType])
+  @@index([isActive])
+  @@map("filingcodelistheader")
+}
+
+/// A single customs code (e.g. "BX" for box) within one versioned header.
+model FilingCodeListItem {
+  itemId       String    @id @default(dbgenerated("gen_random_uuid()")) @map("itemid") @db.Uuid
+  codeListId   String    @map("codelistid") @db.Uuid
+  code         String    @db.VarChar(50)
+  /// Flexible metadata (tax rates, flags, custom properties).
+  attributes   Json      @default("{}")
+  isDeprecated Boolean   @default(false) @map("isdeprecated")
+  createdBy    String    @map("createdby") @db.VarChar(100)
+  /// Null until the row is edited for the first time -- populated only by an
+  /// actual update, never by creation.
+  updatedBy    String?   @map("updatedby") @db.VarChar(100)
+  createdAt    DateTime  @default(now()) @map("createdat") @db.Timestamptz
+  /// Null until the row is edited for the first time. Deliberately NOT
+  /// @updatedAt: that directive stamps now() on every write including
+  /// create() (confirmed by testing), which would defeat the whole point --
+  /// this is set explicitly in codeListService.ts, only on genuine updates.
+  updatedAt    DateTime? @map("updatedat") @db.Timestamptz
+
+  header       FilingCodeListHeader           @relation(fields: [codeListId], references: [codeListId], onDelete: Cascade)
+  translations FilingCodeListItemTranslation[]
+
+  @@unique([codeListId, code], map: "uq_filingitem_code")
+  @@map("filingcodelistitem")
+}
+
+/// Per-language display name/description for one code list item.
+model FilingCodeListItemTranslation {
+  translationId String    @id @default(dbgenerated("gen_random_uuid()")) @map("translationid") @db.Uuid
+  itemId        String    @map("itemid") @db.Uuid
+  languageCode  String    @map("languagecode") @db.VarChar(10)
+  displayName   String    @map("displayname") @db.VarChar(255)
+  description   String?
+  // Audit columns beyond the originally specified DDL, added for
+  // consistency with every other Filing* master table in this schema and
+  // per this feature's "createdBy/updatedBy/createdAt/updatedAt" requirement.
+  createdBy     String    @map("createdby") @db.VarChar(100)
+  /// Null until the row is edited for the first time -- populated only by an
+  /// actual update, never by creation.
+  updatedBy     String?   @map("updatedby") @db.VarChar(100)
+  createdAt     DateTime  @default(now()) @map("createdat") @db.Timestamptz
+  /// Null until the row is edited for the first time. Deliberately NOT
+  /// @updatedAt: that directive stamps now() on every write including
+  /// create() (confirmed by testing), which would defeat the whole point --
+  /// this is set explicitly in codeListService.ts, only on genuine updates.
+  updatedAt     DateTime? @map("updatedat") @db.Timestamptz
+
+  item FilingCodeListItem @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@unique([itemId, languageCode], map: "uq_filingitem_language")
+  @@map("filingcodelistitemtranslation")
+}
+
 /// Lists valid message names for each country/procedure/transaction combination.
 /// Replaces the old FilingProcedureMapping which was US-centric (entryType-based).
 /// Example: (NL, NCTS, 5100, IE015) means Netherlands NCTS procedure 5100 uses message IE015.
@@ -10662,3 +10789,4 @@ model InboundDocumentReview {
   @@index([clientId, status])
   @@index([inboundEmailId])
 }
+
