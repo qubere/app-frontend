@@ -9,6 +9,7 @@ import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Moda
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import UIConfigDashboard from "./UIConfigDashboard";
+import FilingCodeListManager from "./FilingCodeListManager";
 
 /**
  * Static, developer-authored UI text (table/field labels, column headers,
@@ -224,6 +225,8 @@ export function FilingConfigClient({ tables }: { tables: TableMeta[] }) {
             }}
           />
         </Card>
+      ) : active && active.key === "code-list" ? (
+        <FilingCodeListManager />
       ) : (
         active && <TablePanel key={active.key} table={active} onShowUIConfigEditor={(configId) => {
           setEditingConfigId(configId);

@@ -30,6 +30,9 @@ export type FilingConfigTableKey =
   | "customer-customs-version"
   // STATUS CATALOG (with multi-language descriptions)
   | "status-catalog"
+  // CUSTOMS CODE LIST MASTERS
+  | "code-list-type"
+  | "code-list"
   // DROPPED TABLES (commented out - kept for reference)
   // | "procedure-mapping" // DROPPED - replaced by procedure-config
   // | "authority-config" // DROPPED - authority names in UI layer
@@ -175,6 +178,53 @@ function localeMapToArray(map: unknown): Array<{ locale: string; description: st
     description: String(description ?? ""),
   }));
 }
+
+// Customs code list masters (FilingCodeListType / Header). Item and
+// Translation schemas live in codeListService.ts, next to the hierarchical
+// create/update logic they're paired with -- unlike Type/Header, those two
+// are never edited through the flat generic /api/filing-config/[table]
+// route, only through the dedicated code-list-headers/items endpoints.
+const codeListTypeCreateSchema = z.object({
+  listType: z.string().trim().min(1).max(50),
+  listTypeName: z.string().trim().min(1).max(150),
+  description: z.string().trim().max(2000).optional(),
+  isActive: z.boolean().default(true),
+  createdBy: z.string().trim().max(100).optional(),
+});
+
+const codeListTypeUpdateSchema = z.object({
+  listTypeName: z.string().trim().min(1).max(150).optional(),
+  description: z.string().trim().max(2000).optional(),
+  isActive: z.boolean().optional(),
+  updatedBy: z.string().trim().max(100).optional(),
+});
+
+const codeListHeaderCreateSchema = z
+  .object({
+    countryIso2: z.string().trim().length(2).toUpperCase(),
+    procedureCode: z.string().trim().min(1).max(20),
+    listType: z.string().trim().min(1).max(50),
+    version: z.string().trim().min(1).max(30),
+    effectiveFrom: z.string().min(1),
+    effectiveTo: z.string().trim().min(1).optional().nullable(),
+    isActive: z.boolean().default(true),
+    createdBy: z.string().trim().max(100).optional(),
+  })
+  .refine((data) => !data.effectiveTo || new Date(data.effectiveTo) > new Date(data.effectiveFrom), {
+    message: "Effective To must be after Effective From",
+    path: ["effectiveTo"],
+  });
+
+const codeListHeaderUpdateSchema = z.object({
+  countryIso2: z.string().trim().length(2).toUpperCase().optional(),
+  procedureCode: z.string().trim().min(1).max(20).optional(),
+  listType: z.string().trim().min(1).max(50).optional(),
+  version: z.string().trim().min(1).max(30).optional(),
+  effectiveFrom: z.string().min(1).optional(),
+  effectiveTo: z.string().trim().min(1).optional().nullable(),
+  isActive: z.boolean().optional(),
+  updatedBy: z.string().trim().max(100).optional(),
+});
 
 // ============================================================================
 // OLD SCHEMAS (commented out - tables dropped)
@@ -882,6 +932,113 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
       isActive: z.boolean().optional(),
       updatedBy: z.string().optional(),
     }),
+  },
+
+  // ============================================================================
+  // CUSTOMS CODE LIST MASTERS
+  // ============================================================================
+
+  "code-list-type": {
+    label: "Filing Code List Type",
+    description: "Lookup of code-list categories (e.g. PACKAGE_TYPES, INCOTERMS) that a code list header belongs to",
+    idField: "listType",
+    fields: [
+      { key: "listType", label: "List Type", type: "text", help: "Unique identifier, e.g. PACKAGE_TYPES" },
+      { key: "listTypeName", label: "List Type Name", type: "text", help: "Human-readable title" },
+      { key: "description", label: "Description", type: "text" },
+      { key: "isActive", label: "Active", type: "boolean" },
+    ],
+    list: () => db.filingCodeListType.findMany({ orderBy: { listType: "asc" } }),
+    create: (data) => wrapPrismaErrors(() => {
+      const parsed = codeListTypeCreateSchema.parse(data);
+      return db.filingCodeListType.create({
+        data: {
+          listType: parsed.listType,
+          listTypeName: parsed.listTypeName,
+          description: parsed.description ?? null,
+          isActive: parsed.isActive,
+          createdBy: parsed.createdBy ?? "system",
+          // updatedBy/updatedAt are deliberately left unset here: they stay
+          // null until this row is genuinely edited, not stamped at creation.
+        },
+      });
+    }),
+    update: (id, data) => wrapPrismaErrors(() => {
+      const parsed = codeListTypeUpdateSchema.parse(data);
+      return db.filingCodeListType.update({
+        where: { listType: id },
+        data: {
+          listTypeName: parsed.listTypeName,
+          description: parsed.description,
+          isActive: parsed.isActive,
+          updatedBy: parsed.updatedBy,
+          updatedAt: new Date(),
+        },
+      });
+    }),
+    remove: (id) => wrapPrismaErrors(() => db.filingCodeListType.delete({ where: { listType: id } })).then(() => undefined),
+    createSchema: codeListTypeCreateSchema,
+    updateSchema: codeListTypeUpdateSchema,
+  },
+
+  // "code-list" is rendered by a dedicated FilingCodeListManager component
+  // (header -> item -> translation drill-down + CSV upload), not the generic
+  // TablePanel, because that hierarchy doesn't fit the flat single-table CRUD
+  // this registry's create/update/remove are shaped for. This entry only
+  // supplies the label/description page.tsx reads for the tab header, and a
+  // best-effort header-level list/CRUD so the type stays sound if the
+  // generic endpoint is ever hit directly.
+  "code-list": {
+    label: "Filing Code List",
+    description: "Country/procedure-scoped customs reference codes (headers, items, and per-language translations)",
+    idField: "codeListId",
+    fields: [
+      { key: "countryIso2", label: "Country", type: "text" },
+      { key: "procedureCode", label: "Procedure Code", type: "text" },
+      { key: "listType", label: "List Type", type: "select", optionsSource: "/api/filing-config/list-types" },
+      { key: "version", label: "Version", type: "text" },
+      { key: "isActive", label: "Active", type: "boolean" },
+    ],
+    list: () => db.filingCodeListHeader.findMany({
+      orderBy: [{ countryIso2: "asc" }, { procedureCode: "asc" }, { listType: "asc" }, { version: "asc" }],
+    }),
+    create: (data) => wrapPrismaErrors(() => {
+      const parsed = codeListHeaderCreateSchema.parse(data);
+      return db.filingCodeListHeader.create({
+        data: {
+          countryIso2: parsed.countryIso2,
+          procedureCode: parsed.procedureCode,
+          listType: parsed.listType,
+          version: parsed.version,
+          effectiveFrom: new Date(parsed.effectiveFrom),
+          effectiveTo: parsed.effectiveTo ? new Date(parsed.effectiveTo) : null,
+          isActive: parsed.isActive,
+          createdBy: parsed.createdBy ?? "system",
+          // updatedBy/updatedAt are deliberately left unset here: they stay
+          // null until this row is genuinely edited, not stamped at creation.
+        },
+      });
+    }),
+    update: (id, data) => wrapPrismaErrors(() => {
+      const parsed = codeListHeaderUpdateSchema.parse(data);
+      return db.filingCodeListHeader.update({
+        where: { codeListId: id },
+        data: {
+          countryIso2: parsed.countryIso2,
+          procedureCode: parsed.procedureCode,
+          listType: parsed.listType,
+          version: parsed.version,
+          effectiveFrom: parsed.effectiveFrom ? new Date(parsed.effectiveFrom) : undefined,
+          effectiveTo: parsed.effectiveTo !== undefined ? (parsed.effectiveTo ? new Date(parsed.effectiveTo) : null) : undefined,
+          isActive: parsed.isActive,
+          updatedBy: parsed.updatedBy,
+          updatedAt: new Date(),
+        },
+      });
+    }),
+    remove: (id) => wrapPrismaErrors(() => db.filingCodeListHeader.delete({ where: { codeListId: id } })).then(() => undefined),
+    createSchema: codeListHeaderCreateSchema,
+    updateSchema: codeListHeaderUpdateSchema,
   },
 };
 
