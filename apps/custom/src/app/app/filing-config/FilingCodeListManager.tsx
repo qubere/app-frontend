@@ -885,8 +885,16 @@ function UploadModal({ onClose, onImported }: { onClose: () => void; onImported:
           comma, wrap the whole field in double quotes and double any inner quotes, e.g.{" "}
           <code className="font-mono">&quot;{"{"}&quot;&quot;weightKg&quot;&quot;:25{"}"}&quot;</code> — see the template.
         </p>
+        {/*
+          A plain anchor, not next/link: this is a file download served by an
+          API route, and client-side navigation to it would be handed a CSV
+          body it cannot render. `download` also exempts it from
+          @next/next/no-html-link-for-pages, matching the party/product
+          import wizards' template-download links.
+        */}
         <a
           href="/api/filing-config/code-list/template"
+          download
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
         >
           <Download className="w-3.5 h-3.5" />
