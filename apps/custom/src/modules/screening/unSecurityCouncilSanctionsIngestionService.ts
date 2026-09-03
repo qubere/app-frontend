@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { SaxesParser, SaxesTagPlain } from "saxes";
 import { computeEntityHash } from "@/modules/screening/entityHash";
 import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "@/modules/screening/searchTokenSync";
 import type { ReferenceDataChangeType } from "@prisma/client";
 
 const UNSC_DATASET_ID = "un-security-council-sanctions";
@@ -294,6 +295,8 @@ export class UnSecurityCouncilSanctionsIngestionService {
         datasetId: UNSC_DATASET_ID,
       })),
     ]);
+
+    await syncSearchTokensForEntities(changeInputs.map((c) => c.screeningEntityId));
 
     return { parsedCount: records.length, supersededCount: supersedeResult.count };
   }

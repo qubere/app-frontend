@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { parse as parseCsv } from "csv-parse/sync";
 import { computeEntityHash } from "@/modules/screening/entityHash";
 import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "@/modules/screening/searchTokenSync";
 import type { ReferenceDataChangeType } from "@prisma/client";
 
 const EUC_DATASET_ID = "eu-consolidated-sanctions";
@@ -321,6 +322,8 @@ export class EuConsolidatedSanctionsIngestionService {
         datasetId: EUC_DATASET_ID,
       })),
     ]);
+
+    await syncSearchTokensForEntities(changeInputs.map((c) => c.screeningEntityId));
 
     return { parsedCount: entities.length, supersededCount: supersedeResult.count, dateGenerated };
   }
