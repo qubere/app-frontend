@@ -1,5 +1,28 @@
 # Customs Filing — Canonical Messaging Architecture
 
+> **STALE (2026-09-03): the reference-table architecture below has been replaced.**
+> `resolveMessageContext()` no longer normalizes an `entryType` via `entryType.ts` or
+> queries `FilingProcedureMapping`/`FilingMessageCatalog` with wildcard
+> most-specific-match — those models are gone from `schema.prisma`. The current
+> implementation (`src/lib/canonicalMessaging/resolveMessageContext.ts`) takes a
+> `procedureCode` directly, does an **exact-match** lookup against
+> `FilingActionMessageMapping` (`(country, procedureCode, action)`) and
+> `FilingProcedureConfig` (`(country, procedureCode, messageName)`), and has an
+> explicit `country === "US"` backwards-compatibility fallback for filings not yet
+> migrated to the new multi-country design. `FilingAuthorityConfig`,
+> `FilingResponseStatusMapping`, `FilingActionRule`, `FilingChildActionRule`, and
+> `FilingMessageActionCatalog` are likewise dropped, replaced by
+> `FilingActionConfiguration` (which folds in `release`, `status`,
+> `availableActions`, `allowSubmit` per `(country, procedureCode, messageName)`)
+> and `FilingActionCatalog`. Schema validation itself is now a no-op:
+> `schemaValidator.ts` is explicitly marked `DEPRECATED` (`FilingSchemaVersion` is
+> commented out of `schema.prisma`; schemas are served from `public/schemas/` via
+> `/api/schemas/[country]/[procedure]/[message]/[type]`, see
+> `src/app/api/filing-config/ui-configuration/**`). The component map, queue
+> mechanics (§3), and dev-stub description (§4) below are still accurate; the
+> message-routing logic in §2 and the reference-table lookups throughout describe
+> the superseded design and need a rewrite against the current code.
+
 This document is a technical reference for the async, country-agnostic messaging
 layer that sits between the Customs Filing module's UI/API and "the outside
 world." It complements `docs/backend-architecture.md` (the general layered

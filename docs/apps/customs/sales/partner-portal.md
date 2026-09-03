@@ -15,10 +15,13 @@ uploaded document flowing straight into the same document-intelligence pipeline.
 
 > **Maturity note:** the portal is a real, authenticated, client-scoped
 > application (Clerk identity, object storage, tenant scoping enforced on read
-> paths) suitable for **design-partner / pilot** deployment. One honest gap
-> remains: generated 7501 / invoice **PDF downloads still return stubs** (no PDF
-> rendering library in the stack yet) — real document downloads (the originals)
-> work. Don't demo the "download your entry summary as a polished PDF" flow.
+> paths) suitable for **design-partner / pilot** deployment. Generated 7501 /
+> invoice **PDF downloads now render real content** — a real itemized invoice
+> PDF and a real CBP Form 7501 built from the filing's frozen snapshot (header
+> totals, per-line description/HTS/value/COO). One honest limit: per-line duty
+> rate/amount are left blank on the portal-generated 7501 rather than
+> recomputed, since the portal doesn't run the tariff duty engine that produced
+> the original figures — point to the broker-side 7501 Preview for that detail.
 
 ---
 
@@ -44,7 +47,7 @@ suppliers is a shared mailbox and a spreadsheet."
 | **Uploaded documents flow into the pipeline** | A document the customer uploads through the portal isn't just a file in a folder — it enters the same parse → extract → reconcile → readiness pipeline as a broker upload. | After the portal upload, show it appearing on the shipment in `/app/documents` with processing status. |
 | **Shipment visibility** | Per-shipment status, milestones, and the journey — what the customer would otherwise call to ask. | Portal → **Shipments** → a shipment detail with status and route. |
 | **Entry / filing visibility** | The broker chooses when an entry becomes customer-visible (`customerVisibleAt` is an explicit publish action — nothing leaks early). | Broker: publish a filing to the customer. Portal: the entry now appears under the customer's shipment. |
-| **Invoices** | The customer sees their invoices in the portal with the shipment context behind each one. | Portal → **Invoices**. (Original documents download; generated-PDF download is stubbed — see maturity note.) |
+| **Invoices** | The customer sees their invoices in the portal with the shipment context behind each one, and can download a real itemized invoice PDF. | Portal → **Invoices** → download the PDF. |
 | **Freight view** | A freight/movement summary for forwarding-style relationships. | Portal → **Freight**. |
 | **Passwordless invite & onboarding** | The broker sends a scoped invitation (`/invite/<token>`); the customer accepts and is provisioned with access limited to their client and, optionally, specific product scopes. | `/app/clients` → invite a portal user with a client + product scope. Show the invite acceptance flow. |
 | **Client document email address** | When enabled, customers copy the address for their assigned client from Setup or Documents. The destination routes the file to that client; a sender's other client relationships do not decide where it belongs. | Portal → **Setup** or **Documents** → copy the labeled client address. Users assigned multiple clients choose the correct client's address. |
@@ -77,9 +80,9 @@ suppliers is a shared mailbox and a spreadsheet."
   document status instead of promising delivery of a receipt.
 - **"Is this production-ready?"** It's pilot-ready. The security model (auth,
   client scoping, object storage) is real and was hardened through a formal
-  review. The remaining gap is polished generated-PDF downloads and broader
-  automated two-tenant test coverage — fine for a design partner, worth being
-  explicit about for a large rollout.
+  review, and generated-PDF downloads now render real content. The remaining
+  gap is broader automated two-tenant test coverage — fine for a design
+  partner, worth being explicit about for a large rollout.
 - **"Can we brand it?"** The portal uses the Qubere design system today. Custom
   branding per broker is a roadmap item, not current.
 - **"What can the customer NOT do?"** They can't see other clients' data, can't

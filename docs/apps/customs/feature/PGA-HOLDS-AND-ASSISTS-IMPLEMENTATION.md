@@ -5,8 +5,9 @@ Source: [PGA-HOLD-RESOLUTION-AND-ASSISTS](../future/PGA-HOLD-RESOLUTION-AND-ASSI
 ## Broker workflows
 
 - Today lists open agency holds by shipment, age, and filing deadline. Reviewers can filter the portfolio by agency or importer.
-- The shipment drawer retains the original notice, entry-derived preparation, a 24-hour draft, and the submission history. Rejections identify fields needing correction. A version conflict preserves the broker's input and compares it with the saved version before either is selected.
-- Brokers record the reference and exact message after filing through their existing ACE channel. Recorded agency responses update only the addressed hold. This workflow does not claim to transmit to ACE or confirm agency acceptance.
+- The shipment drawer retains the original notice, entry-derived preparation, a 24-hour draft, and the submission history; the history is paged (`GET /api/pga/holds/[id]/submissions?page=`, 20 per page) rather than loaded in full. Rejections identify fields needing correction. A version conflict preserves the broker's input and compares it with the saved version before either is selected.
+- Brokers record the reference and exact message after filing through their existing ACE channel, including responses recorded after the fact for a hold already filed outside this flow. Recorded agency responses update only the addressed hold. This workflow does not claim to transmit to ACE or confirm agency acceptance.
+- Released holds stay discoverable from shipment history: `GET /api/pga/holds?shipmentId=&includeClosed=true` includes them, and the default query excludes them so the open-work count stays accurate.
 - The Assists registry supports Draft, Active, Suspended, and Amortized states. Supplier/manufacturer shortcuts prefill the applicable party roles. Drafts can be saved with description and total before the activation prerequisites are complete.
 - Entry banners suggest active assists scoped to importer, supplier/manufacturer, and HTS or SKU. Brokers can include, override with a reason, or decline each assist. A conflict requires review and confirmation of the refreshed amount.
 

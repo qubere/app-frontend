@@ -3,6 +3,8 @@
 **Date**: 2026-08-16  
 **Feature**: Comprehensive ordering control for tabs, panels, grids, and fields
 
+> **Status vs. current code**: This remains a design proposal ("Ready for Implementation"), not the shipped mechanism. What actually shipped (see `src/types/ui-config.types.ts`, `src/components/form/layouts/LayoutRenderer.tsx`) orders tabs/sections via `tabOrder`/`sectionOrder` on `UITab`/`UISection` objects inside `configData.tabs[]`/`configData.sections[]`, and fields reference their tab/section/panel by `tabId`/`sectionId`/`panelId` rather than by the `tabGroup`/`panelTitle` strings and `FilingUIConfig.useTabs`/`tabOrder` columns described below — those columns don't exist on the current `FilingUIConfig` Prisma model. Panel-level ordering (`panelOrder`) is defined on `UIPanel` but panel layout mode itself is still a "coming soon" stub in `LayoutRenderer.tsx`.
+
 ---
 
 ## 🎯 Ordering Hierarchy

@@ -4,6 +4,8 @@
 
 This document describes the major architectural change from per-field rows to single-JSON configuration storage.
 
+> **Update**: The `FilingUIConfig` model has evolved further since this doc was written. Current columns (see `packages/db/prisma/schema.prisma`) are `country`, `procedureCode`, `messageName`, `messageType`, `release` (nullable — a specific customs release, or `null` for an all-releases fallback config), `configData`, `version`, `description`, `isDraft`, `isActive`, plus audit fields. There is **no `transactionType` column**, and the unique/lookup key includes `release` rather than `transactionType`. Lifecycle is now draft/active (`isDraft`/`isActive`) rather than a single `isActive` flag. `configData` itself has also grown richer than the `{ fields, totalFields, sections: string[] }` shape shown below — the current shape (`FilingUIConfigData` in `src/types/ui-config.types.ts`) adds `version`, `metadata`, `layout`, optional `tabs: UITab[]` and `panels: UIPanel[]`, and `sections: UISection[]` (objects, not plain strings). The API route (`src/app/api/filing/ui-config/route.ts`) still supports the legacy flat-`fields`-array shape for backward compatibility, grouping by `field.section`.
+
 ---
 
 ## Overview

@@ -15,7 +15,7 @@
 >   - Removed invalid `LicenseCertificatePermitInput` citation (cited a TypeScript interface name instead of a Prisma model; reclassified to **MISSING**).
 > - **Zero Invalid Citations Remaining**: All **262 COVERED and PARTIAL citations** in this report cite active, non-deprecated fields that genuinely exist in `prisma/schema.prisma`.
 > 
-> Final verified totals (post Statement-chapter over-citation fix, see Overall Summary below): **101 COVERED (10.9%)**, **161 PARTIAL (17.4%)**, **663 MISSING (71.7%)**, and **494 NOT APPLICABLE** (out of 925 active business fields). These are the authoritative totals — they match the Executive Summary Table and Overall Summary below; an earlier draft of this callout (204 PARTIAL / 620 MISSING) predated that fix and has been corrected here.
+> Final verified totals (post Statement-chapter over-citation fix and a subsequent correction of the two `entryTypeCode` citations in `HeaderControlInput` (Entry Summary) and `HeaderInput` (Cargo Release) — `CustomsFiling.entryType` is a legacy-but-active column, not `@deprecated`, so these are COVERED rather than PARTIAL — see Overall Summary below): **104 COVERED (11.2%)**, **158 PARTIAL (17.1%)**, **663 MISSING (71.7%)**, and **494 NOT APPLICABLE** (out of 925 active business fields). These are the authoritative totals — they match the Executive Summary Table and Overall Summary below; an earlier draft of this callout (204 PARTIAL / 620 MISSING) predated that fix and has been corrected here.
 
 
 ## Executive Summary Table
@@ -23,9 +23,9 @@
 | Chapter | Total Fields Assessed | COVERED | PARTIAL | MISSING | NOT APPLICABLE |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | [1. Batch & Block Control](src/lib/abi/batchBlockControl/types.ts) | 76 | 0 | 0 | 0 | 76 |
-| [2. Entry Summary (7501)](src/lib/abi/entrySummary/types.ts) | 238 | 20 | 33 | 160 | 25 |
+| [2. Entry Summary (7501)](src/lib/abi/entrySummary/types.ts) | 238 | 22 | 31 | 160 | 25 |
 | [3. Entry Summary Query](src/lib/abi/entrySummaryQuery/types.ts) | 134 | 6 | 0 | 21 | 107 |
-| [4. Cargo Release (3461)](src/lib/abi/cargoRelease/types.ts) | 69 | 8 | 9 | 49 | 3 |
+| [4. Cargo Release (3461)](src/lib/abi/cargoRelease/types.ts) | 69 | 9 | 8 | 49 | 3 |
 | [5. Daily & Periodic Monthly Statement](src/lib/abi/statement/types.ts) | 88 | 0 | 31 | 44 | 13 |
 | [6. eBond](src/lib/abi/ebond/types.ts) | 45 | 7 | 13 | 21 | 4 |
 | [7. Drawback (7553)](src/lib/abi/drawback/types.ts) | 158 | 16 | 25 | 104 | 13 |
@@ -34,11 +34,11 @@
 | [10. Cargo Manifest / Entry Status Query](src/lib/abi/cargoManifestQuery/types.ts) | 178 | 4 | 0 | 13 | 161 |
 | [11. In-Bond (7512)](src/lib/abi/inBond/types.ts) | 76 | 6 | 0 | 44 | 26 |
 | [12. Importer / Bond Query](src/lib/abi/importerBondQuery/types.ts) | 45 | 5 | 0 | 0 | 40 |
-| **Total** | **1419** | **101** | **161** | **663** | **494** |
+| **Total** | **1419** | **104** | **158** | **663** | **494** |
 
 ## Overall Summary
 
-Across all 12 CATAIR chapters, a total of **1419 fields** were assessed against the 196 models in `prisma/schema.prisma`. Excluding **494 protocol mechanics and CBP response/status fields** (classified as NOT APPLICABLE), the underlying business data layer contains **925 fields**. Following mechanical schema re-verification (documented in Verification Pass Notes above, including a targeted fix to the Statement chapter's PARTIAL bucket, which had uniformly cited one monetary field, Invoice.totalAmount, to justify unrelated non-monetary rows like filer codes, print dates, and indicators), **101 fields (10.9%)** are fully **COVERED** by valid, non-deprecated Prisma columns, **161 fields (17.4%)** are **PARTIAL** (captured via related generic fields or parent relations lacking granular sub-fields — no field in the schema serves as a general JSON catch-all), and **663 fields (71.7%)** are completely **MISSING** from the database schema. The three chapters with the most severe database coverage gaps are **Entry Summary** (160 missing fields out of 213 business fields), **PGA Message Set** (129 missing fields out of 178 business fields), and **Drawback** (104 missing fields out of 145 business fields). Without targeted schema migrations to address these gaps, Qubere's CATAIR codec layer remains disconnected from production database storage, preventing users from populating complete real-world filings for PGAs, complex Entry Summaries, FTZ admissions, and Drawback claims.
+Across all 12 CATAIR chapters, a total of **1419 fields** were assessed against the 196 models in `prisma/schema.prisma`. Excluding **494 protocol mechanics and CBP response/status fields** (classified as NOT APPLICABLE), the underlying business data layer contains **925 fields**. Following mechanical schema re-verification (documented in Verification Pass Notes above, including a targeted fix to the Statement chapter's PARTIAL bucket, which had uniformly cited one monetary field, Invoice.totalAmount, to justify unrelated non-monetary rows like filer codes, print dates, and indicators, and a fix reclassifying the Entry Summary and Cargo Release chapters' `entryTypeCode` fields from PARTIAL to COVERED since `CustomsFiling.entryType` is not `@deprecated`), **104 fields (11.2%)** are fully **COVERED** by valid, non-deprecated Prisma columns, **158 fields (17.1%)** are **PARTIAL** (captured via related generic fields or parent relations lacking granular sub-fields — no field in the schema serves as a general JSON catch-all), and **663 fields (71.7%)** are completely **MISSING** from the database schema. The three chapters with the most severe database coverage gaps are **Entry Summary** (160 missing fields out of 213 business fields), **PGA Message Set** (129 missing fields out of 178 business fields), and **Drawback** (104 missing fields out of 145 business fields). Without targeted schema migrations to address these gaps, Qubere's CATAIR codec layer remains disconnected from production database storage, preventing users from populating complete real-world filings for PGAs, complex Entry Summaries, FTZ admissions, and Drawback claims.
 
 ## Chapter Assessment Details
 
@@ -137,7 +137,7 @@ Across all 12 CATAIR chapters, a total of **1419 fields** were assessed against 
 | `HeaderControlInput.entryNumber` | **COVERED** | `CustomsFiling.entryNumber` | Exact entry number (Verified: CustomsFiling.entryNumber exists [String]) |
 | `HeaderControlInput.districtPortOfEntry` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderControlInput.brokerReferenceNumber` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
-| `HeaderControlInput.entryTypeCode` | **PARTIAL** | `CustomsFiling.procedureCode` | CustomsFiling.entryType is @deprecated; generic procedureCode and filingType exist, but dedicated 2-digit US entry type code column is missing |
+| `HeaderControlInput.entryTypeCode` | **COVERED** | `CustomsFiling.entryType` | Corrected citation: CustomsFiling.entryType is a "LEGACY FIELD (kept temporarily for backwards compatibility)" per its schema comment, not @deprecated — it is the dedicated 2-digit US entry type code column (e.g. "01" Consumption, "11" Informational, "06" FTZ), kept alongside country/procedureCode/messageName (Verified: CustomsFiling.entryType exists [String?]) |
 | `HeaderControlInput.modeOfTransportationCode` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderControlInput.bondWaiverIndicator` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderControlInput.electronicSignature` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
@@ -523,7 +523,7 @@ Across all 12 CATAIR chapters, a total of **1419 fields** were assessed against 
 | `HeaderInput.actionCode` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderInput.entryFilerCode` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderInput.entryNumber` | **COVERED** | `CustomsFiling.entryNumber` | Entry number (Verified: CustomsFiling.entryNumber exists [String]) |
-| `HeaderInput.entryTypeCode` | **PARTIAL** | `CustomsFiling.procedureCode` | CustomsFiling.entryType is @deprecated; generic procedureCode and filingType exist, but dedicated 2-digit US entry type code column is missing |
+| `HeaderInput.entryTypeCode` | **COVERED** | `CustomsFiling.entryType` | Corrected citation: CustomsFiling.entryType is a "LEGACY FIELD (kept temporarily for backwards compatibility)" per its schema comment, not @deprecated — it is the dedicated 2-digit US entry type code column, kept alongside country/procedureCode/messageName (Verified: CustomsFiling.entryType exists [String?]) |
 | `HeaderInput.importerOfRecordType` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderInput.importerOfRecordNumber` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |
 | `HeaderInput.modeOfTransportationCode` | **MISSING** | - | Citation - invalid (NO_CITATION); reclassified to MISSING |

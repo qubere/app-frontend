@@ -4,6 +4,19 @@
 
 This document shows **exactly how** shipment data currently flows to the canonical declaration, with actual field mappings from the code.
 
+**Status update (2026-09)**: `src/lib/canonicalMessaging/importDeclarationBuilder.ts` and
+`exportDeclarationBuilder.ts` (the "Phase 1" comprehensive builders this doc's "Solution" section
+called for) now exist and are wired into `buildCanonicalDeclaration` behind a `transactionType`
+parameter — see `SHIPMENT-TO-CANONICAL-FIELD-MAPPING.md`. However, the standard (non-standalone)
+filing submission path in `filing.service.ts` still calls `buildCanonicalDeclaration` **without**
+`transactionType`, so it still falls through to `buildLegacyDeclaration` (now explicitly marked
+`@deprecated` in code) — the ~20/25-field mapping below remains what actually ships for ordinary
+filings today. `FilingSnapshotData` itself has grown a few fields since this doc was written
+(`destinationCountry`, `countryOfExport`, `estimatedArrival`, `ladingDate`, `arrivalDate`,
+`transportMode`, `status`, `currentStage` on `shipment`; `customsValue` per line item; a top-level
+`currency` block; `commercialTotalValue` on `filingHeader`) — not reflected in the field tables
+below.
+
 ---
 
 ## Mapping Flow Overview
@@ -45,7 +58,7 @@ This document shows **exactly how** shipment data currently flows to the canonic
 
 ## Step 1: Shipment → FilingSnapshot
 
-**File**: `src/modules/filings/filing.service.ts` (lines 295-333)
+**File**: `src/modules/filings/filing.service.ts` (see `buildSnapshotAndPublish`; line numbers have drifted from the original 295-333)
 
 ### Snapshot Structure
 
@@ -128,7 +141,7 @@ Parties (importer, exporter, filer) are **NOT** in the snapshot - they're loaded
 
 ## Step 2: Snapshot → Canonical Declaration
 
-**File**: `src/lib/canonicalMessaging/declarationBuilder.ts` (lines 43-89)
+**File**: `src/lib/canonicalMessaging/declarationBuilder.ts` (`buildLegacyDeclaration`, now `@deprecated`; line numbers have drifted from the original 43-89)
 
 ### Canonical Declaration Structure
 

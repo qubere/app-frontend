@@ -22,7 +22,7 @@
 
 ### Schema Definition
 
-**File**: [`prisma/schema.prisma`](c:/WorkSpace/app-frontend/prisma/schema.prisma) (lines 4143-4175)
+**File**: [`packages/db/prisma/schema.prisma`](../../../../packages/db/prisma/schema.prisma) (model `FilingMessage`; line numbers below are illustrative — see the `model FilingMessage {` block for the current source of truth)
 
 ```prisma
 model FilingMessage {
@@ -470,11 +470,11 @@ ORDER BY "createdAt" DESC;
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| **Publisher** | [`publisher.ts`](c:/WorkSpace/app-frontend/src/lib/canonicalMessaging/publisher.ts) | Creates OUTBOUND messages |
-| **Consumer** | [`consumer.ts`](c:/WorkSpace/app-frontend/src/lib/canonicalMessaging/consumer.ts) | Processes INBOUND messages |
-| **Filing Service** | [`filing.service.ts`](c:/WorkSpace/app-frontend/src/modules/filings/filing.service.ts) | Orchestrates transmission |
-| **Dev Stub** | [`devStub.ts`](c:/WorkSpace/app-frontend/src/lib/canonicalMessaging/devStub.ts) | Simulates third party |
-| **Response Tab** | [`FilingDetailClient.tsx`](c:/WorkSpace/app-frontend/src/app/app/filing/[id]/FilingDetailClient.tsx) | Displays message timeline |
+| **Publisher** | [`publisher.ts`](../../../../apps/custom/src/lib/canonicalMessaging/publisher.ts) | Creates OUTBOUND messages |
+| **Consumer** | [`consumer.ts`](../../../../apps/custom/src/lib/canonicalMessaging/consumer.ts) | Processes INBOUND messages |
+| **Filing Service** | [`filing.service.ts`](../../../../apps/custom/src/modules/filings/filing.service.ts) | Orchestrates transmission |
+| **Dev Stub** | [`devStub.ts`](../../../../apps/custom/src/lib/canonicalMessaging/devStub.ts) | Simulates third party |
+| **Response Tab** | [`FilingDetailClient.tsx`](../../../../apps/custom/src/app/app/filing/[id]/FilingDetailClient.tsx) | Displays message timeline |
 
 ---
 

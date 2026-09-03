@@ -1,5 +1,24 @@
 # Onboarding a New Country
 
+> **STALE (2026-09-03): the tables this runbook is built on have been dropped.**
+> `FilingProcedureMapping`, `FilingAuthorityConfig`, `FilingMessageCatalog`,
+> `FilingResponseStatusMapping`, `FilingActionRule`, `FilingChildActionRule`, and
+> `FilingMessageActionCatalog` no longer exist in `schema.prisma` — the
+> multi-country rewrite (see commits around `975523ec`/`0ee01d2a` and the new
+> `FilingProcedureConfig`/`FilingActionMessageMapping`/`FilingActionConfiguration`/
+> `FilingActionCatalog`/`FilingCountryCustomsVersion`/`FilingCustomerCustomsVersion`
+> models) replaced the wildcard-`"*"`/most-specific-match resolution described
+> below with **exact-match** lookups keyed directly on a `procedureCode`
+> (`entryType.ts` is no longer consulted by `resolveMessageContext()`), plus an
+> explicit `country === "US"` fallback in code for filings not yet migrated. The
+> onboarding steps in this file (populate `FilingProcedureMapping`, add a wildcard
+> `FilingAuthorityConfig`/`FilingMessageCatalog` row, etc.) do not match the
+> current admin UI's table list (see `05-ui-configuration.md`, which has been
+> updated) or `resolveMessageContext.ts`. This runbook needs to be rewritten
+> against the new tables before it's trustworthy again; left in place rather than
+> deleted since the *practice* of "onboarding is data rows, not code" still holds
+> — only the concrete table names and lookup semantics changed.
+
 This runbook explains what actually has to happen to add a new country to the
 customs-filing module, grounded in the Germany ("DE") rollout that proved the
 design (`scripts/seed-canonical-messaging.ts`, and

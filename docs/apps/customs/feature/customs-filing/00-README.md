@@ -9,6 +9,17 @@ something doesn't exist yet (a real customs-authority integration, retry/backoff
 regime), that's stated plainly rather than glossed over — this package documents current behavior,
 not aspiration.
 
+> **Update (2026-09-03):** a multi-country migration replaced the original seven message-routing
+> reference tables (procedure mapping, authority config, message catalog, response-status mapping,
+> action rule, child-action rule, message-action catalog) and the `FilingSchemaVersion`-based
+> canonical-schema versioning with a smaller set of exact-match tables
+> (`FilingProcedureConfig`, `FilingActionMessageMapping`, `FilingActionConfiguration`) plus
+> schemas served from `public/schemas/`. Sections 2, 4, and 6 below describe the superseded design
+> and now carry stale-content banners pointing at the current tables/files; section 3's table
+> inventory and section 5 have been updated in place. The admin UI (section 5) also gained a
+> Filing Code List master/CSV-import feature, a Filing Status Catalog, and dynamic
+> Customer/CountryCustomsVersion dropdowns not covered when this package was first written.
+
 ## Contents
 
 1. **[Functional overview](01-functional-overview.md)** — what the module does today: the full
@@ -21,9 +32,11 @@ not aspiration.
    connection).
 3. **[Database schema](03-database-schema.md)** — every column of every filing-related table
    (`CustomsFiling`, `FilingMessage`, `FilingSnapshot`, `CustomsResponse`,
-   `FilingActionDataRequirement`, and the seven reference/config tables, plus `Shipment` and its
-   line items/documents), each with data type, constraints, business meaning, and exactly which
-   code reads or writes it.
+   `FilingActionDataRequirement`, the current reference/config tables (`FilingProcedureConfig`,
+   `FilingActionMessageMapping`, `FilingActionConfiguration`, and the code-list/status-catalog
+   masters), plus `Shipment` and its line items/documents), each with data type, constraints,
+   business meaning, and exactly which code reads or writes it. The original seven reference
+   tables this section once described have been dropped — see the doc's own stale-content note.
 4. **[New country onboarding](04-new-country-onboarding.md)** — a practical runbook, grounded in
    the real Germany rollout, for adding a country: which reference-table rows to populate, in what
    order, worked examples from the actual seed data, and the honest limits (new action types and

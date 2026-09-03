@@ -455,11 +455,17 @@ Some fields may come from external systems:
 ## Next Steps
 
 1. ✅ Add `ReferenceNumber` field to schemas
-2. ⏳ Implement `importDeclarationBuilder.ts`
-3. ⏳ Implement `exportDeclarationBuilder.ts`
-4. ⏳ Update `declarationBuilder.ts` to route by transaction type
-5. ⏳ Create mapper utility functions
-6. ⏳ Test with real shipment data
+2. ✅ Implement `importDeclarationBuilder.ts` (exists, exports `buildImportDeclaration`)
+3. ✅ Implement `exportDeclarationBuilder.ts` (exists, exports `buildExportDeclaration`)
+4. ✅ Update `declarationBuilder.ts` to route by transaction type — `buildCanonicalDeclaration`
+   now dispatches to `buildImportDeclaration` / `buildExportDeclaration` when a `transactionType`
+   of `"import"` / `"export"` is passed, falling back to the old ~20-field
+   `buildLegacyDeclaration` (now `@deprecated`) otherwise
+5. ⏳ Create mapper utility functions (`fieldMappers.ts` exists; ongoing)
+6. ⚠️ Test with real shipment data — **the standard entry-filing submission path in
+   `filing.service.ts` still calls `buildCanonicalDeclaration` without `transactionType`**, so
+   production filings still go through the legacy builder; the new builders are reachable but not
+   yet the default for ordinary filings
 7. ⏳ Update UI Config to show all mapped fields
 
 ---

@@ -4,6 +4,8 @@
 
 The UI Configuration Framework allows administrators to define how declaration forms and response views are rendered dynamically based on canonical JSON schemas. This framework provides a flexible, database-driven approach to form rendering that adapts to schema changes without requiring code modifications.
 
+> **Note**: The table structure, field list, and code samples below describe the original one-row-per-field `FilingUIConfig` design and predate the JSON-column refactor. They are superseded by `UI-CONFIG-JSON-STRUCTURE.md` and, further still, by the current `FilingUIConfig` Prisma model (`country`, `procedureCode`, `messageName`, `messageType`, `release`, `configData`, `version`, `description`, `isDraft`, `isActive`) — there are no `fieldPath`/`fieldLabel`/`section`/etc. columns on the table itself; those live inside `configData` per `src/types/ui-config.types.ts`. The architectural overview, master-data-source concepts, and troubleshooting sections below remain broadly accurate.
+
 ## Architecture
 
 ### Components

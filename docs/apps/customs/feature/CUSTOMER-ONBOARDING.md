@@ -525,7 +525,7 @@ model PoaEnvelope {
   powerOfAttorneyId  String   @unique
   powerOfAttorney    PowerOfAttorney @relation(fields: [powerOfAttorneyId], references: [id], onDelete: Cascade)
 
-  provider           String   // DOCUSIGN | DROPBOX_SIGN | INTERNAL | MANUAL_UPLOAD
+  provider           String   // DOCUSIGN (declared, no adapter yet) | DROPBOX_SIGN | OPEN_SIGN | INTERNAL | MANUAL_UPLOAD
   providerEnvelopeId String?
   templateId         String?
   status             String   // created | sent | delivered | signed | completed | declined | voided | error
@@ -707,9 +707,10 @@ interface EsignProvider {
 }
 ```
 
-- Adapters: `DocusignProvider`, `DropboxSignProvider`, `InternalProvider` (a minimal in-app click-to-sign with recorded IP/timestamp/consent for low-risk cases), `ManualUploadProvider` (no-op create; completion is the operator's upload + attestation).
-- Credentials via the same `SecretStoreResolver` pattern as `AbiFilerCredential` — never plaintext in `IntegrationConfig`.
-- Webhook route: `POST /api/webhooks/esign/[provider]` — verifies provider signature, loads `PoaEnvelope` by `providerEnvelopeId`, appends the raw event, transitions status; on `completed` downloads the executed PDF + certificate to storage (GCS in demo/prod, local-fs on localhost — per the storage memo, no Vercel Blob), sets `PowerOfAttorney.status: executed`, `executedDocumentUrl`, `signedDate`, and `expirationDate` from `PoaTemplate.termMonths`. Emits `WorkflowOutboxEvent`.
+- Adapters implemented: `OpenSignProvider` (`src/lib/esign/providers/openSignProvider.ts`, targeting `sandbox.opensignlabs.com` API v1.2, JSON transport, `x-api-token` auth), `DropboxSignProvider`, `InternalProvider` (a minimal in-app click-to-sign with recorded IP/timestamp/consent for low-risk cases), `ManualUploadProvider` (no-op create; completion is the operator's upload + attestation). `DOCUSIGN` remains a declared `EsignProviderName` value with no corresponding adapter file — not yet built.
+- Provider selection: `getEsignProvider()` (`src/lib/esign/index.ts`) resolves an explicit provider name, else the `ESIGN_PROVIDER` env var, else falls back to `INTERNAL`.
+- Credentials via the same `SecretStoreResolver` pattern as `AbiFilerCredential` — never plaintext in `IntegrationConfig`. OpenSign currently reads `OPEN_SIGN_BASE_URL` / `OPEN_SIGN_API_TOKEN` directly from env rather than through `SecretStoreResolver`.
+- Webhook route: `POST /api/webhooks/esign/[provider]` — verifies provider signature, loads `PoaEnvelope` by `providerEnvelopeId`, appends the raw event, transitions status; on `completed` downloads the executed PDF + certificate to storage (GCS in demo/prod, local-fs on localhost — per the storage memo, no Vercel Blob), sets `PowerOfAttorney.status: executed`, `executedDocumentUrl`, `signedDate`, and `expirationDate` from `PoaTemplate.termMonths`. Emits `WorkflowOutboxEvent`. OpenSign's webhook auth is a shared secret read from the callback URL's query string (`OPEN_SIGN_WEBHOOK_SECRET`), not a signed header, because OpenSign has no header-based signing.
 - Executed-document storage uses the existing `loadDocumentBytes` / document pipeline so the POA is a first-class document (viewable in the PDF viewer, checksummed, dedup-aware).
 
 ### 7.4 ERP onboarding

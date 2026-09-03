@@ -12,7 +12,7 @@ To guarantee maximum fidelity, transparency, and operational readiness:
 - **Point-in-Time Versioning for Screening**: `ScreeningEntity` (OFAC SDN, BIS CSL) uses `DRAFT → PUBLISHED → SUPERSEDED` versioning — enabling "what was this party's sanction status on date X?" queries for audit defensibility.
 - **Zero-Downtime Delta Processing**: Differential updates compute SHA-256 node hashes and audit changes (`HtsChange`) without blocking live calculation engines.
 - **Circuit Breaker Protection**: Ingestion pipelines automatically reject empty payloads (0-item yields) to prevent database truncation or corruption.
-- **Single Dispatcher Cron**: Vercel Hobby plan supports 2 cron entries. One entry (`/api/cron/data-dispatcher` at `0 2 * * *`) fans out to all `LIVE` datasets based on `scheduledFrequencyHours` vs `lastSuccessAt` from the `DatasetRefreshLog` table.
+- **Single Dispatcher Cron**: The platform now deploys to GCP (Cloud Run + Cloud Scheduler), not Vercel — `apps/custom/src/lib/admin/cronJobs.data.ts` is the single source of truth both the admin dashboard and `infrastructure/gcp/configure-scheduler.sh` read from. One dispatcher job (`qubere-data-dispatcher`, `/api/cron/data-dispatcher` at `0 2 * * *`) fans out to all `LIVE` datasets based on `scheduledFrequencyHours` vs `lastSuccessAt` from the `DatasetRefreshLog` table; several of the newer LIVE screening sources also have their own dedicated Cloud Scheduler entries (e.g. `qubere-bis-csl-ingest`) alongside the dispatcher, since the old "2 cron slot" Vercel Hobby constraint that originally motivated a single dispatcher no longer applies.
 - **Staleness Alerting**: The dispatcher checks `staleThresholdHours` for every dataset on each run. Any dataset exceeding its threshold triggers a `Notification` (`dataset_staleness_alert`) and an `AuditLog` event.
 - **Heavy Parses via Inngest**: XML streaming (OFAC), PDF/OCR extraction (Section 301), and LLM batch extraction (AD/CVD company rates) run as durable Inngest background functions with retry semantics — not synchronously in POST handlers at risk of Vercel timeout.
 - **Persistent Run Log**: `DatasetRefreshLog` DB table is the source of truth for last-run timestamps and status displayed in the `<Data>` tab. There is no in-memory state.
@@ -22,6 +22,20 @@ To guarantee maximum fidelity, transparency, and operational readiness:
 ## 2. Dataset Master Registry (19 Datasets)
 
 Below is the comprehensive operational policy for all 19 datasets required across the platform.
+
+**Update (2026-09)**: the registry has grown past 19 since this was written. `66241ae9`
+("expand restricted-party screening ingestion coverage") added 13 more LIVE sources — UK
+Sanctions List (OFSI), EU Consolidated Financial Sanctions List, UN Security Council Consolidated
+List, SECO Sanctions List (Switzerland), DFAT Consolidated List (Australia), Consolidated Canadian
+Autonomous Sanctions List, World Bank Ineligible Firms and Individuals, Public Safety Canada
+Listed Terrorist Entities, EU Air Safety List, MAS Domestic Designations (Singapore
+TSFA2002), FBI Wanted, FDA Debarment List, and SAM.gov Exclusions — each normalizing into
+`ScreeningEntity` with its own cron route, `datasetRegistry.ts` entry, and circuit breaker, same
+pattern as OFAC SDN/UFLPA below. `9b5fc392` subsequently fixed the EU Consolidated and UN
+Security Council sources to also populate the precomputed `ScreeningSearchToken` index added
+alongside this expansion (name/alias/address, metaphone + double-metaphone, used to narrow the
+candidate set before fuzzy matching). See `apps/custom/src/lib/data/datasetRegistry.ts` for the
+current authoritative list rather than the table below.
 
 ### Group A: Free — Public Government Sources (Machine-Readable APIs)
 

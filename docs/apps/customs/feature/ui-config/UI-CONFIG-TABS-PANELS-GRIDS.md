@@ -3,6 +3,8 @@
 **Date**: 2026-08-16  
 **Feature**: Display sections as tabs, complex types as panels, and arrays as grids
 
+> **Status vs. current code**: Tabs shipped, but not via this design. `LayoutRenderer.tsx` picks layout mode from `config.layout.mode` (`"tabs" | "accordion" | "single-page" | "panels"`); `"tabs"` renders via `TabbedFormLayout.tsx`, which looks up tabs/sections by `tabId`/`sectionId` in `configData.tabs[]`/`configData.sections[]` — there is no `FilingUIConfig.useTabs`/`tabOrder` column and no per-field `tabGroup`/`tabLabel`/`tabOrder` string. `"panels"` and `"accordion"` are still "coming soon" stubs, and grids are rendered by `ArrayGridView.tsx` off `layoutHints`, not per-field `displayMode: "grid"`.
+
 ---
 
 ## 🎯 Enhanced Goal

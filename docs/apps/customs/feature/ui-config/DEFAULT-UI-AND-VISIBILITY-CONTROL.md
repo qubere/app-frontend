@@ -350,24 +350,19 @@ if (useDefaultRenderer && schema) {
 - Cursor pointer indicates clickability
 - Help text explains purpose
 
-### File: `route.ts` (EXISTING - No changes needed)
+### File: `route.ts` (`src/app/api/filing/ui-config/route.ts`)
 
-**Already filters by isVisible**:
+**Note**: `isVisible` is a property inside each field's JSON entry (`configData.fields[]`), not a database column — the route fetches the single config row (`db.filingUIConfig.findFirst`, matched on `country`/`procedureCode`/`messageName`/`messageType`/`release`/`isActive`) and then filters/sorts in application code:
 
 ```typescript
-const uiConfig = await db.filingUIConfig.findMany({
-  where: {
-    country,
-    procedureCode,
-    messageName,
-    messageType,
-    isVisible: true,  // ← Already filtering
-  },
-  orderBy: [
-    { section: "asc" },
-    { displayOrder: "asc" },
-  ],
+const config = await db.filingUIConfig.findFirst({
+  where: { country, procedureCode, messageName, messageType, release: { in: releases }, isActive: true },
 });
+
+const configData = config.configData as unknown as FilingUIConfigData;
+const visibleFields = configData.fields.filter(field => field.isVisible !== false);
+// visibleFields is then grouped/sorted by section (legacy shape) or by
+// sectionId/displayOrder (current shape) before being returned to the renderer.
 ```
 
 ---

@@ -5,19 +5,34 @@
 `/app/app/filing-config` is a single, generic admin screen that can list, create,
 edit, and delete rows in every global (non-tenant-scoped) canonical-messaging
 reference table the filing workflow depends on. There is no per-table React
-component or per-table API route — the whole screen is driven by one registry,
-`FILING_CONFIG_TABLES` in `src/modules/filingConfig/registry.ts:170-331`. The
-eight registered tables are: Procedure Mapping (`procedure-mapping`, registry.ts:171),
-Authority Config (`authority-config`, registry.ts:187), Message Catalog
-(`message-catalog`, registry.ts:203), Response Status Mapping
-(`response-status-mapping`, registry.ts:221), Action Rule (`action-rule`,
-registry.ts:238), Child Action Rule (`child-action-rule`, registry.ts:256),
-Message Action Catalog (`message-action-catalog`, registry.ts:274), and Action
-Data Requirement (`action-data-requirement`, registry.ts:290). Two related
-tables are intentionally excluded from this surface altogether:
-`FilingSchemaVersion` (schemas are version-controlled files, loaded only via
-migration/seed, never edited live) and `FilingMessage` (an audit/queue log, not
-configuration) — both per the comment at registry.ts:5-11.
+component or per-table API route (with one exception, §8) — the whole screen is
+driven by one registry, `FILING_CONFIG_TABLES` in
+`src/modules/filingConfig/registry.ts`.
+
+**Update (2026-09-03):** the table set has been through a multi-country
+redesign since this document was first written. The registry's own comment
+records the change directly: "Many old tables have been dropped and replaced
+with new design." The **twelve** tables registered today (`page.tsx`'s
+`tableKeys` array) are: Transaction Type (`transaction-type`), Action Catalog
+(`action-catalog`), Procedure Configuration (`procedure-config`), Action
+Message Mapping (`action-message-mapping`), Action Configuration
+(`action-configuration`), Action Data Requirement (`action-data-requirement`,
+unchanged from before), UI Configuration (`ui-configuration`), Country Customs
+Versions (`country-customs-version`), Customer Customs Versions
+(`customer-customs-version`), Filing Status Catalog (`status-catalog`), Filing
+Code List Type (`code-list-type`), and Filing Code List (`code-list`, §8 —
+rendered by a dedicated component, not the generic table renderer). A
+`master-data-source` key exists in the registry but is commented out of
+`page.tsx`'s `tableKeys` ("removed, will implement later") so it isn't
+currently reachable from the UI. The **dropped** tables this replaces —
+`FilingProcedureMapping`, `FilingAuthorityConfig`, `FilingMessageCatalog`,
+`FilingResponseStatusMapping`, `FilingActionRule`, `FilingChildActionRule`,
+`FilingMessageActionCatalog` — are commented out of the registry's
+`FilingConfigTableKey` union for reference. `FilingSchemaVersion` remains
+excluded, but for a different reason now: it's commented out of
+`schema.prisma` entirely (see `06-canonical-schema-management.md`), not merely
+kept off this admin surface. `FilingMessage` is still excluded as before (an
+audit/queue log, not configuration).
 
 ## 2. How a new reference table gets a UI for free
 
@@ -32,20 +47,27 @@ in `wrapPrismaErrors` to turn P2002/P2025 into `DuplicateConfigRowError`/
 `ConfigRowNotFoundError`, registry.ts:160-168), and `createSchema`/
 `updateSchema` Zod schemas.
 
-Each `FieldDef` (registry.ts:41-48) is `{ key, label, type, help?, itemFields? }`
-where `type` is `"text" | "boolean" | "fieldArray"`. A `fieldArray` field's
-`itemFields: SubFieldDef[]` (registry.ts:32-39) describes the shape of each
-entry in that array — `SubFieldDef` adds a `"select"` type (with `options`)
-that plain `FieldDef` doesn't have. For example, Procedure Mapping is just
-three text fields (registry.ts:176-179) backed by `procedureMappingSchema`
-(registry.ts:65-69) — that's the entire amount of code needed to get a full
-searchable, paginated, CRUD table in the admin screen: no new page, no new
-form component, no new API route, just the registry entry and its Zod schema.
-The page itself (`src/app/app/filing-config/page.tsx:32-35`) simply maps
-`Object.keys(FILING_CONFIG_TABLES)` into the plain serializable `TableMeta[]`
-it hands to the client component — function-valued properties like
-`list`/`create` can't cross the server→client boundary, so only
-`{key, label, description, idField, fields}` is sent (page.tsx:30-34).
+Each `FieldDef` is `{ key, label, type, help?, itemFields?, options?, optionLabels?,
+optionsSource? }` where `type` is now `"text" | "boolean" | "fieldArray" | "date" |
+"select"` (updated 2026-09-03 — `date` and `select` used to be `SubFieldDef`-only
+variants; a top-level field can now render a native date picker or a dropdown
+directly, not just a nested grid column). A top-level `"select"` field sources
+its options either statically (`options`, a `{value, label}[]`) or dynamically
+(`optionsSource`, an API path returning `{ codes: string[] }` — see §8's
+Customer/Country Customs Version dropdowns for the live example). A
+`fieldArray` field's `itemFields: SubFieldDef[]` describes the shape of each
+entry in that array — `SubFieldDef` adds its own `"select"` type (with
+`options`) for nested grid columns. For example, Procedure Configuration is
+just a handful of fields backed by `procedureConfigSchema` — that's the entire
+amount of code needed to get a full searchable, paginated, CRUD table in the
+admin screen: no new page, no new form component, no new API route, just the
+registry entry and its Zod schema. The page itself
+(`src/app/app/filing-config/page.tsx`) builds `TableMeta[]` from an explicit
+`tableKeys` array (not simply every registry key — see §1's note on
+`master-data-source` being commented out) and hands it to the client
+component — function-valued properties like `list`/`create` can't cross the
+server→client boundary, so only `{key, label, description, idField, fields}`
+is sent.
 
 ## 3. JSON-based dynamic form rendering
 
@@ -156,10 +178,12 @@ are global, not tenant-scoped, so gating is by the `PLATFORM_ADMIN` role, not
 a tenant permission or account type — a change here is visible to every tenant
 immediately.
 
-Note: that comment says "these 7 tables," but `FILING_CONFIG_TABLES` registers
-8 keys (registry.ts:13-21, :170-331) — the comment appears stale relative to
-the current registry (Action Data Requirement was likely added after the
-comment was written).
+Note: that comment says "these 7 tables" — stale even before the 2026-09-03
+multi-country redesign (which itself dropped and replaced most of the original
+8), and `FILING_CONFIG_TABLES` now registers 14 keys total (12 reachable from
+the admin UI's `tableKeys`, plus `master-data-source` and the commented-out
+dropped-table entries) — a comment worth re-checking rather than trusting
+verbatim.
 
 ## 7. Current limitations
 
@@ -182,3 +206,33 @@ comment was written).
   "runtime content, not something a static compile-time dictionary can cover."
   Those labels are rendered as-is wherever they're consumed downstream (the
   comment points to `FilingDetailClient.tsx`'s `ActionFieldPrompts`).
+
+## 8. Filing Code List masters, CSV import, and dynamic dropdowns (added 2026-09)
+
+Three admin-UI features landed after the sections above were written:
+
+- **Filing Code List masters.** `code-list-type` and `code-list`
+  (`FilingCodeListType`/`FilingCodeListItem`/`FilingCodeListItemTranslation`)
+  hold country-scoped lookup values (e.g. unit-of-measure or currency codes)
+  with per-locale translations. `code-list-type` renders through the generic
+  `FilingConfigClient`; `code-list` does not — the registry comment notes it
+  "is rendered by a dedicated `FilingCodeListManager` component" because a
+  plain row is header, and each header owns a variable set of translated
+  items, which the generic single-table editor can't express.
+- **CSV import/template for code lists.** `FilingCodeListManager` adds a
+  bulk-upload path: download a CSV template for the selected code-list type,
+  edit it offline, and re-upload to create/replace items and translations in
+  one pass, instead of adding rows one at a time through the modal form.
+- **Dynamic Customer/CountryCustomsVersion dropdowns.** `customer-customs-version`
+  fields (`customerId`, `filingCountryCustomsId`) use `optionsSource` (e.g.
+  `/api/filing-config/customers`, `/api/filing-config/country-customs-versions`)
+  instead of a static `options` list — the client fetches the option set at
+  render time, with retry-with-backoff on failure, and a previously-saved
+  value that no longer appears in the fetched list is still shown/selectable
+  rather than silently dropped.
+- **Filing Status Catalog locale text.** `status-catalog`'s
+  `localeDescription` is stored as a map (`{ "en": "...", "fr": "..." }`) but
+  edited as a `fieldArray` of `{locale, text}` rows; `localeArrayToMap`/
+  `localeMapToArray` (registry.ts) convert between the two shapes at the
+  schema boundary — the generic `fieldArray` editor is unaware the array it's
+  editing is really a map underneath.

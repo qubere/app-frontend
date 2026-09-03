@@ -26,8 +26,9 @@ hit when **all** of the following hold:
   a stale approval (granted before a denied-party list update) does not
   qualify.
 - **Not expired.** `expiresAt`, if set, must be in the future.
-- **Not revoked.** `status` must still be `ACTIVE` — a `REVOKED` row is
-  never eligible again, even if every other condition would otherwise match.
+- **Not revoked.** `status` must still be `PRE_APPROVED` (the code's active
+  state — the gate query filters on it directly) — a `REVOKED` row is never
+  eligible again, even if every other condition would otherwise match.
 
 Any failure in that chain is treated identically to "no approval exists" —
 the caller falls through to a normal RPS run. There is deliberately no

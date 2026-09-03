@@ -54,6 +54,11 @@ For client document email, use the
 [broker/customer instructions](../support/CLIENT-EMAIL-DOCUMENTS.md). The capability
 defaults off until configured; demonstrate clear matches, broker review and the
 unchanged published proof rather than promising every email attaches automatically.
+For the customer-facing side of a published entry, use the
+[Entry Proof partner demo](../../../sales/PARTNER-PORTAL-ENTRY-PROOF-DEMO.md). To
+run the whole story end to end — inbound email through screening, broker approval,
+and transmission — use the
+[email-to-filing demo](../../../sales/END-TO-END-EMAIL-TO-FILING-DEMO.md).
 
 ---
 

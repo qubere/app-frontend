@@ -1,6 +1,6 @@
 # Navigation & Information Architecture Redesign
 
-**Status:** Phases 1–4d + follow-ups (Escalate, standalone classification detail, permission catalogue) shipped, in review. Not built: per-tenant Filing Settings (needs product design), cross-run proposal compare, misc `/api/v1` dead-route cleanup.
+**Status:** Phases 1–4d + follow-ups (Escalate, standalone classification detail, permission catalogue) shipped and merged to `main`. A later fix (`59311a78`, "consolidate clients and importers sidebar links") superseded §3's four separate MANAGEMENT rows — see the note at that section. Not built: per-tenant Filing Settings (needs product design), cross-run proposal compare, misc `/api/v1` dead-route cleanup.
 **Author:** Rachit Lohani (with Claude)
 **Date:** 2026-08-29
 **Primary user:** a licensed customs broker working many shipments under hard filing
@@ -89,6 +89,15 @@ MANAGEMENT
 ── persistent header ──
   🔔 Notifications bell (already exists — NotificationBell). Phase 3 widens sources.
 ```
+
+> **Superseded (commit `59311a78`, "consolidate clients and importers sidebar
+> links"):** the four MANAGEMENT rows above are the original plan, not the
+> current sidebar. Importers of Record, Bonds, and Powers of Attorney were
+> folded into the single "Clients and Importers" row (`/app/clients`,
+> `labelKey: clientsAndImporters`) and no longer render as separate sidebar
+> items. They remain in `UNLISTED_NAV_ITEMS` with `sidebarHref: "/app/clients"`
+> so `activeNavHref` still highlights "Clients and Importers" when one of
+> those routes is active, and existing deep links keep resolving.
 
 ### Sidebar states
 

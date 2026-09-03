@@ -4,6 +4,8 @@
 
 This document provides a comprehensive architectural design for a dynamic, schema-driven UI configuration system. The goal is to enable new screens, forms, workflows, and dashboards to be created entirely through JSON schemas without requiring code changes.
 
+> **Status vs. current code**: This is an aspirational target-state design, not a description of what is implemented. The actual `FieldConfig`/`FilingUIConfigData` shape (`src/types/ui-config.types.ts`) and renderer (`src/components/form/layouts/LayoutRenderer.tsx`, `TabbedFormLayout.tsx`) support only a small subset of what's outlined below — currently: `tabs`/`single-page` layout modes (with `accordion`/`panels` as "coming soon" stubs), field-level `isVisible`/`isRequired`/`isReadOnly`/`gridColumn`/`displayOrder`/`dataSource`/`validation`/`conditional`/`hooks`. There is no implemented plugin system, theme/dark-mode config, RBAC/permissions engine, workflow/wizard/approval orchestration, i18n translation keys, webhooks, or dashboard/analytics layer as described in sections 6–12. Treat this document as a roadmap, and verify any specific claim against the current types file and renderer before relying on it.
+
 ## Table of Contents
 
 1. [Form Generation](#1-form-generation)

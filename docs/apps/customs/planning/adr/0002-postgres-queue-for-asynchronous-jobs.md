@@ -16,3 +16,17 @@ Background job execution is required for multi-modal OCR extraction, asynchronou
 - Single source of truth for application state and background queue in PostgreSQL.
 - Zero extra external infrastructure dependencies required.
 - Full transactional guarantees during job enqueue and execution.
+
+## Current status (2026-09)
+
+`PgQueue`/`PipelineJob` (`apps/custom/src/lib/queue/pgQueue.ts`) is still live for the pipeline
+orchestration this ADR targeted (OCR extraction, classification cases, agent pipelines — see
+`pipelineOrchestrator.ts`, `classificationCaseEngine.ts`). However, the codebase has since adopted
+Inngest (`apps/custom/src/lib/inngest/`) as a second background-job engine for a different class of
+work: long-running/scheduled ingestion and sweep jobs that would exceed a request-scoped cron's
+timeout (OFAC SDN ingestion, HTS refresh, SLA sweep, compliance report runs, account memory
+extraction, restricted-party search-token backfill). This is exactly the kind of "third-party
+external queue service" this ADR's Context argued against — the two engines now coexist rather
+than one superseding the other, split by job shape (transactional row-locked work stays on
+`PgQueue`; long-running/durable-cron work moved to Inngest). The original decision and its
+reasoning above are preserved as written for `PgQueue`'s actual scope.

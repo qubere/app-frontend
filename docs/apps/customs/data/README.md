@@ -32,6 +32,17 @@ The Qubere Platform relies on authoritative trade data, tariff schedules, sancti
 
 ---
 
+**Update (2026-09)**: the LIVE roster above is a snapshot from when this matrix was written and
+undercounts the current registry. `apps/custom/src/lib/data/datasetRegistry.ts` (the actual
+source of truth) now also carries `fda-debarment`, `fbi-wanted`, and `sam-gov-exclusions` as LIVE
+in Group A, plus 13 additional LIVE restricted-party screening sources added in
+`66241ae9` (UK OFSI, EU Consolidated, UN Security Council, SECO Switzerland, DFAT Australia,
+Canada Consolidated Sanctions, World Bank Debarred Firms, Public Safety Canada Terrorist
+Entities, EU Air Safety List, MAS/TSFA2002 Domestic Designations, plus the three above) — each
+with its own cron route and `DatasetRefreshLog` tracking, feeding the same `ScreeningEntity`
+table as BIS CSL/OFAC SDN/UFLPA. See `data-refresh-policy.md` and `datasetRegistry.ts` directly
+for the current full list; this file has not been kept in lockstep with that registry.
+
 ## 🛡 Platform Admin Controls & Zero-Fabrication Policy
 
 All datasets can be monitored and executed on demand via the Platform Admin Console:

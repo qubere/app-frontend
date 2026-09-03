@@ -3,6 +3,8 @@
 **Date**: 2026-08-16  
 **Feature**: Display complex types as panels and arrays as grids
 
+> **Status vs. current code**: Still a design proposal, not the shipped mechanism. `LayoutRenderer.tsx` currently renders `"panels"` layout mode as a literal "Panel layout coming soon" placeholder — no `FieldPanel`/`FieldGrid` components matching this doc exist. Array/grid display for line items is instead handled by `ArrayGridView.tsx` (`src/app/app/filing/[id]/ArrayGridView.tsx`), driven by `configData.layoutHints`, not by per-field `displayMode: "grid"` flags. There is also no `FilingUIFieldConfig` table — field configs live inside the single `FilingUIConfig.configData` JSON column (see `UI-CONFIG-JSON-STRUCTURE.md` and `src/types/ui-config.types.ts`).
+
 ---
 
 ## 🎯 Goal

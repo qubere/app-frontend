@@ -40,7 +40,7 @@ every action button in the UI.
 | `authority` | String | required, no default | Name/code of the customs authority this entry is filed with (e.g. `CBP`). Deliberately has **no schema default** — resolved per `destinationCountry` from `FilingAuthorityConfig` at creation time in `POST /api/filing`, since hardcoding one country's authority is exactly what this table structure exists to avoid. | `filing.service.ts` `buildMessage()` stamps it into the outbound envelope header; `FilingDetailClient.tsx` displays "Filing Authority: {authority}". |
 | `entryType` | String | required | A code from `entryType.ts` describing the type of customs entry (e.g. consumption entry code `"01"`). | `resolveMessageContext.ts` calls `requireEntryTypeCode(filing.entryType)` to normalize it, then looks it up in `FilingProcedureMapping`. |
 | `filingType` | String | required | The filing method/channel label (e.g. how the entry is being filed). | Displayed as "Filing Method" in `FilingDetailClient.tsx`. |
-| `filingStatus` | String | `@default("Draft")`, indexed | Workflow status of the entry. Documented values: `Draft, Preparing, ValidationFailed, ReadyForBrokerReview, BrokerApproved, TransmissionPending, Transmitted, Accepted, Rejected, DocumentsRequested, CustomsHold, Released, Cancelled, Closed, Simulation`. Never written directly — always through `applyTransition()` in `filingStateMachine.ts`. | Written by `filing.service.ts` (`buildSnapshotAndPublish`, `cancelFiling`) and `inboundConsumer.ts` (`processInboundMessage`, via `FilingResponseStatusMapping` → `applyTransition`). Read by `page.tsx` to compute `canValidate/canApprove/canTransmit/canResubmit` via `canTransition()`, and by the UI badge/timeline in `FilingDetailClient.tsx`. |
+| `filingStatus` | String | `@default("Draft")`, indexed | Workflow status of the entry. Documented values: `Draft, Preparing, ValidationFailed, ReadyForBrokerReview, BrokerApproved, TransmissionPending, Transmitted, Accepted, Rejected, DocumentsRequested, CustomsHold, Released, CancellationRequested, Cancelled, Closed, Simulation` (this list was missing `CancellationRequested` — see `FILING_STATUSES`, `filingStateMachine.ts:6-23`). Never written directly — always through `applyTransition()` in `filingStateMachine.ts`. | Written by `filing.service.ts` (`buildSnapshotAndPublish`, `cancelFiling`) and `inboundConsumer.ts` (`processInboundMessage`, via `FilingResponseStatusMapping` → `applyTransition`). Read by `page.tsx` to compute `canValidate/canApprove/canTransmit/canResubmit` via `canTransition()`, and by the UI badge/timeline in `FilingDetailClient.tsx`. |
 | `paymentStatus` | String | `@default("Pending")` | Duty/tax payment state: `Pending, Paid, Deferred`. | Displayed in `FilingDetailClient.tsx` Entry Summary ("Payment Status"). |
 | `totalValue` | Decimal? | nullable | Total customs (entered) value of the entry. Null until computed from line items by the duty engine. | `filing.service.ts` copies it into `FilingSnapshotData.filingHeader.totalValue` at transmit time; `FilingDetailClient.tsx` shows it as "Entered Value" / "Customs Value". |
 | `totalDuties` | Decimal? | nullable | Total duty owed, computed by `computeFilingTariff()` (`dutyEngine.ts`). Null until calculated. | Read by `FilingDetailClient.tsx` ("Total Duties"), `metricComputer.ts` for analytics, PSC/Protest new-request clients, `dailyComplianceAudit.ts`. |
@@ -139,6 +139,29 @@ audit trail).
 | `updatedAt` | DateTime | `@updatedAt` | Auto-managed last-modified timestamp. | Bookkeeping. |
 
 ---
+
+## Reference tables — STALE (2026-09-03)
+
+The seven reference/config tables documented below this point
+(`FilingProcedureMapping`, `FilingMessageCatalog`, `FilingResponseStatusMapping`,
+`FilingActionRule`, `FilingChildActionRule`, `FilingMessageActionCatalog`,
+`FilingAuthorityConfig`, `FilingSchemaVersion`) **no longer exist** in
+`prisma/schema.prisma` — they were dropped as part of a multi-country redesign.
+`FilingActionDataRequirement` is the one exception and is still current. In
+their place, `schema.prisma` now defines: `FilingProcedureConfig`,
+`FilingActionMessageMapping`, `FilingActionConfiguration`, `FilingActionCatalog`,
+`FilingTransactionType`, `FilingStatusCatalog`, `FilingCountryCustomsVersion`,
+`FilingCustomerCustomsVersion`, `FilingMasterDataSource`, `FilingUIConfig`, and
+the `FilingCodeListType`/`FilingCodeListHeader`/`FilingCodeListItem`/
+`FilingCodeListItemTranslation` hierarchy. `FilingSchemaVersion` is commented
+out entirely (schemas now live under `public/schemas/`, served via
+`/api/schemas/[country]/[procedure]/[message]/[type]`). See
+`05-ui-configuration.md` for the current admin-UI table list and
+`02-architecture.md`/`04-new-country-onboarding.md` for what's confirmed stale
+about the resolution logic these old tables fed. The field-by-field tables
+below describe the **dropped** models and are kept only as a historical
+reference pending a rewrite against the new ones — do not use them to look up
+a live column.
 
 ## FilingActionDataRequirement
 
@@ -529,6 +552,14 @@ exists for that shipment):
 
 ## Relationships
 
+> **STALE (2026-09-03):** the `FilingProcedureMapping`, `FilingMessageCatalog`,
+> `FilingResponseStatusMapping`, `FilingActionRule`, `FilingChildActionRule`,
+> `FilingMessageActionCatalog`, and `FilingAuthorityConfig` rows described
+> below no longer exist (see the "Reference tables — STALE" note earlier in
+> this doc). `FilingActionDataRequirement` and its `findMostSpecificMatch()`
+> resolution are unaffected and still accurate. `FilingSchemaVersion` is now
+> a commented-out block in `schema.prisma`, not a live table.
+
 **CustomsFiling** is the hub of the module: `CustomsFiling.shipmentId` → `Shipment.id` and `CustomsFiling.accountId` → `Account.id`. It is referenced by `CustomsResponse.filingId`, `FilingMessage.filingId`, `FilingSnapshot.filingId` (unique — 1:1), `ExceptionItem.filingId` (nullable), plus `RefundOpportunity`, `PostSummaryCorrection`, `ProtestEntry`, `ComplianceAuditRecord`, `ComplianceFinding`, `ClassificationChangeImpact`, `ValuationAssistsRecord`, and `AuditTimeline`, all of which point back at it.
 
 **FilingMessage** has FKs to both `CustomsFiling.id` (`filingId`) and `Account.id` (`accountId`). Its `correlationId`/`priorMessageId` columns are *logical* references to another `FilingMessage.messageId` — not enforced FK constraints — used to stitch together request/response and supersession chains.
@@ -554,6 +585,14 @@ exists for that shipment):
 ---
 
 ## The `"*"` wildcard convention
+
+> **STALE (2026-09-03):** of the tables below, only `FilingActionDataRequirement`
+> still exists and still uses this wildcard/`findMostSpecificMatch()` pattern.
+> `FilingProcedureMapping`, `FilingMessageCatalog`, `FilingResponseStatusMapping`,
+> `FilingActionRule`, and `FilingChildActionRule` have been dropped; message
+> routing (`resolveMessageContext.ts`) now resolves `FilingProcedureConfig` and
+> `FilingActionMessageMapping` by exact match on `country`/`procedureCode`,
+> with no wildcard fallback. See the earlier "Reference tables — STALE" note.
 
 `FilingProcedureMapping`, `FilingMessageCatalog`, `FilingResponseStatusMapping`,
 `FilingActionRule`, `FilingChildActionRule`, and `FilingActionDataRequirement`

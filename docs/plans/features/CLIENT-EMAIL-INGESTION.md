@@ -1,6 +1,6 @@
 # Client email ingestion — per-client inbound document addresses (build epic)
 
-**Status:** Ready for implementation (Codex)
+**Status:** Implemented and merged to `main` (issue #297; see `docs/operations/CLIENT-EMAIL-INGESTION-ROLLOUT.md` for the current rollout/config state and `docs/sales/CLIENT-EMAIL-INGESTION-DEMO.md` for the live walkthrough). `InboundAddress`, `InboundDocumentReview`, the reworked webhook/worker, broker review UI, and the client-scoped `auto-attach-process` fix all exist in code (`apps/custom/src/modules/inbound/*`, `packages/db/prisma/schema.prisma`). Feature-gated behind `INBOUND_CLIENT_ADDRESSES_ENABLED` / `INBOUND_AUTO_REPLY_ENABLED` (both default off) as described below.
 **Owner area:** `apps/custom`, `apps/portal`, `packages/db`
 **Closes:** #104 (client email ingestion), #260 (tenant-safe inbound document email — routing contract)
 **Depends on:** #294 (`/setup` page + onboarding→portal — this epic adds the inbound address to that surface), `feat/document-intake-improvements` branch (weighted matcher — merge first)

@@ -1,5 +1,24 @@
 # Canonical Schema Management
 
+> **STALE (2026-09-03): schema validation as described here has been removed.**
+> `FilingSchemaVersion` is commented out of `schema.prisma` with the note
+> "DEPRECATED: Old schema versioning system - removed 2026-08-17. Schemas are now
+> served from `public/schemas/` directory via `/api/schemas` endpoint." Every
+> function in `src/lib/canonicalMessaging/schemaValidator.ts`
+> (`getActiveSchemaVersion`, `validateAgainstActiveSchema`,
+> `invalidateSchemaCache`) is explicitly marked `DEPRECATED` in its own doc
+> comment; `validateAgainstActiveSchema()` now just logs a warning and returns
+> `{ version: "1.0.0" }` **without validating anything** — outbound/inbound
+> messages are no longer checked against any Ajv-compiled schema at publish or
+> consume time. Schema definitions now live under `public/schemas/` and are
+> served per `(country, procedure, message, type)` via
+> `src/app/api/schemas/[country]/[procedure]/[message]/[type]/route.ts`, wired
+> into the new "UI Configuration" admin tab (see `05-ui-configuration.md`) rather
+> than a `FilingSchemaVersion` DB row. Everything below (the versioning model,
+> the ACTIVE/SUPERSEDED promotion flow, the 1.0.0→1.0.1 diff walkthrough) is
+> historical — accurate to a design that has since been replaced — not a
+> description of current behavior.
+
 This document covers how the customs-filing module defines, versions, and enforces the shape of the messages it exchanges with third-party filing systems: the "canonical" envelope header, the outbound declaration data, and the inbound response data.
 
 ## 1. What a "canonical schema" is here

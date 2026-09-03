@@ -16,17 +16,22 @@ transmission, and a CBP response lifecycle to release and closure — with resub
 and pre/post-transmission cancellation paths. Everything downstream of "does the entry type resolve
 to a real CBP procedure" is deliberately architected to be country-agnostic: entry type,
 authority, message routing, response-status mapping, allowed post-submission edits, and offered
-child actions are all resolved through database tables
-(`FilingProcedureMapping`, `FilingAuthorityConfig`, `FilingMessageCatalog`,
-`FilingResponseStatusMapping`, `FilingActionRule`, `FilingChildActionRule`,
-`FilingActionDataRequirement`) keyed by `(country, procedure, ...)`, most-specific-match-wins
-(`src/lib/canonicalMessaging/wildcardLookup.ts`). Germany was onboarded through these tables with
-no application-code changes, proving the design
+child actions are all resolved through database tables keyed by `(country, procedure, ...)`.
+Germany was onboarded through these tables with no application-code changes, proving the design
 (`docs/customs-filing-canonical-messaging-changelog.md:25-35`). What is **not** yet
 country-agnostic: duty/MPF calculation runs unconditionally as a US CBP calculation regardless of
-destination (flagged explicitly in `src/app/api/filing/route.ts:395-400`), and the entry-type
-vocabulary itself (`src/modules/filing/entryType.ts`) is CBP's 18 codes, kept as code rather than
-config because it's a stable, legally-fixed standard, not a tenant preference.
+destination (flagged explicitly in `src/app/api/filing/route.ts:395-400`).
+
+> **Update (2026-09-03):** the reference-table set named above (`FilingProcedureMapping`,
+> `FilingAuthorityConfig`, `FilingMessageCatalog`, `FilingResponseStatusMapping`,
+> `FilingActionRule`, `FilingChildActionRule`) and the wildcard/most-specific-match resolution
+> in `wildcardLookup.ts` have been **replaced** by a multi-country redesign:
+> `FilingProcedureConfig`, `FilingActionMessageMapping`, and `FilingActionConfiguration`, resolved
+> by **exact match** on `(country, procedureCode, ...)` in
+> `resolveMessageContext.ts` — no wildcard `"*"` rows, and `entryType.ts` is no longer consulted
+> by that resolver (a `procedureCode` is now supplied directly). See `02-architecture.md` and
+> `04-new-country-onboarding.md` for what's confirmed stale there; those two files have not been
+> fully rewritten against the new tables yet. `FilingActionDataRequirement` itself is unchanged.
 
 ## 2. Functional inventory
 

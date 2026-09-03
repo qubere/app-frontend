@@ -1,6 +1,6 @@
 # Extensible Shipment Tracking Provider System
 
-Status: Customs-first production slice in progress on `codex/extensible-tracking-providers`
+Status: Slice 1 and Slice 1.5 (Customs-first platformization) shipped and merged to `main` (PR #136, commit `b0b91576`; follow-up fix `59b9b503`). `@qubere/tracking` and `@qubere/tracking-platform` exist as packages; only the generic-webhook adapter (`packages/tracking/src/adapters/genericWebhook.ts`) is implemented so far. Slice 2 (first commercial/ocean provider adapter) and Slice 3 (ACE/customs + multimodal adapters) are not started.
 Owner: Platform / TMS / Customs
 Applies to: `apps/custom`, `apps/tms`, shared shipment data model
 

@@ -38,7 +38,7 @@ judgment kept separate, so a past HIT is never quietly rewritten.
 
 | Feature | What the customer gets | Show it in the app |
 |---|---|---|
-| **Restricted/Denied-Party Screening** | Every Party Master record and every shipment/line-level party screened against SDN, Consolidated non-SDN, DPL, ISN, SSI, FSE, PLC, NS-MBS — exact, raw-word, and a phonetic (Double Metaphone / Metaphone2, configurable per account) shortlist feeding a fuzzy scorer, plus an independent red-flag keyword check. | `/app/compliance` → **Screening** tab → **Party Screening** sub-tab. Open a party with a potential match; show the score, the matched list, and the phonetic vs exact reason. |
+| **Restricted/Denied-Party Screening** | Every Party Master record and every shipment/line-level party screened against SDN, Consolidated non-SDN, DPL, ISN, SSI, FSE, PLC, NS-MBS, plus 13 additional multi-jurisdiction sources (UK, EU, UN, Switzerland, Australia, Canada, World Bank, FDA, SAM.gov, FBI, METI Japan, and more) — exact, raw-word, and a phonetic (Double Metaphone / Metaphone2, configurable per account) shortlist feeding a fuzzy scorer, plus an independent red-flag keyword check. | `/app/compliance` → **Screening** tab → **Party Screening** sub-tab. Open a party with a potential match; show the score, the matched list, and the phonetic vs exact reason. |
 | **Immutable results, separate dispositions** | Every screening result is frozen. The reviewer's judgment (Approved / False Positive / Blocked) is a separate record, 1:1 with the result. A later clean run never erases an earlier hit. | On a party's screening history, show two runs — an earlier HIT with a "False Positive — same name, different DUNS, analyst note" disposition, and a later CLEAR. Both are on the record. |
 | **Country Embargo Screening** | Deterministic engine (never an LLM) evaluating transaction, party, and line-level country pairs against government country-by-country maps, country groups, and CCL/ECCN data. A run that had to skip a check (party with no country on file) is reported as PARTIAL, not CLEAR. | **Screening** tab → embargo sub-tabs. Show a shipment's embargo result with the checks performed / passed / failed counts distinct from the deduplicated hit count. |
 | **Private Embargo overlay** | A tenant layers its own country-pair rules in front of the government matchers. A private rule can only *add* a HIT — it can never manufacture a CLEAR. | `/app/admin/settings` → **Private Embargo Rules**. Add a rule (e.g. "no transactions touching Country X"), then re-screen a shipment and show the new HIT with its private-rule provenance. |
@@ -78,9 +78,14 @@ judgment kept separate, so a past HIT is never quietly rewritten.
 - **"What lists do you actually screen against today?"** Live and ingesting on a
   governed schedule: OFAC SDN + Consolidated non-SDN (~20k entries, streamed via
   a durable job), BIS Consolidated Screening List (10 agency lists via
-  `api.trade.gov`), DHS UFLPA Entity List, CBP CROSS rulings, and a Dow Jones
+  `api.trade.gov`), DHS UFLPA Entity List, CBP CROSS rulings, a Dow Jones
   full-feed pipeline carrying provider lineage and multi-valued alias/address/
-  identifier/reference data per profile.
+  identifier/reference data per profile — plus UK OFSI, EU Consolidated, UN
+  Security Council, SECO Switzerland, DFAT Australia, Canada's consolidated
+  sanctions list, Public Safety Canada's terrorist entities list, the EU Air
+  Safety List, World Bank debarred firms, SAM.gov exclusions, FDA debarment,
+  FBI Wanted, and METI Japan's foreign end-user list. This is genuinely broad,
+  multi-jurisdiction coverage, not a US-only tool with an OFAC sticker on it.
 - **"Do you do PEP screening / beneficial ownership / corporate registry?"** Not
   yet — deliberately called out as a known gap, along with autonomous approval
   and fuzzy matching beyond the phonetic shortlist. Sell what's there: the

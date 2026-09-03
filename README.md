@@ -103,9 +103,10 @@ module (private embargo, RDPS, PAL, Community Screening, settings) against a
 enum. Compliance events additionally queue outbox-pattern emails
 (`ComplianceNotification` → `ComplianceNotificationDispatcher`) over SMTP,
 covering RPS hit/review/rescreen types plus License Determination review-
-required alerts and the license portfolio expiry/utilization digest. See
-[docs/compliance-notifications-and-audit.md](docs/compliance-notifications-and-audit.md)
-for the full mechanism, audit-history UI surfaces, export, and known gaps.
+required alerts and the license portfolio expiry/utilization digest. The
+design write-up for this mechanism (audit-history UI surfaces, export, and
+known gaps) was migrated to the GitHub Issues backlog — see
+[docs/README.md](docs/README.md#the-backlog-lives-in-github-issues).
 
 ### 6. Row-Level Security & Capability Gating
 
@@ -124,7 +125,7 @@ so on, each with its own status, reviewer and effective window, and only
 different facts, and origin is never inferred from a manufacturer, supplier,
 seller, export or shipping country.
 
-See [docs/product-master.md](docs/product-master.md) for the domain model,
+See [docs/apps/customs/data/product-master.md](docs/apps/customs/data/product-master.md) for the domain model,
 matching rules, change-detection signals, CSV import, and what is deliberately
 not implemented.
 
@@ -139,7 +140,7 @@ own `CLAIMED → UNDER_REVIEW → VERIFIED` lifecycle, independent of the
 party's own `UNREVIEWED → IN_REVIEW → APPROVED` review status. A name match
 alone is never treated as legal-identity proof.
 
-See [docs/party-master.md](docs/party-master.md) for the domain model,
+See [docs/apps/customs/data/party-master.md](docs/apps/customs/data/party-master.md) for the domain model,
 matching rules, change-detection signals, CSV import, and what is
 deliberately not implemented.
 
@@ -219,7 +220,7 @@ logic. No real third-party customs system is wired up yet: with
 or cancelling a filing simulates and applies a matching inbound response
 inline so the Response tab populates without any manual step; set it to
 `false` once a real integration exists. See
-[docs/customs-filing/customs-filing-canonical-messaging-changelog.md](docs/customs-filing/customs-filing-canonical-messaging-changelog.md)
+[docs/apps/customs/feature/customs-filing/customs-filing-canonical-messaging-changelog.md](docs/apps/customs/feature/customs-filing/customs-filing-canonical-messaging-changelog.md)
 for the full implementation history, including the second-country (Germany)
 proof and the gaps closed along the way.
 
@@ -256,10 +257,10 @@ A tenant can additionally layer its own **Private Embargo Screening**
 country-pair rules (`PrivateEmbargoRule`) in front of these government-source
 matchers via `privateEmbargoMatcher.ts` — a private rule can only add a
 `HIT`, never manufacture a `CLEAR`, and is gated by the `settings.manage`
-permission with its own audit actions. See
-[docs/private-embargo-screening.md](docs/private-embargo-screening.md) for
-the rule model, admin UI, and known gaps (no edit UI, no allow-list
-exemption, unverified matcher-precedence ordering).
+permission with its own audit actions. The rule model, admin UI, and known
+gaps (no edit UI, no allow-list exemption, unverified matcher-precedence
+ordering) were documented in a design write-up now tracked in the GitHub
+Issues backlog — see [docs/README.md](docs/README.md#the-backlog-lives-in-github-issues).
 
 Every consumer of this evidence — the chat assistant's `screen_shipment_embargo`
 / `get_embargo_screening_details` tools and the partner API below — reads and
@@ -291,9 +292,10 @@ in sync with the pipeline.
 
 ### 12. Restricted/Denied-Party Screening & Compliance Workspace UI
 
-Restricted/Denied-Party Screening (`src/modules/agents/compliance/restrictedParty/`,
-see `docs/restricted-party-screening-implementation-report.md` for the full
-design) is a sixth deterministic screening module, in the same house style as
+Restricted/Denied-Party Screening (`src/modules/agents/compliance/restrictedParty/`;
+the full design report was migrated to the GitHub Issues backlog — see
+[docs/README.md](docs/README.md#the-backlog-lives-in-github-issues)) is a
+sixth deterministic screening module, in the same house style as
 Country Embargo/UFLPA/End-Use/End-User/Anti-Boycott/Military End-Use, closing
 the gap where `SDN`, `CONSOLIDATED_NON_SDN`, `DPL`, `ISN`, `SSI`, `FSE`, `PLC`,
 and `NS_MBS` `ScreeningEntity` rows were fully ingested but never screened by
@@ -340,8 +342,8 @@ Screening** sub-tab for this module's results) and on each party's own detail
 page. Deliberately not yet implemented: PEP screening, beneficial-ownership
 graphs, corporate registry ingestion, autonomous approval, and any fuzzy
 matching beyond the Double Metaphone/Metaphone2 shortlist — see
-`docs/party-master.md` and Sections K/N of the implementation report for the
-full list of known gaps.
+`docs/apps/customs/data/party-master.md` and Sections K/N of the implementation
+report (GitHub Issues backlog) for the full list of known gaps.
 
 A **Pre-Approved Party List (PAL)** lets a prior clearance be reused instead
 of re-running RPS, but only through a fail-closed gate
@@ -349,12 +351,13 @@ of re-running RPS, but only through a fail-closed gate
 version, fresh-enough reference data, no expiry, and no revocation — any gap
 in that chain falls straight through to a normal screening run. The same gate
 is shared verbatim by Community Screening below. See
-[docs/pre-approved-party-list.md](docs/pre-approved-party-list.md) for the
-full lifecycle and known gaps (no scheduled expiry sweep, no bulk approval).
+[docs/apps/customs/data/pre-approved-party-list.md](docs/apps/customs/data/pre-approved-party-list.md)
+for the full lifecycle and known gaps (no scheduled expiry sweep, no bulk approval).
 
 ### 13. RDPS — Reverse Denied-Party Screening / Continuous Party Monitoring
 
-RDPS re-screens previously-cleared parties so that a change in the party's
+RDPS (full design write-up migrated to the GitHub Issues backlog — see
+[docs/README.md](docs/README.md#the-backlog-lives-in-github-issues)) re-screens previously-cleared parties so that a change in the party's
 own data, or in the denied-party reference data, gets caught rather than
 persisting behind a stale one-time clearance. A **delta-impact dispatcher**
 reacts to a specific reference-data change; a **full-population dispatcher**
@@ -378,9 +381,7 @@ wired into scheduled cron (`rdps-delta-impact-dispatch` every 10 minutes,
 registered in both `apps/custom/vercel.json` and
 `infrastructure/gcp/configure-scheduler.sh` (GCP Cloud Scheduler is
 authoritative in production). Surfaced via `RdpsPanel.tsx` inside the
-Compliance workspace and its tenant-scoped API routes. See
-[docs/rdps-continuous-monitoring.md](docs/rdps-continuous-monitoring.md) for
-the full design.
+Compliance workspace and its tenant-scoped API routes.
 
 ### 14. Community Screening — Multi-Party Batch RPS + Embargo Orchestration
 
@@ -412,9 +413,10 @@ per-row claim pattern as `ComplianceNotificationDispatcher` so a retried tick
 can never double-process a row. Gated by three permissions
 (`compliance.community_screening.read`/`.screen`/`.override`), every route
 tenant-scoped via `withAuthenticatedRoute`, with export (CSV/XLSX) and Ask
-Qubere assistant tools surfacing the same independent-findings evidence. See
-[docs/community-screening.md](docs/community-screening.md) for the full
-design, data model, and known gaps.
+Qubere assistant tools surfacing the same independent-findings evidence. The
+full design, data model, and known gaps were documented in a write-up now
+tracked in the GitHub Issues backlog — see
+[docs/README.md](docs/README.md#the-backlog-lives-in-github-issues).
 
 ### 15. Qubere Autonomous Freight Execution TMS (`apps/tms`)
 
@@ -477,9 +479,10 @@ documents, close license), gated by a dedicated `licenseDetermination.*` /
 `licenses.*` permission set. Formal compliance overrides against a License
 Determination result can be created/revoked from the Audit & History panel's
 execution detail view (`compliance.override`-gated), the same generic
-`ComplianceFormalOverride` mechanism every compliance domain shares. See
-[docs/LICENSE-DETERMINATION-GAP-MATRIX.md](docs/LICENSE-DETERMINATION-GAP-MATRIX.md)
-for the full implementation status, fail-safe rationale, and test coverage.
+`ComplianceFormalOverride` mechanism every compliance domain shares. The full
+implementation status, fail-safe rationale, and test coverage were documented
+in a gap-matrix write-up now tracked in the GitHub Issues backlog — see
+[docs/README.md](docs/README.md#the-backlog-lives-in-github-issues).
 
 ### 17. Document Association & Trade Repository
 
@@ -612,47 +615,47 @@ provenance cannot claim one model while another did the reading.
 
 ## 📁 Repository Structure
 
+This is a Turborepo monorepo. The section headers above describe features that
+live in `apps/custom` (the primary Customs & Trade Compliance app); shared
+logic used by more than one app lives in `packages/`.
+
 ```text
-├── docs/
-│   ├── product-master.md    # Global Product / Item Master domain reference
-│   ├── party-master.md      # Global Party Master domain reference
-│   ├── document-intelligence.md # Document parsing pipeline reference
-│   ├── community-screening.md # Multi-party batch RPS + Embargo orchestration reference
-│   ├── private-embargo-screening.md # Tenant country-pair overlay in front of the embargo engine
-│   ├── pre-approved-party-list.md # PAL fail-closed reuse gate reference
-│   ├── rdps-continuous-monitoring.md # Reverse/continuous denied-party re-screening reference
-│   ├── compliance-notifications-and-audit.md # Email notification pipeline + audit logging reference
-│   ├── ai-chat-interface.md # AI assistant design spec — see "AI Chat Assistant" above for the built shape
-│   ├── customs-filing-canonical-messaging-changelog.md # Multi-country filing/messaging implementation history
-│   └── LICENSE-DETERMINATION-GAP-MATRIX.md # License Determination & Management implementation status reference
-├── prisma/
-│   ├── schema.prisma        # Prisma data models & database relationships
-│   ├── migrations/          # Versioned schema migrations
-│   └── seed.ts              # Database seed script for test accounts & RBAC
-├── scripts/
-│   ├── seed-clerk-users.ts  # Programmatic Clerk user provisioning script
-│   ├── seed-qubere-trade-network.ts # Demo product/party network seed
-│   └── backfill-document-associations.ts # One-time backfill into DocumentAssociation
-├── src/
-│   ├── app/
-│   │   ├── (auth)/          # Clerk Auth routes (/sign-in, /sign-up)
-│   │   ├── api/             # Internal API routes (account, users, platform-admin,
-│   │   │                    #   products, parties, documents, shipments, filing, …)
-│   │   ├── app/             # Application Console — dashboard, admin, products,
-│   │   │                    #   parties, shipments, documents, filing, actions
-│   │   ├── invite/[token]/  # Token-based secure invitation acceptance
-│   │   ├── platform-admin/  # Qubere Platform Admin Console
-│   │   ├── globals.css      # Design tokens & Apple light theme
-│   │   └── page.tsx         # Landing page & auto-redirect guard
-│   ├── components/          # Reusable UI components (Sidebar, Header, AccountSwitcher,
-│   │                        #   table/BulkSelection, …)
-│   ├── lib/                 # Core utilities (auth context, audit logger, db client,
-│   │                        #   csvExport, i18n)
-│   ├── modules/             # Domain logic (product, party, shipment, documents,
-│   │                        #   assistant, copilot, tables, …), independent of the route layer
-│   └── middleware.ts        # Route protection middleware
-├── tests/                   # Vitest unit and integration tests
-└── package.json
+├── apps/
+│   ├── custom/               # Customs & Trade Compliance app — http://localhost:3000
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   │   ├── (auth)/       # Clerk Auth routes (/sign-in, /sign-up)
+│   │   │   │   ├── api/          # Internal API routes (account, users, platform-admin,
+│   │   │   │   │                 #   products, parties, documents, shipments, filing, …)
+│   │   │   │   ├── app/          # Application Console — dashboard, admin, products,
+│   │   │   │   │                 #   parties, shipments, documents, filing, compliance, actions
+│   │   │   │   ├── invite/[token]/ # Token-based secure invitation acceptance
+│   │   │   │   └── platform-admin/ # Qubere Platform Admin Console
+│   │   │   ├── components/       # Reusable UI components (Sidebar, Header, AccountSwitcher, …)
+│   │   │   ├── lib/               # Core utilities (auth context, audit logger, db client, csvExport, i18n)
+│   │   │   ├── modules/           # Domain logic (filings, product, party, shipment, documents,
+│   │   │   │                      #   inbound email, screening, assistant, …), independent of the route layer
+│   │   │   └── worker/            # Long-running document-processing worker
+│   │   ├── scripts/               # Seed and one-off maintenance scripts (see "Manual seed scripts" below)
+│   │   ├── public/deck/           # Self-contained sales/demo slide decks (HTML)
+│   │   └── tests/                 # Vitest unit and integration tests
+│   ├── portal/                # Customer/partner self-service portal
+│   └── tms/                   # Autonomous Freight Execution TMS app — http://localhost:3001
+├── packages/
+│   ├── db/                    # @qubere/db — Prisma schema, migrations, generated client
+│   │   └── prisma/
+│   │       ├── schema.prisma  # Prisma data models & database relationships
+│   │       └── migrations/    # Versioned schema migrations
+│   ├── auth/                  # @qubere/auth — shared auth guards/route wrappers
+│   ├── ai/                    # @qubere/ai — shared AI provider adapters
+│   ├── storage/               # @qubere/storage — shared object-storage client
+│   ├── assistant/, billing/, cloud-runtime/, decisions/, entry-proof/,
+│   │   shipment-legs/, tracking/, tracking-platform/ # other shared domain packages
+├── docs/                      # See docs/README.md for the full index and the GitHub Issues backlog note
+│   └── apps/customs/          # Customs app reference docs (feature/, data/, ops/, sales/, support/, planning/adr/)
+├── schemas/customs-filing/    # Versioned JSON Schemas for customs-filing messages
+├── infrastructure/gcp/        # GCP deployment + Cloud Scheduler configuration
+└── package.json                # Workspace root (Turborepo)
 ```
 
 ---
@@ -710,11 +713,11 @@ feature's linked doc for what "unconfigured" looks like in the UI.
 | `AI_ACCOUNT_TOKENS_PER_DAY` | Daily token ceiling for an account, across every AI surface | Unset means unlimited; usage is still counted. See [AI cost controls](#-ai-cost-controls) |
 | `AI_AGENT_USER_REQUESTS_PER_MIN`, `AI_AGENT_ACCOUNT_REQUESTS_PER_MIN` | Request ceilings on the agent routes | Both unset by default, so agents are metered and never refused |
 | `COPILOT_USER_REQUESTS_PER_MIN`, `COPILOT_ACCOUNT_REQUESTS_PER_MIN` | `/chat` assistant request ceilings | Default 15 per user and 60 per account per minute |
-| `BLOB_READ_WRITE_TOKEN` | Document upload storage (Vercel Blob) | Required for any document upload in production; see [docs/document-intelligence.md](docs/document-intelligence.md) |
+| `BLOB_READ_WRITE_TOKEN` | Document upload storage (Vercel Blob) | Required for any document upload in production |
 | `MAX_UPLOAD_BYTES` | Upload size limit | Defaults to 50 MB |
 | `UPLOAD_TOKEN_SECRET` (or `NEXTAUTH_SECRET`) | Signs shipment-document upload-request tokens (`src/lib/uploadToken.ts`) | `NEXTAUTH_SECRET` is checked first — a legacy name kept for compatibility, not NextAuth config (this app uses Clerk). One of the two is required; token signing throws without either |
 | `DOCUMENT_MALWARE_SCAN_MODE` | Malware-scan policy for uploaded documents when no real scanner is configured | `advisory` (default, accepts unscanned) \| `block` (quarantines unscanned uploads) |
-| `DOCUMENT_PARSER_PROVIDER` | Document Intelligence parsing pipeline | `ibm-docling` \| `mock` \| `none` (default `none` — see [docs/document-intelligence.md](docs/document-intelligence.md)) |
+| `DOCUMENT_PARSER_PROVIDER` | Document Intelligence parsing pipeline | `ibm-docling` \| `mock` \| `none` (default `none`) |
 | `DOCLING_API_BASE_URL`, `DOCLING_API_KEY`, `DOCLING_AUTH_HEADER_NAME`, `DOCLING_AUTH_HEADER_SCHEME`, `DOCLING_SUBMIT_PATH`, `DOCLING_STATUS_PATH`, `DOCLING_RESULT_PATH`, `DOCLING_SOURCE_DELIVERY`, `DOCLING_SUBMIT_ENCODING`, `DOCLING_ARTIFACT_HOSTS`, `DOCLING_SOURCE_ENVELOPE` | IBM-hosted Docling connection, only read when `DOCUMENT_PARSER_PROVIDER=ibm-docling` | All but base URL and API key have working defaults |
 | `DOCUMENT_PARSER_REQUEST_TIMEOUT_MS` | Docling request timeout | Defaults to 60000 |
 | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` | Inbound email → document intake | Required to receive documents by email |
@@ -781,9 +784,10 @@ GET endpoints **never** seed data. If a collection is empty, they return `[]`. R
 
 ### 5. Running & Managing Applications
 
-This repository is a Turborepo monorepo containing two primary web applications:
-- **`apps/custom`** (Customs & Trade Compliance App) ➔ **`http://localhost:3000`**
-- **`apps/tms`** (Autonomous Freight Execution TMS App) ➔ **`http://localhost:3001`**
+This repository is a Turborepo monorepo containing three web applications:
+- **`apps/custom`** (Customs & Trade Compliance App, `@qubere/custom`) ➔ **`http://localhost:3000`**
+- **`apps/tms`** (Autonomous Freight Execution TMS App, `@qubere/tms`) ➔ **`http://localhost:3001`**
+- **`apps/portal`** (Customer/partner self-service portal, `@qubere/portal`) ➔ **`http://localhost:3002`**
 
 #### 🚀 How to Start the Applications
 
@@ -791,16 +795,21 @@ This repository is a Turborepo monorepo containing two primary web applications:
   ```bash
   npm run dev
   ```
-  *Launches both Customs (`:3000`) and TMS (`:3001`) concurrently via Turborepo.*
+  *Launches Customs (`:3000`), TMS (`:3001`), and Portal (`:3002`) concurrently via Turborepo.*
+
+- **Start Only the Customs App (Port 3000)**:
+  ```bash
+  npm run dev --workspace=@qubere/custom
+  ```
 
 - **Start Only the TMS App (Port 3001)**:
   ```bash
   npm run dev --workspace=@qubere/tms
   ```
 
-- **Start Only the Customs App (Port 3000)**:
+- **Start Only the Portal App (Port 3002)**:
   ```bash
-  npm run dev --workspace=@qubere/custom
+  npm run dev --workspace=@qubere/portal
   ```
 
 ---
@@ -808,10 +817,10 @@ This repository is a Turborepo monorepo containing two primary web applications:
 #### 🛑 How to Stop the Applications
 
 - **Graceful Stop**: Press **`Ctrl + C`** in the terminal where `npm run dev` is running.
-- **Kill Lingering Processes (If `EADDRINUSE` Port 3000/3001 error occurs)**:
-  If a Node background process remains bound to port 3000 or 3001, clear them instantly:
+- **Kill Lingering Processes (If `EADDRINUSE` Port 3000/3001/3002 error occurs)**:
+  If a Node background process remains bound to port 3000, 3001, or 3002, clear them instantly:
   ```bash
-  lsof -ti :3000 -ti :3001 | xargs kill -9
+  lsof -ti :3000 -ti :3001 -ti :3002 | xargs kill -9
   ```
 
 ---
@@ -845,7 +854,7 @@ This repository is a Turborepo monorepo containing two primary web applications:
 
 All 19 platform datasets are strictly audited under a **Zero-Fabrication Policy**. Operational calculations derive strictly from verified government and multilateral sources. Un-wired datasets return HTTP 422 and never fake success.
 
-For detailed dataset architecture, source endpoints, and engineering complexity breakdowns, see **[docs/data/README.md](docs/data/README.md)** and **[docs/data/data-refresh-policy.md](docs/data/data-refresh-policy.md)**.
+For detailed dataset architecture, source endpoints, and engineering complexity breakdowns, see **[docs/apps/customs/data/README.md](docs/apps/customs/data/README.md)** and **[docs/apps/customs/data/data-refresh-policy.md](docs/apps/customs/data/data-refresh-policy.md)**.
 
 ### Dataset Status Summary Matrix
 
@@ -898,7 +907,7 @@ curl -X GET "https://<your-deployment>/api/cron/hts-refresh" \
 - **No work without a provider**: returns HTTP 503 with an explicit blocker when `DOCUMENT_PARSER_PROVIDER` is unset or IBM Docling is not configured, rather than a 200 that looks like an idle queue.
 - **Does not hold the request open** waiting for the parser, and creates no documents, exceptions, or demo data.
 
-See [docs/document-intelligence.md](docs/document-intelligence.md) for the architecture, processing profiles, provenance chain, configuration, and known limitations.
+The architecture, processing profiles, provenance chain, configuration, and known limitations of this pipeline were documented in a write-up now tracked in the GitHub Issues backlog — see [docs/README.md](docs/README.md#the-backlog-lives-in-github-issues).
 
 ### Sanctions Watchlist Sync
 `scripts/nightly-watchlist-sync.ts` exists in the repo but is **not currently wired to any scheduler** — running it today requires invoking it manually (`npx tsx scripts/nightly-watchlist-sync.ts`). It also currently seeds hardcoded example OFAC/BIS entries rather than fetching from a real sanctions list source. Treat it as a stub, not a working scheduled job.

@@ -19,7 +19,7 @@ Think of it as a **"photograph"** of the shipment data that was used to create t
 
 ### Schema Definition
 
-**File**: [`prisma/schema.prisma`](c:/WorkSpace/app-frontend/prisma/schema.prisma) (lines 2849-2859)
+**File**: [`packages/db/prisma/schema.prisma`](../../../../packages/db/prisma/schema.prisma) (model `FilingSnapshot`; line numbers below are illustrative — see the `model FilingSnapshot {` block for the current source of truth)
 
 ```prisma
 model FilingSnapshot {
@@ -48,7 +48,13 @@ CustomsFiling (1) ←→ (1) FilingSnapshot
 
 ### Type Definition
 
-**File**: [`src/modules/filings/filing.service.ts`](c:/WorkSpace/app-frontend/src/modules/filings/filing.service.ts) (lines 12-51)
+**File**: [`src/modules/filings/filing.service.ts`](../../../../apps/custom/src/modules/filings/filing.service.ts) (`FilingSnapshotData`, near the top of the file)
+
+**Update (2026-09)**: this shape has grown since the type was first documented here — it now also
+carries `shipment.destinationCountry`, `countryOfExport`, `estimatedArrival`, `ladingDate`,
+`arrivalDate`, `transportMode`, `status`, `currentStage`; `lineItems[].customsValue`; and a
+top-level `currency: FilingCurrencyContext` block (multi-currency/assist support). `filingHeader`
+also gained `commercialTotalValue` alongside `totalValue`. Current shape:
 
 ```typescript
 type FilingSnapshotData = {
@@ -60,6 +66,14 @@ type FilingSnapshotData = {
     carrierName: string | null;
     incoterm: string | null;
     entryType: string | null;
+    destinationCountry: string | null;
+    countryOfExport: string | null;
+    estimatedArrival: Date | string | null;
+    ladingDate: Date | string | null;
+    arrivalDate: Date | string | null;
+    transportMode: string | null;
+    status: string;
+    currentStage: string | null;
   };
   
   lineItems: Array<{
@@ -69,6 +83,7 @@ type FilingSnapshotData = {
     quantity: number;
     unitPrice: number;
     totalValue: number;
+    customsValue?: number;
     htsCode: string;
     countryOfOrigin: string;
   }>;
@@ -78,10 +93,13 @@ type FilingSnapshotData = {
     fileName: string;
     docType: string;
   }>;
+
+  currency: FilingCurrencyContext; // multi-currency / assist-declaration context
   
   filingHeader: {
     entryNumber: string;
     entryType: string;
+    commercialTotalValue: number;
     totalValue: number;
     totalDuties: number;
     totalTaxes: number;
@@ -525,9 +543,9 @@ Snapshot stores data in simple shipment structure, not complex canonical schema,
 
 ## 📚 Related Files
 
-- **Schema**: [`prisma/schema.prisma`](c:/WorkSpace/app-frontend/prisma/schema.prisma) (line 2849)
-- **Service**: [`filing.service.ts`](c:/WorkSpace/app-frontend/src/modules/filings/filing.service.ts) (lines 12-51, 295-352)
-- **Declaration Builder**: [`declarationBuilder.ts`](c:/WorkSpace/app-frontend/src/lib/canonicalMessaging/declarationBuilder.ts) (uses snapshot as input)
+- **Schema**: [`packages/db/prisma/schema.prisma`](../../../../packages/db/prisma/schema.prisma) (model `FilingSnapshot`)
+- **Service**: [`filing.service.ts`](../../../../apps/custom/src/modules/filings/filing.service.ts) (`FilingSnapshotData` type + `buildSnapshotAndPublish`)
+- **Declaration Builder**: [`declarationBuilder.ts`](../../../../apps/custom/src/lib/canonicalMessaging/declarationBuilder.ts) (uses snapshot as input)
 
 ---
 

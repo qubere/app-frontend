@@ -67,31 +67,39 @@ model ExampleTable {
 ```prisma
 model FilingUIConfig {
   id              String   @id @default(cuid())
-  
+
   // Business identifiers
   country         String
   procedureCode   String
   messageName     String
   messageType     String
-  transactionType String   @default("import")
-  
+  release         String?
+
   // Data
   configData      Json
-  
+
   // Metadata
   version         Int      @default(1)
   description     String?
-  isActive        Boolean  @default(true)
-  
+  isDraft         Boolean  @default(true)
+  isActive        Boolean  @default(false)
+
   // Audit (LAST)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String?
   updatedBy       String?
 
-  @@unique([country, procedureCode, messageName, messageType, transactionType])
+  @@index([country, procedureCode, messageName, messageType, release, isActive, isDraft])
+  @@index([isActive])
 }
 ```
+
+**Update (2026-09)**: this example previously showed a `transactionType` field and a
+`@@unique(...)` constraint that do not exist on the real model — corrected above to match
+`packages/db/prisma/schema.prisma`'s actual `FilingUIConfig` (which uses `release` and
+`isDraft`/`isActive` flags, enforced via `@@index`, not `@@unique`). The column-ordering
+claim itself (audit fields last) still holds.
 
 ### ❌ Incorrect: Audit Fields in Middle
 
