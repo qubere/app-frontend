@@ -37,11 +37,13 @@
     "@qubere/cloud-runtime": "*",
     "@qubere/db": "*",
     "@qubere/decisions": "*",
+    "@qubere/entry-proof": "*",
     "@qubere/shipment-legs": "*",
     "@qubere/storage": "*",
     "@qubere/tracking": "*",
     "@qubere/tracking-platform": "*",
     "@types/nodemailer": "^8.0.1",
+    "adm-zip": "^0.6.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "cheerio": "^1.2.0",
@@ -61,8 +63,7 @@
     "resend": "^6.19.0",
     "saxes": "^6.0.0",
     "tailwind-merge": "^3.6.0",
-    "zod": "^4.4.3",
-    "@qubere/entry-proof": "*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@asteasolutions/zod-to-openapi": "^9.1.0",

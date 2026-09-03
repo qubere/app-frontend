@@ -52,19 +52,19 @@ export async function checkCountryPair(
   }
 
   const findings: AdHocEmbargoFinding[] = [];
-  if (relationship.cycyIndNationalSanction) {
+  if (relationship.cycyIndNationalSanction === "Y") {
     findings.push({ kind: "NATIONAL_SANCTION", message: "This country is on a user-specified watch list." });
   }
-  if (relationship.cycyIndEmbargoed) {
+  if (relationship.cycyIndEmbargoed === "Y") {
     findings.push({
       kind: "EMBARGOED",
       message: "Country is embargoed. Individual Export License is required to ship to this country.",
     });
   }
-  if (relationship.cycyIndEuSanction) {
+  if (relationship.cycyIndEuSanction === "Y") {
     findings.push({ kind: "EU_SANCTION", message: "This country is on an EU sanctions list." });
   }
-  if (relationship.cycyIndUnSanction) {
+  if (relationship.cycyIndUnSanction === "Y") {
     findings.push({ kind: "UN_SANCTION", message: "This country is on a UN sanctions list." });
   }
 

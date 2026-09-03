@@ -46,8 +46,15 @@ export interface GenerateCandidatesResult {
   alternateScreeningReason: string;
 }
 
+/** The subset of entity fields candidateNames() actually reads -- lets callers that only have a name/alternateNames/aliases projection (e.g. searchTokenGeneration.ts, working off an ingestion-time select) reuse it without assembling a full ScreeningEntityWithAddresses. */
+export interface CandidateNameSource {
+  name: string;
+  alternateNames: string[];
+  aliases?: { name: string }[];
+}
+
 /** All name strings worth checking a target against for this entity: primary name, alternateNames, and ScreeningEntityAlias rows (Dow Jones AKA/FKA/spelling-variation records) -- de-duplicated case-insensitively since Dow Jones ingestion writes some alias strings into both alternateNames and ScreeningEntityAlias. Purely additive vs. the pre-alias candidate set: it can only add candidates, never remove one. Exported for reuse by impactAnalysis.ts's reverse candidate index -- never reimplemented there. */
-export function candidateNames(entity: ScreeningEntityWithAddresses): string[] {
+export function candidateNames(entity: CandidateNameSource): string[] {
   const names = [entity.name, ...entity.alternateNames, ...(entity.aliases ?? []).map((a) => a.name)];
   const seen = new Set<string>();
   const result: string[] = [];

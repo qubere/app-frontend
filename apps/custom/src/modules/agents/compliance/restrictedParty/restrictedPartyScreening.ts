@@ -12,6 +12,8 @@
 // SKIPPED, never CLEAR -- mirrors every sibling compliance module.
 import crypto from "crypto";
 import { generateCandidates } from "./candidateGeneration";
+import { selectCandidateEntityIdsFromIndex, isIndexCoverageAcceptable } from "./candidateIndexService";
+import { rpsIndexLogger } from "./rpsIndexLogger";
 import { scoreCandidate } from "./scoring";
 import { checkRedFlags } from "./redFlagCheck";
 import { normalizeForMatching } from "./normalize";
@@ -94,7 +96,7 @@ interface PassContext {
   referenceDataAsOf: Date | null;
 }
 
-function runOnePass(
+async function runOnePass(
   passType: RestrictedPartyPassType,
   name: string,
   address: string | null,
@@ -102,7 +104,7 @@ function runOnePass(
   country: string | null,
   options: EffectiveScreeningOptions,
   ctx: PassContext
-): RestrictedPartyPassOutcome {
+): Promise<RestrictedPartyPassOutcome> {
   const started = Date.now();
   const { nameThreshold, addressThreshold, countryMatchRequired, redFlagCheckEnabled, excludeMetaphone, phoneticAlgorithm, continueOnExactMatch, alternateScreeningEnabled } = options;
 
@@ -153,13 +155,57 @@ function runOnePass(
     errors.push(ctx.referenceError);
   } else if (ctx.referenceList && ctx.referenceList.length > 0) {
     ranDenialOrderCheck = true;
-    const generated = generateCandidates(name, ctx.referenceList, {
+
+    // Indexed candidate narrowing (RPS_CANDIDATE_MODE=CANDIDATE_PRIMARY) is a
+    // pure performance optimization over the full referenceList scan below --
+    // generateCandidates() still runs its own exact/raw-word/phonetic pass
+    // and decides the actual CandidateReason. Any index lookup failure, or a
+    // materially incomplete index (isIndexCoverageAcceptable), falls back to
+    // the full referenceList, never to an empty scan, so it can never turn a
+    // real positive into a false CLEAR. Default (unset) is LEGACY_ONLY.
+    //
+    // SHADOW mode always scans the full referenceList (identical output to
+    // LEGACY_ONLY) but additionally runs the indexed lookup and logs a
+    // comparison against what the full scan actually matched -- a
+    // zero-behavior-change way to build confidence in the index before
+    // flipping a tenant to CANDIDATE_PRIMARY.
+    const candidateMode = process.env.RPS_CANDIDATE_MODE === "CANDIDATE_PRIMARY" || process.env.RPS_CANDIDATE_MODE === "SHADOW" ? process.env.RPS_CANDIDATE_MODE : "LEGACY_ONLY";
+
+    let scanList = ctx.referenceList;
+    if (candidateMode === "CANDIDATE_PRIMARY") {
+      try {
+        if (await isIndexCoverageAcceptable()) {
+          const { candidateEntityIds, diagnostics } = await selectCandidateEntityIdsFromIndex(name, address);
+          scanList = ctx.referenceList.filter((e) => candidateEntityIds.has(e.id));
+          rpsIndexLogger.info("candidate_primary_lookup", { ...diagnostics });
+        }
+      } catch {
+        scanList = ctx.referenceList;
+      }
+    }
+
+    const generated = generateCandidates(name, scanList, {
       nameThreshold,
       excludeMetaphone,
       phoneticAlgorithm,
       continueOnExactMatch,
       alternateScreeningEnabled,
     });
+
+    if (candidateMode === "SHADOW") {
+      try {
+        const { candidateEntityIds, diagnostics } = await selectCandidateEntityIdsFromIndex(name, address);
+        const fullScanEntityIds = new Set(generated.candidates.map((c) => c.entity.id));
+        const missedByIndex = [...fullScanEntityIds].filter((id) => !candidateEntityIds.has(id));
+        rpsIndexLogger.info("shadow_comparison", {
+          ...diagnostics,
+          fullScanCandidateCount: fullScanEntityIds.size,
+          missedByIndexCount: missedByIndex.length,
+        });
+      } catch (err) {
+        rpsIndexLogger.warn("shadow_comparison_failed", { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
     exactMatchFound = generated.exactMatchFound;
     alternateScreeningRan = generated.alternateScreeningRan;
     alternateScreeningReason = generated.alternateScreeningReason;
@@ -258,11 +304,11 @@ export async function runRestrictedPartyScreening(input: RestrictedPartyScreenin
   const options = resolveEffectiveOptions(input, accountConfig);
 
   const passes: RestrictedPartyPassOutcome[] = [
-    runOnePass("PARTY_NAME", input.identity.name, input.identity.address ?? null, input.identity.city ?? null, input.identity.country ?? null, options, ctx),
+    await runOnePass("PARTY_NAME", input.identity.name, input.identity.address ?? null, input.identity.city ?? null, input.identity.country ?? null, options, ctx),
   ];
 
   if (input.identity.contactName && input.identity.contactName.trim()) {
-    passes.push(runOnePass("CONTACT_NAME", input.identity.contactName, null, null, input.identity.country ?? null, options, ctx));
+    passes.push(await runOnePass("CONTACT_NAME", input.identity.contactName, null, null, input.identity.country ?? null, options, ctx));
   }
 
   return { correlationId, passes };

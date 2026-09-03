@@ -25,6 +25,7 @@ const FEED_TYPE = "full";
 const DICTIONARY: SanctionsReferenceDictionary = new Map([
   ["2", { name: "OFAC - Specially Designated National List", status: "Current" }],
   ["17", { name: "BIS Entity List", status: "Current" }],
+  ["42", { name: "World Bank List of Debarred Firms", status: "Current" }],
 ]);
 
 function baseEntity(overrides: Partial<RawEntity> = {}): RawEntity {
@@ -139,7 +140,25 @@ describe("dowJones/entityTransformer", () => {
     expect(result.references[1]).toMatchObject({ sourceAuthority: "BIS", sourceList: "ENTITY_LIST" });
     expect(result.references[2].sourceListName).toBe("UNKNOWN_REFERENCE_CODE_99999");
     expect(result.unknownReferenceNames).toEqual(["UNKNOWN_REFERENCE_CODE_99999"]);
-    // The primary sourceList/sourceAuthority on the flat row is the first Current reference.
+    // The primary sourceList/sourceAuthority on the flat row is whichever reference
+    // ranks highest by category priority (SANCTIONS here), not just the first in feed order.
+    expect(result.sourceList).toBe("SDN");
+    expect(result.sourceAuthority).toBe("OFAC");
+  });
+
+  it("prefers a higher-priority category (SANCTIONS) as primary even when it is not the first reference in feed order", () => {
+    const raw = baseEntity({
+      names: [{ nameType: "Primary Name", entityName: "Doubly Listed Corp" }],
+      references: [{ reference: "42" }, { reference: "2" }],
+    });
+
+    const result = transformEntity(raw, DICTIONARY, FEED_DATE, FEED_TYPE);
+
+    // World Bank debarment (category DEBARMENT) comes first in feed order, but
+    // the OFAC SDN sanctions listing (category SANCTIONS) is more consequential
+    // and must win as the entity's primary sourceList/sourceAuthority.
+    expect(result.references[0]).toMatchObject({ sourceAuthority: "WORLD_BANK", sourceList: "DEBARRED_FIRMS" });
+    expect(result.references[1]).toMatchObject({ sourceAuthority: "OFAC", sourceList: "SDN" });
     expect(result.sourceList).toBe("SDN");
     expect(result.sourceAuthority).toBe("OFAC");
   });

@@ -28,6 +28,10 @@ vi.mock("@/modules/screening/referenceDataChangeTracking", () => ({
   recordReferenceDataChanges: (...args: unknown[]) => recordReferenceDataChanges(...args),
 }));
 
+vi.mock("@/modules/screening/searchTokenSync", () => ({
+  syncSearchTokensForEntities: vi.fn().mockResolvedValue(undefined),
+}));
+
 const { ingestDowJonesDeltaFeed } = await import("@/modules/screening/dowJones/deltaFeedIngestionService");
 
 beforeEach(() => {

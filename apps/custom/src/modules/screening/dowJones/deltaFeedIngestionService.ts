@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { parseSanctionsReferencesDictionary, type SanctionsReferenceDictionary } from "./dictionaryParser";
 import { transformEntity } from "./entityTransformer";
 import { recordReferenceDataChanges } from "../referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "../searchTokenSync";
 import { parseDowJonesEntities, upsertDowJonesEntity, UPSERT_BATCH_SIZE, PROVIDER } from "./fullFeedIngestionService";
 
 // Distinct from fullFeedIngestionService's DOW_JONES_DATASET_ID so RDPS /
@@ -148,6 +149,10 @@ export async function ingestDowJonesDeltaFeed(
       changeType: c.changeType,
       datasetId: DOW_JONES_DELTA_DATASET_ID,
     }))
+  );
+
+  await syncSearchTokensForEntities(
+    changeInputs.filter((c) => c.changeType !== "SUPERSEDED").map((c) => c.screeningEntityId)
   );
 
   return {

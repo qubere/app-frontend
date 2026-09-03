@@ -228,6 +228,7 @@ model Account {
   inboundAddresses       InboundAddress[]
   inboundDocumentReviews InboundDocumentReview[]
   entryProofs            EntryProof[]
+  entryProofEvents       EntryProofEvent[]
   clientStakeholders     ClientStakeholder[]
   clientDocuments        ClientDocument[]
   pgaHolds               PgaHold[]
@@ -6495,6 +6496,7 @@ model ScreeningEntity {
   identifiers            ScreeningEntityIdentifier[]
   references             ScreeningEntityReference[]
   changeSets             ReferenceDataChangeSet[]
+  searchTokens           ScreeningSearchToken[]
 
   @@unique([provider, providerRecordId])
   @@index([name])
@@ -6511,6 +6513,49 @@ model ScreeningEntity {
   // referenceDataExpirySweep.ts's WHERE publicationStatus = "PUBLISHED" AND
   // expirationDate <= now() scan.
   @@index([publicationStatus, expirationDate])
+}
+
+enum ScreeningSearchFieldType {
+  NAME
+  ALIAS
+  ADDRESS
+}
+
+/// Precomputed, indexed search representations for RPS candidate generation
+/// (see candidateIndexService.ts / searchTokenGeneration.ts). Two row shapes
+/// share this table: one "whole-name" row per candidateNames() entry
+/// (normalizedToken = the full normalized name, metaphone/doubleMetaphone*
+/// computed over that whole string -- mirrors candidateGeneration.ts's EXACT
+/// and whole-string DOUBLE_METAPHONE/METAPHONE2 checks exactly), and one
+/// "per-token" row per meaningful word in that name (normalizedToken = the
+/// single word -- mirrors the RAW_WORD/ALTERNATE_WHOLE_WORD checks, which
+/// already operate on the same tokenized vocabulary). A candidate lookup ORs
+/// across both shapes; over-matching between them is harmless -- this table
+/// only narrows the corpus before the existing matcher runs, it never decides
+/// a match on its own.
+model ScreeningSearchToken {
+  id                       String                   @id @default(cuid())
+  screeningEntityId        String
+  screeningEntity          ScreeningEntity          @relation(fields: [screeningEntityId], references: [id], onDelete: Cascade)
+  fieldType                ScreeningSearchFieldType
+  originalToken            String?
+  normalizedToken          String
+  metaphone                String?
+  doubleMetaphonePrimary   String?
+  doubleMetaphoneAlternate String?
+  // Per-row match weight (see searchTokenGeneration.ts's tokenWeightFor and
+  // candidateIndexService.ts's candidateScore pruning): 1 for the whole-name
+  // row and an ordinary per-token/address word, lower for a legal-form or
+  // weak-business-connector word, lowest for an ADDRESS-typed row (always
+  // supporting evidence, never a primary signal).
+  tokenWeight              Float                    @default(1)
+  createdAt                DateTime                 @default(now())
+
+  @@index([normalizedToken, fieldType])
+  @@index([metaphone, fieldType])
+  @@index([doubleMetaphonePrimary, fieldType])
+  @@index([doubleMetaphoneAlternate, fieldType])
+  @@index([screeningEntityId])
 }
 
 /// One name variant (Also Known As, Formerly Known As, Spelling Variation, ...)
@@ -10675,6 +10720,7 @@ model EntryProofEvent {
   entryProofId String
   entryProof EntryProof @relation(fields: [entryProofId], references: [id], onDelete: Cascade)
   accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   type String
   actorUserId String?
   actorType String

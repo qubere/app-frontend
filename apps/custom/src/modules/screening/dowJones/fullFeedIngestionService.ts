@@ -4,6 +4,7 @@ import { db } from "@qubere/db";
 import { parseSanctionsReferencesDictionary, type SanctionsReferenceDictionary } from "./dictionaryParser";
 import { transformEntity, type RawEntity, type RawNameDetail, type RawCompanyDetail, type RawCountryDetail, type RawIdNumberType, type RawSanctionsReference, type RawSource } from "./entityTransformer";
 import { recordReferenceDataChanges } from "../referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "../searchTokenSync";
 
 // Dow Jones has no scheduled cron entry in datasetRegistry.ts (it's a
 // manual, operator-triggered file upload, not a polled feed), so there is
@@ -474,6 +475,8 @@ export async function ingestDowJonesFullFeed(
       datasetId: DOW_JONES_DATASET_ID,
     }))
   );
+
+  await syncSearchTokensForEntities(changeInputs.map((c) => c.screeningEntityId));
 
   // A full run that reaches this point covers every entity in the file
   // (created, updated, or skipped-as-already-done) -- the resume cursor has
