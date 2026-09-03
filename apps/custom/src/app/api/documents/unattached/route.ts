@@ -27,6 +27,11 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       fileUrl: true,
       confidence: true,
       source: true,
+      uploadedByName: true,
+      uploadedByEmail: true,
+      uploadedByType: true,
+      channel: true,
+      channelMeta: true,
       shipmentCandidates: {
         select: {
           id: true,

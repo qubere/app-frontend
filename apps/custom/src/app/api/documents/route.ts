@@ -35,6 +35,11 @@ export async function GET(req: Request) {
             createdAt: true,
             shipmentId: true,
             source: true,
+            uploadedByName: true,
+            uploadedByEmail: true,
+            uploadedByType: true,
+            channel: true,
+            channelMeta: true,
             shipment: {
               select: {
                 shipmentNumber: true,

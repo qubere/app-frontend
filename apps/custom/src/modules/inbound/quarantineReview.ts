@@ -12,6 +12,7 @@ import { db, withDataModeContext } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
 import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
+import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 import { enqueueDocumentParse } from "@/modules/documents/processing/documentProcessingWorker";
 import { notify } from "@/modules/notifications/notify";
 import {
@@ -157,7 +158,10 @@ async function releaseQuarantinedInboundEmailImpl(params: {
     const correlationId = randomUUID();
     const docType = DocumentTypeCatalog.matchDocumentType(attachment.originalFilename).name;
 
-    const senderAddress = email.originalFromAddress || email.normalizedFromAddress || null;
+    const rawFrom = email.originalFromAddress || email.normalizedFromAddress || null;
+    const { displayName, email: parsedEmail, nameOrEmail } = parseSenderNameAndEmail(rawFrom);
+    const senderAddress = parsedEmail || rawFrom;
+
     const document = await db.shipmentDocument.create({
       data: {
         accountId,
@@ -173,10 +177,12 @@ async function releaseQuarantinedInboundEmailImpl(params: {
         ...(await buildDocumentProvenance({
           channel: "EMAIL",
           uploadedByType: "EMAIL_SENDER",
-          uploadedByName: senderAddress,
+          uploadedByName: displayName ?? nameOrEmail ?? senderAddress,
           uploadedByEmail: senderAddress,
           channelMeta: {
             fromAddress: senderAddress,
+            fromName: displayName ?? null,
+            originalFrom: rawFrom,
             subject: email.subject ?? null,
             inboundEmailId,
             releasedFromQuarantineBy: adminUserId,

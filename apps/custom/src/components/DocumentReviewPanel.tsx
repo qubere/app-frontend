@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock } from "lucide-react";
+import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock, User, Mail } from "lucide-react";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor, reviewCategory } from "@/modules/decisions/editableFields";
 import { triageDecision } from "@/modules/decisions/decisionState";
 import { type ReviewField, nextReviewIndex } from "@/modules/documents/extractionReview";
 import { PdfCanvas, type PdfCanvasBbox } from "@/components/PdfCanvas";
+import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 
 const NEUTRAL_BADGE = "text-[10px] font-bold px-2 py-1 rounded-lg bg-surface-muted border border-border text-ink-muted";
 
@@ -1289,6 +1290,22 @@ export function DocumentReviewPanel({
                               Uploaded {uploadedLabel}
                             </span>
                           )}
+                          {(() => {
+                            const meta = data?.metadata as any;
+                            const rawSender = meta?.uploadedByName || meta?.uploadedByEmail || meta?.channelMeta?.fromAddress;
+                            const parsed = parseSenderNameAndEmail(rawSender);
+                            const sourceLabel = parsed.nameOrEmail || (meta?.source === "EMAIL" || meta?.source === "INBOUND_EMAIL" ? "Email" : meta?.source);
+                            if (!sourceLabel) return null;
+                            return (
+                              <span
+                                title={`Source: ${sourceLabel}`}
+                                className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-300 shrink-0 border-l border-white/10 pl-2.5"
+                              >
+                                {meta?.source === "EMAIL" || meta?.source === "INBOUND_EMAIL" ? <Mail className="w-3 h-3 text-indigo-400" /> : <User className="w-3 h-3 text-slate-400" />}
+                                <span className="truncate max-w-[150px]">Source: {sourceLabel}</span>
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="flex items-center space-x-2 shrink-0">
                           {pdfPage > 1 && (

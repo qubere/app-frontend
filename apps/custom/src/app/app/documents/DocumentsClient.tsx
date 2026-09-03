@@ -19,6 +19,8 @@ import {
   ArrowDown,
   ArrowUpDown,
   Sparkles,
+  Mail,
+  User,
 } from "lucide-react";
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
@@ -26,6 +28,7 @@ import { documentViewUrl } from "@/lib/documentUrl";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { RawExtractionModal } from "@/components/RawExtractionModal";
 import { QuarantineInboxTable } from "./QuarantineInboxTable";
+import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 
 interface ShipmentDocumentItem {
   id: string;
@@ -50,6 +53,9 @@ interface ShipmentDocumentItem {
   clientName: string;
   unattached?: boolean;
   source?: string;
+  uploadedByName?: string | null;
+  uploadedByEmail?: string | null;
+  sourceLabel?: string | null;
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
@@ -86,6 +92,9 @@ interface ApiDocument {
   confidence?: number | null;
   /** UPLOAD or EMAIL -- how this document row was created. */
   source?: string | null;
+  uploadedByName?: string | null;
+  uploadedByEmail?: string | null;
+  channelMeta?: any;
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
@@ -134,6 +143,14 @@ interface DocumentsClientProps {
   initialQuarantineCount?: number;
 }
 
+function resolveSourceLabel(d: ApiDocument): string | null {
+  const rawCandidate = d.uploadedByName || d.uploadedByEmail || (d.channelMeta as any)?.fromAddress;
+  const parsed = parseSenderNameAndEmail(rawCandidate);
+  if (parsed.nameOrEmail) return parsed.nameOrEmail;
+  if (d.source === "EMAIL" || d.source === "INBOUND_EMAIL") return "Email";
+  return d.source || null;
+}
+
 function buildDocumentItems(
   apiShipments: ApiShipment[],
   unattachedDocs: ApiDocument[]
@@ -164,6 +181,9 @@ function buildDocumentItems(
           clientId: shp.clientId ?? null,
           clientName: shp.client?.name || "No Client",
           source: d.source ?? "UPLOAD",
+          uploadedByName: d.uploadedByName ?? null,
+          uploadedByEmail: d.uploadedByEmail ?? null,
+          sourceLabel: resolveSourceLabel(d),
         });
       });
     }
@@ -190,6 +210,9 @@ function buildDocumentItems(
       clientName: "No Client",
       unattached: true,
       source: d.source ?? "UPLOAD",
+      uploadedByName: d.uploadedByName ?? null,
+      uploadedByEmail: d.uploadedByEmail ?? null,
+      sourceLabel: resolveSourceLabel(d),
       shipmentCandidates: d.shipmentCandidates,
     });
   });
@@ -997,25 +1020,33 @@ export function DocumentsClient({
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="truncate max-w-xs group-hover:underline">{doc.name}</span>
-                            {doc.source === "EMAIL" && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
-                                Emailed
-                              </span>
-                            )}
                             <Eye className="w-3.5 h-3.5 text-ink-muted opacity-0 group-hover:opacity-100 transition-opacity" />
                           </div>
-                          {!needsClassification && effectiveType && (
-                            <div className="mt-1 flex items-center gap-1.5">
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            {!needsClassification && effectiveType && (
                               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                                 {DOCUMENT_TYPE_LABELS[effectiveType] ?? doc.type ?? effectiveType}
                               </span>
-                              {doc.documentTypeConfidence != null && (
-                                <span className="text-[9px] font-mono text-ink-muted">
-                                  {Math.round(doc.documentTypeConfidence * 100)}%
-                                </span>
-                              )}
-                            </div>
-                          )}
+                            )}
+                            {doc.documentTypeConfidence != null && (
+                              <span className="text-[9px] font-mono text-ink-muted">
+                                {Math.round(doc.documentTypeConfidence * 100)}%
+                              </span>
+                            )}
+                            {doc.sourceLabel && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-slate-100 text-slate-700 border border-slate-200 shrink-0"
+                                title={`Source: ${doc.sourceLabel}`}
+                              >
+                                {doc.source === "EMAIL" || doc.source === "INBOUND_EMAIL" ? (
+                                  <Mail className="w-2.5 h-2.5 text-indigo-600" />
+                                ) : (
+                                  <User className="w-2.5 h-2.5 text-slate-500" />
+                                )}
+                                <span className="truncate max-w-[160px]">{doc.sourceLabel}</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                     </td>

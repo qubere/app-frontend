@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSenderEmail, recipientMatches } from "@/modules/inbound/emailNormalization";
+import { normalizeSenderEmail, recipientMatches, parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 
 describe("inbound email normalization", () => {
   it("trims surrounding whitespace", () => {
@@ -33,6 +33,42 @@ describe("inbound email normalization", () => {
 
     it("rejects a different local part on the same domain", () => {
       expect(recipientMatches("random@inbound.qubere.ai", "docs@inbound.qubere.ai")).toBe(false);
+    });
+  });
+
+  describe("parseSenderNameAndEmail", () => {
+    it("extracts display name and email when both are present", () => {
+      expect(parseSenderNameAndEmail('"Jane Lohani" <janeilohani@gmail.com>')).toEqual({
+        displayName: "Jane Lohani",
+        email: "janeilohani@gmail.com",
+        nameOrEmail: "Jane Lohani",
+      });
+      expect(parseSenderNameAndEmail("Jane Lohani <janeilohani@gmail.com>")).toEqual({
+        displayName: "Jane Lohani",
+        email: "janeilohani@gmail.com",
+        nameOrEmail: "Jane Lohani",
+      });
+    });
+
+    it("falls back to email when display name is missing or angle brackets only", () => {
+      expect(parseSenderNameAndEmail("<janeilohani@gmail.com>")).toEqual({
+        displayName: null,
+        email: "janeilohani@gmail.com",
+        nameOrEmail: "janeilohani@gmail.com",
+      });
+      expect(parseSenderNameAndEmail("janeilohani@gmail.com")).toEqual({
+        displayName: null,
+        email: "janeilohani@gmail.com",
+        nameOrEmail: "janeilohani@gmail.com",
+      });
+    });
+
+    it("handles null or empty inputs", () => {
+      expect(parseSenderNameAndEmail(null)).toEqual({
+        displayName: null,
+        email: null,
+        nameOrEmail: null,
+      });
     });
   });
 });

@@ -77,6 +77,10 @@ function pendingBlob(doc: DocumentWithRelations) {
       pageCount: doc.pageCount,
       confidence: doc.confidence,
       uploadedAt: doc.createdAt,
+      uploadedByName: doc.uploadedByName ?? null,
+      uploadedByEmail: doc.uploadedByEmail ?? null,
+      source: doc.source ?? null,
+      channelMeta: doc.channelMeta ?? null,
     },
     extractionStatus:
       doc.extractionFields.length > 0 ? "PARTIAL_OCR" : "PENDING_VISION_PROCESSING",

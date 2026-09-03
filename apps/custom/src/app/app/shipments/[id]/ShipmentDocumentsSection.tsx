@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { checkRequiredDocumentTypes } from "@/lib/requiredDocumentTypes";
 import { caughtMessage } from "@/lib/utils";
+import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 
 interface DocumentItem {
   id: string;
@@ -19,6 +20,10 @@ interface DocumentItem {
   fileUrl?: string | null;
   /** "passed" | "failed" | "pending" — whether parsing produced a usable result. */
   parseState?: "passed" | "failed" | "pending";
+  uploadedByName?: string | null;
+  uploadedByEmail?: string | null;
+  source?: string | null;
+  channelMeta?: any;
 }
 
 interface ShipmentDocumentsSectionProps {
@@ -330,8 +335,19 @@ export function ShipmentDocumentsSection({
                     <p className="font-bold text-ink break-words leading-tight">
                       {formatDocTypeName(doc.docType)}
                     </p>
-                    <p className="text-[10px] text-ink-muted break-words leading-tight mt-0.5">
-                      {doc.fileName} ({doc.pageCount || 1} {doc.pageCount === 1 ? "page" : "pages"})
+                    <p className="text-[10px] text-ink-muted break-words leading-tight mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      <span>{doc.fileName} ({doc.pageCount || 1} {doc.pageCount === 1 ? "page" : "pages"})</span>
+                      {(() => {
+                        const raw = doc.uploadedByName || doc.uploadedByEmail || (doc.channelMeta as any)?.fromAddress;
+                        const parsed = parseSenderNameAndEmail(raw);
+                        const sourceLabel = parsed.nameOrEmail || (doc.source === "EMAIL" || doc.source === "INBOUND_EMAIL" ? "Email" : doc.source);
+                        if (!sourceLabel) return null;
+                        return (
+                          <span className="text-[9px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" title={`Source: ${sourceLabel}`}>
+                            {sourceLabel}
+                          </span>
+                        );
+                      })()}
                     </p>
                   </div>
                 </div>

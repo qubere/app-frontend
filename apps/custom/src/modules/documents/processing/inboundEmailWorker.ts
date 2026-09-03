@@ -32,6 +32,7 @@ import { isDocumentParserError } from "../parser/contracts";
 import { enqueueDocumentParse } from "./documentProcessingWorker";
 import { findCrossShipmentDuplicates } from "@/modules/documents/duplicateDetection";
 import { buildDocumentProvenance } from "@qubere/db/services/document-provenance";
+import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 import { resolveBlockedInboundRoute, resolveInboundRoute } from "@/modules/inbound/senderRouting";
 import { notify } from "@/modules/notifications/notify";
 import {
@@ -403,7 +404,10 @@ async function processOneAttachment(params: {
     const { DocumentTypeCatalog } = await import("@/modules/intake/documentTypeCatalog");
     const docType = DocumentTypeCatalog.matchDocumentType(filename).name;
 
-    const senderAddress = email.originalFromAddress || email.normalizedFromAddress || null;
+    const rawFrom = email.originalFromAddress || email.normalizedFromAddress || null;
+    const { displayName, email: parsedEmail, nameOrEmail } = parseSenderNameAndEmail(rawFrom);
+    const senderAddress = parsedEmail || rawFrom;
+
     const document = await db.$transaction(async tx => {
       const created = await tx.shipmentDocument.create({
       data: {
@@ -422,10 +426,12 @@ async function processOneAttachment(params: {
         ...(await buildDocumentProvenance({
           channel: "EMAIL",
           uploadedByType: "EMAIL_SENDER",
-          uploadedByName: senderAddress,
+          uploadedByName: displayName ?? nameOrEmail ?? senderAddress,
           uploadedByEmail: senderAddress,
           channelMeta: {
             fromAddress: senderAddress,
+            fromName: displayName ?? null,
+            originalFrom: rawFrom,
             subject: email.subject ?? null,
             inboundEmailId: email.id,
           },
