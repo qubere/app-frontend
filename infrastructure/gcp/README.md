@@ -144,6 +144,11 @@ Optional integrations are attached automatically when these secrets exist:
 `qubere-demo-inngest-signing-key`, `qubere-demo-cbp-filer-code`, and
 `qubere-demo-cbp-filer-password`.
 
+Inbound email requires both Resend secrets. `RESEND_API_KEY` lets the worker fetch
+the received message and attachments; `RESEND_WEBHOOK_SECRET` verifies the signed
+`email.received` event before Qubere records it. The deployment fails before
+changing Cloud Run when either configured secret is missing.
+
 The demo deliberately sets `CUSTOMS_FILING_MOCK_RESPONSES=true`. Do not use it
 for real filing.
 
