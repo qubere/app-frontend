@@ -39,6 +39,8 @@ export default async function FilingConfigPage() {
     "country-customs-version",
     "customer-customs-version",
     "status-catalog",
+    "code-list-type",
+    "code-list",
     // "master-data-source" - removed, will implement later
   ];
   

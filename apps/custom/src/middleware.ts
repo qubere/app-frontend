@@ -15,6 +15,12 @@ const isProtectedRoute = createRouteMatcher([
 // `signInUrl` option, which is validated as absolute and throws
 // "The signInUrl needs to have a absolute url format." for a relative path,
 // 500-ing every protected route (including /api/documents/upload).
+//
+// clockSkewInMs is bumped well above Clerk's 5s default: this dev machine's
+// system clock drifts by several seconds in either direction (confirmed via
+// repeated "JWT issued/not-before claim" redirect loops), and 5s of leeway
+// isn't enough to absorb that drift. This only widens the acceptable window
+// for token iat/nbf/exp checks -- it does not disable verification.
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
     await auth.protect({
@@ -22,7 +28,7 @@ export default clerkMiddleware(async (auth, req) => {
       unauthorizedUrl: new URL("/sign-in", req.url).toString(),
     });
   }
-});
+}, { clockSkewInMs: 60_000 });
 
 export const config = {
   matcher: [
