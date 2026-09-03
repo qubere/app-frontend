@@ -110,6 +110,6 @@ substitutions:
   _IMAGE_TAG: manual
   _CUSTOMS_APP_URL: https://customs-gcp.example.com
   _TMS_APP_URL: https://tms-gcp.example.com
-  _NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: required-at-submit
+  _NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsucXViZXJlLmFpJA
   _RUNTIME_SERVICE_ACCOUNT: demo-app-runner@qubere-demo.iam.gserviceaccount.com
 
