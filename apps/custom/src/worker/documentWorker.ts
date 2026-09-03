@@ -83,11 +83,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-if (require.main === module) {
-  startDocumentWorker().catch((error) => {
-    console.error("[DocumentWorker] fatal:", error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  });
-}
+startDocumentWorker().catch((error) => {
+  console.error("[DocumentWorker] fatal:", error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
 
 export { startDocumentWorker };

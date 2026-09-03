@@ -61,9 +61,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
 
-if (require.main === module) {
-  runTmsDocumentJob().catch((error) => {
-    console.error("[TmsDocumentJob] fatal", error);
-    process.exit(1);
-  });
-}
+runTmsDocumentJob().catch((error) => {
+  console.error("[TmsDocumentJob] fatal", error);
+  process.exit(1);
+});

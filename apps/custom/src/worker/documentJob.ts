@@ -44,9 +44,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
 
-if (require.main === module) {
-  runCustomsDocumentJob().catch((error) => {
-    console.error("[CustomsDocumentJob] fatal", error);
-    process.exit(1);
-  });
-}
+runCustomsDocumentJob().catch((error) => {
+  console.error("[CustomsDocumentJob] fatal", error);
+  process.exit(1);
+});
