@@ -71,12 +71,11 @@ export default function RequestThreadPage() {
   const fetchRequest = () => {
     fetch(`/api/requests/${id}`, { cache: "no-store" })
       .then((res) => {
-        if (res.status === 401) {
-          if (typeof window !== "undefined") {
-            window.location.href = `/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`;
-          }
-          return null;
-        }
+        // The portal layout owns session handling (it reconciles a 401 against
+        // the live Clerk session and only then redirects). A 401 here is either
+        // that same signed-out state — already being handled — or a transient
+        // backend blip; either way, don't hard-navigate and fight the layout.
+        if (!res.ok) return null;
         return res.json();
       })
       .then((data) => {
