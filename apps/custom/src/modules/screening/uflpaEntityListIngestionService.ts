@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import * as cheerio from "cheerio";
 import { computeEntityHash } from "@/modules/screening/entityHash";
 import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "@/modules/screening/searchTokenSync";
 import type { ReferenceDataChangeType } from "@prisma/client";
 
 const UFLPA_DATASET_ID = "uflpa-entity-list";
@@ -192,6 +193,8 @@ export class UflpaEntityListIngestionService {
         datasetId: UFLPA_DATASET_ID,
       })),
     ]);
+
+    await syncSearchTokensForEntities(changeInputs.map((c) => c.screeningEntityId));
 
     return { parsedCount: entries.length, supersededCount: supersedeResult.count };
   }

@@ -20,6 +20,9 @@ const dbMock = {
   htsRelease: { findFirst: vi.fn() },
   htsNode: { findMany: vi.fn() },
   section232Rate: { findMany: vi.fn() },
+  section301Rate: { findMany: vi.fn() },
+  adcvdOrder: { findMany: vi.fn() },
+  adCvdCompanyRate: { findMany: vi.fn() },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -41,6 +44,9 @@ beforeEach(() => {
   dbMock.htsRelease.findFirst.mockResolvedValue({ id: "rel_published" });
   dbMock.htsNode.findMany.mockResolvedValue([node("Free")]);
   dbMock.section232Rate.findMany.mockResolvedValue([]);
+  dbMock.section301Rate.findMany.mockResolvedValue([]);
+  dbMock.adcvdOrder.findMany.mockResolvedValue([]);
+  dbMock.adCvdCompanyRate.findMany.mockResolvedValue([]);
 });
 
 describe("duty rate release scope", () => {

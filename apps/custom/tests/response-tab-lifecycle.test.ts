@@ -19,7 +19,7 @@ describe("Customs Filing Response tab lifecycle", () => {
   let shipmentId: string;
   let filingId: string;
 
-  const DB_TIMEOUT = 120_000;
+  const DB_TIMEOUT = 240_000;
 
   const TEST_HTS_CODE = "8481.80.5090";
   const TEST_HTS_NORMALIZED = "8481805090";

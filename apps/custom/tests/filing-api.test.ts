@@ -49,6 +49,15 @@ const dbMock = {
   section232Rate: {
     findMany: vi.fn().mockResolvedValue([]),
   },
+  section301Rate: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  adcvdOrder: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  adCvdCompanyRate: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));

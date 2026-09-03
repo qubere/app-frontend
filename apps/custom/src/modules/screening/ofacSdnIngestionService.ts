@@ -4,6 +4,7 @@ import { parse as parseCsv } from "csv-parse";
 import { Readable } from "stream";
 import { computeEntityHash } from "@/modules/screening/entityHash";
 import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "@/modules/screening/searchTokenSync";
 import type { ReferenceDataChangeType } from "@prisma/client";
 
 const OFAC_DATASET_ID = "ofac-sdn";
@@ -383,6 +384,8 @@ export class OfacSdnIngestionService {
         datasetId: OFAC_DATASET_ID,
       })),
     ]);
+
+    await syncSearchTokensForEntities(changeInputs.map((c) => c.screeningEntityId));
 
     let csvRowCount: number | null = null;
     try {

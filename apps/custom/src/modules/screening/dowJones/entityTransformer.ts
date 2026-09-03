@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { mapDowJonesReference } from "./sourceListMapper";
+import type { SourceCategory } from "./sourceListMapper";
 import type { SanctionsReferenceDictionary } from "./dictionaryParser";
 
 export interface RawNameDetail {
@@ -121,6 +122,41 @@ function nameDetailText(n: RawNameDetail): string | null {
   return n.entityName?.trim() || n.fullName?.trim() || n.singleStringName?.trim() || null;
 }
 
+// Lower number = higher priority. An entity carrying multiple references
+// (e.g. both a World Bank debarment and an OFAC sanction) must surface the
+// more consequential one as its ScreeningEntity-level sourceAuthority/
+// sourceList -- that's what every match/report/citation reads (references[]
+// is stored in full on ScreeningEntityReference, but nothing downstream
+// queries it), so picking the wrong one silently drops the more actionable
+// finding from every compliance-facing surface.
+const CATEGORY_PRIORITY: Record<SourceCategory, number> = {
+  SANCTIONS: 0,
+  EXPORT_CONTROL: 1,
+  LAW_ENFORCEMENT: 2,
+  DEBARMENT: 3,
+  REGULATORY_WARNING: 4,
+  OTHER_WATCHLIST: 5,
+};
+
+function selectPrimaryReference(
+  references: TransformedReference[],
+  categories: SourceCategory[]
+): TransformedReference | null {
+  if (references.length === 0) return null;
+  let bestIndex = 0;
+  for (let i = 1; i < references.length; i++) {
+    const best = references[bestIndex];
+    const candidate = references[i];
+    const priorityDiff = CATEGORY_PRIORITY[categories[i]] - CATEGORY_PRIORITY[categories[bestIndex]];
+    if (priorityDiff < 0) {
+      bestIndex = i;
+    } else if (priorityDiff === 0 && best.sourceStatus !== "Current" && candidate.sourceStatus === "Current") {
+      bestIndex = i;
+    }
+  }
+  return references[bestIndex];
+}
+
 /**
  * Transforms one parsed `<Entity>` node into a ScreeningEntity row plus its
  * alias/address/identifier/reference children. Pure and side-effect-free --
@@ -178,6 +214,7 @@ export function transformEntity(
   const programCodes = raw.idNumbers.filter((i) => i.idType === "OFAC Program ID" && i.idValue).map((i) => i.idValue!);
 
   const references: TransformedReference[] = [];
+  const referenceCategories: SourceCategory[] = [];
   const unknownReferenceNames: string[] = [];
   for (const ref of raw.references) {
     if (!ref.reference) continue;
@@ -192,8 +229,9 @@ export function transformEntity(
       sourceListName,
       sourceStatus: dictEntry?.status ?? "Current",
     });
+    referenceCategories.push(mapped.category);
   }
-  const primaryReference = references.find((r) => r.sourceStatus === "Current") ?? references[0] ?? null;
+  const primaryReference = selectPrimaryReference(references, referenceCategories);
 
   const publicationStatus = raw.activeStatus === "Active" ? "PUBLISHED" : "SUPERSEDED";
 

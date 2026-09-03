@@ -6,30 +6,44 @@ import {
 } from "@/lib/data/datasetRegistry";
 
 describe("Dataset Registry — Real Ingestion Wiring & Compliance Safety", () => {
-  it("registers exactly 19 datasets", () => {
-    expect(DATASET_DEFINITIONS.length).toBe(19);
+  it("registers exactly 34 datasets", () => {
+    expect(DATASET_DEFINITIONS.length).toBe(34);
   });
 
-  it("contains 11 Public API datasets and 8 Structured Document datasets", () => {
+  it("contains 13 Public API datasets and 21 Structured Document datasets", () => {
     const publicApis = DATASET_DEFINITIONS.filter((d) => d.category === "Public API");
     const structuredDocs = DATASET_DEFINITIONS.filter((d) => d.category === "Structured Document");
-    expect(publicApis.length).toBe(11);
-    expect(structuredDocs.length).toBe(8);
+    expect(publicApis.length).toBe(13);
+    expect(structuredDocs.length).toBe(21);
   });
 
-  it("has exactly 6 LIVE datasets with genuine fetchers (hts-schedule, federal-register, bis-csl, cbp-cross-rulings, ofac-sdn, uflpa-entity-list) and 13 NOT_YET_IMPLEMENTED", () => {
+  it("has exactly 20 LIVE datasets with genuine fetchers and 14 NOT_YET_IMPLEMENTED", () => {
     const live = DATASET_DEFINITIONS.filter((d) => d.readinessStatus === "LIVE");
     const notYet = DATASET_DEFINITIONS.filter((d) => d.readinessStatus === "NOT_YET_IMPLEMENTED");
-    expect(live.length).toBe(6);
+    expect(live.length).toBe(20);
     expect(live.map((d) => d.id).sort()).toEqual([
       "bis-csl",
+      "canada-consolidated-sanctions-list",
       "cbp-cross-rulings",
+      "dfat-consolidated-list",
+      "eu-air-safety-list",
+      "eu-consolidated-sanctions",
+      "fbi-wanted",
+      "fda-debarment",
       "federal-register",
       "hts-schedule",
+      "mas-domestic-designations",
+      "meti-foreign-end-user-list",
       "ofac-sdn",
+      "public-safety-canada-terrorist-entities",
+      "sam-gov-exclusions",
+      "seco-sanctions-list",
       "uflpa-entity-list",
+      "uk-sanctions-list",
+      "un-security-council-sanctions",
+      "world-bank-debarred-firms",
     ]);
-    expect(notYet.length).toBe(13);
+    expect(notYet.length).toBe(14);
   });
 
   it("all LIVE datasets have a valid cron endpoint configured", () => {
@@ -78,7 +92,10 @@ describe("Dataset Registry — Real Ingestion Wiring & Compliance Safety", () =>
       expect(d.name).toBeTruthy();
       expect(d.powers).toBeTruthy();
       expect(d.source).toBeTruthy();
-      expect(d.cost).toBe("Free");
+      // Some LIVE datasets require a free-tier API key with a rate-limit caveat --
+      // the requirement is that data acquisition costs nothing, not that the
+      // string is the literal word "Free".
+      expect(d.cost).toMatch(/^Free\b/);
       expect(d.refreshMethod).toBeTruthy();
       expect(d.frequency).toBeTruthy();
       expect(typeof d.scheduledFrequencyHours).toBe("number");

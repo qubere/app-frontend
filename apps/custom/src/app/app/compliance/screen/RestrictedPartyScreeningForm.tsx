@@ -42,6 +42,7 @@ interface AdHocPass {
   screenedName: string;
   hitCount: number;
   redFlagCount: number;
+  matchesTruncated: boolean;
   matches: AdHocMatch[];
   redFlagHits: { matchedWord: string }[];
 }
@@ -339,6 +340,17 @@ export function RestrictedPartyScreeningForm({ countries }: { countries: Country
                     </Badge>
                   </div>
                 </CardHeader>
+
+                {pass.matchesTruncated && (
+                  <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <p>
+                      Additional matches were found beyond what is shown below. Results are truncated to the
+                      top {pass.matches.length} matches — refine the search by adding more party information
+                      and/or raising the match threshold.
+                    </p>
+                  </div>
+                )}
 
                 {pass.matches.length === 0 && pass.redFlagHits.length === 0 ? (
                   <div className="text-center py-6 space-y-2">

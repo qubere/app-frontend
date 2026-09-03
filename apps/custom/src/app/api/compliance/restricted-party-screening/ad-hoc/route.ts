@@ -95,6 +95,7 @@ export const POST = withAuthenticatedRoute(
             screenedName: r.screenedName,
             hitCount: r.hitCount,
             redFlagCount: r.redFlagCount,
+            matchesTruncated: r.matchesTruncated,
             matches: r.matches.map((m) => ({
               matchedName: m.matchedName,
               matchedAddress: m.matchedAddress,

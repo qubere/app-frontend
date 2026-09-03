@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { computeEntityHash } from "@/modules/screening/entityHash";
 import { recordReferenceDataChanges } from "@/modules/screening/referenceDataChangeTracking";
+import { syncSearchTokensForEntities } from "@/modules/screening/searchTokenSync";
 import type { ReferenceDataChangeType } from "@prisma/client";
 
 const BIS_DATASET_ID = "bis-csl";
@@ -180,6 +181,9 @@ export class BisCslIngestionService {
           changeType: c.changeType,
           datasetId: BIS_DATASET_ID,
         }))
+      );
+      await syncSearchTokensForEntities(
+        changeInputs.filter((c) => c.changeType !== "SUPERSEDED").map((c) => c.screeningEntityId)
       );
     }
 
