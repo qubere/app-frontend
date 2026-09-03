@@ -16,7 +16,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        variables: {
+          colorPrimary: "#0071E3",
+        },
+      }}
+    >
       <html lang="en" className="h-full">
         <body className={`${inter.className} min-h-screen bg-[#F5F5F7] text-[#1D1D1F] antialiased`}>
           {children}
