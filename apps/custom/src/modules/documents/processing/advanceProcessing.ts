@@ -102,19 +102,26 @@ export async function advanceDocumentProcessing(options: AdvanceOptions): Promis
     return;
   }
 
-  after(async () => {
-    try {
-      await drain(budgetMs);
-    } catch (error) {
-      // The response is long gone, so there is nobody to tell. A failed drain
-      // leaves every run exactly where it was, which is precisely the state the
-      // cron backstop expects to find.
-      console.error("[documents.advance] drain failed", {
+  try {
+    after(async () => {
+      try {
+        await drain(budgetMs);
+      } catch (error) {
+        console.error("[documents.advance] drain failed", {
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+  } catch {
+    // Outside a Next.js request scope (e.g. background worker or CLI script). Run drain directly.
+    void drain(budgetMs).catch((error) => {
+      console.error("[documents.advance] drain failed (CLI scope)", {
         reason,
         error: error instanceof Error ? error.message : String(error),
       });
-    }
-  });
+    });
+  }
 }
 
 async function drain(budgetMs: number): Promise<void> {
