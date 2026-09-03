@@ -3,7 +3,7 @@
 import { PortalSidebar } from "@/components/PortalSidebar";
 import { PortalNotifications } from "@/components/PortalNotifications";
 import React, { useEffect, useState } from "react";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser, useClerk, useAuth } from "@clerk/nextjs";
 import {
   Building2,
   HelpCircle,
@@ -29,7 +29,8 @@ interface Capability {
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user: clerkUser } = useUser();
-  const { signOut } = useClerk();
+  const { signOut, redirectToSignIn } = useClerk();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const [accountId, setAccountId] = useState<string>("");
@@ -45,11 +46,16 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const [workspaceName, setWorkspaceName] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  // Set only when /api/me keeps failing while Clerk still reports a live session
+  // — i.e. the backend is degraded, NOT that the user is logged out. Drives a
+  // banner instead of a reload so a transient DB/cold-start blip can't loop.
+  const [backendDegraded, setBackendDegraded] = useState(false);
 
   const SESSION_CACHE_KEY = "qubere_portal_user_session_v3";
-  const SESSION_CACHE_TTL = 300 * 1000; // 300s (5 minutes)
 
   useEffect(() => {
+    const SESSION_CACHE_TTL = 300 * 1000; // 300s (5 minutes)
+
     // 1. Instant HTML5 sessionStorage read (0 ms client-side hydration)
     try {
       const rawCache = sessionStorage.getItem(SESSION_CACHE_KEY);
@@ -65,37 +71,53 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       }
     } catch {}
 
-    // 2. Background fetch to revalidate HTML5 cache
-    fetch("/api/me", { cache: "no-store" })
-      .then(async (res) => {
-        // No valid session -> this is not a logged-in portal. Clear any stale
-        // cache and send the visitor to sign-in rather than rendering the shell
-        // with placeholder identity.
-        if (res.status === 401) {
-          try {
-            sessionStorage.removeItem(SESSION_CACHE_KEY);
-          } catch {}
-          window.location.href = "/sign-in";
-          return null;
-        }
-        return res.ok ? res.json() : null;
-      })
-      .then((data) => {
-        if (data && data.user) {
+    // Wait for Clerk to settle so a 401 can be attributed correctly.
+    if (!authLoaded) return;
+
+    // Genuinely signed out -> hand off to Clerk (satellite: this bounces to the
+    // primary at accounts.qubere.ai and syncs the session back).
+    if (!isSignedIn) {
+      try { sessionStorage.removeItem(SESSION_CACHE_KEY); } catch {}
+      void redirectToSignIn({ redirectUrl: window.location.href });
+      return;
+    }
+
+    // 2. Background revalidate. Clerk says we ARE signed in, so a 401/5xx/network
+    //    failure here means the backend is unavailable, not that we're logged
+    //    out — retry with backoff, then degrade gracefully. Never reload.
+    let cancelled = false;
+    const load = async (attempt = 0): Promise<void> => {
+      try {
+        const res = await fetch("/api/me", { cache: "no-store" });
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (cancelled || !data?.user) return;
           setUser(data.user);
           if (data.account?.id) setAccountId(data.account.id);
           if (data.capabilities) setCapabilities(data.capabilities);
           setWorkspaceName(data.account?.name || '');
+          setBackendDegraded(false);
           try {
-            sessionStorage.setItem(
-              SESSION_CACHE_KEY,
-              JSON.stringify({ timestamp: Date.now(), data })
-            );
+            sessionStorage.setItem(SESSION_CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data }));
           } catch {}
+          return;
         }
-      })
-      .catch(() => {});
-  }, []);
+        throw new Error(`/api/me ${res.status}`);
+      } catch (err) {
+        if (cancelled) return;
+        if (attempt < 4) {
+          const delay = Math.min(1000 * 2 ** attempt, 8000);
+          setTimeout(() => { void load(attempt + 1); }, delay);
+          return;
+        }
+        console.error("Portal identity unavailable after retries:", err);
+        setBackendDegraded(true);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [authLoaded, isSignedIn, redirectToSignIn]);
 
   const userName = user?.name || clerkUser?.fullName || clerkUser?.primaryEmailAddress?.emailAddress || "";
   const userEmail = user?.email || clerkUser?.primaryEmailAddress?.emailAddress || "";
@@ -214,11 +236,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                         onClick={async () => {
                           setIsMenuOpen(false);
                           try {
-                            await signOut();
+                            // Clerk clears the session and handles the post-logout
+                            // navigation (satellite-aware); no manual location assign.
+                            await signOut({ redirectUrl: "/sign-in" });
                           } catch (err) {
                             console.error("Sign out error:", err);
                           }
-                          window.location.href = "/sign-in";
                         }}
                         className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-left text-sm font-medium text-red-600 hover:bg-red-50 transition cursor-pointer"
                       >
@@ -232,6 +255,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             </div>
           </div>
         </header>
+
+        {backendDegraded && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 lg:px-6 py-2 text-xs text-amber-800 flex items-center justify-between gap-3">
+            <span>
+              Some data could not be loaded. Your session is still active — this is usually a brief connectivity issue.
+            </span>
+            <button
+              onClick={() => window.location.reload()}
+              className="font-semibold underline underline-offset-2 hover:no-underline shrink-0 cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Page Body View */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">{children}</main>

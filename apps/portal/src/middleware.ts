@@ -1,5 +1,4 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 
 // Pages that must render for signed-out visitors.
 const isPublicRoute = createRouteMatcher([
@@ -17,14 +16,12 @@ export default clerkMiddleware(async (auth, req) => {
 
   const { userId } = await auth();
   if (!userId) {
-    // Redirect straight to our own branded /sign-in page. auth().redirectToSignIn()
-    // resolves to the unstyled hosted Clerk Account Portal at accounts.qubere.ai
-    // whenever NEXT_PUBLIC_CLERK_SIGN_IN_URL is unset on the deployment, and a
-    // relative value for that var can't be used as a fix — Clerk v7 rejects it in
-    // proxy mode (see the /__clerk rewrite in next.config.ts) and breaks <SignIn>.
-    const signInUrl = new URL("/sign-in", req.url);
-    signInUrl.searchParams.set("redirect_url", req.url);
-    return NextResponse.redirect(signInUrl);
+    // This app is a Clerk *satellite* of the primary at accounts.qubere.ai
+    // (NEXT_PUBLIC_CLERK_IS_SATELLITE=true). redirectToSignIn() performs the
+    // cross-domain handshake to the primary's hosted sign-in and syncs the
+    // session back — do NOT replace it with a same-origin redirect to a local
+    // /sign-in, which strands the satellite handshake and loops.
+    return (await auth()).redirectToSignIn({ returnBackUrl: req.url });
   }
 });
 
