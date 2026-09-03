@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { buildErrorResponse } from "@/lib/api/error";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { runRestrictedPartyScreening } from "@/modules/agents/compliance/restrictedParty/restrictedPartyScreening";
 import { persistScreeningRun } from "@/modules/agents/compliance/restrictedParty/persistResult";
@@ -38,12 +39,12 @@ export const POST = withAuthenticatedRoute(
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json({ error: "Invalid JSON body", requestId }, { status: 400 });
+      return buildErrorResponse(400, "INVALID_JSON", "Invalid JSON body", undefined, requestId);
     }
 
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Validation error", issues: parsed.error.issues, requestId }, { status: 400 });
+      return buildErrorResponse(400, "VALIDATION_ERROR", "Validation error", parsed.error.issues, requestId);
     }
     const { complianceCountry, ultimateDestination, referenceId, party, threshold, countryMatch, redFlagCheck } =
       parsed.data;
