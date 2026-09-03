@@ -147,7 +147,8 @@ Optional integrations are attached automatically when these secrets exist:
 Inbound email requires both Resend secrets. `RESEND_API_KEY` lets the worker fetch
 the received message and attachments; `RESEND_WEBHOOK_SECRET` verifies the signed
 `email.received` event before Qubere records it. The deployment fails before
-changing Cloud Run when either configured secret is missing.
+changing Cloud Run when either configured secret is missing. The webhook signing
+secret is mounted only on the Customs web service, which owns the receiving route.
 
 The demo deliberately sets `CUSTOMS_FILING_MOCK_RESPONSES=true`. Do not use it
 for real filing.

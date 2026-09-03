@@ -32,7 +32,8 @@ DOCLING_API_KEY_SECRET="${DOCLING_API_KEY_SECRET:-qubere-demo-docling-api-key}"
 RESEND_API_KEY_SECRET="${RESEND_API_KEY_SECRET:-qubere-demo-resend-api-key}"
 RESEND_WEBHOOK_SECRET_SECRET="${RESEND_WEBHOOK_SECRET_SECRET:-qubere-demo-resend-webhook-secret}"
 OPENSIGN_API_TOKEN_SECRET="${OPENSIGN_API_TOKEN_SECRET:-qubere-demo-opensign-api-token}"
-SECRET_BINDINGS="DATABASE_URL=${DATABASE_URL_SECRET}:latest,DIRECT_URL=${DIRECT_URL_SECRET}:latest,PRODUCT_HELP_DATABASE_URL=${PRODUCT_HELP_DATABASE_URL_SECRET}:latest,CLERK_SECRET_KEY=${CLERK_SECRET_KEY_SECRET}:latest,GEMINI_API_KEY=${GEMINI_API_KEY_SECRET}:latest,CRON_SECRET=${CRON_SECRET_SECRET}:latest,DOCLING_API_KEY=${DOCLING_API_KEY_SECRET}:latest,RESEND_API_KEY=${RESEND_API_KEY_SECRET}:latest,RESEND_WEBHOOK_SECRET=${RESEND_WEBHOOK_SECRET_SECRET}:latest,OPEN_SIGN_API_TOKEN=${OPENSIGN_API_TOKEN_SECRET}:latest"
+SECRET_BINDINGS="DATABASE_URL=${DATABASE_URL_SECRET}:latest,DIRECT_URL=${DIRECT_URL_SECRET}:latest,PRODUCT_HELP_DATABASE_URL=${PRODUCT_HELP_DATABASE_URL_SECRET}:latest,CLERK_SECRET_KEY=${CLERK_SECRET_KEY_SECRET}:latest,GEMINI_API_KEY=${GEMINI_API_KEY_SECRET}:latest,CRON_SECRET=${CRON_SECRET_SECRET}:latest,DOCLING_API_KEY=${DOCLING_API_KEY_SECRET}:latest,RESEND_API_KEY=${RESEND_API_KEY_SECRET}:latest,OPEN_SIGN_API_TOKEN=${OPENSIGN_API_TOKEN_SECRET}:latest"
+RESEND_WEBHOOK_BINDING="RESEND_WEBHOOK_SECRET=${RESEND_WEBHOOK_SECRET_SECRET}:latest"
 for secret in "${DATABASE_URL_SECRET}" "${DIRECT_URL_SECRET}" "${PRODUCT_HELP_DATABASE_URL_SECRET}" "${CLERK_SECRET_KEY_SECRET}" "${GEMINI_API_KEY_SECRET}" "${CRON_SECRET_SECRET}" "${DOCLING_API_KEY_SECRET}" "${RESEND_API_KEY_SECRET}" "${RESEND_WEBHOOK_SECRET_SECRET}" "${OPENSIGN_API_TOKEN_SECRET}"; do
   gcloud secrets describe "${secret}" --project="${GCP_PROJECT_ID}" >/dev/null || { echo "Missing secret: ${secret}" >&2; exit 1; }
 done
@@ -63,9 +64,12 @@ gcloud run jobs add-iam-policy-binding "${BACKUP_JOB}" --project="${GCP_PROJECT_
 
 deploy_web() {
   local service="$1" image="$2" app_url="$3"
-  gcloud run deploy "${service}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${image}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --allow-unauthenticated --cpu=2 --memory=2Gi --min-instances=1 --max-instances=3 --concurrency=20 --timeout=300 --vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUDSQL_INSTANCE}" --set-env-vars="${JOB_TRIGGER_ENV},NEXT_PUBLIC_APP_URL=${app_url}" --set-secrets="${SECRET_BINDINGS}"
+  local service_secrets="${4:-}"
+  local bindings="${SECRET_BINDINGS}"
+  if [[ -n "${service_secrets}" ]]; then bindings="${bindings},${service_secrets}"; fi
+  gcloud run deploy "${service}" --project="${GCP_PROJECT_ID}" --region="${GCP_REGION}" --image="${image}" --service-account="${RUNTIME_SERVICE_ACCOUNT}" --allow-unauthenticated --cpu=2 --memory=2Gi --min-instances=1 --max-instances=3 --concurrency=20 --timeout=300 --vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only --add-cloudsql-instances="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUDSQL_INSTANCE}" --set-env-vars="${JOB_TRIGGER_ENV},NEXT_PUBLIC_APP_URL=${app_url}" --set-secrets="${bindings}"
 }
-deploy_web "${CUSTOMS_WEB_SERVICE}" "${CUSTOMS_IMAGE}" "${NEXT_PUBLIC_CUSTOMS_APP_URL}"
+deploy_web "${CUSTOMS_WEB_SERVICE}" "${CUSTOMS_IMAGE}" "${NEXT_PUBLIC_CUSTOMS_APP_URL}" "${RESEND_WEBHOOK_BINDING}"
 deploy_web "${TMS_WEB_SERVICE}" "${TMS_IMAGE}" "${NEXT_PUBLIC_TMS_APP_URL}"
 
 echo "Deployment complete. Map ${NEXT_PUBLIC_CUSTOMS_APP_URL} to ${CUSTOMS_WEB_SERVICE} and ${NEXT_PUBLIC_TMS_APP_URL} to ${TMS_WEB_SERVICE}."
