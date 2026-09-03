@@ -315,6 +315,16 @@ interface ExtractionPayload {
   extractionFields?: Array<ExtractionFieldRow>;
   // C-3: Grouped, bbox-parsed review fields returned by the updated GET endpoint.
   reviewFields?: ReviewField[];
+  metadata?: {
+    docType?: string | null;
+    pageCount?: number | null;
+    confidence?: number | null;
+    uploadedAt?: string | Date | null;
+    uploadedByName?: string | null;
+    uploadedByEmail?: string | null;
+    source?: string | null;
+    channelMeta?: any;
+  } | null;
 }
 
 type ReviewAction = "APPROVE" | "REJECT" | "RE_EVALUATE";
