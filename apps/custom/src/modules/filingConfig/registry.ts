@@ -381,7 +381,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     idField: "id",
     fields: [
       { key: "country", label: "Country", type: "text" },
-      { key: "procedureCode", label: "Procedure Code", type: "select", optionsSource: "/api/filing-config/procedure-catalog" },
+      { key: "procedureCode", label: "Procedure Code", type: "select", optionsSource: "/api/filing-config/procedure-catalog-codes" },
       { key: "messageName", label: "Message Name", type: "text" },
       { key: "isActive", label: "Is Active", type: "boolean" },
     ],
