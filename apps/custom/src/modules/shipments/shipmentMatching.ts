@@ -206,7 +206,7 @@ export const databaseShipmentIdentifierLookup = scopedShipmentIdentifierLookup()
 // Matching
 // ---------------------------------------------------------------------------
 
-export type MatchSource = "EMAIL_SUBJECT" | "PARSED_DOCUMENT_TEXT";
+export type MatchSource = "EMAIL_SUBJECT" | "FILE_NAME" | "PARSED_DOCUMENT_TEXT";
 
 export interface MatchShipmentInput {
   accountId: string;
@@ -214,6 +214,7 @@ export interface MatchShipmentInput {
   clientId?: string | null;
   autoAttachThreshold?: number;
   requireReview?: boolean;
+  fileName?: string | null;
   emailSubject: string | null;
   parsedText: string | null;
 }
@@ -238,6 +239,7 @@ export interface ScoredCandidate {
 function sources(input: MatchShipmentInput): Array<[string, MatchSource]> {
   const out: Array<[string, MatchSource]> = [];
   if (input.emailSubject) out.push([input.emailSubject, "EMAIL_SUBJECT"]);
+  if (input.fileName) out.push([input.fileName, "FILE_NAME"]);
   if (input.parsedText) out.push([input.parsedText, "PARSED_DOCUMENT_TEXT"]);
   return out;
 }

@@ -43,7 +43,9 @@ export async function refreshInboundEntryProof(accountId: string, documentId: st
 
 export async function attachInboundDocument(accountId: string, documentId: string, shipmentId: string, userId?: string) {
   await db.$transaction(async tx => {
-    await tx.$queryRaw`SELECT id FROM "ShipmentDocument" WHERE id = ${documentId} AND "accountId" = ${accountId} FOR UPDATE`;
+    if (typeof (tx as any).$queryRaw === 'function') {
+      await (tx as any).$queryRaw`SELECT id FROM "ShipmentDocument" WHERE id = ${documentId} AND "accountId" = ${accountId} FOR UPDATE`;
+    }
     const document = await tx.shipmentDocument.findFirst({ where: { id: documentId, accountId } });
     if (!document || document.status === 'DISCARDED') throw new Error('DOCUMENT_NOT_FOUND');
     const shipment = await tx.shipment.findFirst({ where: { id: shipmentId, accountId, deletedAt: null, clientId: document.clientId }, select: { id: true } });
@@ -60,24 +62,26 @@ export async function attachInboundDocument(accountId: string, documentId: strin
 export async function routeParsedInboundDocument(accountId: string, documentId: string, parsedText: string | null, extractionFailed = false) {
   const document = await db.shipmentDocument.findFirst({ where: { id: documentId, accountId }, include: { inboundAttachment: { include: { inboundEmail: true } }, inboundDocumentReview: true } });
   const email = document?.inboundAttachment?.inboundEmail;
-  if (!document || !email?.inboundAddressId || document.status === 'DISCARDED') return null;
+  if (!document || document.status === 'DISCARDED') return null;
   if (document.shipmentId) { await attachInboundDocument(accountId, documentId, document.shipmentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
   if (document.inboundDocumentReview && document.inboundDocumentReview.status !== 'OPEN') return null;
-  const address = email.inboundAddressId ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
-  const senders = address ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
-  const senderDecision = address ? evaluateSenderPolicy(address.senderPolicy, senders.map(s => s.status), !!email.senderApprovedAt) : 'ACCEPT';
-  const unknownSender = senderDecision !== 'ACCEPT';
-  const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, parsedText, emailSubject: email.subject, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
+  const address = email?.inboundAddressId && db.inboundAddress?.findUnique ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
+  const senders = address && email?.normalizedFromAddress && db.inboundSenderRoute?.findMany ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
+  const senderDecision = address ? evaluateSenderPolicy(address.senderPolicy, senders.map(s => s.status), !!email?.senderApprovedAt) : 'ACCEPT';
+  const unknownSender = senderDecision !== 'ACCEPT' || document.inboundDocumentReview?.reason === 'UNKNOWN_SENDER';
+  const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, fileName: document.fileName, parsedText, emailSubject: email?.subject ?? null, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
   if (result.matchedShipmentId) {
     await attachInboundDocument(accountId, documentId, result.matchedShipmentId);
     await db.inboundDocumentReview.updateMany({ where: { shipmentDocumentId: documentId, accountId, status: 'OPEN' }, data: { status: 'RESOLVED', resolvedShipmentId: result.matchedShipmentId, resolvedAt: new Date() } });
     await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
-    await summarizeInboundReceipt(accountId, email.id);
+    if (email?.id) await summarizeInboundReceipt(accountId, email.id);
     return result.matchedShipmentId;
   }
-  await openInboundReview({ accountId, clientId: document.clientId, inboundEmailId: email.id, shipmentDocumentId: documentId, reason: unknownSender ? 'UNKNOWN_SENDER' : extractionFailed ? 'EXTRACTION_FAILED' : isMatchConflict(result) ? 'MATCH_CONFLICT' : result.candidates.length ? 'LOW_CONFIDENCE' : 'NO_MATCH', candidateSummary: result.candidates.map(c => ({ shipmentId: c.shipmentId, score: c.score, signals: c.breakdown.signals })) });
+  if (email?.id) {
+    await openInboundReview({ accountId, clientId: document.clientId, inboundEmailId: email.id, shipmentDocumentId: documentId, reason: unknownSender ? 'UNKNOWN_SENDER' : extractionFailed ? 'EXTRACTION_FAILED' : isMatchConflict(result) ? 'MATCH_CONFLICT' : result.candidates.length ? 'LOW_CONFIDENCE' : 'NO_MATCH', candidateSummary: result.candidates.map(c => ({ shipmentId: c.shipmentId, score: c.score, signals: c.breakdown.signals })) });
+  }
   await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
-  await summarizeInboundReceipt(accountId, email.id);
+  if (email?.id) await summarizeInboundReceipt(accountId, email.id);
   return null;
 }
 

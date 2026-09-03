@@ -40,6 +40,7 @@ import {
   getAttachmentDownloadInfo,
   downloadAttachmentBytes,
   type ReceivedEmailAttachmentMeta,
+  type ReceivedEmailContent,
 } from "@/lib/inbound/resendClient";
 
 const MAX_EMAILS_PER_TICK = 10;
@@ -156,7 +157,35 @@ async function processOneEmail(inboundEmailId: string, provider: InboundEmailPro
   const accountId = email.accountId;
   const defaultAssigneeId = destination?.defaultAssignedToUserId ?? route?.defaultAssignedToUserId ?? null;
 
-  const remote = await provider.getReceivedEmail(email.providerEmailId);
+  let remote: ReceivedEmailContent;
+  try {
+    remote = await provider.getReceivedEmail(email.providerEmailId);
+  } catch (err: any) {
+    if (email.providerEmailId?.startsWith("inbound-demo-") || err?.message?.includes("must be a valid UUID")) {
+      log("email.provider_fetch_skipped_demo", { inboundEmailId: email.id, providerEmailId: email.providerEmailId });
+      const existingAttachments = await db.inboundAttachment.findMany({
+        where: { inboundEmailId: email.id },
+      });
+      remote = {
+        id: email.providerEmailId,
+        from: email.originalFromAddress || email.normalizedFromAddress || "",
+        to: [],
+        subject: email.subject || "",
+        receivedFor: [],
+        headers: (email.authHeaders as Record<string, string> | null) ?? {},
+        attachments: existingAttachments.map((a) => ({
+          id: a.providerAttachmentId,
+          filename: a.originalFilename,
+          size: a.actualSize ?? 0,
+          contentType: a.declaredMimeType ?? "application/pdf",
+          contentId: null,
+          contentDisposition: "attachment" as const,
+        })),
+      };
+    } else {
+      throw err;
+    }
+  }
   log("email.fetched_from_provider", {
     inboundEmailId: email.id,
     providerEmailId: email.providerEmailId,

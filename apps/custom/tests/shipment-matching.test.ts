@@ -117,6 +117,27 @@ describe("matchShipmentForDocument", () => {
     expect(recorded[0].confidenceScore).toBeGreaterThanOrEqual(AUTO_ATTACH_THRESHOLD);
   });
 
+  it("auto-selects a shipment match from fileName", async () => {
+    const { lookup, recorded } = makeLookup({
+      async findByShipmentNumber(_accountId, shipmentNumber) {
+        return shipmentNumber === "SHP-TGT-2026-001" ? { id: "shp_tgt_1" } : null;
+      },
+    });
+
+    const result = await matchShipmentForDocument(
+      input({ fileName: "SHP-TGT-2026-001-fourth.PDF" }),
+      lookup
+    );
+
+    expect(result.matchedShipmentId).toBe("shp_tgt_1");
+    expect(recorded[0]).toMatchObject({
+      shipmentId: "shp_tgt_1",
+      matchedIdentifierType: "SHIPMENT_NUMBER",
+      matchedSource: "FILE_NAME",
+      autoSelected: true,
+    });
+  });
+
   it("returns null and records nothing when no identifiers are found", async () => {
     const { lookup, recorded, deleted } = makeLookup();
     const result = await matchShipmentForDocument(

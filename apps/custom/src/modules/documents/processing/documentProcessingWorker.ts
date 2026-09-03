@@ -746,6 +746,7 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
   const matchResult = await matchShipmentForDocument({
     accountId: run.document.accountId,
     documentId: run.documentId,
+    fileName: run.document.fileName,
     emailSubject: inboundAttachment?.inboundEmail.subject ?? null,
     parsedText,
   });
