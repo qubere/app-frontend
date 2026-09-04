@@ -109,6 +109,7 @@ async function recordLineItemFacts(
   fields: Record<string, string | number | null | undefined>
 ): Promise<void> {
   const facts: RecordFactInput[] = [];
+  const entityRef = `line:${lineNumber}`;
   for (const [field, value] of Object.entries(fields)) {
     if (value === null || value === undefined || value === "") continue;
     facts.push({
@@ -117,6 +118,7 @@ async function recordLineItemFacts(
       value: String(value),
       sourceType,
       documentId,
+      entityRef,
     });
   }
   await FactService.recordMany(facts);

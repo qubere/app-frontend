@@ -18,6 +18,7 @@ export interface RecordFactInput {
   confidence?: number | null;
   documentId?: string | null;
   documentPage?: number | null;
+  entityRef?: string | null;
   metadata?: Prisma.InputJsonValue | null;
 }
 
@@ -45,6 +46,7 @@ export class FactService {
         confidence: input.confidence ?? null,
         documentId: input.documentId ?? null,
         documentPage: input.documentPage ?? null,
+        entityRef: input.entityRef ?? null,
         metadata: input.metadata ?? Prisma.JsonNull,
       },
     });
@@ -63,6 +65,7 @@ export class FactService {
         confidence: input.confidence ?? null,
         documentId: input.documentId ?? null,
         documentPage: input.documentPage ?? null,
+        entityRef: input.entityRef ?? null,
         metadata: input.metadata ?? Prisma.JsonNull,
       })),
     });

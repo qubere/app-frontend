@@ -98,7 +98,8 @@ export class LineItemReconciler {
 
   private static async recordFacts(ctx: ApplyDiscoveriesInput, item: LineItemDiscovery, tx?: any): Promise<void> {
     const facts: RecordFactInput[] = [];
-    const push = (field: string, value: string | number | null | undefined) => {
+    const entityRef = `line:${item.lineNumber}`;
+    const push = (field: string, value: string | number | null | undefined, confidence?: number | null) => {
       if (value === null || value === undefined || value === "") return;
       facts.push({
         shipmentId: ctx.shipmentId,
@@ -106,6 +107,8 @@ export class LineItemReconciler {
         value: String(value),
         sourceType: ctx.sourceType,
         documentId: ctx.documentId ?? null,
+        entityRef,
+        confidence: confidence ?? null,
       });
     };
     push("description", item.description);
@@ -114,7 +117,7 @@ export class LineItemReconciler {
     push("unitPrice", item.unitPrice);
     push("totalValue", item.totalValue);
     push("countryOfOrigin", item.countryOfOrigin);
-    push("htsCode", item.htsCode);
+    push("htsCode", item.htsCode, item.htsConfidence);
     push("eccnCode", item.eccnCode);
     await FactService.recordMany(facts, tx);
   }
