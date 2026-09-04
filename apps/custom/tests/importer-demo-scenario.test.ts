@@ -3,8 +3,8 @@ import { IMPORTER_DEMO_SCENARIO } from "@/modules/importers/importerDemoScenario
 
 describe("Northwind importer demo scenario", () => {
   it("keeps each broker workflow state explicit and internally linked", () => {
-    const clientKeys = new Set(IMPORTER_DEMO_SCENARIO.clients.map((client) => client.key));
-    const importerKeys = new Set(IMPORTER_DEMO_SCENARIO.importers.map((importer) => importer.key));
+    const clientKeys = new Set<string>(IMPORTER_DEMO_SCENARIO.clients.map((client) => client.key));
+    const importerKeys = new Set<string>(IMPORTER_DEMO_SCENARIO.importers.map((importer) => importer.key));
 
     expect(IMPORTER_DEMO_SCENARIO.synthetic).toBe(true);
     expect(clientKeys.size).toBe(4);
