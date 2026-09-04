@@ -270,6 +270,8 @@ model Account {
   shipments                   Shipment[]
   shipmentDocuments           ShipmentDocument[]
   shipmentLineItems           ShipmentLineItem[]
+  shipmentContainers          ShipmentContainer[]
+  shipmentPackages            ShipmentPackage[]
   agentDecisions              AgentDecision[]
   customsFilings              CustomsFiling[]
   customsResponses            CustomsResponse[]
@@ -803,6 +805,8 @@ model Shipment {
 
   documents                       ShipmentDocument[]
   lineItems                       ShipmentLineItem[]
+  containers                      ShipmentContainer[]
+  packages                        ShipmentPackage[]
   agentDecisions                  AgentDecision[]
   customsFilings                  CustomsFiling[]
   exceptionItems                  ExceptionItem[]
@@ -1686,9 +1690,9 @@ model ShipmentLineItem {
   declaredHsCode            String?
   declaredCountryOfOrigin   String?
   declaredExportControlCode String?
-  dutyStack       Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  dutyStack                 Json?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   /// Optional link to the tenant's Product Master. Null means the line has not
   /// been matched to a product yet -- never a reason to withhold the line, and
@@ -1717,6 +1721,79 @@ model ShipmentLineItem {
   @@index([shipmentId])
   @@index([accountId])
   @@index([productId])
+}
+
+/// Container-level structure for transport documents that describe one (BOL,
+/// Forwarding Instruction, Booking Request, Packing List). Reconciled the
+/// same way as ShipmentLineItem: found-or-created by (shipmentId,
+/// containerNumber), never overwritten once a field is set except by a
+/// human edit -- see LineItemReconciler for the pattern this mirrors.
+model ShipmentContainer {
+  id         String   @id @default(cuid())
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  containerNumber    String
+  sealNumbers        String[]
+  containerType      String?
+  containerSize      String?
+  containerHeight    String?
+  packageCount       Int?
+  packageType        String?
+  descriptionOfGoods String?
+  pieceQuantity      Int?
+  quantityUom        String?
+  grossWeight        Decimal?
+  netWeight          Decimal?
+  weightUom          String?
+  volume             Decimal?
+  volumeUom          String?
+  marksAndNumbers    String?
+
+  status    String   @default("Unreviewed") // Unreviewed, Valid, Review Required
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shipmentId])
+  @@index([accountId])
+}
+
+/// Package-level structure for documents that describe individually
+/// numbered packages/cartons (Packing List, and packages nested within a
+/// ShipmentContainer). `containerNumber` is a soft text reference to the
+/// container it was found under, not a hard foreign key -- a package may be
+/// discovered before its container row exists, or the source document may
+/// not mention a container at all. Reconciled the same way as
+/// ShipmentLineItem/ShipmentContainer.
+model ShipmentPackage {
+  id         String   @id @default(cuid())
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  packageNumber   String
+  containerNumber String?
+  packageType     String?
+  cartonNumber    String?
+  packageCount    Int?
+  marksAndNumbers String?
+  grossWeight     Decimal?
+  netWeight       Decimal?
+  weightUom       String?
+  dimensions      String?
+  volume          Decimal?
+  volumeUom       String?
+  containedItems  String[]
+
+  status    String   @default("Unreviewed") // Unreviewed, Valid, Review Required
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shipmentId])
+  @@index([accountId])
 }
 
 model AgentDecision {
@@ -2722,26 +2799,26 @@ model ComplianceAuditRecord {
 model ImporterOfRecord {
   assists Assist[]
 
-  id                 String   @id @default(cuid())
+  id                 String       @id @default(cuid())
   accountId          String
-  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account            Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name               String
   irsEin             String
-  cbpImporterNumber  String?  @unique // nullable during the pre-CBP-assigned window (S2)
-  registrationStatus String   @default("unregistered") // unregistered | pending_5106 | registered
+  cbpImporterNumber  String?      @unique // nullable during the pre-CBP-assigned window (S2)
+  registrationStatus String       @default("unregistered") // unregistered | pending_5106 | registered
   address            Json
   bondId             String?
-  bond               Bond?    @relation(fields: [bondId], references: [id], onDelete: SetNull)
+  bond               Bond?        @relation(fields: [bondId], references: [id], onDelete: SetNull)
   // A Client (forwarder's customer) can have multiple legal importer
   // entities on file -- e.g. separate CBP importer numbers per subsidiary.
   clientId           String?
-  client             Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client             Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   // Transitional 1:1 bridge to the legal-identity graph. Nullable while
   // existing importer records are reviewed and backfilled.
   legalEntityId      String?      @unique
   legalEntity        LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   shipments          Shipment[]
   customsFilings     CustomsFiling[]
@@ -3353,7 +3430,7 @@ model ReconciliationIssue {
   expectedValue      String
   actualValue        String
   sourceDocuments    String[] // e.g. ["Commercial Invoice", "Packing List"]
-  sourceDocumentIds  String[] @default([]) // ShipmentDocument.id values backing sourceDocuments, for per-document linking
+  sourceDocumentIds  String[]  @default([]) // ShipmentDocument.id values backing sourceDocuments, for per-document linking
   status             String    @default("Open") // Open | Resolved | Ignored
   issueType          String    @default("DOCUMENT_CONFLICT") // DOCUMENT_CONFLICT | ENTRY_DISCREPANCY | PSC_CANDIDATE | PLAN_CHANGED
   // C-2: Resolution detail — which value was accepted and by whom
@@ -6199,7 +6276,7 @@ model FilingMessageCatalog {
 /// separately-maintained transactionType string.
 model FilingSchema {
   id            String   @id @default(cuid())
-  schemaPath String @db.Text // e.g. "customs-filing/filing-schemas/import/1.0.0/ImportDeclaration.schema.json"
+  schemaPath    String   @db.Text // e.g. "customs-filing/filing-schemas/import/1.0.0/ImportDeclaration.schema.json"
   schemaVersion String // e.g. "1.0.0"
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
@@ -8255,7 +8332,7 @@ enum LicenseOperationType {
 /// this table can only ever assert LICENSE_REQUIRED or NO_LICENSE_REQUIRED,
 /// never any of the other LicenseDeterminationStatus values.
 model LicenseControlRule {
-  id                  String               @id @default(cuid())
+  id                  String                     @id @default(cuid())
   operationType       LicenseOperationType
   /// ECCN | USML | HTS | SCHEDULE_B | ICN -- matches ClassificationInput.type
   classificationType  String
@@ -8271,8 +8348,8 @@ model LicenseControlRule {
   ruleVersion         String
   effectiveFrom       DateTime?
   effectiveTo         DateTime?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
 
   @@index([operationType, classificationType, country])
 }

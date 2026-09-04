@@ -18,6 +18,7 @@ import { CanonicalShipmentService } from "@/modules/shipment/canonicalShipmentSe
 import { ShipmentEventBus, ShipmentEventType } from "@/modules/events/shipmentEventBus";
 import { FactService, RecordFactInput } from "@/modules/shipment/factService";
 import { LineItemReconciler, lineItemFactField } from "@/modules/shipment/lineItemReconciler";
+import { ContainerReconciler, PackageReconciler } from "@/modules/shipment/containerPackageReconciler";
 import { buildAgentContext, ShipmentAgentContext, factValue, latestTradeMetadata } from "./agentContext";
 import { computeFilingTariff, loadHtsCodesMap } from "@/lib/tariff/dutyEngine";
 import { captureShipmentOutputFacts } from "./outputCapture";
@@ -969,6 +970,26 @@ export class PipelineOrchestrator {
       countryOfOrigin: output.originCountry,
       incoterm: output.incoterm,
     });
+
+    if (output.containers && output.containers.length > 0) {
+      await ContainerReconciler.applyDiscoveries({
+        shipmentId,
+        accountId,
+        documentId,
+        sourceType: "EXTRACTED",
+        items: output.containers,
+      });
+    }
+
+    if (output.packages && output.packages.length > 0) {
+      await PackageReconciler.applyDiscoveries({
+        shipmentId,
+        accountId,
+        documentId,
+        sourceType: "EXTRACTED",
+        items: output.packages,
+      });
+    }
 
     // invoiceCurrency defaults to "USD" in the schema, so fillShipmentFields'
     // fill-if-empty semantics would never apply it -- the field is never

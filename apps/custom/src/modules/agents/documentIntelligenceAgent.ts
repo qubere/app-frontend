@@ -207,6 +207,45 @@ export interface LineItemExtraction {
   htsCode?: string | null;
 }
 
+/** Container-level structure, present on transport documents (Ocean BOL, Forwarding
+ * Instruction, Booking Request) and sometimes a Packing List. See ShipmentContainer. */
+export interface ContainerExtraction {
+  containerNumber: string;
+  sealNumbers?: string[] | null;
+  containerType?: string | null;
+  containerSize?: string | null;
+  containerHeight?: string | null;
+  packageCount?: number | null;
+  packageType?: string | null;
+  descriptionOfGoods?: string | null;
+  pieceQuantity?: number | null;
+  quantityUom?: string | null;
+  grossWeight?: number | null;
+  netWeight?: number | null;
+  weightUom?: string | null;
+  volume?: number | null;
+  volumeUom?: string | null;
+  marksAndNumbers?: string | null;
+}
+
+/** Individually numbered package/carton, mainly from a Packing List. `containerNumber`
+ * is a soft reference to a container it was found under. See ShipmentPackage. */
+export interface PackageExtraction {
+  packageNumber: string;
+  containerNumber?: string | null;
+  packageType?: string | null;
+  cartonNumber?: string | null;
+  packageCount?: number | null;
+  marksAndNumbers?: string | null;
+  grossWeight?: number | null;
+  netWeight?: number | null;
+  weightUom?: string | null;
+  dimensions?: string | null;
+  volume?: number | null;
+  volumeUom?: string | null;
+  containedItems?: string[] | null;
+}
+
 export interface DocumentIntelligenceInput {
   accountId: string;
   /**
@@ -364,6 +403,8 @@ export interface DocumentIntelligenceOutput {
   documentNarrativeText?: string | null;
   missingFields: string[];
   lineItems: LineItemExtraction[];
+  containers?: ContainerExtraction[];
+  packages?: PackageExtraction[];
   confidence: number | MultiDimensionalConfidence;
   confidenceMetrics: {
     extractionConfidence: number;
@@ -543,6 +584,53 @@ const intelligenceSchema: Schema = {
         required: ["lineNumber", "description"],
       },
     },
+    containers: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          containerNumber: { type: Type.STRING },
+          sealNumbers: { type: Type.ARRAY, items: { type: Type.STRING } },
+          containerType: { type: Type.STRING, nullable: true },
+          containerSize: { type: Type.STRING, nullable: true },
+          containerHeight: { type: Type.STRING, nullable: true },
+          packageCount: { type: Type.INTEGER, nullable: true },
+          packageType: { type: Type.STRING, nullable: true },
+          descriptionOfGoods: { type: Type.STRING, nullable: true },
+          pieceQuantity: { type: Type.INTEGER, nullable: true },
+          quantityUom: { type: Type.STRING, nullable: true },
+          grossWeight: { type: Type.NUMBER, nullable: true },
+          netWeight: { type: Type.NUMBER, nullable: true },
+          weightUom: { type: Type.STRING, nullable: true },
+          volume: { type: Type.NUMBER, nullable: true },
+          volumeUom: { type: Type.STRING, nullable: true },
+          marksAndNumbers: { type: Type.STRING, nullable: true },
+        },
+        required: ["containerNumber"],
+      },
+    },
+    packages: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          packageNumber: { type: Type.STRING },
+          containerNumber: { type: Type.STRING, nullable: true },
+          packageType: { type: Type.STRING, nullable: true },
+          cartonNumber: { type: Type.STRING, nullable: true },
+          packageCount: { type: Type.INTEGER, nullable: true },
+          marksAndNumbers: { type: Type.STRING, nullable: true },
+          grossWeight: { type: Type.NUMBER, nullable: true },
+          netWeight: { type: Type.NUMBER, nullable: true },
+          weightUom: { type: Type.STRING, nullable: true },
+          dimensions: { type: Type.STRING, nullable: true },
+          volume: { type: Type.NUMBER, nullable: true },
+          volumeUom: { type: Type.STRING, nullable: true },
+          containedItems: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ["packageNumber"],
+      },
+    },
   },
   required: [
     "discoveredKeyValues",
@@ -597,6 +685,8 @@ export class DocumentIntelligenceAgent {
     let warnings: string[] | undefined = undefined;
 
     let lineItems: LineItemExtraction[] = [];
+    let containers: ContainerExtraction[] = [];
+    let packages: PackageExtraction[] = [];
     let aiProvider = "Gemini Flash Vision (Google GenAI SDK)";
     let usedGeminiExtraction = false;
 
@@ -627,7 +717,9 @@ INSTRUCTIONS:
 4. Determine primaryAgency and secondaryAgencies in 'filingDetermination' based on actual content (e.g. CBP default, FDA for food/medical, EPA for chemicals).
 5. Run consistency checks in 'validations' (line item math, missing fields, page continuity).
 6. Do NOT mutate or invent missing values. Set unverified values to null.
-7. Set 'hasCommercialInvoice' to true ONLY if financial line items and subtotal pricing are present on the document.`;
+7. Set 'hasCommercialInvoice' to true ONLY if financial line items and subtotal pricing are present on the document.
+8. On an Ocean Bill of Lading, Forwarding Instruction, Booking Request, or Packing List that lists one or more shipping containers, populate 'containers' with one entry per container actually named on the document (containerNumber, seal numbers, size/type, and its weight/volume/package-count if stated). Leave 'containers' empty if the document names no container.
+9. On a Packing List (or any document that itemizes individually numbered packages/cartons distinct from the commercial line items), populate 'packages' with one entry per package/carton, including which container it was packed into ('containerNumber') if the document says so. Leave 'packages' empty if the document has no such package-level breakdown.`;
 
         const schemaScopedInstructions = buildSchemaScopedInstructions(input.documentTypeHint);
         const scopedInstructions = schemaScopedInstructions
@@ -726,6 +818,8 @@ ${scopedInstructions}`;
         if (typeof parsed.hasCommercialInvoice === "boolean") hasCommercialInvoice = parsed.hasCommercialInvoice;
         if (parsed.confidence) confidence = parsed.confidence;
         if (parsed.lineItems && parsed.lineItems.length > 0) lineItems = parsed.lineItems;
+        if (parsed.containers && parsed.containers.length > 0) containers = parsed.containers;
+        if (parsed.packages && parsed.packages.length > 0) packages = parsed.packages;
         usedGeminiExtraction = true;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -945,6 +1039,8 @@ ${scopedInstructions}`;
             onBoardDate: tradeMetadata?.onBoardDate || null,
           },
           lineItems,
+          containers,
+          packages,
           validations: validations || [],
           missingFields,
         };
@@ -1345,6 +1441,8 @@ ${scopedInstructions}`;
       documentNarrativeText,
       missingFields,
       lineItems,
+      containers,
+      packages,
       confidence: filingConfidence,
       confidenceMetrics: {
         extractionConfidence,
