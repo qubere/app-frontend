@@ -21,6 +21,9 @@ import { ExceptionsDrawer } from "./ExceptionsDrawer";
 import { LineItemsTable } from "./LineItemsTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
 import { ComplianceChecksPanel } from "./ComplianceChecksPanel";
+import { PartyScreeningPanel, type PartyScreeningRow } from "./PartyScreeningPanel";
+import { AutomaticEmbargoScreeningPanel, type AutomaticEmbargoFinding, type AutomaticEmbargoStatus } from "./AutomaticEmbargoScreeningPanel";
+import type { AuditCheckResult } from "@/modules/agents/complianceAuditAgent";
 import { JourneyRibbon } from "@/components/journey/JourneyRibbon";
 import { AddTransportLegButton } from "./AddTransportLegButton";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
@@ -114,8 +117,14 @@ export default async function ShipmentWorkspacePage(props: {
   const canRunAiChecks = isAccountAdmin || context.permissions.includes("ai.use");
   const canRunReconciliation = isAccountAdmin || context.permissions.includes("shipments.manage");
 
+  // Restricted-party screening runs automatically via the Compliance Audit
+  // Agent (pipelineOrchestrator on upload / field edits); this page only
+  // ever reads its persisted results, so it mirrors the read permission the
+  // account-wide Compliance workspace already gates on.
+  const canReadPartyScreening = isAccountAdmin || context.permissions.includes("compliance.restrictedParty.read");
 
-  // None of these nine depend on each other; run them in parallel.
+
+  // None of these eleven depend on each other; run them in parallel.
   const [
     canonical,
     clients,
@@ -130,6 +139,9 @@ export default async function ShipmentWorkspacePage(props: {
     customerRequests,
     pipelineJobs,
     pgaRequirementCount,
+    shipmentPartiesForScreening,
+    restrictedPartyScreeningResults,
+    latestComplianceAgentDecision,
   ] = await Promise.all([
     CanonicalShipmentService.getCanonicalState(shipment.id),
     canEditClient
@@ -217,6 +229,30 @@ export default async function ShipmentWorkspacePage(props: {
     db.pgaRequirement.count({
       where: { shipmentLineItem: { shipmentId: shipment.id, accountId: context.accountId } },
     }),
+    canReadPartyScreening
+      ? db.shipmentParty.findMany({
+          where: { shipmentId: shipment.id },
+          include: { legalEntity: { select: { legalName: true, tradeName: true, partyId: true } } },
+        })
+      : Promise.resolve([]),
+    // Latest run per party -- screening is keyed to the ShipmentParty via
+    // `externalReference` (see getShipmentPartiesForScreening/shipmentScreening.ts),
+    // so this reads the same rows the automatic pipeline already wrote instead
+    // of re-screening anything from this page.
+    canReadPartyScreening
+      ? db.restrictedPartyScreeningResult.findMany({
+          where: { shipmentId: shipment.id, accountId: context.accountId },
+          include: { disposition: true },
+          orderBy: { screeningDate: "desc" },
+        })
+      : Promise.resolve([]),
+    // ComplianceAuditAgent's own run -- broader than the on-demand embargo
+    // tile (per-line-item + destination + private-embargo rules, see
+    // AutomaticEmbargoScreeningPanel). Read-only: this page never re-runs it.
+    db.agentDecision.findFirst({
+      where: { shipmentId: shipment.id, accountId: context.accountId, agentName: "Compliance Agent" },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   if (!trackingProjection) notFound();
@@ -265,6 +301,59 @@ export default async function ShipmentWorkspacePage(props: {
     (acc: number, item) => acc + Number(item.quantity) * Number(item.unitPrice),
     0
   );
+
+  // One row per shipment party, joined to its latest restricted-party
+  // screening run (if any). `externalReference` is how shipmentScreening.ts
+  // stamps the ShipmentParty.id on the row it persists, so it's the reliable
+  // join key -- `partyId` is only ever set when the party is linked to a
+  // Party Master record.
+  const latestScreeningByShipmentPartyId = new Map<string, (typeof restrictedPartyScreeningResults)[number]>();
+  for (const result of restrictedPartyScreeningResults) {
+    if (!result.externalReference) continue;
+    if (!latestScreeningByShipmentPartyId.has(result.externalReference)) {
+      latestScreeningByShipmentPartyId.set(result.externalReference, result);
+    }
+  }
+  const partyScreeningRows: PartyScreeningRow[] = shipmentPartiesForScreening.map((sp) => {
+    const latest = latestScreeningByShipmentPartyId.get(sp.id);
+    return {
+      shipmentPartyId: sp.id,
+      role: sp.role,
+      partyName: sp.legalEntity.tradeName || sp.legalEntity.legalName,
+      partyId: sp.legalEntity.partyId,
+      status: latest?.status ?? "NOT_SCREENED",
+      screeningDate: latest?.screeningDate.toISOString() ?? null,
+      hitCount: latest?.hitCount ?? 0,
+      redFlagCount: latest?.redFlagCount ?? 0,
+      dispositionStatus: latest?.disposition?.status ?? null,
+    };
+  });
+
+  // Embargo-relevant slice of the Compliance Audit Agent's last run --
+  // everything else in its evidenceItems (PGA/ADD-CVD/UFLPA/end-use/etc.) is
+  // out of scope for this panel, which mirrors the on-demand embargo tile.
+  // A generic "SCREENING_GAP" only counts here when it's actually about
+  // embargo/sanctions data -- the same category also covers unrelated gaps
+  // (end-use, anti-boycott, etc.) that this panel shouldn't surface.
+  const complianceAgentEvidence = latestComplianceAgentDecision?.evidenceItems as
+    | { auditResults?: AuditCheckResult[] }
+    | null
+    | undefined;
+  const automaticEmbargoFindings: AutomaticEmbargoFinding[] = (complianceAgentEvidence?.auditResults ?? [])
+    .filter(
+      (r) =>
+        r.category === "COUNTRY_EMBARGO" ||
+        r.category === "PRIVATE_EMBARGO" ||
+        (r.category === "SCREENING_GAP" && /embargo|sanction/i.test(r.ruleName))
+    )
+    .map((r) => ({ ruleName: r.ruleName, severity: r.severity, details: r.details, lineNumber: r.lineNumber }));
+  const automaticEmbargoStatus: AutomaticEmbargoStatus = !latestComplianceAgentDecision
+    ? "not-run"
+    : automaticEmbargoFindings.some((f) => f.severity === "CRITICAL")
+      ? "blocked"
+      : automaticEmbargoFindings.length > 0
+        ? "attention"
+        : "clear";
 
   // Formatted once: this figure is shown in the readiness evidence panel and the
   // filing summary, and both used to prefix it with "$" regardless of the
@@ -1654,6 +1743,22 @@ export default async function ShipmentWorkspacePage(props: {
           canRunAiChecks={canRunAiChecks}
           canRunReconciliation={canRunReconciliation}
         />
+
+        {/* The tile above only checks 3 shipment-level fields on demand;
+            ComplianceAuditAgent already runs a broader embargo/sanctions
+            pass automatically on upload/field edits -- surface that result
+            too instead of leaving it reachable only via the raw AgentDecision
+            row. */}
+        <AutomaticEmbargoScreeningPanel
+          status={automaticEmbargoStatus}
+          findings={automaticEmbargoFindings}
+          lastRunAt={latestComplianceAgentDecision?.createdAt.toISOString() ?? null}
+        />
+
+        {/* Restricted-party screening already runs automatically (Compliance
+            Audit Agent, on upload / field edits) -- this surfaces its results
+            here instead of only in the account-wide Compliance workspace. */}
+        {canReadPartyScreening && <PartyScreeningPanel rows={partyScreeningRows} />}
 
         {/* Compliance Deadline Rail — every statutory and commercial clock for this
             shipment. Sits above the Exceptions/Field Review ribbon so it stays
