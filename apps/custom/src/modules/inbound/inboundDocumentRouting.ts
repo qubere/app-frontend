@@ -3,7 +3,7 @@ import { evaluateSenderPolicy } from './inboundAddressService';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { parseArtifactIndex, loadNormalizedResult } from '@/modules/documents/parser/artifactStore';
-import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from '@/modules/shipments/shipmentMatching';
+import { resolveShipmentForDocument, plainTextFromParsedResult, type ResolveShipmentResult, type AutoAttachPolicy } from '@/modules/shipments/shipmentMatching';
 import { createAuditLog, AuditAction } from '@/lib/audit';
 import { linkDocument } from '@/modules/documentAssociations/service';
 import { notifyAccountRoleHolders } from '@/modules/notifications/notifyAccount';
@@ -43,9 +43,7 @@ export async function refreshInboundEntryProof(accountId: string, documentId: st
 
 export async function attachInboundDocument(accountId: string, documentId: string, shipmentId: string, userId?: string) {
   await db.$transaction(async tx => {
-    if (typeof (tx as any).$queryRaw === 'function') {
-      await (tx as any).$queryRaw`SELECT id FROM "ShipmentDocument" WHERE id = ${documentId} AND "accountId" = ${accountId} FOR UPDATE`;
-    }
+    await tx.$queryRaw`SELECT id FROM "ShipmentDocument" WHERE id = ${documentId} AND "accountId" = ${accountId} FOR UPDATE`;
     const document = await tx.shipmentDocument.findFirst({ where: { id: documentId, accountId } });
     if (!document || document.status === 'DISCARDED') throw new Error('DOCUMENT_NOT_FOUND');
     const shipment = await tx.shipment.findFirst({ where: { id: shipmentId, accountId, deletedAt: null, clientId: document.clientId }, select: { id: true } });
@@ -61,28 +59,98 @@ export async function attachInboundDocument(accountId: string, documentId: strin
 /** Called after parsing, when the existing deterministic matcher has usable text. */
 export async function routeParsedInboundDocument(accountId: string, documentId: string, parsedText: string | null, extractionFailed = false) {
   const document = await db.shipmentDocument.findFirst({ where: { id: documentId, accountId }, include: { inboundAttachment: { include: { inboundEmail: true } }, inboundDocumentReview: true } });
-  const email = document?.inboundAttachment?.inboundEmail;
   if (!document || document.status === 'DISCARDED') return null;
-  if (document.shipmentId) { await attachInboundDocument(accountId, documentId, document.shipmentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
+  // Only inbound-email documents route here. The parse worker calls this on its
+  // generic failure / needs-review paths for every document, so a doc with no
+  // inbound context is a no-op rather than being pushed through attach logic.
+  if (!document.inboundAttachment && document.source !== 'INBOUND_EMAIL') return null;
+  const email = document.inboundAttachment?.inboundEmail ?? null;
+  if (document.shipmentId) {
+    // Already attached. The first route links the document + refreshes the
+    // entry proof; repeating that on every worker tick regenerates proofs and
+    // re-notifies filing approvers, so skip once it has been done.
+    if (document.inboundRoutedAt && !document.inboundProofPending) return document.shipmentId;
+    await attachInboundDocument(accountId, documentId, document.shipmentId);
+    await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
+    return document.shipmentId;
+  }
   if (document.inboundDocumentReview && document.inboundDocumentReview.status !== 'OPEN') return null;
-  const address = email?.inboundAddressId && db.inboundAddress?.findUnique ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
-  const senders = address && email?.normalizedFromAddress && db.inboundSenderRoute?.findMany ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
+  const address = email?.inboundAddressId ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
+  const senders = address && email?.normalizedFromAddress ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
+  // Evaluate the *live* sender policy — not a stale review reason. A sender that
+  // has since been approved must be able to auto-attach on a reprocess.
   const senderDecision = address ? evaluateSenderPolicy(address.senderPolicy, senders.map(s => s.status), !!email?.senderApprovedAt) : 'ACCEPT';
-  const unknownSender = senderDecision !== 'ACCEPT' || document.inboundDocumentReview?.reason === 'UNKNOWN_SENDER';
-  const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, fileName: document.fileName, parsedText, emailSubject: email?.subject ?? null, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
+  const unknownSender = senderDecision !== 'ACCEPT';
+  const autoAttachPolicy = (address?.autoAttachPolicy as AutoAttachPolicy | undefined) ?? 'CONFIDENT';
+  // A failed parse no longer forces review on its own: if the subject / body /
+  // filename produced a DB-verified match and the sender is trusted, the
+  // document still attaches. Unknown senders, and addresses set to "Off", always
+  // go to a human.
+  const requireReview = unknownSender || autoAttachPolicy === 'OFF';
+
+  const result = await resolveShipmentForDocument({
+    accountId,
+    clientId: document.clientId,
+    documentId,
+    fileName: document.fileName,
+    parsedText,
+    emailBody: email?.bodyText ?? null,
+    emailSubject: email?.subject ?? null,
+    autoAttachThreshold: inboundAutoAttachThreshold(),
+    autoAttachPolicy,
+    requireReview,
+  });
+
   if (result.matchedShipmentId) {
     await attachInboundDocument(accountId, documentId, result.matchedShipmentId);
     await db.inboundDocumentReview.updateMany({ where: { shipmentDocumentId: documentId, accountId, status: 'OPEN' }, data: { status: 'RESOLVED', resolvedShipmentId: result.matchedShipmentId, resolvedAt: new Date() } });
     await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
+    await createAuditLog({ accountId, action: AuditAction.AUTO_ATTACH_DOCUMENT, entity: 'ShipmentDocument', entityId: documentId, source: 'SYSTEM', metadata: { shipmentId: result.matchedShipmentId, outcome: result.outcome, llmModel: result.llm?.model ?? null } });
     if (email?.id) await summarizeInboundReceipt(accountId, email.id);
     return result.matchedShipmentId;
   }
+
   if (email?.id) {
-    await openInboundReview({ accountId, clientId: document.clientId, inboundEmailId: email.id, shipmentDocumentId: documentId, reason: unknownSender ? 'UNKNOWN_SENDER' : extractionFailed ? 'EXTRACTION_FAILED' : isMatchConflict(result) ? 'MATCH_CONFLICT' : result.candidates.length ? 'LOW_CONFIDENCE' : 'NO_MATCH', candidateSummary: result.candidates.map(c => ({ shipmentId: c.shipmentId, score: c.score, signals: c.breakdown.signals })) });
+    const reason = unknownSender
+      ? 'UNKNOWN_SENDER'
+      : result.outcome === 'MATCH_CONFLICT'
+        ? 'MATCH_CONFLICT'
+        : result.outcome === 'LOW_CONFIDENCE'
+          ? 'LOW_CONFIDENCE'
+          : extractionFailed && result.candidates.length === 0 && !result.llm?.suggestedShipmentId
+            ? 'EXTRACTION_FAILED'
+            : 'NO_MATCH';
+    await openInboundReview({
+      accountId,
+      clientId: document.clientId,
+      inboundEmailId: email.id,
+      shipmentDocumentId: documentId,
+      reason,
+      candidateSummary: buildCandidateSummary(result),
+    });
   }
   await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
   if (email?.id) await summarizeInboundReceipt(accountId, email.id);
   return null;
+}
+
+/**
+ * The review queue's "why" payload: ranked deterministic candidates plus, when
+ * the LLM proposed a shipment, its reasoning attached to that candidate (or as
+ * its own entry when the LLM saw something the deterministic pass did not).
+ */
+function buildCandidateSummary(result: ResolveShipmentResult) {
+  const rows = result.candidates.map(c => ({
+    shipmentId: c.shipmentId,
+    score: c.score,
+    signals: c.breakdown.signals,
+    reasoning: result.llm?.suggestedShipmentId === c.shipmentId ? result.llm.reasoning : undefined,
+  }));
+  const llmId = result.llm?.suggestedShipmentId;
+  if (llmId && !rows.some(r => r.shipmentId === llmId)) {
+    rows.unshift({ shipmentId: llmId, score: result.llm!.confidence, signals: [], reasoning: result.llm!.reasoning });
+  }
+  return rows;
 }
 
 /** Cron recovery when a parser finished but downstream dispatch was interrupted. */

@@ -33,7 +33,7 @@ import { pollDelayMs, readProcessingLimits } from "../parser/config";
 import { getDocumentParserProvider } from "../parser/registry";
 import { assessQuality, qualifiesAsActive } from "../parser/qualityGate";
 import { persistRunArtifacts, parseArtifactIndex, loadNormalizedResult } from "../parser/artifactStore";
-import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
+import { resolveShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
 import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
 import { scanDocumentForMalware } from "@/lib/security/scanDocument";
 import {
@@ -740,14 +740,16 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
 
   const inboundAttachment = await db.inboundAttachment.findUnique({
     where: { shipmentDocumentId: run.documentId },
-    select: { inboundEmail: { select: { subject: true } } },
+    select: { inboundEmail: { select: { subject: true, bodyText: true } } },
   });
 
-  const matchResult = await matchShipmentForDocument({
+  const matchResult = await resolveShipmentForDocument({
     accountId: run.document.accountId,
+    clientId: run.document.clientId,
     documentId: run.documentId,
     fileName: run.document.fileName,
     emailSubject: inboundAttachment?.inboundEmail.subject ?? null,
+    emailBody: inboundAttachment?.inboundEmail.bodyText ?? null,
     parsedText,
   });
   const { matchedShipmentId } = matchResult;

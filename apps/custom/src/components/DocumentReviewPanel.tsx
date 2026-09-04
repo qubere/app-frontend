@@ -8,6 +8,7 @@ import { triageDecision } from "@/modules/decisions/decisionState";
 import { type ReviewField, nextReviewIndex } from "@/modules/documents/extractionReview";
 import { PdfCanvas, type PdfCanvasBbox } from "@/components/PdfCanvas";
 import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
+import { DocumentProcessingBadge } from "@/components/DocumentProcessingBadge";
 
 const NEUTRAL_BADGE = "text-[10px] font-bold px-2 py-1 rounded-lg bg-surface-muted border border-border text-ink-muted";
 
@@ -1300,6 +1301,9 @@ export function DocumentReviewPanel({
                               Uploaded {uploadedLabel}
                             </span>
                           )}
+                          <span className="hidden md:inline-flex shrink-0 border-l border-white/10 pl-2.5">
+                            <DocumentProcessingBadge documentId={documentId} />
+                          </span>
                           {(() => {
                             const meta = data?.metadata as any;
                             const rawSender = meta?.uploadedByName || meta?.uploadedByEmail || meta?.channelMeta?.fromAddress;

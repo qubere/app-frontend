@@ -71,6 +71,8 @@ vi.mock("@/lib/inbound/resendClient", () => ({
   getReceivedEmail: getReceivedEmailMock,
   getAttachmentDownloadInfo: getAttachmentDownloadInfoMock,
   downloadAttachmentBytes: downloadAttachmentBytesMock,
+  bodyExcerpt: (text?: string | null, html?: string | null) => (text ?? html ?? null) || null,
+  INBOUND_BODY_EXCERPT_MAX: 16_000,
 }));
 vi.mock("@/modules/intake/documentTypeCatalog", () => ({
   DocumentTypeCatalog: { matchDocumentType: () => ({ name: "COMMERCIAL_INVOICE" }) },
@@ -84,6 +86,7 @@ const RECEIVED_EMAIL = {
   originalFromAddress: "Jane <jane@acme.com>",
   providerEmailId: "resend_email_1",
   authHeaders: null,
+  bodyText: null,
   routingStatus: "RECEIVED",
 };
 

@@ -249,7 +249,23 @@ describe("mock provider safety", () => {
   it("cannot be selected in a production environment", () => {
     process.env.DOCUMENT_PARSER_PROVIDER = "mock";
     process.env.NEXT_PUBLIC_APP_URL = "https://app.qubere.ai";
-    expect(() => getDocumentParserProvider()).toThrowError(/not permitted in a production/);
+    expect(() => getDocumentParserProvider()).toThrowError(/only permitted on a local development machine/);
+  });
+
+  it("cannot be selected on the demo deployment", () => {
+    process.env.DOCUMENT_PARSER_PROVIDER = "mock";
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    process.env.APP_ENV = "demo";
+    expect(() => getDocumentParserProvider()).toThrowError(/only permitted on a local development machine/);
+  });
+
+  it("never falls back to the mock provider when ibm-docling is unconfigured", () => {
+    process.env.DOCUMENT_PARSER_PROVIDER = "ibm-docling";
+    delete process.env.DOCLING_API_BASE_URL;
+    delete process.env.DOCLING_API_KEY;
+    // A silent fallback here would emit mock results that look like real
+    // extracted evidence.
+    expect(() => getDocumentParserProvider()).toThrowError(/Docling/i);
   });
 
   it("throws rather than returning null when nothing is configured", () => {

@@ -39,6 +39,7 @@ import {
   getReceivedEmail,
   getAttachmentDownloadInfo,
   downloadAttachmentBytes,
+  bodyExcerpt,
   type ReceivedEmailAttachmentMeta,
   type ReceivedEmailContent,
 } from "@/lib/inbound/resendClient";
@@ -173,6 +174,8 @@ async function processOneEmail(inboundEmailId: string, provider: InboundEmailPro
         subject: email.subject || "",
         receivedFor: [],
         headers: (email.authHeaders as Record<string, string> | null) ?? {},
+        text: null,
+        html: null,
         attachments: existingAttachments.map((a) => ({
           id: a.providerAttachmentId,
           filename: a.originalFilename,
@@ -192,11 +195,17 @@ async function processOneEmail(inboundEmailId: string, provider: InboundEmailPro
     attachmentCount: remote.attachments.length,
     attachmentFilenames: remote.attachments.map((a) => a.filename ?? a.id).join(", ") || null,
   });
-  if (email.authHeaders === null) {
+  if (email.authHeaders === null || email.bodyText === null) {
+    const excerpt = bodyExcerpt(remote.text, remote.html);
     await db.inboundEmail.update({
       where: { id: email.id },
-      data: { authHeaders: remote.headers ?? {} },
+      data: {
+        ...(email.authHeaders === null ? { authHeaders: remote.headers ?? {} } : {}),
+        // Body is stored for matching + reviewer context; it is never logged.
+        ...(email.bodyText === null && excerpt !== null ? { bodyText: excerpt } : {}),
+      },
     });
+    if (excerpt !== null && email.bodyText === null) email.bodyText = excerpt;
   }
 
   let storedCount = 0;

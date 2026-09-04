@@ -23,6 +23,11 @@ steps:
       - "jobs"
       - "deploy"
       - "qubere-document-worker-demo"
+      # Image-only redeploy: env vars and secrets set by deploy-demo.sh
+      # (DOCUMENT_PARSER_PROVIDER, DOCLING_API_BASE_URL, DOCLING_API_KEY, ...) are
+      # preserved. The registry no longer falls back to the mock provider, so a
+      # job with a missing DOCLING_API_BASE_URL fails loudly instead of emitting
+      # fake results.
       - "--image=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/document-worker:$SHORT_SHA"
       - "--region=us-west1"
       - "--project=$PROJECT_ID"

@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { DocumentParserError, PROCESSING_PROFILES, type ProcessingProfile } from "./contracts";
+import { deploymentTier } from "@/lib/environment";
 
 export const PARSER_PROVIDER_IDS = ["ibm-docling", "mock", "none"] as const;
 export type ParserProviderId = (typeof PARSER_PROVIDER_IDS)[number];
@@ -282,13 +283,17 @@ export function parserConfigurationReport(): {
     };
   }
   if (provider === "mock") {
+    const tier = deploymentTier();
+    const allowed = tier === "local";
     return {
       provider,
-      configured: true,
-      mock: true,
+      configured: allowed,
+      mock: allowed,
       profiles: PROCESSING_PROFILES,
       contractVersion: "qubere.parser/1",
-      blocker: "Mock parser provider is selected. Results are NOT produced by IBM Docling.",
+      blocker: allowed
+        ? "Mock parser provider is selected. Results are NOT produced by IBM Docling."
+        : `DOCUMENT_PARSER_PROVIDER=mock is not permitted on a ${tier} deployment. Set DOCUMENT_PARSER_PROVIDER=ibm-docling and configure DOCLING_API_BASE_URL / DOCLING_API_KEY. No document can be parsed until this is corrected.`,
     };
   }
   return {

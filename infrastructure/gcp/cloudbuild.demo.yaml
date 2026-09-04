@@ -97,6 +97,23 @@ steps:
           --region="${_REGION}" \
           --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/tms-web:${_IMAGE_TAG}"
 
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-document-worker-job
+    waitFor: ["run-migrations"]
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        # This pipeline builds the document-worker image on every push but used to
+        # never redeploy the job, so it kept running a stale image. Image-only
+        # redeploy: env vars and secrets set by deploy-demo.sh (DOCUMENT_PARSER_PROVIDER,
+        # DOCLING_API_BASE_URL, DOCLING_API_KEY, ...) are preserved.
+        gcloud run jobs deploy qubere-document-worker-demo \
+          --project="$PROJECT_ID" \
+          --region="${_REGION}" \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/document-worker:${_IMAGE_TAG}"
+
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/customs-web:${_IMAGE_TAG}"
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/tms-web:${_IMAGE_TAG}"

@@ -4,6 +4,7 @@ import { db, withDataModeContext } from '../index';
 
 export const clientInboundEnabled = () => process.env.INBOUND_CLIENT_ADDRESSES_ENABLED === 'true';
 export type SenderPolicy = 'OPEN' | 'ALLOWLIST' | 'REVIEW';
+export type AutoAttachPolicy = 'OFF' | 'CONFIDENT' | 'AGGRESSIVE';
 export type AddressPurpose = 'CLIENT_DOCUMENTS' | 'ACCOUNT_OPS' | 'ONBOARDING';
 type AddressInput = { accountId: string; clientId?: string | null; label?: string; createdByUserId?: string; purpose?: AddressPurpose; senderPolicy?: SenderPolicy };
 type Address = { status: string; graceUntil: Date | null };
@@ -76,7 +77,7 @@ export async function resolveInboundAddress(raw: string) {
   return withDataModeContext(null, () => db.inboundAddress.findUnique({ where: { address } }));
 }
 
-export async function changeInboundAddress(accountId: string, id: string, action: 'SUSPEND' | 'RESUME' | 'REVOKE' | 'ROTATE' | 'POLICY', userId: string, options: { senderPolicy?: SenderPolicy; autoReplyEnabled?: boolean } = {}) {
+export async function changeInboundAddress(accountId: string, id: string, action: 'SUSPEND' | 'RESUME' | 'REVOKE' | 'ROTATE' | 'POLICY', userId: string, options: { senderPolicy?: SenderPolicy; autoReplyEnabled?: boolean; autoAttachPolicy?: AutoAttachPolicy } = {}) {
   return db.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM "InboundAddress" WHERE id = ${id} AND "accountId" = ${accountId} FOR UPDATE`;
     const old = await tx.inboundAddress.findFirst({ where: { id, accountId } });
@@ -92,7 +93,7 @@ export async function changeInboundAddress(accountId: string, id: string, action
     }
     const data = action === 'POLICY' ? options : action === 'REVOKE' ? { status: 'REVOKED', activeKey: null, graceUntil: null, revokedAt: new Date() } : { status: action === 'RESUME' ? 'ACTIVE' : 'SUSPENDED', graceUntil: null };
     const address = await tx.inboundAddress.update({ where: { id }, data });
-    await audit(tx, accountId, id, action.toLowerCase(), userId, { previousStatus: old.status, status: address.status, senderPolicy: address.senderPolicy, autoReplyEnabled: address.autoReplyEnabled });
+    await audit(tx, accountId, id, action.toLowerCase(), userId, { previousStatus: old.status, status: address.status, senderPolicy: address.senderPolicy, autoReplyEnabled: address.autoReplyEnabled, autoAttachPolicy: address.autoAttachPolicy });
     return address;
   });
 }

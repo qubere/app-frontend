@@ -29,6 +29,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { RawExtractionModal } from "@/components/RawExtractionModal";
 import { QuarantineInboxTable } from "./QuarantineInboxTable";
 import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
+import { DocumentProcessingBadge } from "@/components/DocumentProcessingBadge";
 
 interface ShipmentDocumentItem {
   id: string;
@@ -419,8 +420,12 @@ export function DocumentsClient({
   /** In-flight classification overrides so the UI optimistically updates. */
   const [typeOverrides, setTypeOverrides] = useState<Record<string, string>>({});
   const [reprocessingDocId, setReprocessingDocId] = useState<string | null>(null);
+  const [processingNonce, setProcessingNonce] = useState<Record<string, number>>({});
   const [attachingDocId, setAttachingDocId] = useState<string | null>(null);
   const [attachDocPending, setAttachDocPending] = useState(false);
+  const [parserHealth, setParserHealth] = useState<
+    { provider: string; configured: boolean; isMock: boolean; blocker: string | null } | null
+  >(null);
 
   const attachDocumentToShipment = async (docId: string, shipmentId: string) => {
     setAttachDocPending(true);
@@ -452,6 +457,7 @@ export function DocumentsClient({
         body: JSON.stringify({ fromStep }),
       });
       if (res.ok) {
+        setProcessingNonce((n) => ({ ...n, [docId]: (n[docId] ?? 0) + 1 }));
         await fetchDocuments();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -598,6 +604,10 @@ export function DocumentsClient({
           .catch((error) => console.error("Failed to fetch quarantine count:", error));
       }
     }
+    fetch("/api/documents/parser-health", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => body && setParserHealth(body))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -748,6 +758,23 @@ export function DocumentsClient({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {parserHealth && (parserHealth.blocker || parserHealth.isMock) && (
+        <div
+          role="alert"
+          className={`rounded-2xl border p-4 text-sm ${
+            parserHealth.isMock && parserHealth.configured
+              ? "border-amber-300 bg-amber-50 text-amber-900"
+              : "border-red-300 bg-red-50 text-red-800"
+          }`}
+        >
+          <p className="font-semibold">
+            {parserHealth.isMock && parserHealth.configured
+              ? "Document parsing is running the mock provider — results are NOT evidence."
+              : "Document parsing is unavailable."}
+          </p>
+          {parserHealth.blocker && <p className="mt-1 text-xs">{parserHealth.blocker}</p>}
+        </div>
+      )}
       <div className="rounded-2xl border border-border bg-white p-5 shadow-xs">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -1180,16 +1207,19 @@ export function DocumentsClient({
                     <td className="py-3.5 px-5 text-ink-muted">{doc.uploadedAt}</td>
 
                     <td className="py-3.5 px-5 text-right">
-                      <button
-                        type="button"
-                        disabled={reprocessingDocId === doc.id}
-                        onClick={() => handleReprocess(doc.id)}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-border bg-white hover:bg-surface-muted text-ink text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
-                        title="Reprocess document extraction pipeline"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${reprocessingDocId === doc.id ? "animate-spin text-brand" : ""}`} />
-                        <span>{reprocessingDocId === doc.id ? "Processing..." : "Reprocess"}</span>
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <DocumentProcessingBadge documentId={doc.id} nonce={processingNonce[doc.id] ?? 0} />
+                        <button
+                          type="button"
+                          disabled={reprocessingDocId === doc.id}
+                          onClick={() => handleReprocess(doc.id)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-border bg-white hover:bg-surface-muted text-ink text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                          title="Reprocess document extraction pipeline"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${reprocessingDocId === doc.id ? "animate-spin text-brand" : ""}`} />
+                          <span>{reprocessingDocId === doc.id ? "Processing..." : "Reprocess"}</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   );
