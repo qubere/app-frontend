@@ -43,9 +43,7 @@ export const maxDuration = 60;
 export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const accountId = ctx.accountId;
   const userId = ctx.userId;
-  const isClientScopedUser = ctx.roleNames.some((role) =>
-    role.toUpperCase().startsWith("CUSTOMER_") || role.toUpperCase() === "PORTER"
-  );
+  const isClientScopedUser = !ctx.isAllClients;
   const correlationId = randomUUID();
 
   const formData = await req.formData();
@@ -190,6 +188,13 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       accountId,
       shipmentId: targetShipmentId ?? null,
       checksum: storageResult.checksum,
+      // A standalone copy owned by one client must never be replaced by an
+      // upload made under another client (or by an unscoped broker upload).
+      // Legacy unassigned rows remain eligible so the first attributable
+      // re-upload can backfill them.
+      ...(targetClientId
+        ? { OR: [{ clientId: targetClientId }, { clientId: null }] }
+        : { clientId: null }),
     },
   });
 
