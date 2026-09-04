@@ -49,7 +49,15 @@ describe("document query parsing", () => {
     expect(q("assignedBrokerIds=u_1,%20u_2,,u_1").assignedBrokerIds).toEqual(["u_1", "u_2"]);
 
     const where = buildDocumentWhere("acc_1", q("assignedBrokerIds=u_1&clientId=cli_1"));
-    expect(where.shipment).toEqual({ clientId: "cli_1", assignedBrokerId: { in: ["u_1"] } });
+    expect(where.AND).toEqual([
+      { OR: [{ clientId: "cli_1" }, { shipment: { clientId: "cli_1" } }] },
+      {
+        OR: [
+          { assignedToUserId: { in: ["u_1"] } },
+          { shipment: { assignedBrokerId: { in: ["u_1"] } } },
+        ],
+      },
+    ]);
 
     expect(buildDocumentWhere("acc_1", q("")).shipment).toBeUndefined();
   });
@@ -89,28 +97,49 @@ describe("document where clause", () => {
     expect(where).toEqual({ accountId: "acct_a" });
   });
 
-  it("searches file name, doc type and shipment number case-insensitively", () => {
+  it("searches identity, client, shipment, parsed text, and every extracted field case-insensitively", () => {
     const where = buildDocumentWhere("acct_a", q("search=INV-45"));
-    expect(where.OR).toEqual([
+    expect(where.AND).toEqual([{ OR: [
       { fileName: { contains: "INV-45", mode: "insensitive" } },
       { docType: { contains: "INV-45", mode: "insensitive" } },
+      { uploadedByName: { contains: "INV-45", mode: "insensitive" } },
+      { uploadedByEmail: { contains: "INV-45", mode: "insensitive" } },
+      { parsedSearchText: { contains: "INV-45", mode: "insensitive" } },
+      { extractedJson: { contains: "INV-45", mode: "insensitive" } },
+      { rawContent: { contains: "INV-45", mode: "insensitive" } },
+      { extractionFields: { some: { OR: [
+        { fieldName: { contains: "INV-45", mode: "insensitive" } },
+        { value: { contains: "INV-45", mode: "insensitive" } },
+      ] } } },
+      { client: { name: { contains: "INV-45", mode: "insensitive" } } },
       { shipment: { shipmentNumber: { contains: "INV-45", mode: "insensitive" } } },
       { shipment: { client: { name: { contains: "INV-45", mode: "insensitive" } } } },
-    ]);
+    ] }]);
   });
 
   it("combines exact filters with search", () => {
     const where = buildDocumentWhere("acct_a", q("search=inv&docType=Commercial Invoice&status=Received"));
     expect(where.docType).toBe("Commercial Invoice");
     expect(where.status).toBe("Received");
-    expect(where.OR).toHaveLength(4);
+    expect(where.AND).toHaveLength(1);
+    expect((where.AND as Array<{ OR: unknown[] }>)[0]?.OR).toHaveLength(11);
   });
 
-  it("filters by the client on the parent shipment", () => {
-    expect(buildDocumentWhere("acct_a", q("clientId=cli_1")).shipment).toEqual({ clientId: "cli_1" });
+  it("filters by client on either the document or its legacy parent shipment", () => {
+    expect(buildDocumentWhere("acct_a", q("clientId=cli_1")).AND).toEqual([
+      { OR: [{ clientId: "cli_1" }, { shipment: { clientId: "cli_1" } }] },
+    ]);
   });
 
-  it("treats UNASSIGNED as a filter for shipments with no client", () => {
-    expect(buildDocumentWhere("acct_a", q("clientId=UNASSIGNED")).shipment).toEqual({ clientId: null });
+  it("treats UNASSIGNED as neither a direct nor inherited client", () => {
+    expect(buildDocumentWhere("acct_a", q("clientId=UNASSIGNED")).AND).toEqual([
+      { clientId: null, OR: [{ shipmentId: null }, { shipment: { clientId: null } }] },
+    ]);
+  });
+
+  it("filters by linked entity type without requiring a specific entity id", () => {
+    expect(buildDocumentWhere("acct_a", q("linkedEntityType=PARTY")).associations).toEqual({
+      some: { entityType: "PARTY", active: true },
+    });
   });
 });
