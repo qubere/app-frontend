@@ -15,6 +15,7 @@
  * Parser artifacts are never modified by any of this.
  */
 
+import type { DocumentType } from "@prisma/client";
 import { db } from "@/lib/db";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { aiModel } from "@/lib/ai/aiModel";
@@ -102,12 +103,16 @@ export async function runDocumentExtraction(
 
   try {
     const { DocumentIntelligenceAgent } = await import("@/modules/agents/documentIntelligenceAgent");
+    const { fileName, documentType } = await documentFileNameAndType(input.accountId, input.documentId);
     const output = await DocumentIntelligenceAgent.execute({
       accountId: input.accountId,
       userId: input.userId,
       shipmentId: input.shipmentId,
       packetId: `pkt_run_${processingRunId.slice(0, 8)}`,
-      fileName: await documentFileName(input.accountId, input.documentId),
+      fileName,
+      // Set only when a prior run already classified this document (e.g. a
+      // re-parse) — a first-time run has no hint and stays fully universal.
+      documentTypeHint: documentType,
       documentContext: {
         text: promptText,
         processingRunId,
@@ -193,10 +198,13 @@ export async function runDocumentExtraction(
   }
 }
 
-async function documentFileName(accountId: string, documentId: string): Promise<string> {
+async function documentFileNameAndType(
+  accountId: string,
+  documentId: string
+): Promise<{ fileName: string; documentType: DocumentType | null }> {
   const document = await db.shipmentDocument.findFirst({
     where: { id: documentId, accountId },
-    select: { fileName: true },
+    select: { fileName: true, documentType: true },
   });
-  return document?.fileName ?? "document";
+  return { fileName: document?.fileName ?? "document", documentType: document?.documentType ?? null };
 }

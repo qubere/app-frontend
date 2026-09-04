@@ -159,3 +159,35 @@ export function getFieldExpectation(
   if (!entry) return "NOT_EXPECTED";
   return entry.required ? "EXPECTED" : "OPTIONAL";
 }
+
+/**
+ * Doc-type-specific field guidance for the extraction prompt, built from the
+ * same schema `getRequiredFields`/`getFieldExpectation` already use for
+ * post-hoc review. Returns null when there is no schema for this type (e.g.
+ * OTHER, PROOF_OF_DELIVERY, CARRIER_INVOICE) — the caller falls back to its
+ * generic instructions in that case rather than emitting an empty section.
+ *
+ * This only ever narrows the model's attention toward fields this document
+ * type is known to carry; it does not replace or restrict the universal
+ * response schema, so nothing else the pipeline extracts (entities, tables,
+ * line items, filing determination) is affected.
+ */
+export function buildSchemaScopedInstructions(docType: DocumentType | null | undefined): string | null {
+  const schema = getExtractionSchema(docType);
+  if (schema.length === 0) return null;
+
+  const required = schema.filter((f) => f.required).map((f) => f.label);
+  const optional = schema.filter((f) => !f.required).map((f) => f.label);
+
+  const lines = [
+    `This document was classified as ${docType}. For this document type, prioritize locating:`,
+    `- Required: ${required.join(", ")}`,
+  ];
+  if (optional.length > 0) {
+    lines.push(`- Optional (capture if present): ${optional.join(", ")}`);
+  }
+  lines.push(
+    "If a required field genuinely does not appear anywhere on the document, leave it null and list it in missingCriticalFields — do not force a value onto a field this document type doesn't carry, and do not invent one."
+  );
+  return lines.join("\n");
+}

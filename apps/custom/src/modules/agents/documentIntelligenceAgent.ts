@@ -10,11 +10,13 @@ import { logAgentError } from "./agentLogger";
 import { EntityResolutionService } from "@/modules/entity/entityResolutionService";
 import { ShipmentPartyService } from "@/modules/shipment/shipmentPartyService";
 import { ExceptionService } from "@/modules/exceptions/exception.service";
+import type { DocumentType } from "@prisma/client";
 import {
   mapToDocumentType,
   normaliseConfidence,
   CLASSIFICATION_CONFIDENCE_THRESHOLD,
 } from "@/lib/documents/classificationMapping";
+import { buildSchemaScopedInstructions } from "@/lib/documents/extractionSchemas";
 import {
   expectedFieldsForDocType,
   extractedValueFor,
@@ -241,6 +243,15 @@ export interface DocumentIntelligenceInput {
    * reading that carries page and bounding-box provenance.
    */
   forceOverwrite?: boolean;
+  /**
+   * A document type already known for this document (from a prior run's
+   * classification), used to scope the extraction instructions toward the
+   * fields that type is expected to carry. Absent on a document's first
+   * extraction, when no type is known yet — that run stays fully universal,
+   * exactly as before, and its own classification becomes the hint for any
+   * future re-extraction.
+   */
+  documentTypeHint?: DocumentType | null;
 }
 
 export interface TradeMetadata {
@@ -611,9 +622,14 @@ INSTRUCTIONS:
 6. Do NOT mutate or invent missing values. Set unverified values to null.
 7. Set 'hasCommercialInvoice' to true ONLY if financial line items and subtotal pricing are present on the document.`;
 
+        const schemaScopedInstructions = buildSchemaScopedInstructions(input.documentTypeHint);
+        const scopedInstructions = schemaScopedInstructions
+          ? `${instructions}\n\n${schemaScopedInstructions}`
+          : instructions;
+
         const prompt = parsedContext
           ? `${DOCUMENT_INTELLIGENCE_SYSTEM_PROMPT}
-${instructions}
+${scopedInstructions}
 8. You are reading a PARSED REPRESENTATION of the document produced by ${parsedContext.parserProvider} (profile ${parsedContext.parserProfile}), not the original image. Every SECTION and TABLE block below carries a stable id and page reference -- cite those ids in 'entities' when you report where a value came from.${
               parsedContext.truncated
                 ? "\n9. The supplied context is INCOMPLETE: material was omitted to fit a budget. If a field is not in the context, treat it as not supplied rather than as absent from the document, and record that in 'warnings'."
@@ -623,7 +639,7 @@ ${instructions}
 PARSED DOCUMENT CONTEXT (${parsedContext.contextSchemaVersion}):
 ${parsedContext.text}`
           : `${DOCUMENT_INTELLIGENCE_SYSTEM_PROMPT}
-${instructions}`;
+${scopedInstructions}`;
 
         if (parsedContext) {
           aiProvider = `Gemini Flash over ${parsedContext.parserProvider} parsed context (${parsedContext.contextSchemaVersion})`;

@@ -12,6 +12,7 @@ import {
   permissionDeniedMessage,
 } from "@/modules/decisions/reviewAuthority";
 import { buildReviewFields } from "@/modules/documents/extractionReview";
+import { RECONCILIATION_RULES } from "@/lib/reconciliation/reconciliationRules";
 import { z } from "zod";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
@@ -121,6 +122,24 @@ async function getReconciliationIssuesForDocument(doc: DocumentWithRelations, ac
   );
 }
 
+/**
+ * ReconciliationIssue.field stores the rule id (e.g. "QTY_INV_PACK"), not an
+ * ExtractionField.fieldName -- resolve it back to the rule's fieldKey, which
+ * is what the extraction pipeline actually names its DOC_INTEL_STRUCTURED
+ * rows after (reconciliationRules.ts's own doc-comment).
+ */
+function conflictedFieldNamesFor(
+  reconciliationIssues: Awaited<ReturnType<typeof getReconciliationIssuesForDocument>>
+): Set<string> {
+  const names = new Set<string>();
+  for (const issue of reconciliationIssues) {
+    if (issue.status !== "Open") continue;
+    const rule = RECONCILIATION_RULES.find((r) => r.id === issue.field);
+    if (rule) names.add(rule.fieldKey);
+  }
+  return names;
+}
+
 function serialize(
   doc: DocumentWithRelations,
   extractedJson: unknown,
@@ -142,7 +161,11 @@ function serialize(
     // C-3: Grouped, bbox-parsed, history-tracked fields for the document viewer.
     // Each entry is the current authoritative reading for one field name, with
     // BoundingBox parsed from the stored JSON and full correction history attached.
-    reviewFields: buildReviewFields(doc.extractionFields, doc.documentType),
+    reviewFields: buildReviewFields(
+      doc.extractionFields,
+      doc.documentType,
+      conflictedFieldNamesFor(reconciliationIssues)
+    ),
     // Cross-document conflicts open against this document (see plan gap #1).
     reconciliationIssues,
     requestId,
@@ -270,6 +293,9 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
       fileName: doc.fileName,
       mimeType: "application/pdf",
       docTypeCode: doc.docType,
+      // Already classified from a prior run — scope this re-extraction's
+      // instructions toward the fields that type is expected to carry.
+      documentTypeHint: doc.documentType,
       // A person pressed "run extraction" on this document, so this reading is
       // meant to replace whatever is there -- including a parse-derived one,
       // which a background vision run is not allowed to overwrite.
