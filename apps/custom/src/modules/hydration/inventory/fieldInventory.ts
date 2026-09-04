@@ -337,7 +337,8 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["carton_count"],
-    docTypes: [PACK],
+    reconciliationKey: "packageCount",
+    docTypes: [PACK, BOL],
   },
   {
     legacyKey: "totalQuantity",

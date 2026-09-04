@@ -86,6 +86,17 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     blocksFiling: false,
     description: "Packing list quantity vs. bill of lading quantity",
   },
+  {
+    id: "PKGCOUNT_PACK_BL",
+    fieldKey: "packageCount",
+    docTypeA: "Packing",
+    docTypeB: "Lading",
+    discrepancyType: "QUANTITY",
+    normalizationFn: "number",
+    tolerancePct: 0,
+    blocksFiling: false,
+    description: "Packing list carton/package count vs. bill of lading package count",
+  },
 
   // ── Value ────────────────────────────────────────────────────────────────────
   {

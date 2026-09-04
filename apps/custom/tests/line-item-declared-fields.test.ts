@@ -101,4 +101,59 @@ describe("LineItemReconciler declared source-document fields", () => {
     expect(updateData.declaredCountryOfOrigin).toBeUndefined();
     expect(updateData.declaredExportControlCode).toBe("5A002");
   });
+
+  it("§79/§80 -- a declared HS code / country of origin conflicting with an already-approved (Valid) classification is recorded only as a Fact and never overwrites the approved columns", async () => {
+    dbMock.shipmentLineItem.findFirst.mockResolvedValueOnce({
+      id: "li_1",
+      status: "Valid",
+      htsCode: "8481.80.5090",
+      countryOfOrigin: "Germany",
+      quantity: 1,
+      unitPrice: { toNumber: () => 0 },
+      totalValue: { toNumber: () => 0 },
+      description: "Widget",
+      partNumber: null,
+      eccnCode: null,
+      declaredHsCode: null,
+      declaredCountryOfOrigin: null,
+      declaredExportControlCode: null,
+      dangerousGoodsIndicator: null,
+      unNumber: null,
+      unProperShippingName: null,
+      dangerousGoodsClass: null,
+      subsidiaryRisk: null,
+      packingGroup: null,
+      marinePollutantIndicator: null,
+      minimumTransportTemperature: null,
+      maximumTransportTemperature: null,
+      temperatureUom: null,
+      handlingInstructions: [],
+      productProperties: [],
+    });
+
+    const updateCallsBefore = dbMock.shipmentLineItem.update.mock.calls.length;
+
+    await LineItemReconciler.applyDiscoveries({
+      shipmentId: "shp_1",
+      accountId: "acc_1",
+      documentId: "doc_3",
+      sourceType: "EXTRACTED",
+      items: [
+        {
+          lineNumber: 1,
+          declaredHsCode: "8412.31.0000",
+          declaredCountryOfOrigin: "India",
+        },
+      ],
+    });
+
+    // Recorded as source evidence regardless of the row's review status.
+    const rows = dbMock.fact.createMany.mock.calls.at(-1)![0].data as Array<Record<string, unknown>>;
+    expect(rows.find((r) => String(r.field).endsWith(".declaredHsCode"))?.value).toBe("8412.31.0000");
+    expect(rows.find((r) => String(r.field).endsWith(".declaredCountryOfOrigin"))?.value).toBe("India");
+
+    // A Valid row is fully locked -- no new update call is made at all, so
+    // neither the approved htsCode/countryOfOrigin nor the declared* columns change.
+    expect(dbMock.shipmentLineItem.update.mock.calls.length).toBe(updateCallsBefore);
+  });
 });

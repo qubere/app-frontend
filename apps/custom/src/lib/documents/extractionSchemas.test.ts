@@ -14,6 +14,10 @@ describe("getFieldExpectation", () => {
     expect(getFieldExpectation("COMMERCIAL_INVOICE", "bl_number")).toBe("NOT_EXPECTED");
   });
 
+  it("returns NOT_EXPECTED (not MISSING_REQUIRED) for a Packing List missing an entry number -- that field belongs to Shipment/Filing Readiness, not this document type", () => {
+    expect(getFieldExpectation("PACKING_LIST", "entry_number")).toBe("NOT_EXPECTED");
+  });
+
   it("returns NOT_EXPECTED for any field on OTHER, which has no schema", () => {
     expect(getFieldExpectation("OTHER", "invoice_number")).toBe("NOT_EXPECTED");
   });

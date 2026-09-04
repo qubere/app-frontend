@@ -300,3 +300,32 @@ describe("runReconciliationEngine — origin", () => {
     expect(evaluatedRuleIds).toContain("ORIGIN_COO_INV");
   });
 });
+
+describe("runReconciliationEngine — BOL vs packing list, multiple independently-flagged fields", () => {
+  // Package count and gross weight genuinely disagree beyond tolerance and each
+  // raise their own, separate ReconciliationResult -- a multi-field mismatch is
+  // never conflated into a single combined issue. Quantity (450 vs 446, a 0.89%
+  // difference) is deliberately NOT flagged: it sits inside the existing 5%
+  // Packing-vs-BOL quantity tolerance (QTY_PACK_BL), which is unchanged here and
+  // reflects that packing/BOL quantities commonly differ slightly without being
+  // a real discrepancy.
+  it("raises separate issues for package count and gross weight, but not for quantity within tolerance", () => {
+    const { results } = runReconciliationEngine([
+      makeGroup("Bill of Lading", { packageCount: "146", totalQuantity: "450", grossWeight: "13540.7 kg" }),
+      makeGroup("Packing List", { packageCount: "346", totalQuantity: "446 EA", grossWeight: "10290.0 kg" }),
+    ]);
+
+    const packageCountHit = results.find((r) => r.ruleId === "PKGCOUNT_PACK_BL");
+    expect(packageCountHit).toBeDefined();
+    expect(packageCountHit?.discrepancyType).toBe("QUANTITY");
+
+    const weightHit = results.find((r) => r.ruleId === "WEIGHT_PACK_BL");
+    expect(weightHit).toBeDefined();
+    expect(weightHit?.discrepancyType).toBe("WEIGHT");
+
+    expect(results.find((r) => r.ruleId === "QTY_PACK_BL")).toBeUndefined();
+
+    // The two hits are distinct records, not one merged issue.
+    expect(packageCountHit).not.toBe(weightHit);
+  });
+});
