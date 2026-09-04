@@ -21,6 +21,7 @@ import { MaterializerRegistry } from "../promotion/materializers";
 import { HydrationLogger } from "../logging/hydrationLogger";
 import type { FieldState, GroundedEvidenceReference } from "../types/canonicalRegistry";
 import { resolveField, type DictionaryField } from "@/lib/documents/fieldDictionary";
+import { createAuditLog, AuditAction } from "@/lib/audit";
 
 export interface FieldReviewSummaryItem {
   fieldKey: string;
@@ -220,6 +221,7 @@ export class FieldReviewService {
         documentId,
         fieldKey: approvalKey,
         value: storedValue,
+        action,
         approvedByUserId: userId,
         approvedByName: userName,
       },
@@ -232,6 +234,25 @@ export class FieldReviewService {
       { userId, name: userName },
       action === "EDIT" ? "Corrected via document field review" : "Confirmed via document field review"
     );
+
+    const annotationAuditAction =
+      action === "REJECT"
+        ? AuditAction.FIELD_REVIEW_REJECTED
+        : action === "MARK_NOT_APPLICABLE"
+          ? AuditAction.FIELD_MARKED_NOT_APPLICABLE
+          : action === "EDIT"
+            ? AuditAction.FIELD_CORRECTED
+            : AuditAction.FIELD_REVIEW_APPROVED;
+
+    await createAuditLog({
+      accountId,
+      userId,
+      action: annotationAuditAction,
+      entity: "ExtractionField",
+      entityId: documentId,
+      source: "UI",
+      metadata: { shipmentId, documentId, fieldKey: approvalKey, action, value: storedValue },
+    });
 
     return { success: true, status: 200 };
   }
@@ -388,10 +409,20 @@ export class FieldReviewService {
       }).catch(() => {});
 
       await db.fieldApproval.create({
-        data: { accountId, shipmentId, documentId, fieldKey, value: "[REJECTED]", approvedByUserId: userId, approvedByName: userName },
+        data: { accountId, shipmentId, documentId, fieldKey, value: "[REJECTED]", action, approvedByUserId: userId, approvedByName: userName },
       });
 
       await ExceptionService.resolveDocumentFieldException(documentId, fieldKey, accountId, { userId, name: userName }, "Rejected via field review");
+
+      await createAuditLog({
+        accountId,
+        userId,
+        action: AuditAction.FIELD_REVIEW_REJECTED,
+        entity: "ExtractionField",
+        entityId: documentId,
+        source: "UI",
+        metadata: { shipmentId, documentId, fieldKey, rawFieldKey: params.fieldKey },
+      });
 
       return { success: true, status: 200, newVersion: updatedShipment.version };
     }
@@ -413,10 +444,20 @@ export class FieldReviewService {
       }).catch(() => {});
 
       await db.fieldApproval.create({
-        data: { accountId, shipmentId, documentId, fieldKey, value: "[NOT_APPLICABLE]", approvedByUserId: userId, approvedByName: userName },
+        data: { accountId, shipmentId, documentId, fieldKey, value: "[NOT_APPLICABLE]", action, approvedByUserId: userId, approvedByName: userName },
       });
 
       await ExceptionService.resolveDocumentFieldException(documentId, fieldKey, accountId, { userId, name: userName }, "Marked not applicable via field review");
+
+      await createAuditLog({
+        accountId,
+        userId,
+        action: AuditAction.FIELD_MARKED_NOT_APPLICABLE,
+        entity: "ExtractionField",
+        entityId: documentId,
+        source: "UI",
+        metadata: { shipmentId, documentId, fieldKey, rawFieldKey: params.fieldKey },
+      });
 
       return { success: true, status: 200, newVersion: updatedShipment.version };
     }
@@ -463,6 +504,7 @@ export class FieldReviewService {
         documentId,
         fieldKey,
         value,
+        action,
         approvedByUserId: userId,
         approvedByName: userName,
       },
@@ -530,6 +572,16 @@ export class FieldReviewService {
       honestDecision,
       { expectedVersion: updatedShipment.version }
     );
+
+    await createAuditLog({
+      accountId,
+      userId,
+      action: action === "EDIT" ? AuditAction.FIELD_CORRECTED : AuditAction.FIELD_REVIEW_APPROVED,
+      entity: "ExtractionField",
+      entityId: documentId,
+      source: "UI",
+      metadata: { shipmentId, documentId, fieldKey, rawFieldKey: params.fieldKey, action, value },
+    });
 
     return {
       success: true,

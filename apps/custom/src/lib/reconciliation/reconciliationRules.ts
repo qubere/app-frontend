@@ -310,3 +310,15 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     description: "Invoice number vs. packing list invoice reference",
   },
 ];
+
+const RULE_FIELD_KEY_BY_ID = new Map(RECONCILIATION_RULES.map((rule) => [rule.id, rule.fieldKey]));
+
+/**
+ * The `ExtractionField.fieldName` a rule compares, given its id. Callers that
+ * only have the persisted `ReconciliationIssue.field` (which stores the rule
+ * id, not the field itself) use this to find which document field a conflict
+ * actually blocks from bulk-acceptance.
+ */
+export function fieldKeyForRuleId(ruleId: string): string | null {
+  return RULE_FIELD_KEY_BY_ID.get(ruleId) ?? null;
+}

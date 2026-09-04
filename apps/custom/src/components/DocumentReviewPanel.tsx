@@ -1379,6 +1379,9 @@ export function DocumentReviewPanel({
                     CONFLICT: "text-rose-400",
                     NEEDS_REVIEW: "text-amber-300",
                     AUTO_VERIFIED: "text-slate-200",
+                    HUMAN_CONFIRMED: "text-slate-200",
+                    HUMAN_CORRECTED: "text-slate-200",
+                    REJECTED: "text-rose-400",
                     NOT_APPLICABLE: "text-slate-600",
                   };
 

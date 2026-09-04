@@ -2,9 +2,16 @@
  * Field verification state and review-trigger reason codes.
  *
  * `ReviewField.needsReview` (extractionReview.ts) only says whether a
- * reviewer should look at a field, not why. This adds the "why": a 5-state
+ * reviewer should look at a field, not why. This adds the "why": a
  * verification outcome plus a stable reason code, computed by
  * `evaluateFieldVerification` in extractionReview.ts.
+ *
+ * HUMAN_CONFIRMED / HUMAN_CORRECTED / REJECTED distinguish the three ways a
+ * human can act on a field from AUTO_VERIFIED (never touched by a person):
+ * confirmed as-is, edited to a new value, or explicitly rejected as wrong.
+ * A caller with no way to tell "confirmed" from "corrected" apart (no action
+ * history) may still just emit AUTO_VERIFIED/NEEDS_REVIEW as before -- these
+ * are additive, not a forced migration.
  *
  * This is a sibling of rejectionReasons.ts, not an extension of it —
  * rejection reasons record why a human rejected a decision; these record why
@@ -17,9 +24,12 @@
 
 export const FIELD_VERIFICATION_STATES = [
   "AUTO_VERIFIED",
+  "HUMAN_CONFIRMED",
+  "HUMAN_CORRECTED",
   "NEEDS_REVIEW",
   "CONFLICT",
   "MISSING_REQUIRED",
+  "REJECTED",
   "NOT_APPLICABLE",
 ] as const;
 

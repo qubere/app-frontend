@@ -277,7 +277,10 @@ const REVIEW_PRIORITY: Record<FieldVerificationState, number> = {
   CONFLICT: 1,
   NEEDS_REVIEW: 2,
   AUTO_VERIFIED: 3,
-  NOT_APPLICABLE: 4,
+  HUMAN_CONFIRMED: 3,
+  HUMAN_CORRECTED: 3,
+  REJECTED: 4,
+  NOT_APPLICABLE: 5,
 };
 
 /** Stable sort: highest-priority verification state first, alphabetical within a state. */

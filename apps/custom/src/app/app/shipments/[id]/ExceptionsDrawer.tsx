@@ -10,6 +10,7 @@ import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 import { Modal } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { canonicalizeFieldKey } from "@/lib/documents/fieldDictionary";
+import { fieldKeyForRuleId } from "@/lib/reconciliation/reconciliationRules";
 import { normalizeExceptionStatus, isTerminalExceptionState } from "@/modules/exceptions/exceptionState";
 import {
   isResolvableException,
@@ -56,6 +57,21 @@ export function ExceptionsDrawer({
   reconciliationIssues = [],
 }: ExceptionsDrawerProps) {
   const router = useRouter();
+
+  // Canonical keys of fields with an open cross-document conflict -- never
+  // bulk-accepted, per the reconciliation-before-approval rule (a value that
+  // disagrees with another document must be resolved, not silently approved
+  // as part of a batch). `issue.field` on a ReconciliationIssue row is the
+  // rule id (e.g. "QTY_INV_PACK"), not the field itself, so resolve it back
+  // through the rule table before comparing against document field keys.
+  const conflictedFieldKeys = new Set(
+    reconciliationIssues
+      .filter((issue) => issue.status === "Open")
+      .map((issue) => fieldKeyForRuleId(issue.field))
+      .filter((key): key is string => Boolean(key))
+      .map((key) => canonicalizeFieldKey(key) ?? key)
+  );
+
   const [panelTab, setPanelTab] = useState<"EXCEPTIONS" | "FIELD_REVIEW">("EXCEPTIONS");
   const [selectedException, setSelectedException] = useState<ResolvableException | null>(null);
   const [reviewingDoc, setReviewingDoc] = useState<DocumentFieldSummary | null>(null);
@@ -180,7 +196,9 @@ export function ExceptionsDrawer({
     setBatchApprovingDoc(doc.documentId);
     setFieldReviewError(null);
     try {
-      const unconfirmed = doc.fields.filter((f) => f.status === "NEEDS_REVIEW" && f.value);
+      const unconfirmed = doc.fields.filter(
+        (f) => f.status === "NEEDS_REVIEW" && f.value && !conflictedFieldKeys.has(canonicalizeFieldKey(f.key) ?? f.key)
+      );
       const results = await Promise.allSettled(
         unconfirmed.map((f) =>
           postFieldReview(doc.documentId, { fieldKey: f.key, action: "APPROVE", value: f.value! })
@@ -651,6 +669,12 @@ export function ExceptionsDrawer({
                   const allConfirmed = doc.confirmedCount === doc.totalCount;
                   const unconfirmedCount = doc.totalCount - doc.confirmedCount;
                   const isBatchLoading = batchApprovingDoc === doc.documentId;
+                  const bulkEligibleCount = doc.fields.filter(
+                    (f) =>
+                      f.status === "NEEDS_REVIEW" &&
+                      f.value &&
+                      !conflictedFieldKeys.has(canonicalizeFieldKey(f.key) ?? f.key)
+                  ).length;
                   return (
                     <div
                       key={doc.documentId}
@@ -674,14 +698,15 @@ export function ExceptionsDrawer({
                             </span>
                           )}
                         </div>
-                        {!allConfirmed && unconfirmedCount > 0 && (
+                        {!allConfirmed && bulkEligibleCount > 0 && (
                           <button
                             type="button"
                             onClick={() => handleBatchApprove(doc)}
                             disabled={isBatchLoading}
+                            title="Confirms fields with a value and no cross-document conflict. Conflicts and missing fields are never bulk-accepted."
                             className="px-2.5 py-1 rounded-lg bg-brand text-white text-[11px] font-semibold hover:bg-brand/90 disabled:opacity-50 transition-all shrink-0 cursor-pointer shadow-2xs"
                           >
-                            {isBatchLoading ? "Approving…" : `Approve All (${unconfirmedCount})`}
+                            {isBatchLoading ? "Accepting…" : `Accept Reviewable (${bulkEligibleCount})`}
                           </button>
                         )}
                         {allConfirmed && (
@@ -698,6 +723,8 @@ export function ExceptionsDrawer({
                           const fieldKeyId = `${doc.documentId}:${f.key}`;
                           const fieldLoading = approvingField === fieldKeyId;
                           const isEditing = editingFieldKey === fieldKeyId;
+                          const isConflicted =
+                            f.status !== "CONFIRMED" && conflictedFieldKeys.has(canonicalizeFieldKey(f.key) ?? f.key);
 
                           if (isEditing) {
                             return (
@@ -774,6 +801,14 @@ export function ExceptionsDrawer({
                                   <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
                                     <CheckCircle2 className="w-3 h-3" />
                                     Confirmed
+                                  </span>
+                                ) : isConflicted ? (
+                                  <span
+                                    title="This value conflicts with another document. Resolve it from the Cross-document conflicts cards above."
+                                    className="text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md flex items-center gap-1"
+                                  >
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Conflicting
                                   </span>
                                 ) : f.value ? (
                                   <button
