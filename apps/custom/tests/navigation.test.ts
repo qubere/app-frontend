@@ -4,7 +4,9 @@ import {
   activeNavHref,
   canAccessHref,
   canAccessNavItem,
+  emptyNavAccess,
   isPathWithin,
+  navAccessFromContext,
   navItemByHref,
   visibleNavigation,
   type NavAccess,
@@ -52,6 +54,33 @@ describe("navigation visibility", () => {
     const scoped: NavAccess = { roleNames: ["MEMBER"], permissions: ["users.manage"], isPlatformAdmin: false };
     expect(canAccessHref(scoped, "/app/admin/users")).toBe(true);
     expect(canAccessHref(scoped, "/app/admin/settings")).toBe(false);
+  });
+
+  it("shows permission-gated workspace items to any role that holds the permission", () => {
+    // A regression guard: the sidebar was hiding every permission-only item
+    // (onboarding, classification, license management, ...) from non-owners
+    // because the components were never handed the permissions array.
+    const brokerManager: NavAccess = {
+      roleNames: ["BROKER_MANAGER"],
+      permissions: ["onboarding.manage"],
+      isPlatformAdmin: false,
+    };
+    expect(hrefsFor(brokerManager)).toContain("/app/onboarding");
+    expect(canAccessHref(brokerManager, "/app/onboarding")).toBe(true);
+
+    const noPerm: NavAccess = { roleNames: ["MEMBER"], permissions: [], isPlatformAdmin: false };
+    expect(hrefsFor(noPerm)).not.toContain("/app/onboarding");
+  });
+
+  it("navAccessFromContext carries roles AND permissions through, and denies by default", () => {
+    expect(navAccessFromContext(null)).toEqual(emptyNavAccess());
+    expect(
+      navAccessFromContext({
+        roleNames: ["ADMIN"],
+        permissions: ["onboarding.manage"],
+        isPlatformAdmin: false,
+      }),
+    ).toEqual({ roleNames: ["ADMIN"], permissions: ["onboarding.manage"], isPlatformAdmin: false });
   });
 
   it("authorizes the platform console only for platform admins (rendered in the header menu)", () => {

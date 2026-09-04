@@ -109,7 +109,10 @@ export function Sidebar({
   currentAccountId,
   accountName = "Personal Workspace",
   accountType = "INDIVIDUAL",
-  roleNames = ["OWNER"],
+  // Deny by default -- these gate what the user can see, so an absent prop must
+  // never widen access (a former ["OWNER"] default showed non-owners nothing,
+  // then briefly showed a propless render everything).
+  roleNames = [],
   isPlatformAdmin = false,
   permissions = [],
   dataMode = "PRODUCTION",

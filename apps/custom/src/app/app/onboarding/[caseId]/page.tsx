@@ -1,7 +1,7 @@
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasPermission } from "@/lib/auth";
 import { db, type DataMode } from "@/lib/db";
 import { computeReadiness } from "@/modules/onboarding/readiness";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { OnboardingWizardClient } from "@/components/onboarding/OnboardingWizardClient";
 import { logger } from "@/lib/logging/logger";
 
@@ -14,7 +14,8 @@ export default async function OnboardingCasePage({ params, searchParams }: Props
   const { caseId } = await params;
   const { step } = await searchParams;
   const context = await getAccountContext();
-  if (!context) return null;
+  if (!context) redirect("/sign-in");
+  if (!(await hasPermission("onboarding.manage"))) redirect("/app/dashboard");
 
   // Explicit account.dataMode in where bypasses the middleware's AsyncLocalStorage-based
   // injection (which is unreliable in RSC) and directly matches the tenant's data mode.

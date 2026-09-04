@@ -107,9 +107,19 @@ describe("scanForMalware", () => {
   });
 });
 
+/** A minimal stand-in for a `fetch` Response: the scanner reads the body via `res.text()`. */
+function fakeResponse(body: string, init: { ok?: boolean; status?: number; statusText?: string } = {}) {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    statusText: init.statusText ?? "OK",
+    text: async () => body,
+  };
+}
+
 describe("clamdHttpScan", () => {
-  it("returns CLEAN on status OK", async () => {
-    vi.stubGlobal("fetch", async () => ({ ok: true, text: async () => JSON.stringify({ status: "OK" }) }));
+  it("returns CLEAN on JSON status OK", async () => {
+    vi.stubGlobal("fetch", async () => fakeResponse(JSON.stringify({ status: "OK" })));
     try {
       const r = await clamdHttpScan(Buffer.from("hello"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
       expect(r).toEqual({ status: "CLEAN", scanner: "clamav" });
@@ -118,11 +128,8 @@ describe("clamdHttpScan", () => {
     }
   });
 
-  it("returns INFECTED on status FOUND", async () => {
-    vi.stubGlobal("fetch", async () => ({
-      ok: true,
-      text: async () => JSON.stringify({ status: "FOUND", virus: "Eicar-Test" }),
-    }));
+  it("returns INFECTED on JSON status FOUND", async () => {
+    vi.stubGlobal("fetch", async () => fakeResponse(JSON.stringify({ status: "FOUND", virus: "Eicar-Test" })));
     try {
       const r = await clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
       expect(r.status).toBe("INFECTED");
@@ -132,8 +139,29 @@ describe("clamdHttpScan", () => {
     }
   });
 
+  it("returns CLEAN on the clamav-rest plaintext 'Everything ok : true'", async () => {
+    vi.stubGlobal("fetch", async () => fakeResponse("Everything ok : true\n"));
+    try {
+      const r = await clamdHttpScan(Buffer.from("hello"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
+      expect(r).toEqual({ status: "CLEAN", scanner: "clamav" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("returns INFECTED on the clamav-rest plaintext 'Everything ok : false'", async () => {
+    vi.stubGlobal("fetch", async () => fakeResponse("Everything ok : false : Eicar-Test-Signature FOUND\n"));
+    try {
+      const r = await clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
+      expect(r.status).toBe("INFECTED");
+      expect(r.detail).toBe("Eicar-Test-Signature");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("throws on non-2xx response", async () => {
-    vi.stubGlobal("fetch", async () => ({ ok: false, status: 503, statusText: "Service Unavailable" }));
+    vi.stubGlobal("fetch", async () => fakeResponse("", { ok: false, status: 503, statusText: "Service Unavailable" }));
     try {
       await expect(
         clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 })
@@ -147,7 +175,7 @@ describe("clamdHttpScan", () => {
 describe("scanForMalware (HTTP mode)", () => {
   it("uses HTTP when CLAMAV_HTTP_URL is set", async () => {
     setEnv({ CLAMAV_HTTP_URL: "https://clamav.example.com", CLAMAV_HOST: undefined });
-    vi.stubGlobal("fetch", async () => ({ ok: true, text: async () => JSON.stringify({ status: "OK" }) }));
+    vi.stubGlobal("fetch", async () => fakeResponse(JSON.stringify({ status: "OK" })));
     try {
       const r = await scanForMalware({ bytes: Buffer.from("hello") });
       expect(r.status).toBe("CLEAN");
@@ -159,7 +187,7 @@ describe("scanForMalware (HTTP mode)", () => {
 
   it("is ERROR (fail-closed) when HTTP scanner returns non-2xx", async () => {
     setEnv({ CLAMAV_HTTP_URL: "https://clamav.example.com", CLAMAV_HOST: undefined });
-    vi.stubGlobal("fetch", async () => ({ ok: false, status: 503, statusText: "Service Unavailable" }));
+    vi.stubGlobal("fetch", async () => fakeResponse("", { ok: false, status: 503, statusText: "Service Unavailable" }));
     try {
       const r = await scanForMalware({ bytes: Buffer.from("x") });
       expect(r.status).toBe("ERROR");

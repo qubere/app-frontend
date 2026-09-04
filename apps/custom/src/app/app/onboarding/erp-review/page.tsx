@@ -1,10 +1,12 @@
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasPermission } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { ErpReviewClient } from "./ErpReviewClient";
 
 export default async function ErpReviewPage() {
   const context = await getAccountContext();
-  if (!context) return null;
+  if (!context) redirect("/sign-in");
+  if (!(await hasPermission("onboarding.manage"))) redirect("/app/dashboard");
 
   // Load available ERP integrations for this account
   const erpConfigs = await db.integrationConfig.findMany({
