@@ -111,6 +111,147 @@ const ISF_SCHEMA: ExtractionSchema = [
   { fieldName: "consolidator_name",  label: "Consolidator",              required: false, type: "string" },
 ];
 
+const FORWARDING_INSTRUCTION_SCHEMA: ExtractionSchema = [
+  { fieldName: "instruction_reference", label: "Instruction Reference",   required: true,  type: "string" },
+  { fieldName: "instruction_date",      label: "Instruction Date",        required: true,  type: "date"   },
+  { fieldName: "exporter_name",         label: "Exporter",                required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "booking_number",        label: "Booking Number",          required: false, type: "string" },
+  { fieldName: "vessel_name",           label: "Vessel Name",             required: false, type: "string" },
+  { fieldName: "port_of_loading",       label: "Port of Loading",         required: true,  type: "string" },
+  { fieldName: "port_of_discharge",     label: "Port of Discharge",       required: true,  type: "string" },
+  { fieldName: "final_destination",     label: "Final Destination",       required: false, type: "string" },
+  { fieldName: "container_count",       label: "Container Count",         required: false, type: "number" },
+  { fieldName: "goods_description",     label: "Description of Goods",    required: true,  type: "string" },
+];
+
+const BOOKING_REQUEST_SCHEMA: ExtractionSchema = [
+  { fieldName: "booking_number",        label: "Booking Number",          required: true,  type: "string" },
+  { fieldName: "shipper_name",          label: "Shipper",                 required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "carrier_name",          label: "Carrier",                 required: false, type: "string" },
+  { fieldName: "mode_of_transport",     label: "Mode of Transport",       required: false, type: "string" },
+  { fieldName: "port_of_loading",       label: "Port of Loading",         required: true,  type: "string" },
+  { fieldName: "port_of_discharge",     label: "Port of Discharge",       required: true,  type: "string" },
+  { fieldName: "cutoff_date",           label: "Cutoff Date",             required: false, type: "date"   },
+  { fieldName: "etd",                   label: "ETD",                     required: false, type: "date"   },
+  { fieldName: "eta",                   label: "ETA",                     required: false, type: "date"   },
+  { fieldName: "container_count",       label: "Container Count",         required: false, type: "number" },
+];
+
+const ARRIVAL_NOTICE_SCHEMA: ExtractionSchema = [
+  { fieldName: "arrival_notice_number", label: "Arrival Notice Number",   required: true,  type: "string" },
+  { fieldName: "notice_date",           label: "Notice Date",             required: true,  type: "date"   },
+  { fieldName: "bol_or_awb_reference",  label: "B/L or AWB Reference",    required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "carrier_name",          label: "Carrier",                 required: false, type: "string" },
+  { fieldName: "vessel_name",           label: "Vessel / Flight",         required: false, type: "string" },
+  { fieldName: "estimated_arrival_date", label: "Estimated Arrival Date", required: true,  type: "date"   },
+  { fieldName: "last_free_date",        label: "Last Free Date",         required: false, type: "date"   },
+  { fieldName: "release_status",        label: "Release Status",         required: false, type: "string" },
+  { fieldName: "gross_weight",          label: "Gross Weight",           required: false, type: "number" },
+];
+
+const PURCHASE_ORDER_SCHEMA: ExtractionSchema = [
+  { fieldName: "po_number",             label: "Purchase Order Number",   required: true,  type: "string" },
+  { fieldName: "po_date",               label: "Purchase Order Date",     required: true,  type: "date"   },
+  { fieldName: "buyer_name",            label: "Buyer",                   required: true,  type: "string" },
+  { fieldName: "seller_name",           label: "Seller",                  required: true,  type: "string" },
+  { fieldName: "currency",              label: "Currency",                required: false, type: "string" },
+  { fieldName: "total_value",           label: "Total Order Value",       required: false, type: "number" },
+  { fieldName: "line_items",            label: "Line Items",              required: true,  type: "array"  },
+];
+
+const DELIVERY_NOTE_SCHEMA: ExtractionSchema = [
+  { fieldName: "delivery_note_number",  label: "Delivery Note Number",    required: true,  type: "string" },
+  { fieldName: "delivery_note_date",    label: "Delivery Note Date",      required: true,  type: "date"   },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "delivery_location",     label: "Delivery Location",       required: false, type: "string" },
+  { fieldName: "carrier_name",          label: "Carrier",                 required: false, type: "string" },
+  { fieldName: "total_quantity",        label: "Total Quantity",          required: false, type: "number" },
+  { fieldName: "received_by",           label: "Received By",             required: false, type: "string" },
+  { fieldName: "received_date",         label: "Received Date",           required: false, type: "date"   },
+  { fieldName: "line_items",            label: "Line Items",              required: true,  type: "array"  },
+];
+
+const SHIPPING_INSTRUCTION_SCHEMA: ExtractionSchema = [
+  { fieldName: "instruction_number",    label: "Instruction Number",      required: true,  type: "string" },
+  { fieldName: "instruction_date",      label: "Instruction Date",        required: true,  type: "date"   },
+  { fieldName: "shipper_name",          label: "Shipper",                 required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "booking_number",        label: "Booking Number",          required: false, type: "string" },
+  { fieldName: "port_of_loading",       label: "Port of Loading",         required: true,  type: "string" },
+  { fieldName: "port_of_discharge",     label: "Port of Discharge",       required: true,  type: "string" },
+  { fieldName: "requested_sailing_date", label: "Requested Sailing Date", required: false, type: "date"   },
+  { fieldName: "goods_description",     label: "Description of Goods",    required: false, type: "string" },
+];
+
+const CMR_SCHEMA: ExtractionSchema = [
+  { fieldName: "cmr_number",            label: "CMR Number",              required: true,  type: "string" },
+  { fieldName: "issue_date",            label: "Issue Date",              required: true,  type: "date"   },
+  { fieldName: "sender_name",           label: "Sender",                  required: true,  type: "string" },
+  { fieldName: "carrier_name",          label: "Carrier",                 required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "place_of_taking_over_goods", label: "Place of Taking Over Goods", required: false, type: "string" },
+  { fieldName: "place_of_delivery",     label: "Place of Delivery",       required: true,  type: "string" },
+  { fieldName: "vehicle_registration",  label: "Vehicle Registration",    required: false, type: "string" },
+  { fieldName: "goods_lines",           label: "Goods Lines",             required: true,  type: "array"  },
+];
+
+const SEA_WAYBILL_SCHEMA: ExtractionSchema = [
+  { fieldName: "sea_waybill_number",    label: "Sea Waybill Number",      required: true,  type: "string" },
+  { fieldName: "shipper_name",          label: "Shipper",                 required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "vessel_name",           label: "Vessel Name",             required: false, type: "string" },
+  { fieldName: "port_of_loading",       label: "Port of Loading",         required: true,  type: "string" },
+  { fieldName: "port_of_discharge",     label: "Port of Discharge",       required: true,  type: "string" },
+  { fieldName: "on_board_date",         label: "On-Board Date",           required: false, type: "date"   },
+  { fieldName: "gross_weight",          label: "Gross Weight",            required: false, type: "number" },
+];
+
+/**
+ * Also used for EXPORT_DECLARATION and IMPORT_DECLARATION: the spec calls
+ * these out as distinct document types but gives no field list separate from
+ * CUSTOMS_ENTRY_V1 (both are government customs-filing variants of the same
+ * declaration facts) — reusing the customs-entry schema follows the spec's
+ * own "base document + jurisdiction overlay" composition principle rather
+ * than inventing a distinct field set that was never specified.
+ */
+const CUSTOMS_ENTRY_SCHEMA: ExtractionSchema = [
+  { fieldName: "entry_number",          label: "Entry / Declaration Number", required: true, type: "string" },
+  { fieldName: "filing_date",           label: "Filing Date",             required: true,  type: "date"   },
+  { fieldName: "importer_name",         label: "Importer / Declarant",    required: true,  type: "string" },
+  { fieldName: "port_of_entry",         label: "Customs Office / Port of Entry", required: true, type: "string" },
+  { fieldName: "total_customs_value",   label: "Total Customs Value",     required: true,  type: "number" },
+  { fieldName: "total_duty",            label: "Total Duty",              required: false, type: "number" },
+  { fieldName: "total_tax",             label: "Total Tax",               required: false, type: "number" },
+  { fieldName: "release_status",        label: "Release Status",          required: false, type: "string" },
+  { fieldName: "line_items",            label: "Tariff Lines",            required: true,  type: "array"  },
+];
+
+const EUR1_CERTIFICATE_SCHEMA: ExtractionSchema = [
+  { fieldName: "certificate_number",    label: "Certificate Number",      required: true,  type: "string" },
+  { fieldName: "issue_date",            label: "Issue Date",              required: true,  type: "date"   },
+  { fieldName: "exporter_name",         label: "Exporter",                required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "origin_country",        label: "Origin Country / Group",  required: true,  type: "string" },
+  { fieldName: "destination_country",   label: "Destination Country / Group", required: false, type: "string" },
+  { fieldName: "invoice_reference",     label: "Invoice Reference",       required: false, type: "string" },
+  { fieldName: "customs_endorsement",   label: "Customs Endorsement",     required: false, type: "string" },
+  { fieldName: "goods_description",     label: "Description of Goods",    required: true,  type: "string" },
+];
+
+const ATR_CERTIFICATE_SCHEMA: ExtractionSchema = [
+  { fieldName: "certificate_number",    label: "Certificate Number",      required: true,  type: "string" },
+  { fieldName: "issue_date",            label: "Issue Date",              required: true,  type: "date"   },
+  { fieldName: "exporter_name",         label: "Exporter",                required: true,  type: "string" },
+  { fieldName: "consignee_name",        label: "Consignee",               required: true,  type: "string" },
+  { fieldName: "exporting_country",     label: "Exporting Country",       required: true,  type: "string" },
+  { fieldName: "destination_country",   label: "Destination Country",     required: false, type: "string" },
+  { fieldName: "goods_description",     label: "Description of Goods",    required: true,  type: "string" },
+  { fieldName: "customs_endorsement",   label: "Customs Endorsement",     required: false, type: "string" },
+];
+
 const SCHEMAS: Partial<Record<DocumentType, ExtractionSchema>> = {
   COMMERCIAL_INVOICE:       COMMERCIAL_INVOICE_SCHEMA,
   PACKING_LIST:             PACKING_LIST_SCHEMA,
@@ -123,6 +264,19 @@ const SCHEMAS: Partial<Record<DocumentType, ExtractionSchema>> = {
   POWER_OF_ATTORNEY:        POWER_OF_ATTORNEY_SCHEMA,
   ENTRY_SUMMARY:            ENTRY_SUMMARY_SCHEMA,
   ISF:                      ISF_SCHEMA,
+  FORWARDING_INSTRUCTION:   FORWARDING_INSTRUCTION_SCHEMA,
+  BOOKING_REQUEST:          BOOKING_REQUEST_SCHEMA,
+  ARRIVAL_NOTICE:           ARRIVAL_NOTICE_SCHEMA,
+  PURCHASE_ORDER:           PURCHASE_ORDER_SCHEMA,
+  DELIVERY_NOTE:            DELIVERY_NOTE_SCHEMA,
+  SHIPPING_INSTRUCTION:     SHIPPING_INSTRUCTION_SCHEMA,
+  CMR:                      CMR_SCHEMA,
+  SEA_WAYBILL:              SEA_WAYBILL_SCHEMA,
+  CUSTOMS_ENTRY:            CUSTOMS_ENTRY_SCHEMA,
+  EUR1_CERTIFICATE:         EUR1_CERTIFICATE_SCHEMA,
+  ATR_CERTIFICATE:          ATR_CERTIFICATE_SCHEMA,
+  EXPORT_DECLARATION:       CUSTOMS_ENTRY_SCHEMA,
+  IMPORT_DECLARATION:       CUSTOMS_ENTRY_SCHEMA,
   // OTHER has no required fields — extraction is opportunistic.
 };
 

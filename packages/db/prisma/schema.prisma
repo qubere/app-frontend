@@ -39,6 +39,19 @@ enum DocumentType {
   ISF
   PROOF_OF_DELIVERY
   CARRIER_INVOICE
+  FORWARDING_INSTRUCTION
+  BOOKING_REQUEST
+  ARRIVAL_NOTICE
+  PURCHASE_ORDER
+  DELIVERY_NOTE
+  SHIPPING_INSTRUCTION
+  CMR
+  SEA_WAYBILL
+  CUSTOMS_ENTRY
+  EUR1_CERTIFICATE
+  ATR_CERTIFICATE
+  EXPORT_DECLARATION
+  IMPORT_DECLARATION
   OTHER
 }
 
@@ -3190,6 +3203,13 @@ model FieldApproval {
   document         ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
   fieldKey         String // "exporterName" | "importerName" | "originCountry"
   value            String
+  // "APPROVE" | "EDIT" | "REJECT" | "MARK_NOT_APPLICABLE" | "SELECT_ALTERNATE" --
+  // the FieldReviewAction that produced this row. Null on rows written before
+  // this column existed. Lets a reader distinguish a human confirming a value
+  // as-is from a human correcting it, which `value` alone cannot (an EDIT
+  // overwrites the field's stored value in place, so the two look identical
+  // once persisted).
+  action           String?
   approvedByUserId String
   approvedByName   String
   approvedAt       DateTime          @default(now())
