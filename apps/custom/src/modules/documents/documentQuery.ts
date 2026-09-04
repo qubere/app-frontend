@@ -11,6 +11,15 @@ const DOCUMENT_ENTITY_TYPES: readonly DocumentEntityType[] = [
   "FILING",
 ];
 
+export function isParsedSearchCompatibilityError(error: unknown): boolean {
+  const record = error && typeof error === "object"
+    ? error as { code?: unknown; meta?: unknown }
+    : null;
+  const detail = `${error instanceof Error ? error.message : String(error)} ${JSON.stringify(record?.meta ?? {})}`;
+  return detail.includes("parsedSearchText") &&
+    (record?.code === "P2022" || detail.includes("Unknown argument") || detail.includes("does not exist"));
+}
+
 function parseEntityType(value: string | null): DocumentEntityType | null {
   return value && (DOCUMENT_ENTITY_TYPES as readonly string[]).includes(value)
     ? (value as DocumentEntityType)
@@ -155,6 +164,14 @@ export function buildDocumentOrderBy(query: DocumentQuery): DocumentOrderBy[] {
  * by any combination of query parameters.
  */
 export function buildDocumentWhere(accountId: string, query: DocumentQuery): Prisma.ShipmentDocumentWhereInput {
+  return buildDocumentWhereWithOptions(accountId, query);
+}
+
+export function buildDocumentWhereWithOptions(
+  accountId: string,
+  query: DocumentQuery,
+  options: { includeParsedSearchText?: boolean } = {}
+): Prisma.ShipmentDocumentWhereInput {
   const where: Prisma.ShipmentDocumentWhereInput = { accountId };
   const predicates: Prisma.ShipmentDocumentWhereInput[] = [];
 
@@ -221,7 +238,7 @@ export function buildDocumentWhere(accountId: string, query: DocumentQuery): Pri
         { docType: contains },
         { uploadedByName: contains },
         { uploadedByEmail: contains },
-        { parsedSearchText: contains },
+        ...(options.includeParsedSearchText === false ? [] : [{ parsedSearchText: contains }]),
         { extractedJson: contains },
         { rawContent: contains },
         { extractionFields: { some: { OR: [{ fieldName: contains }, { value: contains }] } } },
