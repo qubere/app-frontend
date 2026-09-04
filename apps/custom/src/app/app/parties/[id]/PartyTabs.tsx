@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { EntityDocuments } from "@/components/EntityDocuments";
 import { displayDate, displayText } from "@/lib/honest";
+import { shipmentDocumentViewerUrl } from "@/lib/shipmentLinks";
 import type { PartyDetail } from "@/modules/party/partyService";
 import {
   PARTY_TABS,
@@ -876,7 +877,7 @@ export function PartyTabs({
                         <>
                           {evidence.sourceDocument.shipmentId !== null ? (
                             <Link
-                              href={`/app/shipments/${evidence.sourceDocument.shipmentId}?view=workspace&docId=${evidence.sourceDocument.id}`}
+                              href={shipmentDocumentViewerUrl(evidence.sourceDocument.shipmentId, evidence.sourceDocument.id)}
                               className="font-semibold text-brand hover:underline"
                             >
                               {evidence.sourceDocument.fileName}
