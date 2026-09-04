@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logging/logger";
+import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
 import { z } from "zod";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
@@ -60,6 +62,41 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
     }
   }
 
+  const country = data.country || "US";
+
+  // Resolve/create this legal entity's Party twin before writing the row
+  // (#320 Phase 1, spec §6.2) -- outside any transaction, since resolution
+  // can trigger Restricted Party Screening, and never blocking creation:
+  // a failure or an uncertain (POSSIBLE_MATCH/AMBIGUOUS) match just leaves
+  // this entity unbridged, exactly today's behavior.
+  let partyId: string | null = null;
+  try {
+    const resolved = await resolvePartyForCompany(
+      { accountId: ctx.accountId, userId: ctx.userId, requestId: null },
+      {
+        legalName: data.legalName,
+        country,
+        taxId: data.taxIdentifier || null,
+        address: data.addressLine1
+          ? {
+              addressLine1: data.addressLine1,
+              addressLine2: data.addressLine2 || null,
+              city: data.city || null,
+              stateProvince: data.stateProvince || null,
+              postalCode: data.postalCode || null,
+              country,
+            }
+          : null,
+      }
+    );
+    partyId = resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+  } catch (error) {
+    logger.warn("legal-entities: resolvePartyForCompany failed, creating the entity without a party link", {
+      accountId: ctx.accountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   const entity = await db.legalEntity.create({
     data: {
       accountId: ctx.accountId,
@@ -67,7 +104,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       legalName: data.legalName,
       tradeName: data.tradeName || null,
       entityType: data.entityType || "US_CORPORATION",
-      country: data.country || "US",
+      country,
       addressLine1: data.addressLine1 || null,
       addressLine2: data.addressLine2 || null,
       city: data.city || null,
@@ -75,6 +112,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       postalCode: data.postalCode || null,
       taxIdentifier: data.taxIdentifier || null,
       status: "ACTIVE",
+      partyId,
     },
     include: {
       client: true,
