@@ -876,7 +876,7 @@ export function PartyTabs({
                         <>
                           {evidence.sourceDocument.shipmentId !== null ? (
                             <Link
-                              href={`/app/shipments/${evidence.sourceDocument.shipmentId}?tab=documents`}
+                              href={`/app/shipments/${evidence.sourceDocument.shipmentId}?view=workspace&docId=${evidence.sourceDocument.id}`}
                               className="font-semibold text-brand hover:underline"
                             >
                               {evidence.sourceDocument.fileName}
