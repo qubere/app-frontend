@@ -201,6 +201,23 @@ describe("extraction write precedence", () => {
     expect(data.parserName).toBeNull();
   });
 
+  it("§81 -- re-applies a human field-review correction on top of a fresh reparse, so a late parse cannot overwrite it", async () => {
+    // A human already corrected containerNumber via field review (FieldApproval),
+    // then this document gets reparsed/re-extracted (e.g. a retry, or the worker
+    // run after the vision run). The reparse's own tradeMetadata.containerNumber
+    // is rebuilt from scratch (null here, since no model call happens without a
+    // key) and must not silently discard the human's correction.
+    dbMock.fieldApproval.findMany.mockResolvedValue([
+      { fieldKey: "containerNumber", value: "MSCU1234567" },
+    ]);
+
+    await DocumentIntelligenceAgent.execute(baseInput());
+
+    const writtenJson = dbMock.shipmentDocument.updateMany.mock.calls[0][0].data.extractedJson;
+    const persistedTradeMetadata = JSON.parse(writtenJson).tradeMetadata;
+    expect(persistedTradeMetadata.containerNumber).toBe("MSCU1234567");
+  });
+
   it("never writes the document row with an unconditional update", async () => {
     // `update` cannot express the guard, so its presence would reintroduce the
     // race even if the guard exists elsewhere.
