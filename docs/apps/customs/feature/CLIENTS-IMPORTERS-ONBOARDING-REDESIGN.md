@@ -135,14 +135,14 @@ the `/app/importers` row (client column = "— Unassigned") and from the client'
 |---|---|---|
 | **E1** | POA sent, not yet signed; operator creates a shipment and tries to transmit | Shipment saves. `filingReadiness` → `IMPORTER_NOT_ONBOARDED` blocker on transmit with a deep link to the POA tab. Importer row badge ⚠️ "POA out for signature". |
 | **E2** | Bond insufficient — projected duty $1.8M, bond $50k, CBP formula wants $180k | Bond tab shows required vs actual in red. Readiness ⚠️ "Bond increase required". **Generate rider request** produces a surety packet. Activation blocked. |
-| **E3** | Screening hit — SDN match on a principal | Importer → `blocked_screening`. Only a `compliance.override` role can disposition (false-positive note) or reject; logged to `AuditLog`. All shipments for this importer hard-blocked. |
+| **E3** | Screening hit on the entity or a principal | Two severities, already implemented in [`/api/onboarding/entity/[entityId]/disposition`](../../../apps/custom/src/app/api/onboarding/entity/[entityId]/disposition/route.ts): **FLAGGED** (soft match) → any `onboarding.manage` holder dispositions with a required note → proceed; **BLOCKED** (confirmed OFAC SDN / BIS / UFLPA) → `OVERRIDE` requires **`compliance.override`** (`BROKER_ADMIN` / `OWNER` / `ADMIN` — not specialists), logged to `AuditLog`. Importer → `blocked_screening`; all its shipments hard-blocked until dispositioned. The new Screening tab surfaces "compliance authority required to override" rather than a bare 403. |
 | **E4** | Switching brokers — importer already has a CBP# and an active bond | Path = "Switching". 5106 = **UPDATE** not CREATE. Bond tab → **Find existing bond** → KI/KR → `Bond` created `verified`, `source: CBP_QUERY`. Only the POA is net-new. |
 | **E5** | Non-resident — German GmbH, no EIN | Path = "Non-resident". Legal tab forces `importerNumberType: CBP_ASSIGNED` + resident-agent block. POA tab forces `WET_INK_NOTARIZED`. Bond tab defaults to "ride broker bond" / STB. |
 | **E6** | Duplicate — operator adds "ACME Corp" but an importer with that EIN exists | `POST /api/importers` → **409** with the existing importer id + "add as a second entity under this client?" affordance. (Same `irsEin` check the entities route already performs.) |
 | **E7** | Orphan importer from legacy data (`clientId: null`) | Appears in `/app/importers` with client = "— Unassigned" (amber). Header chip "N unassigned importers". Bulk **Assign client** or per-row **Attach to client** (combobox). Not offered in the shipment importer picker unless "show unassigned" is toggled. |
 | **E8** | Operator re-points an importer to a different client after shipments exist | `PATCH /api/importers/[id] { clientId }` allowed; warns "N shipments / M filings will re-associate for billing"; audit-logged. Historical invoice lines already snapshot values — unaffected. |
 | **E9** | POA expires mid-relationship | Scheduled job → `PowerOfAttorney.status: expired` → importer readiness ⚠️ → `OnboardingCase` reopens `blocked` → open filings get an `ExceptionItem`. (Per `CUSTOMER-ONBOARDING.md` §4.2 / S8.) |
-| **E10** | A `LegalEntity` that exists as a manufacturer party later needs to import | From the party record → **Register as importer** → creates the `ImporterOfRecord` linked to the **same** `LegalEntity`, starts onboarding. No duplicate legal record. |
+| **E10** | A `LegalEntity` that exists as a manufacturer party later needs to import | From the party record → **Register as importer** → creates the `ImporterOfRecord` linked to the **same** `LegalEntity`, starts onboarding. No duplicate legal record. **Broker-initiated only** (see §11.4). |
 | **E11** | Portal (customer) user tries to view/attach an importer outside their client | Every route asserts `clientId ∈ ctx.authorizedClientIds`; 403 otherwise (the PR #97 IDOR class). |
 
 ### 3.4 Why this is intuitive
@@ -168,7 +168,7 @@ the `/app/importers` row (client column = "— Unassigned") and from the client'
 - `importers-of-record` item: `labelKey` `importersOfRecord` → `importers`, `href` `/app/importers`.
 - New item `legal-entities` is **not** added; `/app/legal-entities` 301-redirects to `/app/importers`.
 - Tab group under "Clients & Importers": **Clients · Importers · Bonds · POAs · Onboarding**. `bonds` and
-  `poa` become saved-filter views that link into the relevant Importer tab.
+  `poa` are **absorbed** into `/app/importers` as portfolio-risk views (§4.8), not standalone CRUD lists.
 - `onboarding` item unchanged (`/app/onboarding`, `onboarding.manage`).
 
 ### 4.2 `/app/clients` — "Clients" (list)
@@ -244,7 +244,37 @@ shipment importer picker, the add-importer client picker, and "attach to client"
 - `ClientPicker` is rewritten as a thin wrapper around it; `CaseClientLink` and `NewCaseModal` pick it up for
   free.
 
-### 4.8 Redirects & deprecations
+### 4.8 Bonds & POA — absorbed as portfolio-risk views
+
+`/app/bonds` and `/app/poa` today are flat CRUD tables. They are **absorbed into `/app/importers`** — not
+just relocated, but re-cast from "rows you edit" to "risk you triage." Each row deep-links to the importer's
+Bond / POA tab, where the actual editing lives. Account-wide cross-importer visibility is kept (a broker who
+thinks "check all my bonds" still has a list) — it just becomes an exposure view.
+
+**Bonds view** (`/app/importers?view=bonds`, or a secondary tab):
+
+| Column | Why it matters to a broker |
+|---|---|
+| Bond # · surety · type | identity |
+| **Importers on this bond** | one bond covers a parent + subsidiaries; non-residents ride the broker's master bond |
+| **Headroom** = bond amount − Σ(projected/actual 12-mo duty+tax+fee across every importer on the bond) | predicts a CBP insufficiency notice / border hold |
+| Days to expiry · last verified | renewal + re-verification cadence |
+
+Default sort: **closest to insufficient first.** Filters: `renewal due 90d`, `insufficiency risk`,
+`broker master bond`. Answers the spreadsheet question — "which client is about to blow through their bond?"
+
+**POA view** (`/app/importers?view=poa`):
+
+| Column | Why |
+|---|---|
+| Importer · signer · execution method | identity |
+| Effective / **expiry · days left** | an expired POA silently invalidates every subsequent filing |
+| Status | executed / out for signature / expired / revoked |
+
+Headline filter: **expiring in 90 days.** Plus **importers with no valid POA** (the coverage-gap list).
+Bulk action: send renewal.
+
+### 4.9 Redirects & deprecations
 
 | Old | New |
 |---|---|
@@ -252,6 +282,8 @@ shipment importer picker, the add-importer client picker, and "attach to client"
 | `/app/legal-entities` (if present) | 301 → `/app/importers` |
 | "Add Importer of Record" standalone modal | Replaced by **＋ Add importer** → onboarding stepper |
 | "Add Legal Entity" on `/app/clients` | Split: **＋ Add importer** (registers) vs **＋ Add party** (trade role only) |
+| `/app/bonds` | Absorbed → `/app/importers?view=bonds` (portfolio-risk view, §4.8); old path 301-redirects |
+| `/app/poa` | Absorbed → `/app/importers?view=poa` (§4.8); old path 301-redirects |
 
 ---
 
@@ -444,7 +476,8 @@ Requires an audit of every `LegalEntity` read (`ShipmentParty`, `ProductParty`, 
   read-only chip showing the importer's client; source chip shows POA/bond dates.
 - **Unassigned importer**: absent from the shipment importer picker until "show unassigned" toggled;
   **Attach to client** sets `clientId` and it appears.
-- **Redirects**: `/app/importers-of-record` and `/app/legal-entities` → `/app/importers` (301).
+- **Redirects**: `/app/importers-of-record`, `/app/legal-entities`, `/app/bonds`, `/app/poa` → `/app/importers`
+  (301; bonds/poa land on the `?view=` portfolio tabs).
 - **Accessibility**: stepper is `<ol>` with `aria-current="step"`; combobox exposes `role="combobox"`,
   `aria-expanded`, `aria-activedescendant`; focus moves to the step heading on step change.
 
@@ -501,14 +534,37 @@ If `full-story.html` has a clients/onboarding section, add a 2-slide condensed v
 
 ---
 
-## 11. Open questions
+## 11. Resolved decisions & open questions
 
-1. **`compliance.override` role** — does it exist, or is screening disposition currently any
-   `onboarding.manage` holder? (Affects E3.)
-2. **Re-pointing an importer with historical filings** (E8) — confirm invoice lines snapshot enough that
-   billing history is truly unaffected, or block re-point when `CustomsFiling` rows exist.
-3. **`CustomsProfile` consumers** — grep confirms UI + `clientsData.ts`; is anything server-side (billing,
-   reporting) reading it directly? Must be zero before demoting to read-through.
-4. **Portal "Register as importer"** (E10) — is a customer user allowed to initiate, or broker-only?
-5. **`bonds` / `poa` standalone pages** — keep as filtered lists that deep-link into the Importer tab, or
-   fully absorb into `/app/importers`?
+### 11.1 Screening disposition permission — RESOLVED
+
+`compliance.override` already exists ([`permissions.ts:184`](../../../packages/auth/src/permissions.ts) —
+"Waive or override compliance exception," default roles `BROKER_ADMIN` / `OWNER` / `ADMIN`), and
+[`/api/onboarding/entity/[entityId]/disposition`](../../../apps/custom/src/app/api/onboarding/entity/[entityId]/disposition/route.ts)
+already enforces the split: **FLAGGED** → any `onboarding.manage` holder + required note → proceed;
+**BLOCKED** `OVERRIDE` → requires `compliance.override`. The redesign reuses this gate unchanged; the new
+Screening tab must show "compliance authority required" instead of a bare 403. See E3.
+
+### 11.2 Bonds / POA pages — RESOLVED: absorb
+
+Absorbed into `/app/importers` as **portfolio-risk views** (not relocated CRUD) — §4.8. Account-wide
+cross-importer visibility is retained as an exposure/expiry view; editing happens on the importer's tab.
+
+### 11.3 Re-pointing an importer with historical filings — still open
+
+(E8) Confirm invoice lines snapshot enough that billing history is truly unaffected, or block the re-point
+when `CustomsFiling` rows exist. Leaning: allow with the warning + audit, since `InvoiceLine` already
+snapshots amounts.
+
+### 11.4 Portal "Register as importer" — RESOLVED: broker-only
+
+(E10) Broker-initiated only. Registering an importer starts a legal process (5106 / bond / POA) the broker is
+professionally responsible for; customer self-initiation creates half-formed records and erodes the "portal
+contributes data + signature, never activates" boundary. **Future, demand-driven:** a portal
+**"Request to add an importer"** action that creates a broker-side task via the existing `CustomerRequest`
+model — never an `ImporterOfRecord` directly.
+
+### 11.5 `CustomsProfile` consumers — still open
+
+Grep confirms UI + `clientsData.ts` read it. Confirm nothing server-side (billing, reporting) reads it
+directly — must be zero before demoting to a read-through.
