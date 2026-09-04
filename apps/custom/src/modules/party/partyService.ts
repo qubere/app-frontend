@@ -201,7 +201,20 @@ const DETAIL_INCLUDE = {
   contacts: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
   roles: { orderBy: { roleType: "asc" } },
   sites: { orderBy: { siteName: "asc" } },
-  evidence: { orderBy: { createdAt: "desc" } },
+  evidence: {
+    orderBy: { createdAt: "desc" },
+    include: {
+      sourceDocument: {
+        select: {
+          id: true,
+          fileName: true,
+          docType: true,
+          shipmentId: true,
+          shipment: { select: { id: true, shipmentNumber: true } },
+        },
+      },
+    },
+  },
   revalidationFlags: { orderBy: { createdAt: "desc" } },
   relationshipsFrom: {
     orderBy: { createdAt: "desc" },

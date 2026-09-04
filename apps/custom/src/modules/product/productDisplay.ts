@@ -286,7 +286,7 @@ export const PRODUCT_TABS = [
   { id: "parties", label: "Parties & manufacturing" },
   { id: "trade", label: "Trade & customs" },
   { id: "classification-history", label: "Classification History" },
-  { id: "evidence", label: "Evidence" },
+  { id: "evidence", label: "Evidence & lineage" },
   { id: "documents", label: "Documents" },
   { id: "history", label: "History" },
 ] as const;

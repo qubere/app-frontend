@@ -872,13 +872,37 @@ export function PartyTabs({
                   <tr key={evidence.id}>
                     <td className={`${cellClass} text-ink`}>{sourceTypeLabel(evidence.sourceType)}</td>
                     <td className={`${cellClass} text-[#6E6E73]`}>
-                      {evidence.sourceDocumentId !== null
-                        ? "A document in this account"
-                        : evidence.sourceExtractedFactId !== null
-                          ? "A fact extracted from a document"
-                          : evidence.sourceUrl !== null
-                            ? evidence.sourceUrl
-                            : displayText(evidence.sourceReference)}
+                      {evidence.sourceDocument !== null ? (
+                        <>
+                          {evidence.sourceDocument.shipmentId !== null ? (
+                            <Link
+                              href={`/app/shipments/${evidence.sourceDocument.shipmentId}?tab=documents`}
+                              className="font-semibold text-brand hover:underline"
+                            >
+                              {evidence.sourceDocument.fileName}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold text-ink">{evidence.sourceDocument.fileName}</span>
+                          )}
+                          {evidence.sourceDocument.shipment !== null && (
+                            <>
+                              {" · "}
+                              <Link
+                                href={`/app/shipments/${evidence.sourceDocument.shipment.id}`}
+                                className="text-brand hover:underline"
+                              >
+                                {evidence.sourceDocument.shipment.shipmentNumber}
+                              </Link>
+                            </>
+                          )}
+                        </>
+                      ) : evidence.sourceExtractedFactId !== null ? (
+                        "A fact extracted from a document"
+                      ) : evidence.sourceUrl !== null ? (
+                        evidence.sourceUrl
+                      ) : (
+                        displayText(evidence.sourceReference)
+                      )}
                     </td>
                     <td className={`${cellClass} text-[#6E6E73]`}>
                       {evidence.page === null ? "—" : `Page ${evidence.page}`}
