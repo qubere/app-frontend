@@ -4,7 +4,9 @@ import { db, withAccountIdContext } from "@/lib/db";
 import {
   buildDocumentOrderBy,
   buildDocumentWhere,
+  buildDocumentWhereWithOptions,
   documentSkip,
+  isParsedSearchCompatibilityError,
   parseDocumentQuery,
 } from "@/modules/documents/documentQuery";
 
@@ -19,10 +21,10 @@ export async function GET(req: Request) {
       const query = parseDocumentQuery(new URL(req.url).searchParams);
       const where = buildDocumentWhere(ctx.accountId, query);
 
-      const [total, documents] = await Promise.all([
-        db.shipmentDocument.count({ where }),
+      const loadPage = (whereFilter: typeof where) => Promise.all([
+        db.shipmentDocument.count({ where: whereFilter }),
         db.shipmentDocument.findMany({
-          where,
+          where: whereFilter,
           select: {
             id: true,
             fileName: true,
@@ -68,6 +70,25 @@ export async function GET(req: Request) {
           take: query.pageSize,
         }),
       ]);
+
+      let pageResult: Awaited<ReturnType<typeof loadPage>>;
+      try {
+        pageResult = await loadPage(where);
+      } catch (error) {
+        // Keep search available during a rolling/local migration. The fallback
+        // still searches persisted extraction fields, raw content, and all
+        // repository metadata; the complete normalized projection joins it as
+        // soon as the schema migration and generated client are current.
+        if (!query.search || !isParsedSearchCompatibilityError(error)) throw error;
+        console.warn(
+          "GET /api/documents: parsedSearchText is unavailable; using legacy parsed-field search until migration 20260904220000_document_parsed_search is applied."
+        );
+        pageResult = await loadPage(
+          buildDocumentWhereWithOptions(ctx.accountId, query, { includeParsedSearchText: false })
+        );
+      }
+
+      const [total, documents] = pageResult;
 
       const documentIds = documents.map((doc) => doc.id);
       const associationCounts =
