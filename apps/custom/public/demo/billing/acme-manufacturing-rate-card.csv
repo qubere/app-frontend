@@ -1,5 +1,0 @@
-Service,Description,Price,Unit,Included Qty,Notes
-Entry Fee,Customs entry summary processing (flat per shipment),$125.00,per shipment,,Standard consumption entry
-Additional Line,Line item processing beyond the first 5 included,$4.00,per line,5,Billed only on lines 6+
-HTS Classification Review,Manual broker review of AI-suggested HTS code,$20.00,per review,,Only when a human review is actually performed
-PGA Processing,Partner Government Agency flag validation & form prep,$35.00,per entry,,FDA / USDA / other PGA flag handling

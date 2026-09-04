@@ -1,4 +1,4 @@
-datasource db {
+ç}vyæ¸Ñízç½¼ïžÚi½ôá×µw^Üé¿]s]ôdatasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")
@@ -2943,6 +2943,7 @@ model LegalEntity {
   party   Party?  @relation(fields: [partyId], references: [id], onDelete: SetNull)
 
   customsProfiles    CustomsProfile[]
+  importerOfRecord   ImporterOfRecord?
   shipmentParties    ShipmentParty[]
   productParties     ProductParty[]
   productIdentifiers ProductIdentifier[]
