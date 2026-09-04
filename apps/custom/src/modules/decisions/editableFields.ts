@@ -32,11 +32,20 @@
  * fields and choose a category) so the two can't drift apart.
  */
 
+import { normalizeDecisionStatus, isTerminalDecisionState, isAutoVerified } from "./decisionState";
+import type { FieldVerificationState } from "@/modules/documents/fieldVerification";
+
 export interface EditableField {
   key: string;
   label: string;
   value: string | null;
   status: "PRESENT" | "MISSING";
+  /**
+   * Drives DocumentReviewPanel's button copy for this field row. Optional
+   * since documentTradeFields() has no decision-status context to derive it
+   * from — only editableFieldsFor() (HTS Code, decision-scoped) sets it.
+   */
+  verification?: FieldVerificationState;
 }
 
 export type ReviewCategory = "MECHANICAL" | "FIELDS" | "NARRATIVE";
@@ -45,6 +54,8 @@ interface DecisionLike {
   agentName?: string | null;
   proposedHtsCode?: string | null;
   currentHtsCode?: string | null;
+  status?: string | null;
+  triageState?: string | null;
 }
 
 // Agent names (with " Agent" already stripped, see decisionGroupLabel) that
@@ -109,9 +120,25 @@ export function editableFieldsFor(decision: DecisionLike): EditableField[] {
     // a code, so it should prompt the broker the same way a null code would.
     const raw = decision.proposedHtsCode || decision.currentHtsCode || null;
     const value = raw && raw !== "UNCLASSIFIABLE" ? raw : null;
-    return [{ key: "proposedHtsCode", label: "HTS Code", value, status: value ? "PRESENT" : "MISSING" }];
+    const status = value ? "PRESENT" : "MISSING";
+    return [{ key: "proposedHtsCode", label: "HTS Code", value, status, verification: fieldVerificationFor(decision, status) }];
   }
   return [];
+}
+
+/**
+ * Best-effort verification state for a FIELDS-category decision's own field,
+ * from data already on hand (decision.status/triageState) -- not a call into
+ * evaluateFieldVerification, which needs confidence/expectation this
+ * decision-scoped field doesn't carry.
+ */
+function fieldVerificationFor(decision: DecisionLike, status: "PRESENT" | "MISSING"): FieldVerificationState {
+  if (status === "MISSING") return "MISSING_REQUIRED";
+  const normalized = normalizeDecisionStatus(decision.triageState ?? decision.status ?? null);
+  if (normalized && (isAutoVerified(normalized) || (isTerminalDecisionState(normalized) && normalized !== "REJECTED"))) {
+    return "AUTO_VERIFIED";
+  }
+  return "NEEDS_REVIEW";
 }
 
 /** Human label for the group this decision's field (or narrative) sits under. */

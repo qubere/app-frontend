@@ -239,6 +239,39 @@ export function isDecisionActionable(row: { status: string; triageState: string 
   return state ? isActionableDecisionState(state) : false;
 }
 
+export interface BulkAcceptCheck {
+  ok: boolean;
+  reason?: "already_terminal" | "not_found";
+}
+
+/**
+ * Whether a decision is still eligible for a bulk APPROVE/REJECT action —
+ * the pre-check `/api/decisions/bulk` runs before attempting its
+ * optimistic-concurrency `updateMany` (a separate, DB-level check that this
+ * function does not replace, since staleness can't be evaluated in memory).
+ *
+ * Only APPROVED/REJECTED count as terminal here, not the full
+ * TERMINAL_DECISION_STATES set — AUTO_VERIFIED is deliberately still
+ * bulk-actionable so a human can convert an auto-verified decision into an
+ * explicit human APPROVED, matching the route's existing sweep behavior.
+ */
+export function canBulkAccept(
+  decision: { status: string; triageState: string | null } | null | undefined
+): BulkAcceptCheck {
+  if (!decision) return { ok: false, reason: "not_found" };
+  const normStatus = normalizeDecisionStatus(decision.status);
+  const isTerminal =
+    decision.status === "Approved" ||
+    decision.status === "Rejected" ||
+    decision.status === "APPROVED" ||
+    decision.status === "REJECTED" ||
+    decision.triageState === "APPROVED" ||
+    decision.triageState === "REJECTED" ||
+    normStatus === "APPROVED" ||
+    normStatus === "REJECTED";
+  return isTerminal ? { ok: false, reason: "already_terminal" } : { ok: true };
+}
+
 /**
  * Canonical Prisma WHERE condition for querying all reviewable decisions in human queues.
  */

@@ -8,6 +8,9 @@
  *
  * Pure: no database, no React. Everything here is exercised directly by tests.
  */
+import type { DocumentType } from "@prisma/client";
+import { getFieldExpectation, getRequiredFields, type FieldExpectation } from "@/lib/documents/extractionSchemas";
+import type { FieldVerificationState } from "./fieldVerification";
 
 export const HUMAN_CORRECTION_SOURCE = "HUMAN_CORRECTION";
 
@@ -55,10 +58,52 @@ export interface ReviewField {
   pageNumber: number | null;
   bbox: BoundingBox | null;
   corrected: boolean;
-  /** True when a reviewer should look at it: low or absent confidence, uncorrected. */
+  /**
+   * True when a reviewer should look at it: low or absent confidence,
+   * uncorrected. Derived from `verification` — kept as a boolean alias so
+   * existing callers (DocumentReviewPanel, nextReviewIndex) don't need to
+   * change; true for NEEDS_REVIEW, MISSING_REQUIRED, and CONFLICT.
+   */
   needsReview: boolean;
+  /** Why this field is (or isn't) in a state a reviewer must act on. */
+  verification: FieldVerificationState;
+  /** Stable code from fieldVerification.ts's REVIEW_REASONS, or null when nothing to explain. */
+  reasonCode: string | null;
   /** Newest first. Every reading ever stored for this field. */
   history: FieldRevision[];
+}
+
+/**
+ * The 5-state verification outcome for one field, plus why (see
+ * fieldVerification.ts's REVIEW_REASONS for reasonCode meanings).
+ *
+ * Precedence: a field that doesn't belong on this document type is
+ * NOT_APPLICABLE regardless of anything else. A required field with no
+ * machine read and no correction is MISSING_REQUIRED — genuinely absent, not
+ * just low-confidence. A field the caller has flagged as conflicting with
+ * another document takes CONFLICT next. Otherwise a corrected or
+ * high-confidence field is AUTO_VERIFIED; anything else NEEDS_REVIEW.
+ */
+export function evaluateFieldVerification(field: {
+  corrected: boolean;
+  confidence: number | null;
+  expectation: FieldExpectation;
+  hasMachineRead: boolean;
+  hasConflict?: boolean;
+}): { state: FieldVerificationState; reasonCode: string | null } {
+  if (field.expectation === "NOT_EXPECTED") {
+    return { state: "NOT_APPLICABLE", reasonCode: null };
+  }
+  if (field.expectation === "EXPECTED" && !field.hasMachineRead && !field.corrected) {
+    return { state: "MISSING_REQUIRED", reasonCode: "MISSING_ON_SOURCE_DOCUMENT" };
+  }
+  if (field.hasConflict) {
+    return { state: "CONFLICT", reasonCode: "CROSS_DOCUMENT_CONFLICT" };
+  }
+  if (field.corrected || (field.confidence !== null && field.confidence >= REVIEW_REQUIRED_BELOW)) {
+    return { state: "AUTO_VERIFIED", reasonCode: null };
+  }
+  return { state: "NEEDS_REVIEW", reasonCode: "LOW_CONFIDENCE" };
 }
 
 /** Accepts the stored Json column, which may be anything. */
@@ -96,7 +141,10 @@ function newestFirst(a: FieldRevision, b: FieldRevision): number {
  * wins outright. Confidence only breaks ties between machine readings, because a
  * reviewed value is not competing on model score.
  */
-export function buildReviewFields(rows: RawExtractionField[]): ReviewField[] {
+export function buildReviewFields(
+  rows: RawExtractionField[],
+  docType?: DocumentType | null
+): ReviewField[] {
   const byName = new Map<string, RawExtractionField[]>();
   for (const row of rows) {
     const bucket = byName.get(row.fieldName);
@@ -141,6 +189,17 @@ export function buildReviewFields(rows: RawExtractionField[]): ReviewField[] {
     // was found rather than claiming a location a reviewer never pointed at.
     const provenance = bestMachineRead ?? group[0];
 
+    // Without a docType, there's no schema to say whether this field even
+    // applies here -- fall back to OPTIONAL (a neutral expectation) rather
+    // than NOT_EXPECTED, so confidence-based review still fires the way it
+    // always has for callers that don't pass one.
+    const verification = evaluateFieldVerification({
+      corrected,
+      confidence: bestMachineRead?.confidence ?? null,
+      expectation: docType ? getFieldExpectation(docType, fieldName) : "OPTIONAL",
+      hasMachineRead: machineReads.length > 0,
+    });
+
     fields.push({
       fieldName,
       currentValue: current.value,
@@ -149,13 +208,34 @@ export function buildReviewFields(rows: RawExtractionField[]): ReviewField[] {
       pageNumber: provenance?.pageNumber ?? null,
       bbox: parseBoundingBox(provenance?.bbox ?? null),
       corrected,
-      needsReview:
-        !corrected &&
-        (bestMachineRead === undefined ||
-          bestMachineRead.confidence === null ||
-          bestMachineRead.confidence < REVIEW_REQUIRED_BELOW),
+      needsReview: verification.state === "NEEDS_REVIEW" || verification.state === "MISSING_REQUIRED" || verification.state === "CONFLICT",
+      verification: verification.state,
+      reasonCode: verification.reasonCode,
       history,
     });
+  }
+
+  // Required fields the pipeline never wrote a row for at all are otherwise
+  // silently absent from this list — indistinguishable from a field that
+  // simply doesn't apply to this document type. Synthesize a placeholder so
+  // "genuinely missing" is visible and flagged.
+  if (docType) {
+    for (const schemaField of getRequiredFields(docType)) {
+      if (byName.has(schemaField.fieldName)) continue;
+      fields.push({
+        fieldName: schemaField.fieldName,
+        currentValue: "",
+        originalValue: null,
+        confidence: null,
+        pageNumber: null,
+        bbox: null,
+        corrected: false,
+        needsReview: true,
+        verification: "MISSING_REQUIRED",
+        reasonCode: "MISSING_ON_SOURCE_DOCUMENT",
+        history: [],
+      });
+    }
   }
 
   return fields.sort((a, b) => a.fieldName.localeCompare(b.fieldName));

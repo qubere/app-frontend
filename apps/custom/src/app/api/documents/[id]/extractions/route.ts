@@ -142,7 +142,7 @@ function serialize(
     // C-3: Grouped, bbox-parsed, history-tracked fields for the document viewer.
     // Each entry is the current authoritative reading for one field name, with
     // BoundingBox parsed from the stored JSON and full correction history attached.
-    reviewFields: buildReviewFields(doc.extractionFields),
+    reviewFields: buildReviewFields(doc.extractionFields, doc.documentType),
     // Cross-document conflicts open against this document (see plan gap #1).
     reconciliationIssues,
     requestId,

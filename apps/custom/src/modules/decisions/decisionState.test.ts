@@ -7,6 +7,7 @@ import {
   getActionableDecisionWhereFilter,
   getAllReviewableDecisionWhereFilter,
   triageDecision,
+  canBulkAccept,
 } from "./decisionState";
 
 describe("decisionState module", () => {
@@ -70,5 +71,31 @@ describe("decisionState module", () => {
     expect(
       triageDecision({ status: "APPROVED", triageState: "APPROVED" })
     ).toBe("verified");
+  });
+
+  it("canBulkAccept flags decisions already terminal by status or triageState", () => {
+    expect(canBulkAccept({ status: "Approved", triageState: null })).toEqual({
+      ok: false,
+      reason: "already_terminal",
+    });
+    expect(canBulkAccept({ status: "REJECTED", triageState: null })).toEqual({
+      ok: false,
+      reason: "already_terminal",
+    });
+    expect(canBulkAccept({ status: "Needs Review", triageState: "APPROVED" })).toEqual({
+      ok: false,
+      reason: "already_terminal",
+    });
+  });
+
+  it("canBulkAccept allows not-yet-terminal decisions, including AUTO_VERIFIED", () => {
+    expect(canBulkAccept({ status: "Needs Review", triageState: "NEEDS_REVIEW" })).toEqual({ ok: true });
+    expect(canBulkAccept({ status: "Auto-Approved", triageState: null })).toEqual({ ok: true });
+    expect(canBulkAccept({ status: "AUTO_VERIFIED", triageState: "AUTO_VERIFIED" })).toEqual({ ok: true });
+  });
+
+  it("canBulkAccept reports not_found for a missing decision", () => {
+    expect(canBulkAccept(null)).toEqual({ ok: false, reason: "not_found" });
+    expect(canBulkAccept(undefined)).toEqual({ ok: false, reason: "not_found" });
   });
 });

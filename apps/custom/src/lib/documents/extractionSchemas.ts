@@ -141,3 +141,21 @@ export function getExtractionSchema(docType: DocumentType | null | undefined): E
 export function getRequiredFields(docType: DocumentType | null | undefined): ExtractionFieldSchema[] {
   return getExtractionSchema(docType).filter((f) => f.required);
 }
+
+/**
+ * Whether a field belongs on a document type at all, and if so whether it's
+ * required. A field absent from the schema (or a doc type with no schema,
+ * e.g. OTHER) is NOT_EXPECTED — distinct from a required field the pipeline
+ * simply failed to locate, which is what `evaluateFieldVerification` in
+ * `extractionReview.ts` calls MISSING_REQUIRED.
+ */
+export type FieldExpectation = "EXPECTED" | "OPTIONAL" | "NOT_EXPECTED";
+
+export function getFieldExpectation(
+  docType: DocumentType | null | undefined,
+  fieldName: string
+): FieldExpectation {
+  const entry = getExtractionSchema(docType).find((f) => f.fieldName === fieldName);
+  if (!entry) return "NOT_EXPECTED";
+  return entry.required ? "EXPECTED" : "OPTIONAL";
+}
