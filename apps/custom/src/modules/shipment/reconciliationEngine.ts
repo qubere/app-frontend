@@ -7,7 +7,7 @@ import { ShipmentPartyService } from "./shipmentPartyService";
 import { matchPartMaster } from "@/modules/product/partMasterMatch";
 import { reconciliationKeyFor } from "@/lib/documents/fieldDictionary";
 
-import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
+import { runReconciliationEngine, applyNorm, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
 import { detectPlanChanges, type PlanFieldReading } from "@/lib/reconciliation/planChangeDetector";
 
 // OCR_AI_AGENT rows carry a freeform LLM label while DOC_INTEL_STRUCTURED rows
@@ -16,6 +16,19 @@ import { detectPlanChanges, type PlanFieldReading } from "@/lib/reconciliation/p
 // raw name (today's behavior) when it can't be resolved.
 export function toReconciliationFieldName(rawFieldName: string): string {
   return reconciliationKeyFor(rawFieldName) ?? rawFieldName;
+}
+
+/**
+ * True when a document's own stated gross weight is lower than its own net
+ * weight -- an internal inconsistency, since gross must always be >= net.
+ * Returns null when either value can't be parsed as a weight (nothing to
+ * compare, not a pass).
+ */
+export function isGrossWeightBelowNetWeight(grossRaw: string, netRaw: string): boolean | null {
+  const grossKg = applyNorm(grossRaw, "weight_unit");
+  const netKg = applyNorm(netRaw, "weight_unit");
+  if (grossKg === null || netKg === null) return null;
+  return Number(grossKg) < Number(netKg);
 }
 
 interface ComplianceAuditFinding {
@@ -289,6 +302,61 @@ export class ReconciliationEngine {
     }
 
     const activeExceptions = shipment.exceptionItems || [];
+
+    // 0. Same-document gross < net weight sanity check -- a document is
+    // internally inconsistent if its own stated gross weight is lower than
+    // its own net weight. Flag for review only; never auto-swap the values,
+    // so the originally extracted facts are preserved either way.
+    const GROSS_LT_NET_CODE_PREFIX = "GROSS_LT_NET_WEIGHT:";
+    const activeGrossLtNetExceptions = activeExceptions.filter((e) => e.code?.startsWith(GROSS_LT_NET_CODE_PREFIX));
+    const currentGrossLtNetCodes = new Set<string>();
+
+    for (const group of documentGroups) {
+      const grossField = group.fields.find((f) => f.fieldName === "grossWeight" && f.value?.trim());
+      const netField = group.fields.find((f) => f.fieldName === "netWeight" && f.value?.trim());
+      if (!grossField || !netField) continue;
+
+      const isBelow = isGrossWeightBelowNetWeight(grossField.value, netField.value);
+      if (isBelow === null) continue;
+
+      if (isBelow) {
+        const code = `${GROSS_LT_NET_CODE_PREFIX}${group.documentId}`;
+        currentGrossLtNetCodes.add(code);
+        const existingEx = await db.exceptionItem.findFirst({
+          where: { shipmentId: shipment.id, accountId: shipment.accountId, code, status: { not: "Resolved" } },
+          select: { id: true },
+        });
+        if (!existingEx) {
+          const doc = shipment.documents.find((d) => d.id === group.documentId);
+          await createExceptionItem({
+            shipmentId: shipment.id,
+            accountId: shipment.accountId,
+            documentId: group.documentId,
+            code,
+            fieldKey: "grossWeight",
+            category: "VALIDATION",
+            type: "data_mismatch",
+            severity: "Medium",
+            blocking: false,
+            description: `${doc?.docType ?? "Document"}${doc?.fileName ? ` (${doc.fileName})` : ""} states a gross weight ("${grossField.value}") lower than its own net weight ("${netField.value}").`,
+            requiredAction: "Review the source document and correct gross/net weight if misread. Do not swap the values without confirming against the source.",
+            sourceAgent: "Reconciliation Engine",
+          });
+          exceptionsGenerated++;
+          affectedAgentsSet.add("RECONCILIATION_ENGINE");
+        }
+      }
+    }
+
+    for (const existing of activeGrossLtNetExceptions) {
+      if (existing.code && !currentGrossLtNetCodes.has(existing.code)) {
+        await db.exceptionItem.update({
+          where: { id: existing.id },
+          data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },
+        });
+        exceptionsResolved++;
+      }
+    }
 
     // 1. Check Missing Importer / Client
     const missingImporterException = activeExceptions.find((e) => e.code === "MISSING_IMPORTER_OF_RECORD");
