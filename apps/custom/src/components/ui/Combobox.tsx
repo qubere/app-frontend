@@ -135,6 +135,12 @@ export function Combobox({
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
               setHighlightedIndex((index) => Math.max(index - 1, 0));
+            } else if (event.key === "Home" && open) {
+              event.preventDefault();
+              setHighlightedIndex(0);
+            } else if (event.key === "End" && open) {
+              event.preventDefault();
+              setHighlightedIndex(Math.max(visibleOptions.length - 1, 0));
             } else if (event.key === "Enter" && open && visibleOptions[highlightedIndex]) {
               event.preventDefault();
               select(visibleOptions[highlightedIndex]);

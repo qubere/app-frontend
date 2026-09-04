@@ -47,8 +47,8 @@ const readinessProjection = {
   id: true,
   clientId: true,
   registrationStatus: true,
-  bond: { select: { status: true, expirationDate: true, bondAmount: true, continuousBondFormulaAmount: true } },
-  powersOfAttorney: { select: { status: true, expirationDate: true, revokedAt: true }, orderBy: { createdAt: "desc" as const } },
+  bond: { select: { status: true, expirationDate: true, bondAmount: true, continuousBondFormulaAmount: true, lastVerifiedAt: true } },
+  powersOfAttorney: { select: { status: true, signedDate: true, expirationDate: true, revokedAt: true }, orderBy: { createdAt: "desc" as const } },
   onboardingEntities: { select: { screeningStatus: true, bondCoverage: true }, orderBy: { updatedAt: "desc" as const }, take: 10 },
 } satisfies Prisma.ImporterOfRecordSelect;
 
