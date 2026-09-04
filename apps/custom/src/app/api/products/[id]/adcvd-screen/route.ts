@@ -1,0 +1,88 @@
+import { NextResponse } from "next/server";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
+import { db } from "@/lib/db";
+import { screenForAdcvd } from "@/lib/adcvd/scopeScreening";
+import { createAuditLog, AuditAction } from "@/lib/audit";
+import { createExceptionItem } from "@/lib/exceptions/createException";
+
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, params }) => {
+  const { id: productId } = params;
+  const body = await req.json().catch(() => ({}));
+  const { htsCode, countryOfOrigin, productDescription, shipmentId, shipmentLineItemId } = body;
+
+  let targetHts = htsCode;
+  let targetCountry = countryOfOrigin;
+  let targetDesc = productDescription;
+
+  if (productId && productId !== "unknown") {
+    const product = await db.product.findFirst({
+      where: { id: productId, accountId: ctx.accountId },
+      include: { countryFacts: true },
+    });
+    if (product) {
+      targetCountry = targetCountry || product.countryFacts[0]?.rawCountry;
+      targetDesc = targetDesc || product.customsDescription || product.commercialDescription || product.productName;
+    }
+  }
+
+  if (shipmentLineItemId) {
+    const lineItem = await db.shipmentLineItem.findFirst({
+      where: { id: shipmentLineItemId, accountId: ctx.accountId },
+    });
+    if (lineItem) {
+      targetHts = targetHts || lineItem.htsCode;
+      targetCountry = targetCountry || lineItem.countryOfOrigin;
+      targetDesc = targetDesc || lineItem.description;
+    }
+  }
+
+  const result = await screenForAdcvd({
+    htsCode: targetHts,
+    countryOfOrigin: targetCountry,
+    productDescription: targetDesc,
+  });
+
+  // Task E-4: Create ExceptionItem for YES or POSSIBLY results
+  const targetShipmentId = shipmentId || body.shipmentId;
+  const ownedShipment = targetShipmentId
+    ? await db.shipment.findFirst({ where: { id: targetShipmentId, accountId: ctx.accountId }, select: { id: true } })
+    : null;
+
+  for (const order of result.orders) {
+    if (order.inScope === "YES" || order.inScope === "POSSIBLY") {
+      if (ownedShipment) {
+        await createExceptionItem({
+          accountId: ctx.accountId,
+          shipmentId: targetShipmentId,
+          category: "COMPLIANCE",
+          type: "compliance_flag",
+          severity: order.inScope === "YES" ? "Critical" : "High",
+          status: "Open",
+          description: `AD/CVD Order Scope Match (${order.caseNumber}): ${order.inScope}. Title: "${order.title}". ${order.reasoning}`,
+        });
+      }
+    }
+  }
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: AuditAction.COMPLIANCE_AUDIT_RUN,
+    entity: "Product",
+    entityId: productId || "unknown",
+    source: "API",
+    metadata: {
+      htsCode: targetHts,
+      countryOfOrigin: targetCountry,
+      matchedOrdersCount: result.orders.length,
+    },
+  });
+
+  return NextResponse.json({
+    productId,
+    htsCode: targetHts,
+    countryOfOrigin: targetCountry,
+    screening: result,
+  });
+
+}, { permission: "products.edit", write: true });

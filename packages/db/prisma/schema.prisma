@@ -1,4 +1,4 @@
-ç}vyæ¸Ñízç½¼ïžÚi½ôá×µw^Üé¿]s]ôdatasource db {
+datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")

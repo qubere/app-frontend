@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Security, Trust &amp; Platform</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Security, Trust &amp; Platform</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">Multi-tenant enterprise infrastructure &mdash;<br><span class="accent">from the ground up, not bolted on.</span></h1>
+      <p class="hero-lede">Account-based tenancy as the isolation boundary, separated platform and customer RBAC, Clerk-managed identity with MFA, SOC2-ready immutable audit logging on every mutating action, a governed data pipeline that refuses to fabricate a number when its source isn't wired, and a scoped partner API.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">1</div><div class="stat-label">shared data layer · every query scoped by accountId</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">~104</div><div class="stat-label">catalogued audit actions · immutable</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">19</div><div class="stat-label">platform datasets · each with an explicit status</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">"Where's the isolation boundary? And are you making up the duty rates?"</h2>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"Every trade-compliance tool we've evaluated is a single-tenant app someone bolted a login onto."</p><p class="pain-tag">Tenancy</p></div>
+        <div class="pain-card"><p class="pain-quote">"Who at the vendor can see our data? Can their support team just look? We need an immutable audit trail for SOC2 and CBP."</p><p class="pain-tag">Access &amp; audit</p></div>
+        <div class="pain-card"><p class="pain-quote">"Half these 'AI trade platforms' are making up sanctions data and duty rates. How do we know your numbers are real?"</p><p class="pain-tag">Data integrity</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">The boundary is enforced in the data layer. The datasets are published.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">One shared <span class="mono" style="color:#fff">@qubere/db</span> layer &mdash; every business query goes through it with <span class="mono">accountId</span> scoping.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Platform roles for Qubere internal ops are a <strong style="color:#fff">separate system</strong> from customer account roles. Impersonation is banner'd and logged.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Every mutating action writes an immutable audit entry &mdash; best-effort, so a logging failure never blocks the action it records.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Zero-Fabrication Policy: un-wired datasets return HTTP 422 and never fake success. Legally-binding data (tariff rates) has a human publish gate.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Scoped partner API &mdash; per-scope, idempotent, audit-tagged <span class="mono">source: "API"</span>.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Tenancy + RBAC + RLS -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Tenancy, RBAC &amp; row-level security</p>
+        <h2 class="feature-headline">Account is the boundary &mdash; and it's enforced in the query layer.</h2>
+        <p class="feature-pain">Not a view filter, not a middleware afterthought. Auth (identity, MFA, sessions) is Clerk; authorization (roles, permissions) is in Postgres. Within an account, a PLANNER sees only their assigned records &mdash; and the AI assistant inherits that because it's the <strong>same code path</strong>.</p>
+        <ul class="feature-bullets">
+          <li>Built-in roles + custom customer-defined roles</li>
+          <li>API routes enforce capabilities via <span class="mono">hasPermission()</span> &rarr; 403</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Log in as <span class="mono">sarah@target.com</span> (PLANNER) vs <span class="mono">admin@target.com</span> &mdash; same Shipments page, different rows. Then <strong>/app/admin/roles</strong> &mdash; the permission matrix.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Admin</span><span style="color:var(--slate-300)">/</span><span>Roles &amp; Permissions</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Roles &amp; Permissions</div><div class="page-sub">4 system roles · 2 custom · row-level security on</div></div><button class="btn-secondary">+ Custom role</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Permission</th><th>OWNER</th><th>ADMIN</th><th>PLANNER</th><th>VIEWER</th></tr></thead>
+                  <tbody>
+                    <tr><td class="mono">filings.submit</td><td>✓</td><td>✓</td><td>—</td><td>—</td></tr>
+                    <tr><td class="mono">decisions.approve</td><td>✓</td><td>✓</td><td>own</td><td>—</td></tr>
+                    <tr><td class="mono">documents.create</td><td>✓</td><td>✓</td><td>✓</td><td>—</td></tr>
+                    <tr><td class="mono">compliance.override</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+                    <tr><td class="mono">shipments.read</td><td>all</td><td>all</td><td><span class="chip chip-normal">assigned only</span></td><td>all</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px;"><span class="evidence-tag">Clerk: identity + MFA</span><span class="evidence-tag">Postgres: authz</span><span class="evidence-tag">withAuthenticatedRoute guards</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — Audit log -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">SOC2-ready immutable audit log</p>
+        <h2 class="feature-headline">It can't be turned off, and it can't block your work.</h2>
+        <p class="feature-pain">Every administrative and mutating action writes an <span class="mono">AuditLog</span> entry: accountId, userId, action, entity, metadata, IP, user-agent, request-id, success/failure. Best-effort write path &mdash; a logging failure never blocks or rolls back the action. Shared by every module against a ~104-entry catalogue.</p>
+        <ul class="feature-bullets">
+          <li>Explicitly designed against CBP 19 U.S.C. &sect; 1509 recordkeeping</li>
+          <li>Compliance events also queue durable outbox notifications</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/admin/settings</strong> &rarr; the settings audit panel. Every compliance module's Audit History tab. Show IP / user-agent / request-id on an entry.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Admin</span><span style="color:var(--slate-300)">/</span><span>Settings &amp; Audit</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Audit log</div><div class="page-sub">immutable · best-effort write · never blocks the action</div></div><button class="btn-secondary">↓ Export</button></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>IP</th><th>OK</th></tr></thead>
+                  <tbody>
+                    <tr><td>14:02:11</td><td class="mono">ROLE_ASSIGNED</td><td>joe@target.com</td><td>72.14.x.x</td><td>✓</td></tr>
+                    <tr><td>13:41:07</td><td class="mono">FILING_TRANSMITTED</td><td>s.chen@target.com</td><td>72.14.x.x</td><td>✓</td></tr>
+                    <tr><td>11:22:03</td><td class="mono">USER_INVITED</td><td>joe@target.com</td><td>72.14.x.x</td><td>✓</td></tr>
+                    <tr><td>09:15:40</td><td class="mono">ACCOUNT_SETTING_CHANGED</td><td>joe@target.com</td><td>72.14.x.x</td><td>✓</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">request-id on every row · joins to the compliance-module audit histories</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · FEATURE — Zero-fabrication data pipeline -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Zero-Fabrication data pipeline</p>
+        <h2 class="feature-headline">We publish which datasets are real &mdash; in the admin console.</h2>
+        <p class="feature-pain">19 core datasets, each with an explicit status. Un-wired datasets return HTTP 422 and never fake success. A new HTS revision is staged <strong>DRAFT</strong> and never auto-published &mdash; duty rates feed real filings, so a person publishes. One daily dispatcher fans out to all LIVE datasets by their own cadence; staleness fires alerts.</p>
+        <ul class="feature-bullets">
+          <li>OFAC's ~20k-entry SDN list streamed via a durable job to avoid timeouts</li>
+          <li>Every AI run records which model actually ran</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Platform Admin &rarr; datasets registry. Walk the <span class="mono">LIVE</span> vs <span class="mono">NOT_YET_IMPLEMENTED</span> matrix. "Most competitors won't tell you what they've actually wired."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span style="color:#B45309;font-weight:700;">Platform Admin</span><span style="color:var(--slate-300)">/</span><span>Datasets</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">PA</div><span class="app-username">Platform Admin</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Platform Dataset Master Registry</div><div class="page-sub">19 datasets · zero-fabrication policy · daily dispatcher</div></div></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>Dataset</th><th>State</th><th>Source</th><th>Last success</th></tr></thead>
+                  <tbody>
+                    <tr><td>HTSUS Schedule</td><td><span class="chip chip-accepted">LIVE</span></td><td>hts.usitc.gov</td><td>08:04 · staged DRAFT</td></tr>
+                    <tr><td>OFAC SDN + non-SDN</td><td><span class="chip chip-accepted">LIVE</span></td><td>treasury (Inngest job)</td><td>02:11</td></tr>
+                    <tr><td>BIS Consolidated Screening</td><td><span class="chip chip-accepted">LIVE</span></td><td>api.trade.gov</td><td>02:14</td></tr>
+                    <tr><td>USITC AD/CVD Orders</td><td><span class="chip chip-normal">NOT_YET_IMPLEMENTED</span></td><td>—</td><td>422 on request</td></tr>
+                    <tr><td>PGA Requirements by HTS</td><td><span class="chip chip-normal">NOT_YET_IMPLEMENTED</span></td><td>—</td><td>422 on request</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-family:var(--font-body);font-size:10px;color:var(--slate-400);">Un-wired = HTTP 422, never a fake 200 · legally-binding data = human publish gate</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · FEATURE — Partner API + platform admin -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Partner API &amp; Platform Admin Console</p>
+        <h2 class="feature-headline">Scoped, keyed, logged &mdash; not a screen-scrape.</h2>
+        <p class="feature-pain"><span class="mono">/api/v1/*</span> routes authenticated by API key (Bearer / X-Api-Key), per-scope, idempotent, every action audit-logged <span class="mono">source: "API"</span>. Screening, classification, HTS, products, parties, regulatory, rulings, trade agreements, batch.</p>
+        <ul class="feature-bullets">
+          <li>Platform Admin Console: accounts, cron control, datasets, deployments, API catalog</li>
+          <li>Environment fail-safes: demo seeding always blocked in production</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/admin/integrations</strong> &rarr; the API key panel and scopes. Then <span class="mono">admin@qubere.ai</span> &rarr; <strong>/platform-admin</strong> &rarr; <strong>/api/health</strong> shows blockers explicitly when misconfigured.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Admin</span><span style="color:var(--slate-300)">/</span><span>Integrations &amp; APIs</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">JT</div><span class="app-username">Joe · Target</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">API keys</div><div class="page-sub">Bearer / X-Api-Key · per-scope · idempotent</div></div><button class="btn-primary">+ Create key</button></div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">acme-prod-01</span><span class="field-v mono">qk_live_…4c1a</span></div>
+                <div class="field-row"><span class="field-k">Scopes</span><span class="field-v"><span class="chip chip-normal">screening.read</span> <span class="chip chip-normal">screening.screen</span> <span class="chip chip-normal">hts.read</span></span></div>
+                <div class="field-row"><span class="field-k">Last used</span><span class="field-v">3m ago · 1,204 calls today</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">/api/health</div>
+                <div class="field-row"><span class="field-k">customs transmission provider</span><span class="field-v" style="color:#92400E;">MockAceProvider — filer credentials not set</span></div>
+                <div class="field-row"><span class="field-k">tenant isolation</span><span class="field-v" style="color:var(--green);">OK</span></div>
+                <div class="field-row"><span class="field-k">demo seeding</span><span class="field-v" style="color:var(--green);">blocked (production)</span></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · SECURITY QUESTIONNAIRE ANSWERS -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">For the security review</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:34px;margin-bottom:18px;">The questionnaire, pre-answered.</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 40px;font-family:var(--font-body);font-size:13px;color:rgba(255,255,255,0.78);">
+        <div><strong style="color:#fff">Tenant isolation:</strong> one shared data layer, accountId-scoped; portal + billing isolation have automated regression tests.</div>
+        <div><strong style="color:#fff">Identity:</strong> Clerk (MFA, sessions); authorization in Postgres.</div>
+        <div><strong style="color:#fff">Audit:</strong> immutable, ~104 actions, IP/UA/request-id, best-effort (never blocks).</div>
+        <div><strong style="color:#fff">Vendor access:</strong> separate platform RBAC; impersonation banner'd + logged.</div>
+        <div><strong style="color:#fff">Data integrity:</strong> Zero-Fabrication; un-wired sources 422; tariff data human-published.</div>
+        <div><strong style="color:#fff">Hosting:</strong> Supabase Postgres, Vercel Blob / GCS, Clerk, IBM Docling, Gemini &mdash; confirm regions from current infra doc.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"SOC2 report?"</td><td class="obj-a">The architecture is SOC2-ready &mdash; immutable audit, RBAC, tenant isolation, least-privilege data access. Position readiness and the design; get the formal attestation status from sales ops, don't improvise it.</td></tr>
+        <tr><td class="obj-q">"Can we self-host / air-gap?"</td><td class="obj-a">The apps are Next.js; the document worker runs as a long-lived process on any host. A fully air-gapped deployment isn't a packaged offering &mdash; scope it as an enterprise engagement.</td></tr>
+        <tr><td class="obj-q">"Data deletion / export on termination?"</td><td class="obj-a">Bulk shipment/document export exists. A formal end-of-contract data-return/purge runbook is an enterprise contract item, not a self-serve button.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:38px;">"Account is the boundary, enforced in the data layer. We publish which datasets are real. The audit log can't be turned off."</h2>
+      <div class="dark-card"><p>Next step: send us your security questionnaire. We'll walk it line by line against the Platform Admin Console on a screen-share &mdash; and show you the dataset registry and the audit log live.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/sales/security-trust-and-platform.md</span> · README §1&ndash;6</p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

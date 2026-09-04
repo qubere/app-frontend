@@ -1,0 +1,169 @@
+/**
+ * API endpoint for fetching UI configuration for filing forms
+ * 
+ * GET /api/filing/ui-config?country=NL&procedureCode=H1&messageName=IE501&messageType=request
+ * 
+ * Returns the complete UI configuration with tabs, sections, panels, and fields
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { FilingUIConfigData } from "@/types/ui-config.types";
+
+function releaseCandidates(release: string | null): string[] {
+  if (!release) return [];
+
+  const candidates = [release];
+  const parts = release.split(".");
+
+  if (parts.length === 2) {
+    candidates.push(`${release}.0`);
+  } else if (parts.length === 3 && parts[2] === "0") {
+    candidates.push(parts.slice(0, 2).join("."));
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    
+    const country = searchParams.get("country");
+    const procedureCode = searchParams.get("procedureCode");
+    const messageName = searchParams.get("messageName");
+    const messageType = searchParams.get("messageType") || "request";
+
+    // Validate required parameters
+    if (!country || !procedureCode || !messageName) {
+      return NextResponse.json(
+        { error: "Missing required parameters: country, procedureCode, messageName" },
+        { status: 400 }
+      );
+    }
+
+    // Validate messageType
+    if (messageType !== "request" && messageType !== "response") {
+      return NextResponse.json(
+        { error: "messageType must be 'request' or 'response'" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch the currently active (published) UI configuration.
+    // Priority: release-specific config first → fallback to release=null (all-releases config)
+    const release = searchParams.get("release") ?? null;
+
+    let config = null;
+
+    // Try release-specific config first (if release param provided).
+    // Release values historically appeared as both "1.0" and "1.0.0";
+    // check both so saved filings keep resolving their published UI config.
+    const releases = releaseCandidates(release);
+    if (releases.length > 0) {
+      config = await db.filingUIConfig.findFirst({
+        where: {
+          country,
+          procedureCode,
+          messageName,
+          messageType,
+          release: { in: releases },
+          isActive: true,
+        },
+      });
+    }
+
+    // Fallback: config without a release (applies to all releases)
+    if (!config) {
+      config = await db.filingUIConfig.findFirst({
+        where: {
+          country, procedureCode, messageName, messageType,
+          isActive: true,
+          release: null,
+        },
+      });
+    }
+
+    if (!config) {
+      return NextResponse.json(
+        { 
+          error: "No UI configuration found for the specified parameters",
+          details: { country, procedureCode, messageName, messageType }
+        },
+        { status: 404 }
+      );
+    }
+
+    // Extract full configData structure
+    const configData = config.configData as unknown as FilingUIConfigData;
+    
+    // Backward compatibility: if no proper structure, return legacy format
+    if (!configData.version || !configData.layout) {
+      // Legacy format (old structure with just fields array)
+      const fields = (configData as any).fields || [];
+      const visibleFields = fields.filter((field: any) => field.isVisible !== false);
+      
+      // Group fields by section
+      const sections = visibleFields.reduce((acc: Record<string, any[]>, field: any) => {
+        if (!acc[field.section]) {
+          acc[field.section] = [];
+        }
+        acc[field.section].push(field);
+        return acc;
+      }, {});
+      
+      // Sort fields within each section by displayOrder
+      Object.keys(sections).forEach(section => {
+        sections[section].sort((a: any, b: any) => a.displayOrder - b.displayOrder);
+      });
+      
+      return NextResponse.json({
+        country,
+        procedureCode,
+        messageName,
+        messageType,
+        version: config.version,
+        legacy: true,
+        sections,
+        totalFields: visibleFields.length,
+      });
+    }
+    
+    // New format: return complete structure
+    // Filter out invisible elements
+    const visibleFields = configData.fields.filter(field => field.isVisible !== false);
+    const visibleSections = configData.sections.filter(section => section.isVisible !== false);
+    const visibleTabs = configData.tabs?.filter(tab => tab.isVisible !== false);
+    
+    return NextResponse.json({
+      country,
+      procedureCode,
+      messageName,
+      messageType,
+      release: config.release,
+      dbVersion: config.version,
+      configVersion: configData.version,
+      metadata: configData.metadata,
+      layout: configData.layout,
+      layoutHints: configData.layoutHints,
+      tabs: visibleTabs,
+      sections: visibleSections,
+      panels: configData.panels,
+      fields: visibleFields,
+      validation: configData.validation,
+      conditionalLogic: configData.conditionalLogic,
+      translations: configData.translations,
+      theme: configData.theme,
+      permissions: configData.permissions,
+      totalFields: visibleFields.length,
+      totalSections: visibleSections.length,
+      totalTabs: visibleTabs?.length || 0,
+    });
+  } catch (error) {
+    console.error("Error fetching UI configuration:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch UI configuration" },
+      { status: 500 }
+    );
+  }
+}

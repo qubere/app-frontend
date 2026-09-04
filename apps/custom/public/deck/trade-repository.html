@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubere — Trade Repository</title>
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body>
+<div class="deck" id="deck">
+  <div class="slides-wrapper" id="sw">
+
+  <!-- 1 · TITLE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Trade Repository</p>
+      <div class="rule"></div>
+      <h1 class="hero-title">Every document, linked to<br><span class="accent">every record it actually belongs to.</span></h1>
+      <p class="hero-lede">A commercial invoice isn't just "the shipment's file" &mdash; it's evidence for a party, a product classification, a license, and a filing, all at once. Trade Repository is the one search surface across every document in the account, and the link layer underneath it that makes a document many-to-many instead of one-to-one.</p>
+      <div class="stat-row">
+        <div><div class="stat-num">1</div><div class="stat-label">search surface for every document in the account</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">5</div><div class="stat-label">linkable entity types &mdash; shipment, party, product, license, filing</div></div>
+        <div class="stat-div"></div>
+        <div><div class="stat-num">15min</div><div class="stat-label">signed URL for storage-backed documents</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE PROBLEM -->
+  <section class="slide slide-light">
+    <div class="problem-wrap">
+      <p class="eyebrow eyebrow-dark">The problem</p>
+      <div class="rule"></div>
+      <h2 class="problem-title">"That invoice is somewhere on the shipment. Which shipment, I'm not sure."</h2>
+      <div class="pain-grid">
+        <div class="pain-card"><p class="pain-quote">"A document only lives under the shipment it was uploaded to. If it's really evidence for a party or a product, there's nowhere to say so."</p><p class="pain-tag">One document, one home</p></div>
+        <div class="pain-card"><p class="pain-quote">"I know we have the manufacturer's origin declaration somewhere &mdash; I just don't know which of forty shipments it's attached to."</p><p class="pain-tag">No cross-entity search</p></div>
+        <div class="pain-card"><p class="pain-quote">"We built a separate document widget for parties, another for products, another for filings &mdash; and now they all behave slightly differently."</p><p class="pain-tag">Duplicated document UI</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · HOW QUBERE ADDRESSES IT -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">How Qubere addresses it</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">One link table. One component. One search page.</h2>
+      <ul class="feature-bullets" style="margin-top:8px;">
+        <li><span style="color:rgba(255,255,255,0.82)">Any document can be linked to a <strong style="color:#fff">shipment, party, product, license, or filing</strong> &mdash; not just the shipment it happened to arrive on.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Unlinking is never a delete &mdash; the link is marked inactive and the history stays, so nothing about "this used to be evidence for X" is lost.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Every entity detail page renders the same linked-documents panel, backed by the same API &mdash; no bespoke document UI per module.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">Trade Repository searches every document in the account by name, type, status, or which entity it's linked to &mdash; independent of any one shipment page.</span></li>
+        <li><span style="color:rgba(255,255,255,0.82)">A link can never be created against another tenant's record, or a record that doesn't exist &mdash; the target is verified before the link is written.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · FEATURE — Trade Repository search -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">Trade Repository</p>
+        <h2 class="feature-headline">Search every document in the account, filtered by what it's linked to.</h2>
+        <p class="feature-pain">Free-text search across file name, doc type, shipment, and client, plus filters for document type, status, and "linked to" entity type. Every row shows how many entities already reference that document &mdash; so you can tell at a glance whether a file is single-purpose or shared evidence.</p>
+        <ul class="feature-bullets">
+          <li>Gated on <span class="mono" style="font-size:11px;">document.read</span>; link and unlink additionally require <span class="mono" style="font-size:11px;">document.update</span></li>
+          <li>Open a file straight from the table &mdash; no need to know which shipment it lives under first</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text"><strong>/app/trade-repository</strong> &rarr; filter "Linked to: PRODUCT" &rarr; open a document that's linked to more than one entity. "This is the same origin declaration the product record, the party record, and the filing all point back to &mdash; one file, three legitimate reasons to find it."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Trade Repository</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Trade Repository</div><div class="page-sub">Every document in this account &middot; search, type, status, linked entity</div></div><span class="chip chip-progress">Linked to: PRODUCT</span></div>
+              <div class="panel" style="padding:0;overflow:hidden;">
+                <table class="data-table">
+                  <thead><tr><th>File</th><th>Type</th><th>Status</th><th>Shipment</th><th>Linked to</th></tr></thead>
+                  <tbody>
+                    <tr><td>origin_declaration_88.pdf</td><td>Origin Declaration</td><td><span class="chip chip-verified">verified</span></td><td><span class="link">SHP-000144</span></td><td>3 entities</td></tr>
+                    <tr><td>bol_scanned_0912.pdf</td><td>Bill of Lading</td><td><span class="chip chip-progress">OCR retry</span></td><td><span class="link">SHP-000144</span></td><td>1 entity</td></tr>
+                    <tr><td>manufacturer_affidavit_12.pdf</td><td>Affidavit</td><td><span class="chip chip-verified">verified</span></td><td>&mdash;</td><td>2 entities</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · FEATURE — DocumentAssociation link layer -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">One link table &middot; shared document panel</p>
+        <h2 class="feature-headline">A document isn't owned by one record &mdash; it's linked to as many as apply.</h2>
+        <p class="feature-pain">A document-to-entity link records which entity, what kind of relationship (source document, supporting document, filing attachment, license evidence, origin evidence), who created it and when. The same panel renders on the party, product, and filing detail pages, and on the shipment workspace &mdash; one component, one API, no drift between them.</p>
+        <ul class="feature-bullets">
+          <li>Unlink sets the link inactive and stamps who/when &mdash; the link history is never deleted</li>
+          <li>Pre-existing shipment-attached documents were migrated into this model, not left behind</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Open a product &rarr; scroll to <strong>Linked documents</strong> &rarr; link the same commercial invoice you just saw on the shipment. "It's the same file, now doing double duty as evidence for the product record too."</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Products</span><span style="color:var(--slate-300)">/</span><span>Widget A400</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Linked documents</div><div class="page-sub">Widget A400 &middot; origin &amp; classification evidence</div></div><button class="btn-secondary">+ Link document</button></div>
+              <div class="panel">
+                <div class="field-row"><span class="field-k">origin_declaration_88.pdf</span><span class="field-v">ORIGIN_EVIDENCE &middot; linked by priya@acme.com</span></div>
+                <div class="field-row"><span class="field-k">manufacturer_affidavit_12.pdf</span><span class="field-v">SUPPORTING_DOCUMENT &middot; linked by priya@acme.com</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Also linked to</div>
+                <div class="chain">
+                  <div class="chain-node"><span class="dot-b"></span>Shipment SHP-000144</div>
+                  <div class="chain-node"><span class="dot-b"></span>Filing QBR-2026-3231761</div>
+                </div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · OBJECTION HANDLING -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">Objection handling</p>
+      <div class="rule" style="background:rgba(0,113,227,0.5);"></div>
+      <h2 class="hero-title" style="font-size:36px;margin-bottom:22px;">Every hard question, answered directly.</h2>
+      <table class="obj-table">
+        <tr><td class="obj-q">"Can a document belong to more than one shipment?"</td><td class="obj-a">Yes &mdash; and to a party, product, license, or filing at the same time. That's the point of the link layer: the document is the file; the links are the facts about what it's evidence for.</td></tr>
+        <tr><td class="obj-q">"If we unlink something by mistake, is it gone?"</td><td class="obj-a">No. Unlinking marks the link inactive and records who did it and when; it never deletes the row. The history of "this was once evidence for X" survives.</td></tr>
+        <tr><td class="obj-q">"Does License get the same linked-documents panel?"</td><td class="obj-a">Not yet &mdash; License has its own, older document mechanism, and wiring it into this shared panel is deliberately deferred pending a product decision on how the two should coexist.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 7 · CLOSE -->
+  <section class="slide slide-dark">
+    <div class="hero-wrap">
+      <p class="eyebrow eyebrow-light">The close</p>
+      <div class="rule"></div>
+      <h2 class="hero-title" style="font-size:40px;">"One document. As many links as it actually has."</h2>
+      <p class="hero-lede">A single search surface across every document in the account, and a link layer that finally lets one file be evidence for a shipment, a party, a product, and a filing &mdash; all at once, all provable, none of it duplicated.</p>
+      <div class="dark-card"><p>Next step: open Trade Repository, filter by an entity type your team cares about, and follow one document to everything it's linked to.</p></div>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/apps/customs/feature/TRADE-REPOSITORY-AND-TRADE-DATA.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

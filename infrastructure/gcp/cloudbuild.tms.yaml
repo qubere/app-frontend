@@ -1,0 +1,40 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - "build"
+      - "--target=tms-web"
+      - "--build-arg=TMS_APP_URL=https://demo-tms.qubere.ai"
+      - "--build-arg=NEXT_PUBLIC_APP_ENV=demo"
+      - "--build-arg=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsucXViZXJlLmFpJA"
+      - "--build-arg=GIT_COMMIT_SHA=$SHORT_SHA"
+      - "-t"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:$SHORT_SHA"
+      - "-t"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:latest"
+      - "."
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - "push"
+      - "--all-tags"
+      - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web"
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "qubere-tms-demo"
+      - "--image=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:$SHORT_SHA"
+      - "--region=us-west1"
+      - "--project=$PROJECT_ID"
+      - "--startup-probe=httpGet.path=/api/health/live"
+      - "--liveness-probe=httpGet.path=/api/health/live"
+      - "--quiet"
+images:
+  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:$SHORT_SHA"
+  - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/tms-web:latest"
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE

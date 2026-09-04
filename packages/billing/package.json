@@ -1,0 +1,26 @@
+{
+  "name": "@qubere/billing",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./conditionEvaluator": "./src/conditionEvaluator.ts",
+    "./constants": "./src/constants.ts",
+    "./costingEngine": "./src/costingEngine.ts",
+    "./form7501": "./src/form7501.ts",
+    "./invoicing": "./src/invoicing.ts",
+    "./ledger": "./src/ledger.ts",
+    "./pdfGenerator": "./src/pdfGenerator.ts",
+    "./rateSimulation": "./src/rateSimulation.ts",
+    "./ratingEngine": "./src/ratingEngine.ts",
+    "./telemetry": "./src/telemetry.ts"
+  },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@qubere/db": "*"
+  },
+  "devDependencies": { "@types/node": "^20", "typescript": "^5" }
+}
