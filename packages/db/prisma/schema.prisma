@@ -2874,7 +2874,6 @@ model Bond {
   bondParties        BondParty[]
   verifications      BondVerification[]
   onboardingEntities OnboardingEntity[]
-  importerOfRecord    ImporterOfRecord?
 
   @@index([accountId])
 }
