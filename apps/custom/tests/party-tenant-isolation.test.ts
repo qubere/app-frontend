@@ -155,7 +155,11 @@ describe("party request schemas", () => {
 });
 
 describe("party service queries", () => {
-  const files = [join(PARTY_MODULE_DIR, "partyService.ts"), join(PARTY_MODULE_DIR, "partyImportService.ts")];
+  const files = [
+    join(PARTY_MODULE_DIR, "partyService.ts"),
+    join(PARTY_MODULE_DIR, "partyImportService.ts"),
+    join(PARTY_MODULE_DIR, "partyResolutionService.ts"),
+  ];
 
   it("only ever sets accountId from the actor", () => {
     const offenders: string[] = [];
