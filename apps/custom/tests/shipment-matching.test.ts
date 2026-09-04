@@ -1,12 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   extractIdentifierCandidates,
   matchShipmentForDocument,
+  resolveShipmentForDocument,
   isMatchConflict,
   AUTO_ATTACH_THRESHOLD,
   SUGGEST_THRESHOLD,
   type ShipmentIdentifierLookup,
   type CandidateRecord,
+  type LlmSuggestion,
 } from "@/modules/shipments/shipmentMatching";
 
 describe("extractIdentifierCandidates", () => {
@@ -262,5 +264,81 @@ describe("matchShipmentForDocument", () => {
 
     const none = await matchShipmentForDocument(input({ parsedText: "nothing here" }), makeLookup().lookup);
     expect(isMatchConflict(none)).toBe(false);
+  });
+});
+
+const llm = (over: Partial<LlmSuggestion>): LlmSuggestion => ({
+  suggestedShipmentId: null,
+  confidence: 0,
+  reasoning: "",
+  extractedIdentifiers: [],
+  alternativeShipmentIds: [],
+  model: "gemini-test",
+  ...over,
+});
+
+describe("resolveShipmentForDocument", () => {
+  it("auto-attaches on a deterministic match without calling the LLM", async () => {
+    const { lookup } = makeLookup({
+      async findByShipmentNumber(_a, n) {
+        return n === "SHP-2026-000042" ? { id: "shp_1" } : null;
+      },
+    });
+    const suggest = vi.fn();
+    const result = await resolveShipmentForDocument(
+      { ...input({ emailSubject: "SHP-2026-000042" }), clientId: "c1" },
+      { lookup, suggest }
+    );
+    expect(result.matchedShipmentId).toBe("shp_1");
+    expect(result.outcome).toBe("AUTO_ATTACH_DETERMINISTIC");
+    expect(suggest).not.toHaveBeenCalled();
+  });
+
+  it("auto-attaches an LLM suggestion only when an identifier corroborates it", async () => {
+    const { lookup, recorded } = makeLookup({
+      async findByTrackingIdentifiers(_a, tokens) {
+        return tokens.includes("MAEU123456789") ? [{ shipmentId: "shp_9", type: "MBL" as const, normalizedValue: "MAEU123456789" }] : [];
+      },
+    });
+    const suggest = vi.fn().mockResolvedValue(
+      llm({ suggestedShipmentId: "shp_9", confidence: 0.9, reasoning: "Maersk BL in the body", extractedIdentifiers: [{ type: "MBL", value: "maeu 123 456 789" }] })
+    );
+    // Body has no regex-matchable token; only the LLM surfaces the identifier,
+    // which is then verified against the DB before auto-attach.
+    const result = await resolveShipmentForDocument(
+      { ...input({ emailBody: "please clear this against our Maersk ocean bill" }), clientId: "c1" },
+      { lookup, suggest }
+    );
+    expect(result.matchedShipmentId).toBe("shp_9");
+    expect(result.outcome).toBe("AUTO_ATTACH_LLM_VERIFIED");
+    expect(recorded.some((r) => r.reasoning === "Maersk BL in the body")).toBe(true);
+  });
+
+  it("never auto-attaches a pure-intent LLM suggestion", async () => {
+    const { lookup } = makeLookup();
+    const suggest = vi.fn().mockResolvedValue(
+      llm({ suggestedShipmentId: "shp_nike", confidence: 0.95, reasoning: "Body says 'the Nike order'", extractedIdentifiers: [] })
+    );
+    const result = await resolveShipmentForDocument(
+      { ...input({ emailBody: "add this to the Nike order" }), clientId: "c1" },
+      { lookup, suggest }
+    );
+    expect(result.matchedShipmentId).toBeNull();
+    expect(result.outcome).toBe("LOW_CONFIDENCE");
+    expect(result.llm?.suggestedShipmentId).toBe("shp_nike");
+  });
+
+  it("does not auto-attach when the address policy is OFF", async () => {
+    const { lookup } = makeLookup({
+      async findByShipmentNumber(_a, n) {
+        return n === "SHP-2026-000042" ? { id: "shp_1" } : null;
+      },
+    });
+    const result = await resolveShipmentForDocument(
+      { ...input({ emailSubject: "SHP-2026-000042", requireReview: true }), clientId: "c1", autoAttachPolicy: "OFF" },
+      { lookup, suggest: vi.fn() }
+    );
+    expect(result.matchedShipmentId).toBeNull();
+    expect(result.outcome).toBe("REVIEW_REQUIRED");
   });
 });

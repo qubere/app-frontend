@@ -56,6 +56,7 @@ const SURFACE_ENV_KEYS: Record<AiSurface, string> = {
   "compliance-audit": "COMPLIANCE_AUDIT_MODEL",
   "document-intake": "DOCUMENT_INTAKE_MODEL",
   advisory: "ADVISORY_MODEL",
+  "shipment-match": "SHIPMENT_MATCH_MODEL",
 };
 
 function configured(raw: string | undefined): string | null {

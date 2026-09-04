@@ -8,7 +8,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx, req }) => {
   if (!clientInboundEnabled()) return NextResponse.json({ enabled: false, addresses: [], clients: [] });
   const clientId = new URL(req.url).searchParams.get('clientId');
   const [addresses, clients] = await Promise.all([
-    db.inboundAddress.findMany({ where: { accountId: ctx.accountId, ...(clientId ? { clientId } : {}), OR: [{ activeKey: { not: null } }, { graceUntil: { gt: new Date() } }] }, take: 200, orderBy: [{ clientId: 'asc' }, { createdAt: 'desc' }], select: { id: true, clientId: true, address: true, status: true, purpose: true, senderPolicy: true, autoReplyEnabled: true, graceUntil: true, activeKey: true, client: { select: { name: true } }, inboundEmails: { orderBy: { receivedAt: 'desc' }, take: 1, select: { receivedAt: true } } } }),
+    db.inboundAddress.findMany({ where: { accountId: ctx.accountId, ...(clientId ? { clientId } : {}), OR: [{ activeKey: { not: null } }, { graceUntil: { gt: new Date() } }] }, take: 200, orderBy: [{ clientId: 'asc' }, { createdAt: 'desc' }], select: { id: true, clientId: true, address: true, status: true, purpose: true, senderPolicy: true, autoReplyEnabled: true, autoAttachPolicy: true, graceUntil: true, activeKey: true, client: { select: { name: true } }, inboundEmails: { orderBy: { receivedAt: 'desc' }, take: 1, select: { receivedAt: true } } } }),
     db.client.findMany({ where: { accountId: ctx.accountId, ...(clientId ? { id: clientId } : {}) }, take: 200, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
   ]);
   return NextResponse.json({ enabled: true, addresses, clients });

@@ -1519,6 +1519,10 @@ model InboundEmail {
   originalFromAddress   String
   toAddresses           String // comma-joined, as reported by the provider
   subject               String?
+  // Plain-text body excerpt fetched from the provider (truncated). Used for
+  // shipment matching (a sender often names the shipment only in the body) and
+  // shown to a reviewer. Never logged.
+  bodyText              String?
   receivedAt            DateTime
   routingStatus         String                  @default("RECEIVED") // RECEIVED, ROUTED, ACCEPTED, QUARANTINED, REJECTED, FAILED
   quarantineReason      String?
@@ -1585,10 +1589,14 @@ model DocumentShipmentCandidate {
   document              ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   shipmentId            String
   shipment              Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  matchedIdentifierType String // SHIPMENT_NUMBER, PO_REFERENCE, MBL, HBL, CONTAINER, BOOKING, MAWB, HAWB
+  matchedIdentifierType String // SHIPMENT_NUMBER, PO_REFERENCE, MBL, HBL, CONTAINER, BOOKING, MAWB, HAWB, LLM_INTENT
   matchedValue          String // the literal token found in text, normalized
-  matchedSource         String // EMAIL_SUBJECT, PARSED_DOCUMENT_TEXT
+  matchedSource         String // EMAIL_SUBJECT, EMAIL_BODY, FILE_NAME, PARSED_DOCUMENT_TEXT, LLM_INTENT
   autoSelected          Boolean          @default(false)
+  // Human-readable "why this shipment" explanation. Populated when the LLM
+  // matcher proposed or corroborated this candidate; null for a pure
+  // deterministic identifier hit.
+  reasoning             String?
   // E-1: 0.0–1.0 signal for UI ranking. v1 wrote a hardcoded 1.0 for every
   // exact-identifier hit; v2 writes a real weighted score (see scoreBreakdown).
   confidenceScore       Float            @default(1.0)
@@ -10827,6 +10835,13 @@ model InboundAddress {
   status                  String         @default("ACTIVE")
   purpose                 String         @default("CLIENT_DOCUMENTS")
   senderPolicy            String         @default("REVIEW")
+  // How aggressively a confidently-matched document is auto-attached to a
+  // shipment without a human review:
+  //   OFF        — always send emailed documents to the review queue.
+  //   CONFIDENT  — auto-attach on a DB-verified single match with no rival.
+  //   AGGRESSIVE — also auto-attach the sole plausible candidate at lower
+  //                confidence (still never a pure LLM-intent guess).
+  autoAttachPolicy        String         @default("CONFIDENT")
   autoReplyEnabled        Boolean        @default(true)
   defaultAssignedToUserId String?
   defaultAssignedToUser   User?          @relation("InboundAddressAssignee", fields: [defaultAssignedToUserId], references: [id], onDelete: SetNull)

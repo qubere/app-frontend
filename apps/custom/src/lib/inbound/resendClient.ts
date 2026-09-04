@@ -65,7 +65,45 @@ export interface ReceivedEmailContent {
   subject: string;
   receivedFor: string[];
   headers: Record<string, string> | null;
+  /** Plain-text body, when the sender included one. */
+  text: string | null;
+  /** HTML body, when the sender included one. */
+  html: string | null;
   attachments: ReceivedEmailAttachmentMeta[];
+}
+
+/** Longest body excerpt persisted / handed to the matcher. */
+export const INBOUND_BODY_EXCERPT_MAX = 16_000;
+
+/**
+ * Reduces a received email's body to a bounded plain-text excerpt for shipment
+ * matching and reviewer display. Prefers the text part; falls back to a rough
+ * de-tagging of the HTML part. Never returns more than `INBOUND_BODY_EXCERPT_MAX`
+ * characters.
+ */
+export function bodyExcerpt(text: string | null | undefined, html: string | null | undefined): string | null {
+  const fromText = (text ?? "").trim();
+  const raw =
+    fromText !== ""
+      ? fromText
+      : (html ?? "")
+          .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/(p|div|tr|li|h[1-6])>/gi, "\n")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/&amp;/gi, "&")
+          .replace(/&lt;/gi, "<")
+          .replace(/&gt;/gi, ">");
+  const collapsed = raw
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (collapsed === "") return null;
+  return collapsed.length > INBOUND_BODY_EXCERPT_MAX
+    ? collapsed.slice(0, INBOUND_BODY_EXCERPT_MAX)
+    : collapsed;
 }
 
 /** Fetches full email metadata/headers/attachment-list for a received email. */
@@ -81,6 +119,8 @@ export async function getReceivedEmail(emailId: string): Promise<ReceivedEmailCo
     subject: data.subject,
     receivedFor: data.received_for,
     headers: data.headers,
+    text: data.text ?? null,
+    html: data.html ?? null,
     attachments: data.attachments.map((a) => ({
       id: a.id,
       filename: a.filename,

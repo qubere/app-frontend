@@ -488,6 +488,7 @@ export interface DueRun extends ProcessingRunRecord {
   document: {
     id: string;
     accountId: string;
+    clientId: string | null;
     fileName: string;
     fileUrl: string | null;
     checksum: string | null;
@@ -502,6 +503,7 @@ const DUE_RUN_SELECT = {
     select: {
       id: true,
       accountId: true,
+      clientId: true,
       fileName: true,
       fileUrl: true,
       checksum: true,

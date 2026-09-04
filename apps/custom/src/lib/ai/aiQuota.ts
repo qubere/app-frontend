@@ -56,6 +56,7 @@ export const AI_SURFACES = [
   "compliance-audit",
   "document-intake",
   "advisory",
+  "shipment-match",
 ] as const;
 
 export type AiSurface = (typeof AI_SURFACES)[number];

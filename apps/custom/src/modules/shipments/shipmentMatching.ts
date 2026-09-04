@@ -108,7 +108,7 @@ export interface CandidateRecord {
   accountId: string;
   documentId: string;
   shipmentId: string;
-  matchedIdentifierType: MatchIdentifierType;
+  matchedIdentifierType: MatchIdentifierType | "LLM_INTENT";
   matchedValue: string;
   matchedSource: MatchSource;
   autoSelected: boolean;
@@ -116,6 +116,8 @@ export interface CandidateRecord {
   algorithmVersion: string;
   matchMethod: string;
   scoreBreakdown: ScoreBreakdown;
+  /** LLM "why this shipment" explanation, when this row came from the LLM matcher. */
+  reasoning?: string | null;
 }
 
 export interface ShipmentIdentifierLookup {
@@ -196,6 +198,7 @@ export const scopedShipmentIdentifierLookup = (clientId?: string | null): Shipme
         algorithmVersion: record.algorithmVersion,
         matchMethod: record.matchMethod,
         scoreBreakdown: record.scoreBreakdown as unknown as object,
+        reasoning: record.reasoning ?? null,
       },
     });
   },
@@ -206,7 +209,12 @@ export const databaseShipmentIdentifierLookup = scopedShipmentIdentifierLookup()
 // Matching
 // ---------------------------------------------------------------------------
 
-export type MatchSource = "EMAIL_SUBJECT" | "FILE_NAME" | "PARSED_DOCUMENT_TEXT";
+export type MatchSource =
+  | "EMAIL_SUBJECT"
+  | "EMAIL_BODY"
+  | "FILE_NAME"
+  | "PARSED_DOCUMENT_TEXT"
+  | "LLM_INTENT";
 
 export interface MatchShipmentInput {
   accountId: string;
@@ -216,6 +224,7 @@ export interface MatchShipmentInput {
   requireReview?: boolean;
   fileName?: string | null;
   emailSubject: string | null;
+  emailBody?: string | null;
   parsedText: string | null;
 }
 
@@ -239,6 +248,7 @@ export interface ScoredCandidate {
 function sources(input: MatchShipmentInput): Array<[string, MatchSource]> {
   const out: Array<[string, MatchSource]> = [];
   if (input.emailSubject) out.push([input.emailSubject, "EMAIL_SUBJECT"]);
+  if (input.emailBody) out.push([input.emailBody, "EMAIL_BODY"]);
   if (input.fileName) out.push([input.fileName, "FILE_NAME"]);
   if (input.parsedText) out.push([input.parsedText, "PARSED_DOCUMENT_TEXT"]);
   return out;
@@ -405,4 +415,207 @@ export function isMatchConflict(result: {
     result.matchedShipmentId === null &&
     result.candidates.filter((c) => c.score >= SUGGEST_THRESHOLD).length >= 2
   );
+}
+
+// ---------------------------------------------------------------------------
+// LLM-assisted resolution (LLM proposes, DB confirms)
+// ---------------------------------------------------------------------------
+
+export type AutoAttachPolicy = "OFF" | "CONFIDENT" | "AGGRESSIVE";
+
+export interface LlmSuggestion {
+  suggestedShipmentId: string | null;
+  confidence: number;
+  reasoning: string;
+  extractedIdentifiers: Array<{ type: string; value: string }>;
+  alternativeShipmentIds: string[];
+  model: string;
+}
+
+export interface ResolveShipmentInput extends MatchShipmentInput {
+  userId?: string | null;
+  autoAttachPolicy?: AutoAttachPolicy;
+}
+
+export interface ResolveShipmentResult {
+  matchedShipmentId: string | null;
+  candidates: ScoredCandidate[];
+  /** The LLM's suggestion, when one was produced (for the review "why" card). */
+  llm: LlmSuggestion | null;
+  /** How the result was reached — drives the review reason / audit trail. */
+  outcome:
+    | "AUTO_ATTACH_DETERMINISTIC"
+    | "AUTO_ATTACH_LLM_VERIFIED"
+    | "AUTO_ATTACH_AGGRESSIVE"
+    | "MATCH_CONFLICT"
+    | "LOW_CONFIDENCE"
+    | "NO_MATCH"
+    | "REVIEW_REQUIRED";
+}
+
+export interface ResolveShipmentOptions {
+  lookup?: ShipmentIdentifierLookup;
+  /** Injectable LLM suggester (real one lazy-loads @/modules/shipments/llmShipmentMatch). */
+  suggest?: (input: ResolveShipmentInput) => Promise<LlmSuggestion | null>;
+}
+
+async function defaultSuggest(input: ResolveShipmentInput): Promise<LlmSuggestion | null> {
+  const { loadCandidateShipments, suggestShipmentWithLLM } = await import(
+    "@/modules/shipments/llmShipmentMatch"
+  );
+  const candidateShipments = await loadCandidateShipments(input.accountId, input.clientId);
+  return suggestShipmentWithLLM({
+    accountId: input.accountId,
+    userId: input.userId,
+    clientId: input.clientId,
+    emailSubject: input.emailSubject,
+    emailBody: input.emailBody,
+    fileName: input.fileName,
+    parsedText: input.parsedText,
+    candidateShipments,
+  });
+}
+
+const LLM_CONFIDENCE_BAR: Record<Exclude<AutoAttachPolicy, "OFF">, number> = {
+  CONFIDENT: 0.75,
+  AGGRESSIVE: 0.6,
+};
+
+/**
+ * Resolves a document to a shipment, combining the deterministic matcher with an
+ * LLM interpretation layer.
+ *
+ *   1. Deterministic exact-identifier match first. A confident, unrivalled hit
+ *      auto-attaches without ever calling the LLM.
+ *   2. Otherwise ask the LLM to read subject + body + filename + parsed text and
+ *      propose a shipment. The proposal is auto-attached ONLY when a real
+ *      identifier also resolves to that same shipment in the database (via a
+ *      deterministic signal or by verifying the LLM's own extracted
+ *      identifiers), with no rival and confidence at/above the policy bar.
+ *   3. A pure-intent LLM proposal (no corroborating identifier) is never
+ *      auto-attached — it is recorded as the top candidate with its reasoning
+ *      for a human to confirm.
+ */
+export async function resolveShipmentForDocument(
+  input: ResolveShipmentInput,
+  options: ResolveShipmentOptions = {}
+): Promise<ResolveShipmentResult> {
+  const lookup = options.lookup ?? scopedShipmentIdentifierLookup(input.clientId);
+  const policy: AutoAttachPolicy = input.autoAttachPolicy ?? "CONFIDENT";
+  const suggest = options.suggest ?? defaultSuggest;
+
+  const det = await matchShipmentForDocument(input, lookup);
+
+  if (det.matchedShipmentId) {
+    return { matchedShipmentId: det.matchedShipmentId, candidates: det.candidates, llm: null, outcome: "AUTO_ATTACH_DETERMINISTIC" };
+  }
+
+  const plausible = det.candidates.filter((c) => c.score >= SUGGEST_THRESHOLD);
+
+  // AGGRESSIVE: a single DB-verified candidate, below the auto threshold but with
+  // no rival, is enough — it is still a real identifier hit, just a weaker one.
+  if (policy === "AGGRESSIVE" && !input.requireReview && plausible.length === 1 && det.candidates.length === 1) {
+    await lookup.recordCandidate(candidateRecordFor(input, plausible[0], true, null));
+    return { matchedShipmentId: plausible[0].shipmentId, candidates: det.candidates, llm: null, outcome: "AUTO_ATTACH_AGGRESSIVE" };
+  }
+
+  let llm: LlmSuggestion | null = null;
+  try {
+    llm = await suggest(input);
+  } catch (error) {
+    console.error("[resolveShipmentForDocument] LLM suggester threw", {
+      documentId: input.documentId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  if (llm?.suggestedShipmentId) {
+    const targetId = llm.suggestedShipmentId;
+    const deterministicSignal = det.candidates.find((c) => c.shipmentId === targetId);
+    const identifierVerified =
+      deterministicSignal !== undefined ||
+      (await verifyIdentifiersResolveToShipment(lookup, input.accountId, llm.extractedIdentifiers, targetId));
+    const rival = det.candidates.some((c) => c.shipmentId !== targetId && c.score >= SUGGEST_THRESHOLD);
+    const bar = policy === "OFF" ? Infinity : LLM_CONFIDENCE_BAR[policy];
+
+    // Always record the LLM's pick as a candidate so the review card can explain it.
+    await lookup.recordCandidate(
+      candidateRecordFor(
+        input,
+        deterministicSignal ?? syntheticCandidate(targetId, llm.confidence),
+        false,
+        llm.reasoning
+      )
+    );
+
+    if (identifierVerified && !input.requireReview && policy !== "OFF" && !rival && llm.confidence >= bar) {
+      return { matchedShipmentId: targetId, candidates: det.candidates, llm, outcome: "AUTO_ATTACH_LLM_VERIFIED" };
+    }
+  }
+
+  const outcome: ResolveShipmentResult["outcome"] = input.requireReview
+    ? "REVIEW_REQUIRED"
+    : isMatchConflict(det)
+      ? "MATCH_CONFLICT"
+      : det.candidates.length > 0 || llm?.suggestedShipmentId
+        ? "LOW_CONFIDENCE"
+        : "NO_MATCH";
+
+  return { matchedShipmentId: null, candidates: det.candidates, llm, outcome };
+}
+
+function syntheticCandidate(shipmentId: string, score: number): ScoredCandidate {
+  const best: Signal = { shipmentId, type: "SHIPMENT_NUMBER", value: "", source: "LLM_INTENT", weight: score };
+  return {
+    shipmentId,
+    score,
+    matchMethod: "LLM_INTENT",
+    best,
+    breakdown: { score, base: score, agreementBonus: 0, signals: [{ type: "SHIPMENT_NUMBER", value: "", source: "LLM_INTENT", weight: score }] },
+  };
+}
+
+function candidateRecordFor(
+  input: ResolveShipmentInput,
+  cand: ScoredCandidate,
+  autoSelected: boolean,
+  reasoning: string | null
+): CandidateRecord {
+  return {
+    accountId: input.accountId,
+    documentId: input.documentId,
+    shipmentId: cand.shipmentId,
+    matchedIdentifierType: cand.best.source === "LLM_INTENT" ? "LLM_INTENT" : cand.best.type,
+    matchedValue: cand.best.value,
+    matchedSource: cand.best.source,
+    autoSelected,
+    confidenceScore: cand.score,
+    algorithmVersion: cand.best.source === "LLM_INTENT" ? "v3-llm-assisted" : ALGORITHM_VERSION,
+    matchMethod: cand.matchMethod,
+    scoreBreakdown: cand.breakdown,
+    reasoning,
+  };
+}
+
+/** True when any of the LLM's extracted identifiers resolves (exact, normalized) to `shipmentId`. */
+async function verifyIdentifiersResolveToShipment(
+  lookup: ShipmentIdentifierLookup,
+  accountId: string,
+  identifiers: Array<{ type: string; value: string }>,
+  shipmentId: string
+): Promise<boolean> {
+  if (identifiers.length === 0) return false;
+  const tokens = Array.from(new Set(identifiers.map((i) => normalizeIdentifier(i.value)).filter(Boolean)));
+  if (tokens.length === 0) return false;
+
+  for (const raw of identifiers) {
+    const value = raw.value.trim();
+    if (!value) continue;
+    const shipHit = await lookup.findByShipmentNumber(accountId, value.toUpperCase());
+    if (shipHit?.id === shipmentId) return true;
+    const poHits = await lookup.findByPoReference(accountId, normalizeIdentifier(value));
+    if (poHits.some((h) => h.id === shipmentId)) return true;
+  }
+  const trackingHits = await lookup.findByTrackingIdentifiers(accountId, tokens);
+  return trackingHits.some((h) => h.shipmentId === shipmentId);
 }

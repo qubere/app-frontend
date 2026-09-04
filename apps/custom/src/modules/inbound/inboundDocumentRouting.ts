@@ -3,7 +3,7 @@ import { evaluateSenderPolicy } from './inboundAddressService';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { parseArtifactIndex, loadNormalizedResult } from '@/modules/documents/parser/artifactStore';
-import { matchShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from '@/modules/shipments/shipmentMatching';
+import { resolveShipmentForDocument, plainTextFromParsedResult, type ResolveShipmentResult, type AutoAttachPolicy } from '@/modules/shipments/shipmentMatching';
 import { createAuditLog, AuditAction } from '@/lib/audit';
 import { linkDocument } from '@/modules/documentAssociations/service';
 import { notifyAccountRoleHolders } from '@/modules/notifications/notifyAccount';
@@ -81,20 +81,76 @@ export async function routeParsedInboundDocument(accountId: string, documentId: 
   // has since been approved must be able to auto-attach on a reprocess.
   const senderDecision = address ? evaluateSenderPolicy(address.senderPolicy, senders.map(s => s.status), !!email?.senderApprovedAt) : 'ACCEPT';
   const unknownSender = senderDecision !== 'ACCEPT';
-  const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, fileName: document.fileName, parsedText, emailSubject: email?.subject ?? null, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
+  const autoAttachPolicy = (address?.autoAttachPolicy as AutoAttachPolicy | undefined) ?? 'CONFIDENT';
+  // A failed parse no longer forces review on its own: if the subject / body /
+  // filename produced a DB-verified match and the sender is trusted, the
+  // document still attaches. Unknown senders, and addresses set to "Off", always
+  // go to a human.
+  const requireReview = unknownSender || autoAttachPolicy === 'OFF';
+
+  const result = await resolveShipmentForDocument({
+    accountId,
+    clientId: document.clientId,
+    documentId,
+    fileName: document.fileName,
+    parsedText,
+    emailBody: email?.bodyText ?? null,
+    emailSubject: email?.subject ?? null,
+    autoAttachThreshold: inboundAutoAttachThreshold(),
+    autoAttachPolicy,
+    requireReview,
+  });
+
   if (result.matchedShipmentId) {
     await attachInboundDocument(accountId, documentId, result.matchedShipmentId);
     await db.inboundDocumentReview.updateMany({ where: { shipmentDocumentId: documentId, accountId, status: 'OPEN' }, data: { status: 'RESOLVED', resolvedShipmentId: result.matchedShipmentId, resolvedAt: new Date() } });
     await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
+    await createAuditLog({ accountId, action: AuditAction.AUTO_ATTACH_DOCUMENT, entity: 'ShipmentDocument', entityId: documentId, source: 'SYSTEM', metadata: { shipmentId: result.matchedShipmentId, outcome: result.outcome, llmModel: result.llm?.model ?? null } });
     if (email?.id) await summarizeInboundReceipt(accountId, email.id);
     return result.matchedShipmentId;
   }
+
   if (email?.id) {
-    await openInboundReview({ accountId, clientId: document.clientId, inboundEmailId: email.id, shipmentDocumentId: documentId, reason: unknownSender ? 'UNKNOWN_SENDER' : extractionFailed ? 'EXTRACTION_FAILED' : isMatchConflict(result) ? 'MATCH_CONFLICT' : result.candidates.length ? 'LOW_CONFIDENCE' : 'NO_MATCH', candidateSummary: result.candidates.map(c => ({ shipmentId: c.shipmentId, score: c.score, signals: c.breakdown.signals })) });
+    const reason = unknownSender
+      ? 'UNKNOWN_SENDER'
+      : result.outcome === 'MATCH_CONFLICT'
+        ? 'MATCH_CONFLICT'
+        : result.outcome === 'LOW_CONFIDENCE'
+          ? 'LOW_CONFIDENCE'
+          : extractionFailed && result.candidates.length === 0 && !result.llm?.suggestedShipmentId
+            ? 'EXTRACTION_FAILED'
+            : 'NO_MATCH';
+    await openInboundReview({
+      accountId,
+      clientId: document.clientId,
+      inboundEmailId: email.id,
+      shipmentDocumentId: documentId,
+      reason,
+      candidateSummary: buildCandidateSummary(result),
+    });
   }
   await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
   if (email?.id) await summarizeInboundReceipt(accountId, email.id);
   return null;
+}
+
+/**
+ * The review queue's "why" payload: ranked deterministic candidates plus, when
+ * the LLM proposed a shipment, its reasoning attached to that candidate (or as
+ * its own entry when the LLM saw something the deterministic pass did not).
+ */
+function buildCandidateSummary(result: ResolveShipmentResult) {
+  const rows = result.candidates.map(c => ({
+    shipmentId: c.shipmentId,
+    score: c.score,
+    signals: c.breakdown.signals,
+    reasoning: result.llm?.suggestedShipmentId === c.shipmentId ? result.llm.reasoning : undefined,
+  }));
+  const llmId = result.llm?.suggestedShipmentId;
+  if (llmId && !rows.some(r => r.shipmentId === llmId)) {
+    rows.unshift({ shipmentId: llmId, score: result.llm!.confidence, signals: [], reasoning: result.llm!.reasoning });
+  }
+  return rows;
 }
 
 /** Cron recovery when a parser finished but downstream dispatch was interrupted. */
