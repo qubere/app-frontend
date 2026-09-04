@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logging/logger";
+import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
 
 export interface EntityMatchCandidate {
   legalEntityId: string;
@@ -186,15 +188,44 @@ export class EntityResolutionService {
       });
     }
 
+    // Resolve/create this entity's Party twin (#320 Phase 1, spec §6.2) --
+    // fail-open, and only when this call is not itself nested inside a
+    // caller's transaction (`tx` supplied). materializers.ts's
+    // PartyRoleMaterializer calls findOrCreateEntity from inside a
+    // Serializable-adjacent hydration transaction with its own optimistic
+    // concurrency check (Shipment.version) and idempotent Fact writes; party
+    // resolution can trigger Restricted Party Screening, and running that
+    // extra work on a separate connection inside someone else's transaction
+    // would extend its wall-clock duration for no benefit worth that risk.
+    // That LegalEntity simply stays unbridged until the backfill script (or
+    // a dedicated look at that pipeline) picks it up -- same as it is today.
+    const country = options?.country || "US";
+    let partyId: string | null = null;
+    if (!tx) {
+      try {
+        const resolved = await resolvePartyForCompany(
+          { accountId, userId: null, requestId: null },
+          { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null }
+        );
+        partyId = resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+      } catch (error) {
+        logger.warn("entityResolutionService: resolvePartyForCompany failed, creating the entity without a party link", {
+          accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     // Create new LegalEntity
     const newEntity = await client.legalEntity.create({
       data: {
         accountId,
         clientId: options?.clientId || null,
         legalName: rawName.trim(),
-        country: options?.country || "US",
+        country,
         taxIdentifier: options?.taxIdentifier || null,
         status: "ACTIVE",
+        partyId,
         ...(options?.cbpImporterNumber
           ? {
               customsProfiles: {

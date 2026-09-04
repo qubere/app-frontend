@@ -129,6 +129,56 @@ interface ScreeningResult {
   disposition: ScreeningDisposition | null;
 }
 
+function humanizeStatus(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/**
+ * The "one party record, N roles" payoff (#320 spec §3.5): the role-specific
+ * facts this party carries because of what it does, not who it is --
+ * CarrierProfile for the carrier role, ImporterOfRecord (read through each
+ * bridged LegalEntity, #320 Phase 1's `legalEntityId -> LegalEntity.partyId`
+ * bridge) for the importer role. Renders nothing when there is genuinely
+ * nothing to show -- a party with no capacity extensions yet is common and
+ * unremarkable, not an empty error state.
+ */
+export function AlsoKnownAsSection({ party }: { party: PartyDetail }) {
+  const importerLinks = party.legalEntities
+    .map((entity) => entity.importerOfRecord)
+    .filter((ior): ior is NonNullable<typeof ior> => ior !== null);
+  const carrierProfile = party.carrierProfile;
+  if (importerLinks.length === 0 && !carrierProfile) return null;
+
+  return (
+    <section className="rounded-2xl bg-white border border-border p-5 space-y-3 lg:col-span-2">
+      <h2 className="text-sm font-bold text-ink">Also known as</h2>
+      <p className="text-xs text-[#6E6E73]">
+        Same company, one party record — screening history and aliases carry across every role this
+        party holds.
+      </p>
+      <ul className="space-y-2 text-sm text-ink">
+        {carrierProfile && (
+          <li>
+            Carrier
+            {carrierProfile.scac ? ` · SCAC ${carrierProfile.scac}` : ""}
+            {carrierProfile.dot ? ` · DOT ${carrierProfile.dot}` : ""}
+          </li>
+        )}
+        {importerLinks.map((ior) => (
+          <li key={ior.id}>
+            <Link href={`/app/importers/${ior.id}`} className="font-semibold text-brand hover:underline">
+              Importer of record
+            </Link>
+            {" — "}
+            {humanizeStatus(ior.registrationStatus)}
+            {ior.cbpImporterNumber ? ` · ${ior.cbpImporterNumber}` : ""}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function PartyTabs({
   partyId,
   initialTab,
@@ -319,6 +369,8 @@ export function PartyTabs({
               Open roles →
             </button>
           </section>
+
+          <AlsoKnownAsSection party={party} />
 
           <section className="rounded-2xl bg-white border border-border p-5 space-y-3 lg:col-span-2">
             <h2 className="text-sm font-bold text-ink">Registrations</h2>
