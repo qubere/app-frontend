@@ -3,7 +3,9 @@ import {
   DOCUMENT_PAGE_SIZE_DEFAULT,
   DOCUMENT_PAGE_SIZE_MAX,
   buildDocumentWhere,
+  buildDocumentWhereWithOptions,
   documentSkip,
+  isParsedSearchCompatibilityError,
   parseDocumentQuery,
 } from "@/modules/documents/documentQuery";
 
@@ -123,6 +125,28 @@ describe("document where clause", () => {
     expect(where.status).toBe("Received");
     expect(where.AND).toHaveLength(1);
     expect((where.AND as Array<{ OR: unknown[] }>)[0]?.OR).toHaveLength(11);
+  });
+
+  it("retains legacy parsed-field search while the new search column is being migrated", () => {
+    const where = buildDocumentWhereWithOptions("acct_a", q("search=basf"), {
+      includeParsedSearchText: false,
+    });
+    const branches = (where.AND as Array<{ OR: unknown[] }>)[0]?.OR;
+    expect(branches).not.toContainEqual({
+      parsedSearchText: { contains: "basf", mode: "insensitive" },
+    });
+    expect(branches).toContainEqual({
+      extractionFields: { some: { OR: [
+        { fieldName: { contains: "basf", mode: "insensitive" } },
+        { value: { contains: "basf", mode: "insensitive" } },
+      ] } },
+    });
+  });
+
+  it("recognizes only parsed-search schema compatibility errors", () => {
+    expect(isParsedSearchCompatibilityError({ code: "P2022", meta: { column: "parsedSearchText" } })).toBe(true);
+    expect(isParsedSearchCompatibilityError(new Error("Unknown argument `parsedSearchText`"))).toBe(true);
+    expect(isParsedSearchCompatibilityError(new Error("Database connection failed"))).toBe(false);
   });
 
   it("filters by client on either the document or its legacy parent shipment", () => {
