@@ -3,6 +3,8 @@ import { ShipmentEventBus } from "@/modules/events/shipmentEventBus";
 import { isPlaceholderValue, lineItemFactField } from "./lineItemReconciler";
 import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service";
 import { createExceptionItem } from "@/lib/exceptions/createException";
+import { ShipmentPartyService } from "./shipmentPartyService";
+import { matchPartMaster } from "@/modules/product/partMasterMatch";
 
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
 
@@ -218,6 +220,90 @@ export class ReconciliationEngine {
         data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },
       });
       exceptionsResolved++;
+    }
+
+    // 1b. Party master revalidation -- swept every run, not just at the
+    // moment a party is assigned, so a revalidation flag opened afterward is
+    // still caught before filing.
+    for (const shipmentParty of shipment.shipmentParties) {
+      if (!shipmentParty.legalEntity?.partyId) continue;
+      await ShipmentPartyService.checkPartyMasterRevalidation(
+        shipment.id,
+        shipmentParty.legalEntityId,
+        shipment.accountId,
+        null
+      );
+    }
+
+    // 1c. Part/product master mismatch -- line items are classified by the
+    // HTS agent independent of reconciliation, so a mismatch against the
+    // canonical product master would otherwise only surface if/when that
+    // agent happens to run again for this line.
+    const canonicalProducts = await db.canonicalProduct.findMany({
+      where: { accountId: shipment.accountId },
+      include: { aliases: true },
+    });
+    const activePartMasterExceptions = activeExceptions.filter((e) => e.sourceAgent === "Part Master Match");
+    const currentPartMasterKeys = new Set<string>();
+
+    for (const item of shipment.lineItems) {
+      if (!item.partNumber?.trim()) continue;
+      const match = matchPartMaster(
+        { partNumber: item.partNumber, proposedHtsCode: item.htsCode },
+        canonicalProducts
+      );
+
+      if (match.matched && !match.htsAgrees) {
+        const code = "PART_MASTER_MISMATCH";
+        currentPartMasterKeys.add(`${code}:${item.lineNumber}`);
+        await createExceptionItem({
+          accountId: shipment.accountId,
+          shipmentId: shipment.id,
+          documentId: null,
+          code,
+          fieldKey: "htsCode",
+          category: "CLASSIFICATION",
+          type: "data_mismatch",
+          severity: "Medium",
+          description: `Line ${item.lineNumber} (part ${item.partNumber}): proposed HTS code "${item.htsCode}" disagrees with the product master's HTS code "${match.masterHtsCode}".`,
+          blocking: false,
+          requiredAction: "Confirm the correct HTS code against the product master before filing.",
+          sourceAgent: "Part Master Match",
+        });
+        exceptionsGenerated++;
+        affectedAgentsSet.add("HTS_CLASSIFICATION");
+      } else if (!match.matched) {
+        const code = "PART_NOT_IN_MASTER";
+        currentPartMasterKeys.add(`${code}:${item.lineNumber}`);
+        await createExceptionItem({
+          accountId: shipment.accountId,
+          shipmentId: shipment.id,
+          documentId: null,
+          code,
+          fieldKey: "partNumber",
+          category: "MISSING_DATA",
+          type: "data_mismatch",
+          severity: "Low",
+          description: `Line ${item.lineNumber}: part number "${item.partNumber}" was not found in the product master.`,
+          blocking: false,
+          requiredAction: "Add this part to the product master, or confirm the part number is correct.",
+          sourceAgent: "Part Master Match",
+        });
+        exceptionsGenerated++;
+        affectedAgentsSet.add("HTS_CLASSIFICATION");
+      }
+    }
+
+    for (const existing of activePartMasterExceptions) {
+      const lineMatch = existing.description.match(/^Line (\d+)/);
+      const key = existing.code && lineMatch ? `${existing.code}:${lineMatch[1]}` : null;
+      if (key && !currentPartMasterKeys.has(key)) {
+        await db.exceptionItem.update({
+          where: { id: existing.id },
+          data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },
+        });
+        exceptionsResolved++;
+      }
     }
 
     // 2. Check Line Items HTS Review Requirements

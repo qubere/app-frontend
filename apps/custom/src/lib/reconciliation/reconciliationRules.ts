@@ -75,6 +75,17 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     blocksFiling: false,
     description: "Invoice quantity vs. bill of lading quantity",
   },
+  {
+    id: "QTY_PACK_BL",
+    fieldKey: "totalQuantity",
+    docTypeA: "Packing",
+    docTypeB: "Lading",
+    discrepancyType: "QUANTITY",
+    normalizationFn: "quantity_unit",
+    tolerancePct: 5,
+    blocksFiling: false,
+    description: "Packing list quantity vs. bill of lading quantity",
+  },
 
   // ── Value ────────────────────────────────────────────────────────────────────
   {
@@ -157,6 +168,17 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     tolerancePct: 3,
     blocksFiling: false,
     description: "Invoice net weight vs. packing list net weight",
+  },
+  {
+    id: "WEIGHT_INV_BL",
+    fieldKey: "grossWeight",
+    docTypeA: "Invoice",
+    docTypeB: "Lading",
+    discrepancyType: "WEIGHT",
+    normalizationFn: "weight_unit",
+    tolerancePct: 5,
+    blocksFiling: false,
+    description: "Invoice gross weight vs. bill of lading gross weight",
   },
 
   // ── Parties ──────────────────────────────────────────────────────────────────
@@ -251,6 +273,17 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     tolerancePct: 0,
     blocksFiling: true,
     description: "Certificate of origin country vs. packing list country of origin",
+  },
+  {
+    id: "ORIGIN_COO_BL",
+    fieldKey: "countryOfOrigin",
+    docTypeA: "Certificate of Origin",
+    docTypeB: "Lading",
+    discrepancyType: "ORIGIN",
+    normalizationFn: "text",
+    tolerancePct: 0,
+    blocksFiling: false,
+    description: "Certificate of origin country vs. bill of lading country of origin",
   },
 
   // ── Reference numbers ────────────────────────────────────────────────────────

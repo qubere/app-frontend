@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock, User, Mail, AlertTriangle } from "lucide-react";
+import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock, User, Mail, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor, reviewCategory } from "@/modules/decisions/editableFields";
 import { triageDecision } from "@/modules/decisions/decisionState";
-import { type ReviewField, nextReviewIndex } from "@/modules/documents/extractionReview";
+import { type ReviewField, nextReviewIndex, sortByReviewPriority, summarizeVerification } from "@/modules/documents/extractionReview";
+import { RECONCILIATION_RULES } from "@/lib/reconciliation/reconciliationRules";
 import { PdfCanvas, type PdfCanvasBbox } from "@/components/PdfCanvas";
 import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
 import { DocumentProcessingBadge } from "@/components/DocumentProcessingBadge";
@@ -531,6 +532,21 @@ export function DocumentReviewPanel({
   const [activeFieldIndex, setActiveFieldIndex] = useState(-1);
   const fieldListRef = useRef<HTMLDivElement>(null);
 
+  // Needs-attention fields (missing/conflict/needs-review) always show; a
+  // document that's mostly clean shouldn't bury them under a wall of
+  // already-verified rows, so auto-verified/not-applicable fields start
+  // collapsed behind this toggle.
+  const [showAutoVerified, setShowAutoVerified] = useState(false);
+  const [highlightedConflictId, setHighlightedConflictId] = useState<string | null>(null);
+
+  // Priority-ordered once per data change; every index used for keyboard nav,
+  // scroll targeting, and rendering must agree on this same order.
+  const sortedReviewFields = useMemo(
+    () => sortByReviewPriority(data?.reviewFields ?? []),
+    [data?.reviewFields]
+  );
+  const verificationCounts = useMemo(() => summarizeVerification(sortedReviewFields), [sortedReviewFields]);
+
   // Resolving a cross-document conflict surfaced from ReconciliationIssue rows.
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
 
@@ -855,11 +871,16 @@ export function DocumentReviewPanel({
   // Jump to a ReviewField by index in the right-pane field list.
   const jumpToReviewField = useCallback(
     (index: number) => {
-      const fields = data?.reviewFields ?? [];
+      const fields = sortedReviewFields;
       if (fields.length === 0) return;
       const clamped = ((index % fields.length) + fields.length) % fields.length;
       const field = fields[clamped];
       setActiveFieldIndex(clamped);
+      // Auto-verified fields are collapsed by default -- reveal the section
+      // when nav lands on one, or the row it's jumping to won't exist in the DOM.
+      if (field.verification === "AUTO_VERIFIED" || field.verification === "NOT_APPLICABLE") {
+        setShowAutoVerified(true);
+      }
       if (field.bbox) {
         setActiveProvenance({ name: field.fieldName, page: field.pageNumber, bbox: field.bbox });
         if (field.pageNumber) setPdfPage(field.pageNumber);
@@ -867,16 +888,27 @@ export function DocumentReviewPanel({
         setActiveProvenance({ name: field.fieldName, page: field.pageNumber, bbox: null });
       }
       // Scroll the field row into view in the right pane.
-      const row = fieldListRef.current?.querySelector<HTMLElement>(`[data-field-index="${clamped}"]`);
-      row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      requestAnimationFrame(() => {
+        const row = fieldListRef.current?.querySelector<HTMLElement>(`[data-field-index="${clamped}"]`);
+        row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
     },
-    [data?.reviewFields]
+    [sortedReviewFields]
   );
+
+  // Jump to the Conflicts-section card matching a CONFLICT-state field row.
+  const jumpToConflict = useCallback((issueId: string) => {
+    setHighlightedConflictId(issueId);
+    requestAnimationFrame(() => {
+      const row = fieldListRef.current?.querySelector<HTMLElement>(`[data-conflict-id="${issueId}"]`);
+      row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, []);
 
   // D-3: n = next review field, p = previous review field (wrapping).
   useEffect(() => {
     if (activeTab !== "DOC") return;
-    const fields = data?.reviewFields ?? [];
+    const fields = sortedReviewFields;
     if (fields.length === 0) return;
 
     function onKeyDown(e: KeyboardEvent) {
@@ -898,7 +930,7 @@ export function DocumentReviewPanel({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeTab, data?.reviewFields, activeFieldIndex, jumpToReviewField]);
+  }, [activeTab, sortedReviewFields, activeFieldIndex, jumpToReviewField]);
 
   const isPending = parsedExtractedJson?.extractionStatus === "PENDING_VISION_PROCESSING";
 
@@ -1320,8 +1352,116 @@ export function DocumentReviewPanel({
                 </div>
               ) : isPdfFile(proxyUrl, fileName) ? (
                 (() => {
-                  const reviewFields = data?.reviewFields ?? [];
+                  const reviewFields = sortedReviewFields;
                   const openConflicts = (data?.reconciliationIssues ?? []).filter((i) => i.status === "Open");
+                  // Same rule-id → fieldKey mapping the server uses (route.ts's
+                  // conflictedFieldNamesFor) so a CONFLICT field row can jump to
+                  // the matching Conflicts-section card.
+                  const conflictByFieldKey = new Map<string, (typeof openConflicts)[number]>();
+                  for (const issue of openConflicts) {
+                    const rule = RECONCILIATION_RULES.find((r) => r.id === issue.field);
+                    if (rule && !conflictByFieldKey.has(rule.fieldKey)) {
+                      conflictByFieldKey.set(rule.fieldKey, issue);
+                    }
+                  }
+                  const attentionFields = reviewFields.filter(
+                    (f) =>
+                      f.verification === "MISSING_REQUIRED" ||
+                      f.verification === "CONFLICT" ||
+                      f.verification === "NEEDS_REVIEW"
+                  );
+                  const verifiedFields = reviewFields.filter(
+                    (f) => f.verification === "AUTO_VERIFIED" || f.verification === "NOT_APPLICABLE"
+                  );
+
+                  const VERIFICATION_TEXT_CLASS: Record<ReviewField["verification"], string> = {
+                    MISSING_REQUIRED: "text-rose-400",
+                    CONFLICT: "text-rose-400",
+                    NEEDS_REVIEW: "text-amber-300",
+                    AUTO_VERIFIED: "text-slate-200",
+                    NOT_APPLICABLE: "text-slate-600",
+                  };
+
+                  function renderReviewFieldRow(field: ReviewField, idx: number) {
+                    const isActive = activeFieldIndex === idx;
+                    const hasLocation = field.pageNumber !== null || field.bbox !== null;
+                    const matchedConflict =
+                      field.verification === "CONFLICT" ? conflictByFieldKey.get(field.fieldName) : undefined;
+                    return (
+                      <div
+                        key={field.fieldName}
+                        data-field-index={idx}
+                        className={`px-3 py-2.5 transition-colors ${
+                          isActive
+                            ? "bg-amber-900/25 border-l-2 border-amber-500"
+                            : "hover:bg-white/5 border-l-2 border-transparent"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 truncate">
+                              {field.fieldName}
+                            </p>
+                            <p
+                              className={`font-mono font-semibold break-words mt-0.5 ${
+                                field.corrected ? "text-brand-light" : VERIFICATION_TEXT_CLASS[field.verification]
+                              }`}
+                            >
+                              {field.currentValue || <span className="italic text-slate-600">(empty)</span>}
+                            </p>
+                          </div>
+                          {/* State-aware action: missing fields have no source to jump
+                              to, conflicts jump to the matching Conflicts card, everything
+                              else jumps to its location on the page as before. */}
+                          {field.verification === "MISSING_REQUIRED" ? (
+                            <span
+                              title="Not found on this document"
+                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/15 text-rose-400"
+                            >
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              Missing
+                            </span>
+                          ) : matchedConflict ? (
+                            <button
+                              onClick={() => jumpToConflict(matchedConflict.id)}
+                              title="View the conflicting values"
+                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors cursor-pointer"
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              Conflict
+                            </button>
+                          ) : hasLocation ? (
+                            <button
+                              onClick={() => jumpToReviewField(idx)}
+                              title={
+                                field.bbox
+                                  ? `Jump to page ${field.pageNumber ?? "?"} and highlight`
+                                  : `Jump to page ${field.pageNumber ?? "?"}`
+                              }
+                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors cursor-pointer"
+                            >
+                              <MapPin className="w-2.5 h-2.5" />
+                              {field.pageNumber !== null ? `p.${field.pageNumber}` : ""}
+                            </button>
+                          ) : (
+                            <span
+                              title="Location not recorded by extraction pipeline"
+                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-slate-600"
+                            >
+                              <MapPinOff className="w-2.5 h-2.5" />
+                            </span>
+                          )}
+                        </div>
+                        {field.confidence !== null && (
+                          <p className="text-[10px] text-slate-600 mt-0.5">
+                            {field.confidence}% confidence
+                            {field.corrected && " · corrected"}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }
+
                   return (
                     <div className="flex-1 w-full h-full flex flex-col overflow-hidden">
                       {/* PDF Action Bar */}
@@ -1443,7 +1583,13 @@ export function DocumentReviewPanel({
                                 </div>
                                 <div className="divide-y divide-white/5">
                                   {openConflicts.map((issue) => (
-                                    <div key={issue.id} className="px-3 py-2.5 space-y-1.5">
+                                    <div
+                                      key={issue.id}
+                                      data-conflict-id={issue.id}
+                                      className={`px-3 py-2.5 space-y-1.5 transition-colors ${
+                                        highlightedConflictId === issue.id ? "bg-amber-900/25" : ""
+                                      }`}
+                                    >
                                       <p className="text-[10px] text-slate-400">
                                         {issue.sourceDocuments.join(" vs ") || issue.field}
                                       </p>
@@ -1473,74 +1619,50 @@ export function DocumentReviewPanel({
                                 </div>
                               </div>
                             )}
-                            <div className="px-3 py-2 border-b border-white/10 shrink-0">
+                            <div className="px-3 py-2 border-b border-white/10 shrink-0 space-y-1">
                               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 Extracted Fields
                               </p>
+                              <p className="text-[10px] text-slate-500 flex flex-wrap gap-x-2">
+                                {verificationCounts.MISSING_REQUIRED > 0 && (
+                                  <span className="text-rose-400">{verificationCounts.MISSING_REQUIRED} missing</span>
+                                )}
+                                {verificationCounts.CONFLICT > 0 && (
+                                  <span className="text-rose-400">{verificationCounts.CONFLICT} conflict</span>
+                                )}
+                                {verificationCounts.NEEDS_REVIEW > 0 && (
+                                  <span className="text-amber-400">{verificationCounts.NEEDS_REVIEW} needs review</span>
+                                )}
+                                <span className="text-emerald-400">{verificationCounts.AUTO_VERIFIED} verified</span>
+                              </p>
                             </div>
                             <div className="flex-1 divide-y divide-white/5">
-                              {reviewFields.map((field, idx) => {
-                                const isActive = activeFieldIndex === idx;
-                                const hasLocation = field.pageNumber !== null || field.bbox !== null;
-                                return (
-                                  <div
-                                    key={field.fieldName}
-                                    data-field-index={idx}
-                                    className={`px-3 py-2.5 transition-colors ${
-                                      isActive
-                                        ? "bg-amber-900/25 border-l-2 border-amber-500"
-                                        : "hover:bg-white/5 border-l-2 border-transparent"
-                                    }`}
+                              {attentionFields.map((field) =>
+                                renderReviewFieldRow(field, reviewFields.indexOf(field))
+                              )}
+                              {verifiedFields.length > 0 && (
+                                <div>
+                                  <button
+                                    onClick={() => setShowAutoVerified((v) => !v)}
+                                    className="w-full flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:bg-white/5 transition-colors cursor-pointer"
                                   >
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 truncate">
-                                          {field.fieldName}
-                                        </p>
-                                        <p
-                                          className={`font-mono font-semibold break-words mt-0.5 ${
-                                            field.corrected
-                                              ? "text-brand-light"
-                                              : field.needsReview
-                                              ? "text-amber-300"
-                                              : "text-slate-200"
-                                          }`}
-                                        >
-                                          {field.currentValue}
-                                        </p>
-                                      </div>
-                                      {/* D-4: view source / location not recorded */}
-                                      {hasLocation ? (
-                                        <button
-                                          onClick={() => jumpToReviewField(idx)}
-                                          title={
-                                            field.bbox
-                                              ? `Jump to page ${field.pageNumber ?? "?"} and highlight`
-                                              : `Jump to page ${field.pageNumber ?? "?"}`
-                                          }
-                                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors cursor-pointer"
-                                        >
-                                          <MapPin className="w-2.5 h-2.5" />
-                                          {field.pageNumber !== null ? `p.${field.pageNumber}` : ""}
-                                        </button>
-                                      ) : (
-                                        <span
-                                          title="Location not recorded by extraction pipeline"
-                                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-slate-600"
-                                        >
-                                          <MapPinOff className="w-2.5 h-2.5" />
-                                        </span>
+                                    {showAutoVerified ? (
+                                      <ChevronDown className="w-3 h-3" />
+                                    ) : (
+                                      <ChevronRight className="w-3 h-3" />
+                                    )}
+                                    {showAutoVerified ? "Hide" : "Show"} {verifiedFields.length} auto-verified field
+                                    {verifiedFields.length === 1 ? "" : "s"}
+                                  </button>
+                                  {showAutoVerified && (
+                                    <div className="divide-y divide-white/5">
+                                      {verifiedFields.map((field) =>
+                                        renderReviewFieldRow(field, reviewFields.indexOf(field))
                                       )}
                                     </div>
-                                    {field.confidence !== null && (
-                                      <p className="text-[10px] text-slate-600 mt-0.5">
-                                        {field.confidence}% confidence
-                                        {field.corrected && " · corrected"}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

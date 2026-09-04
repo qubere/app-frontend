@@ -19,6 +19,9 @@ const { dbMock, logEventMock, recordUsageEventMock } = vi.hoisted(() => ({
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({ id: "exc_1" }),
     },
+    canonicalProduct: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     fact: {
       findMany: vi.fn().mockResolvedValue([]),
     },

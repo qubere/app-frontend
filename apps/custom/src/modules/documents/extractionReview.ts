@@ -10,7 +10,7 @@
  */
 import type { DocumentType } from "@prisma/client";
 import { getFieldExpectation, getRequiredFields, type FieldExpectation } from "@/lib/documents/extractionSchemas";
-import type { FieldVerificationState } from "./fieldVerification";
+import { FIELD_VERIFICATION_STATES, type FieldVerificationState } from "./fieldVerification";
 
 export const HUMAN_CORRECTION_SOURCE = "HUMAN_CORRECTION";
 
@@ -143,7 +143,8 @@ function newestFirst(a: FieldRevision, b: FieldRevision): number {
  */
 export function buildReviewFields(
   rows: RawExtractionField[],
-  docType?: DocumentType | null
+  docType?: DocumentType | null,
+  conflictedFieldNames?: ReadonlySet<string>
 ): ReviewField[] {
   const byName = new Map<string, RawExtractionField[]>();
   for (const row of rows) {
@@ -198,6 +199,7 @@ export function buildReviewFields(
       confidence: bestMachineRead?.confidence ?? null,
       expectation: docType ? getFieldExpectation(docType, fieldName) : "OPTIONAL",
       hasMachineRead: machineReads.length > 0,
+      hasConflict: conflictedFieldNames?.has(fieldName) ?? false,
     });
 
     fields.push({
@@ -239,6 +241,40 @@ export function buildReviewFields(
   }
 
   return fields.sort((a, b) => a.fieldName.localeCompare(b.fieldName));
+}
+
+/**
+ * Priority order for review: a field a reviewer must act on before this
+ * document can be trusted comes first, fields that are already settled come
+ * last. Ties within a bucket keep buildReviewFields's own alphabetical order.
+ */
+const REVIEW_PRIORITY: Record<FieldVerificationState, number> = {
+  MISSING_REQUIRED: 0,
+  CONFLICT: 1,
+  NEEDS_REVIEW: 2,
+  AUTO_VERIFIED: 3,
+  NOT_APPLICABLE: 4,
+};
+
+/** Stable sort: highest-priority verification state first, alphabetical within a state. */
+export function sortByReviewPriority(fields: ReviewField[]): ReviewField[] {
+  return [...fields].sort((a, b) => {
+    const priorityDiff = REVIEW_PRIORITY[a.verification] - REVIEW_PRIORITY[b.verification];
+    if (priorityDiff !== 0) return priorityDiff;
+    return a.fieldName.localeCompare(b.fieldName);
+  });
+}
+
+/** Count of fields in each verification state, for a panel-header rollup. */
+export function summarizeVerification(fields: ReviewField[]): Record<FieldVerificationState, number> {
+  const counts = Object.fromEntries(FIELD_VERIFICATION_STATES.map((state) => [state, 0])) as Record<
+    FieldVerificationState,
+    number
+  >;
+  for (const field of fields) {
+    counts[field.verification] += 1;
+  }
+  return counts;
 }
 
 /** Pages that actually carry a located field, so navigation cannot offer empty pages. */

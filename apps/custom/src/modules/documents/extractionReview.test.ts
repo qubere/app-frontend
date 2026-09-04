@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { buildReviewFields, evaluateFieldVerification, type RawExtractionField } from "./extractionReview";
+import {
+  buildReviewFields,
+  evaluateFieldVerification,
+  sortByReviewPriority,
+  summarizeVerification,
+  type RawExtractionField,
+  type ReviewField,
+} from "./extractionReview";
 
 function row(overrides: Partial<RawExtractionField> = {}): RawExtractionField {
   return {
@@ -125,5 +132,104 @@ describe("buildReviewFields — verification and needsReview alias", () => {
   it("does not synthesize placeholders for optional fields", () => {
     const fields = buildReviewFields([row({ fieldName: "invoice_number" })], "COMMERCIAL_INVOICE");
     expect(fields.find((f) => f.fieldName === "incoterm")).toBeUndefined();
+  });
+
+  it("marks a field as CONFLICT when it's named in conflictedFieldNames", () => {
+    const fields = buildReviewFields(
+      [row({ fieldName: "invoice_number", confidence: 95 })],
+      "COMMERCIAL_INVOICE",
+      new Set(["invoice_number"])
+    );
+    const field = fields.find((f) => f.fieldName === "invoice_number")!;
+    expect(field.verification).toBe("CONFLICT");
+    expect(field.reasonCode).toBe("CROSS_DOCUMENT_CONFLICT");
+    expect(field.needsReview).toBe(true);
+  });
+
+  it("leaves a field unaffected when conflictedFieldNames doesn't name it", () => {
+    const fields = buildReviewFields(
+      [row({ fieldName: "invoice_number", confidence: 95 })],
+      "COMMERCIAL_INVOICE",
+      new Set(["seller_name"])
+    );
+    const field = fields.find((f) => f.fieldName === "invoice_number")!;
+    expect(field.verification).toBe("AUTO_VERIFIED");
+  });
+});
+
+function reviewField(overrides: Partial<ReviewField> = {}): ReviewField {
+  return {
+    fieldName: "z_field",
+    currentValue: "value",
+    originalValue: null,
+    confidence: 90,
+    pageNumber: null,
+    bbox: null,
+    corrected: false,
+    needsReview: false,
+    verification: "AUTO_VERIFIED",
+    reasonCode: null,
+    history: [],
+    ...overrides,
+  };
+}
+
+describe("sortByReviewPriority", () => {
+  it("orders MISSING_REQUIRED, CONFLICT, NEEDS_REVIEW, AUTO_VERIFIED, NOT_APPLICABLE", () => {
+    const fields = [
+      reviewField({ fieldName: "b_auto", verification: "AUTO_VERIFIED" }),
+      reviewField({ fieldName: "a_missing", verification: "MISSING_REQUIRED" }),
+      reviewField({ fieldName: "c_na", verification: "NOT_APPLICABLE" }),
+      reviewField({ fieldName: "d_conflict", verification: "CONFLICT" }),
+      reviewField({ fieldName: "e_needs", verification: "NEEDS_REVIEW" }),
+    ];
+
+    const sorted = sortByReviewPriority(fields).map((f) => f.verification);
+    expect(sorted).toEqual(["MISSING_REQUIRED", "CONFLICT", "NEEDS_REVIEW", "AUTO_VERIFIED", "NOT_APPLICABLE"]);
+  });
+
+  it("breaks ties within a bucket alphabetically by fieldName", () => {
+    const fields = [
+      reviewField({ fieldName: "zeta", verification: "NEEDS_REVIEW" }),
+      reviewField({ fieldName: "alpha", verification: "NEEDS_REVIEW" }),
+    ];
+
+    const sorted = sortByReviewPriority(fields).map((f) => f.fieldName);
+    expect(sorted).toEqual(["alpha", "zeta"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const fields = [reviewField({ fieldName: "b" }), reviewField({ fieldName: "a" })];
+    const original = [...fields];
+    sortByReviewPriority(fields);
+    expect(fields).toEqual(original);
+  });
+});
+
+describe("summarizeVerification", () => {
+  it("counts fields per verification state, including zero for absent states", () => {
+    const fields = [
+      reviewField({ verification: "AUTO_VERIFIED" }),
+      reviewField({ verification: "AUTO_VERIFIED" }),
+      reviewField({ verification: "CONFLICT" }),
+    ];
+
+    expect(summarizeVerification(fields)).toEqual({
+      AUTO_VERIFIED: 2,
+      NEEDS_REVIEW: 0,
+      CONFLICT: 1,
+      MISSING_REQUIRED: 0,
+      NOT_APPLICABLE: 0,
+    });
+  });
+
+  it("returns all-zero counts for an empty list", () => {
+    expect(summarizeVerification([])).toEqual({
+      AUTO_VERIFIED: 0,
+      NEEDS_REVIEW: 0,
+      CONFLICT: 0,
+      MISSING_REQUIRED: 0,
+      NOT_APPLICABLE: 0,
+    });
   });
 });
