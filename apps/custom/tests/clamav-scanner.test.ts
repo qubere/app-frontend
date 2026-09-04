@@ -109,7 +109,7 @@ describe("scanForMalware", () => {
 
 describe("clamdHttpScan", () => {
   it("returns CLEAN on status OK", async () => {
-    vi.stubGlobal("fetch", async () => ({ ok: true, json: async () => ({ status: "OK" }) }));
+    vi.stubGlobal("fetch", async () => ({ ok: true, text: async () => JSON.stringify({ status: "OK" }) }));
     try {
       const r = await clamdHttpScan(Buffer.from("hello"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
       expect(r).toEqual({ status: "CLEAN", scanner: "clamav" });
@@ -119,7 +119,10 @@ describe("clamdHttpScan", () => {
   });
 
   it("returns INFECTED on status FOUND", async () => {
-    vi.stubGlobal("fetch", async () => ({ ok: true, json: async () => ({ status: "FOUND", virus: "Eicar-Test" }) }));
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ status: "FOUND", virus: "Eicar-Test" }),
+    }));
     try {
       const r = await clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
       expect(r.status).toBe("INFECTED");
@@ -144,7 +147,7 @@ describe("clamdHttpScan", () => {
 describe("scanForMalware (HTTP mode)", () => {
   it("uses HTTP when CLAMAV_HTTP_URL is set", async () => {
     setEnv({ CLAMAV_HTTP_URL: "https://clamav.example.com", CLAMAV_HOST: undefined });
-    vi.stubGlobal("fetch", async () => ({ ok: true, json: async () => ({ status: "OK" }) }));
+    vi.stubGlobal("fetch", async () => ({ ok: true, text: async () => JSON.stringify({ status: "OK" }) }));
     try {
       const r = await scanForMalware({ bytes: Buffer.from("hello") });
       expect(r.status).toBe("CLEAN");
