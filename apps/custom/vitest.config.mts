@@ -8,7 +8,7 @@ export default defineConfig({
     // Increase global test timeout to accommodate long-running integration tests
     testTimeout: 300000, // 5 minutes
     // e2e/*.spec.ts is Playwright's; the default glob would otherwise claim it.
-    include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "src/**/*.test.ts"],
     // This suite validates the persistent Qubere Trade Network demo seed and
     // intentionally resets/repopulates data. It must be invoked explicitly,
     // not as part of the normal isolated unit-test run.
