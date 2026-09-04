@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { EntityDocuments } from "@/components/EntityDocuments";
 import { displayDate, displayText } from "@/lib/honest";
+import { shipmentDocumentViewerUrl } from "@/lib/shipmentLinks";
 import { findAttributeDefinition } from "@/modules/product/productAttributes";
 import type { ProductDetail } from "@/modules/product/productService";
 import type { CapabilityStatus } from "@/modules/product/productIntelligence";
@@ -1142,13 +1144,37 @@ export function ProductTabs({
                   <tr key={evidence.id}>
                     <td className={`${cellClass} text-ink`}>{sourceTypeLabel(evidence.sourceType)}</td>
                     <td className={`${cellClass} text-[#6E6E73]`}>
-                      {evidence.sourceDocumentId !== null
-                        ? "A document in this account"
-                        : evidence.sourceExtractedFactId !== null
-                          ? "A fact extracted from a document"
-                          : evidence.sourceUrl !== null
-                            ? evidence.sourceUrl
-                            : displayText(evidence.sourceReference)}
+                      {evidence.sourceDocument !== null ? (
+                        <>
+                          {evidence.sourceDocument.shipmentId !== null ? (
+                            <Link
+                              href={shipmentDocumentViewerUrl(evidence.sourceDocument.shipmentId, evidence.sourceDocument.id)}
+                              className="font-semibold text-brand hover:underline"
+                            >
+                              {evidence.sourceDocument.fileName}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold text-ink">{evidence.sourceDocument.fileName}</span>
+                          )}
+                          {evidence.sourceDocument.shipment !== null && (
+                            <>
+                              {" · "}
+                              <Link
+                                href={`/app/shipments/${evidence.sourceDocument.shipment.id}`}
+                                className="text-brand hover:underline"
+                              >
+                                {evidence.sourceDocument.shipment.shipmentNumber}
+                              </Link>
+                            </>
+                          )}
+                        </>
+                      ) : evidence.sourceExtractedFactId !== null ? (
+                        "A fact extracted from a document"
+                      ) : evidence.sourceUrl !== null ? (
+                        evidence.sourceUrl
+                      ) : (
+                        displayText(evidence.sourceReference)
+                      )}
                     </td>
                     <td className={`${cellClass} text-[#6E6E73]`}>
                       {evidence.page === null ? "—" : `Page ${evidence.page}`}
