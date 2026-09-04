@@ -14,13 +14,15 @@ const PATHS = [
 
 interface Props {
   onClose: () => void;
+  initialClient?: ClientOption;
+  lockClient?: boolean;
 }
 
-export function NewCaseModal({ onClose }: Props) {
+export function NewCaseModal({ onClose, initialClient, lockClient = false }: Props) {
   const router = useRouter();
   const [path, setPath] = useState<string>("STANDARD");
   const [clientMode, setClientMode] = useState<"existing" | "new">("existing");
-  const [client, setClient] = useState<ClientOption | null>(null);
+  const [client, setClient] = useState<ClientOption | null>(initialClient ?? null);
   const [clientName, setClientName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [saving, setSaving] = useState(false);
@@ -65,7 +67,7 @@ export function NewCaseModal({ onClose }: Props) {
 
       <form onSubmit={handleSubmit} className="contents">
         <ModalBody className="space-y-5 pr-1">
-          <fieldset className="space-y-2">
+          {!lockClient && <fieldset className="space-y-2">
             <legend className="text-xs font-semibold text-ink">Where should this importer live?</legend>
             <div className="grid grid-cols-2 gap-2">
               {([
@@ -103,10 +105,18 @@ export function NewCaseModal({ onClose }: Props) {
                 );
               })}
             </div>
-          </fieldset>
+          </fieldset>}
 
           {clientMode === "existing" ? (
-            <ClientPicker value={client} onChange={(nextClient) => { setClient(nextClient); setError(null); }} disabled={saving} />
+            lockClient && initialClient ? (
+              <div className="rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">Client</p>
+                <p className="mt-1 text-sm font-bold text-ink">{initialClient.name}</p>
+                <p className="mt-0.5 text-[11px] text-ink-muted">The importer will be added to this client portfolio.</p>
+              </div>
+            ) : (
+              <ClientPicker value={client} onChange={(nextClient) => { setClient(nextClient); setError(null); }} disabled={saving} />
+            )
           ) : (
             <div className="grid gap-4 rounded-xl border border-border bg-surface-muted/40 p-4">
               <div className="space-y-1.5">
