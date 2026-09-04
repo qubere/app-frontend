@@ -10,6 +10,8 @@ import { NotificationBell } from "./NotificationBell";
 import { accountAdminItems } from "@/lib/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
+import { OmniboxSearch } from "./OmniboxSearch";
+
 interface HeaderProps {
   tenantName?: string;
   userName?: string;
@@ -84,6 +86,10 @@ export function Header({
             Account Isolated
           </span>
         </div>
+      </div>
+
+      <div className="flex-1 max-w-md mx-4 hidden md:block">
+        <OmniboxSearch />
       </div>
 
       <div className="flex items-center gap-1 shrink-0">

@@ -552,6 +552,8 @@ export class DocumentIntelligenceAgent {
     let rawDiscoveredKeyValues: Record<string, string | number | null> = {};
     let exporterName: string | null = null;
     let importerName: string | null = null;
+    let consigneeName: string | null = null;
+    let notifyPartyName: string | null = null;
     let originCountry: string | null = null;
     let destinationCountry: string | null = null;
     let transportDetails: string | null = null;
@@ -681,6 +683,8 @@ ${instructions}`;
         // Direct LLM semantic mapping values (prefer tradeMetadata if present)
         exporterName = parsed.tradeMetadata?.shipper || parsed.exporterName || null;
         importerName = parsed.tradeMetadata?.consignee || parsed.tradeMetadata?.importerOfRecord || parsed.importerName || null;
+        consigneeName = parsed.tradeMetadata?.consignee || null;
+        notifyPartyName = parsed.tradeMetadata?.notifyParty || null;
         originCountry = parsed.tradeMetadata?.countryOfOrigin || parsed.originCountry || null;
         // Destination = where the goods are shipped TO. Previously this read
         // `countryOfExport` (where they ship FROM), so every document reported
@@ -774,6 +778,8 @@ ${instructions}`;
         extractionStatus = "failed";
         exporterName = null;
         importerName = null;
+        consigneeName = null;
+        notifyPartyName = null;
         originCountry = null;
         destinationCountry = null;
         currency = null;
@@ -1072,6 +1078,42 @@ ${instructions}`;
                   shipmentId: input.shipmentId,
                   legalEntityId: resolvedExporter.id,
                   role: "EXPORTER",
+                  accountId: input.accountId,
+                  source: "DOCUMENT",
+                  confidence: typeof confidence === "number" ? confidence / 100 : 0.9,
+                  isVerified: false,
+                });
+              }
+            }
+
+            if (consigneeName) {
+              const resolvedConsignee = await EntityResolutionService.findOrCreateEntity(
+                input.accountId,
+                consigneeName
+              );
+              if (resolvedConsignee) {
+                await ShipmentPartyService.assignParty({
+                  shipmentId: input.shipmentId,
+                  legalEntityId: resolvedConsignee.id,
+                  role: "CONSIGNEE",
+                  accountId: input.accountId,
+                  source: "DOCUMENT",
+                  confidence: typeof confidence === "number" ? confidence / 100 : 0.9,
+                  isVerified: false,
+                });
+              }
+            }
+
+            if (notifyPartyName) {
+              const resolvedNotifyParty = await EntityResolutionService.findOrCreateEntity(
+                input.accountId,
+                notifyPartyName
+              );
+              if (resolvedNotifyParty) {
+                await ShipmentPartyService.assignParty({
+                  shipmentId: input.shipmentId,
+                  legalEntityId: resolvedNotifyParty.id,
+                  role: "NOTIFY_PARTY",
                   accountId: input.accountId,
                   source: "DOCUMENT",
                   confidence: typeof confidence === "number" ? confidence / 100 : 0.9,

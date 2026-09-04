@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
-import { Prisma, ShipmentLineItem } from "@prisma/client";
+import { ProductMatchStatus, Prisma, ShipmentLineItem } from "@prisma/client";
 import { FactService, FactSourceType, RecordFactInput } from "./factService";
 import { loadHtsCodesMap, calculateDutyStack } from "@/lib/tariff/dutyEngine";
+import { findProductMatches } from "@/modules/product/productService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 /**
  * Placeholder values LineItemReconciler writes itself when extraction didn't
@@ -162,7 +164,46 @@ export class LineItemReconciler {
       }
     }
 
-    await client.shipmentLineItem.create({
+    let productId: string | null = null;
+    let productMatchStatus: ProductMatchStatus | null = null;
+    let productMatchedAt: Date | null = null;
+    let pendingProductProposal: { matchStatus: string; inputPayload: Record<string, unknown>; candidatesJson: unknown[] } | null = null;
+
+    try {
+      const identifiers: Array<{ identifierType: any; value: string }> = [];
+      if (item.partNumber && item.partNumber.trim() !== "") {
+        const val = item.partNumber.trim();
+        identifiers.push({ identifierType: "INTERNAL_SKU", value: val });
+        identifiers.push({ identifierType: "MANUFACTURER_PART_NUMBER", value: val });
+      }
+      // No brand is ever available for a shipment line, and findProductMatches
+      // only considers its productName clause alongside a brand (see its
+      // matchShipmentLine caller/docstring) -- a bare description match is
+      // treated as too weak to be a candidate. Match on the part number only,
+      // same as matchShipmentLine.
+      const matchInput = { identifiers: identifiers.length > 0 ? identifiers : undefined };
+      if (identifiers.length > 0) {
+        const matchResult = await findProductMatches(
+          { accountId: ctx.accountId, userId: null },
+          matchInput
+        );
+        productMatchStatus = matchResult.status;
+        productMatchedAt = new Date();
+        if (matchResult.status === "EXACT_MATCH" && matchResult.candidates[0]) {
+          productId = matchResult.candidates[0].productId;
+        } else if (matchResult.status === "POSSIBLE_MATCH" || matchResult.status === "AMBIGUOUS") {
+          pendingProductProposal = {
+            matchStatus: matchResult.status,
+            inputPayload: matchInput,
+            candidatesJson: matchResult.candidates as any,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("[lineItemReconciler] Failed product matching:", err);
+    }
+
+    const createdLineItem = await client.shipmentLineItem.create({
       data: {
         shipmentId: ctx.shipmentId,
         accountId: ctx.accountId,
@@ -178,8 +219,28 @@ export class LineItemReconciler {
         eccnCode: item.eccnCode ?? null,
         status: wasDefaulted ? "Review Required" : "Unreviewed",
         dutyStack: dutyStackJson,
+        productId,
+        productMatchStatus,
+        productMatchedAt,
       },
     });
+
+    if (pendingProductProposal) {
+      try {
+        await recordPendingMatchProposal({
+          accountId: ctx.accountId,
+          domain: "PRODUCT",
+          matchStatus: pendingProductProposal.matchStatus,
+          targetEntityType: "SHIPMENT_LINE_ITEM",
+          targetEntityId: createdLineItem.id,
+          sourceDocumentId: ctx.documentId ?? null,
+          inputPayload: pendingProductProposal.inputPayload,
+          candidatesJson: pendingProductProposal.candidatesJson,
+        });
+      } catch (err) {
+        console.warn("[lineItemReconciler] Failed to record pending match proposal:", err);
+      }
+    }
   }
 
   private static async fillEmpty(existing: ShipmentLineItem, item: LineItemDiscovery, tx?: any): Promise<void> {

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logging/logger";
 import { ensurePartyRole, resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 const entitySchema = z.object({
   importerNumberType: z.enum(["EIN", "SSN", "CBP_ASSIGNED"]),
@@ -31,12 +32,17 @@ const entitySchema = z.object({
  * behavior, until a person confirms the match (Phase 2) or the backfill
  * script picks it up.
  */
+interface ResolvedEntityParty {
+  partyId: string | null;
+  pendingCandidates: { matchStatus: string; candidatesJson: unknown[]; inputPayload: Record<string, unknown> } | null;
+}
+
 async function resolveNewEntityParty(
   accountId: string,
   userId: string,
   requestId: string | undefined,
   data: z.infer<typeof entitySchema>
-): Promise<string | null> {
+): Promise<ResolvedEntityParty> {
   try {
     const taxId = data.importerNumberType === "CBP_ASSIGNED" ? null : (data.importerNumber?.trim() || null);
     const resolved = await resolvePartyForCompany(
@@ -54,13 +60,23 @@ async function resolveNewEntityParty(
         },
       }
     );
-    return resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+    if (resolved.outcome === "CANDIDATES") {
+      return {
+        partyId: null,
+        pendingCandidates: {
+          matchStatus: resolved.status,
+          candidatesJson: resolved.candidates as any,
+          inputPayload: { legalName: data.legalName, country: data.country, taxId },
+        },
+      };
+    }
+    return { partyId: resolved.partyId, pendingCandidates: null };
   } catch (error) {
     logger.warn("onboarding entities: resolvePartyForCompany failed, creating the entity without a party link", {
       accountId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    return { partyId: null, pendingCandidates: null };
   }
 }
 
@@ -91,7 +107,7 @@ export const POST = withAuthenticatedRoute(
 
     // Outside the transaction: party resolution can trigger Restricted Party
     // Screening, and nothing here should hold the transaction's locks open.
-    const partyId = await resolveNewEntityParty(ctx.accountId, ctx.userId, requestId, data);
+    const { partyId, pendingCandidates } = await resolveNewEntityParty(ctx.accountId, ctx.userId, requestId, data);
     // Adding this entity to a case is a deliberate importer registration, so
     // ensure the IMPORTER role on whatever party it resolved to -- fail-open,
     // same as ensurePartyRole always is.
@@ -185,6 +201,25 @@ export const POST = withAuthenticatedRoute(
 
         return { entity, legalEntity, ior };
       });
+
+      if (pendingCandidates) {
+        try {
+          await recordPendingMatchProposal({
+            accountId: ctx.accountId,
+            domain: "PARTY",
+            matchStatus: pendingCandidates.matchStatus,
+            targetEntityType: "LEGAL_ENTITY",
+            targetEntityId: result.legalEntity.id,
+            inputPayload: pendingCandidates.inputPayload,
+            candidatesJson: pendingCandidates.candidatesJson,
+          });
+        } catch (error) {
+          logger.warn("onboarding entities: recordPendingMatchProposal failed, entity stays unbridged", {
+            accountId: ctx.accountId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
       await createAuditLog({
         accountId: ctx.accountId,

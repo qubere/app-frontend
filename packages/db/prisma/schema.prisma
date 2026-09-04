@@ -278,6 +278,7 @@ model Account {
   exportLineItems             ExportLineItem[]
   drawbackClaims              DrawbackClaim[]
   complianceAuditRecords      ComplianceAuditRecord[]
+  pendingMatchProposals       PendingMatchProposal[]
   reconciliationIssues        ReconciliationIssue[]
   canonicalProducts           CanonicalProduct[]
   complianceFindings          ComplianceFinding[]
@@ -1336,6 +1337,7 @@ model ShipmentDocument {
   rawContent             String?                @db.Text
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
+  pendingMatchProposals  PendingMatchProposal[]
 
   /// Byte size and detected media type of the immutable original, recorded at
   /// upload. `checksum` above is its SHA-256.
@@ -4726,6 +4728,7 @@ model Product {
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   clientId  String?
   client    Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  resolvedMatchProposals PendingMatchProposal[] @relation("ResolvedProductProposals")
 
   /// Convenience copy of the INTERNAL_SKU identifier, kept unique per account so
   /// the database refuses a second product under the same internal SKU. The
@@ -5334,6 +5337,7 @@ model Party {
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   clientId  String?
   client    Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  resolvedMatchProposals PendingMatchProposal[] @relation("ResolvedPartyProposals")
 
   /// Convenience copy of the INTERNAL_PARTY_CODE identifier, kept unique per
   /// account. The authoritative list of identifiers is still `identifiers`.
@@ -5747,6 +5751,54 @@ model PartyChangeEvent {
   @@index([accountId, createdAt])
   @@index([partyId, versionNumber])
   @@index([accountId, significance])
+}
+
+enum MatchProposalDomain {
+  PARTY
+  PRODUCT
+}
+
+enum MatchProposalStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CREATED_NEW
+}
+
+model PendingMatchProposal {
+  id                String              @id @default(cuid())
+  accountId         String
+  account           Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  domain            MatchProposalDomain
+  matchStatus       String              // POSSIBLE_MATCH, AMBIGUOUS
+
+  targetEntityType  String?             // SHIPMENT_PARTY, SHIPMENT_LINE_ITEM, LEGAL_ENTITY, IMPORTER
+  targetEntityId    String?             // e.g. shipmentId, shipmentLineItemId, legalEntityId
+  targetRole        String?             // e.g. IMPORTER_OF_RECORD, CONSIGNEE, EXPORTER, NOTIFY_PARTY
+
+  sourceDocumentId  String?
+  sourceDocument    ShipmentDocument?   @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  source            String              @default("DOCUMENT") // DOCUMENT, ONBOARDING, API, USER
+
+  inputPayload      Json
+  candidatesJson    Json
+
+  status            MatchProposalStatus @default(PENDING)
+
+  resolvedPartyId   String?
+  resolvedParty     Party?              @relation("ResolvedPartyProposals", fields: [resolvedPartyId], references: [id], onDelete: SetNull)
+  resolvedProductId String?
+  resolvedProduct   Product?            @relation("ResolvedProductProposals", fields: [resolvedProductId], references: [id], onDelete: SetNull)
+  resolvedByUserId  String?
+  resolvedAt        DateTime?
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([accountId, status])
+  @@index([domain, status])
+  @@index([sourceDocumentId])
 }
 
 /// An open request to revalidate something because a fact underneath it

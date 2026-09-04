@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
 import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 export interface EntityMatchCandidate {
   legalEntityId: string;
@@ -72,46 +73,6 @@ export class EntityResolutionService {
     const candidates: EntityMatchCandidate[] = [];
 
     for (const entity of entities) {
-      let score = 0;
-      const reasons: string[] = [];
-
-      // A. CBP Importer Number exact match (High confidence: +100)
-      const matchingCustomsProfile = entity.customsProfiles.find(
-        (cp: any) =>
-          input.cbpImporterNumber &&
-          cp.cbpImporterNumber &&
-          cp.cbpImporterNumber.replace(/[^a-zA-Z0-9]/g, "") ===
-            input.cbpImporterNumber.replace(/[^a-zA-Z0-9]/g, "")
-      );
-
-      if (matchingCustomsProfile) {
-        score += 100;
-        reasons.push(`Exact CBP Importer Number match (${matchingCustomsProfile.cbpImporterNumber})`);
-      }
-
-      // B. Tax Identifier / EIN match (+90)
-      if (
-        input.taxIdentifier &&
-        entity.taxIdentifier &&
-        input.taxIdentifier.replace(/[^0-9]/g, "") === entity.taxIdentifier.replace(/[^0-9]/g, "")
-      ) {
-        score += 90;
-        reasons.push(`Tax ID / EIN match (${entity.taxIdentifier})`);
-      }
-
-      // C. Exact Legal Name match (+95)
-      if (entity.legalName.toLowerCase().trim() === input.rawName.toLowerCase().trim()) {
-        score += 95;
-        reasons.push("Exact legal name match");
-      } else {
-        // D. Normalized Name match (+80)
-        const normEntityName = this.normalizeName(entity.legalName);
-        if (normEntityName && normInputName && (normEntityName === normInputName || normEntityName.includes(normInputName) || normInputName.includes(normEntityName))) {
-          score += 80;
-          reasons.push("Normalized company name match");
-        }
-      }
-
       const normLegalName = this.normalizeName(entity.legalName);
       let matchScore = 0;
       const matchReasons: string[] = [];
@@ -201,13 +162,19 @@ export class EntityResolutionService {
     // a dedicated look at that pipeline) picks it up -- same as it is today.
     const country = options?.country || "US";
     let partyId: string | null = null;
+    let pendingCandidates: { matchStatus: string; candidatesJson: unknown[] } | null = null;
     if (!tx) {
       try {
         const resolved = await resolvePartyForCompany(
           { accountId, userId: null, requestId: null },
           { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null }
         );
-        partyId = resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+        if (resolved.outcome === "CANDIDATES") {
+          partyId = null;
+          pendingCandidates = { matchStatus: resolved.status, candidatesJson: resolved.candidates as any };
+        } else {
+          partyId = resolved.partyId;
+        }
       } catch (error) {
         logger.warn("entityResolutionService: resolvePartyForCompany failed, creating the entity without a party link", {
           accountId,
@@ -239,6 +206,25 @@ export class EntityResolutionService {
       },
       include: { customsProfiles: true },
     });
+
+    if (pendingCandidates) {
+      try {
+        await recordPendingMatchProposal({
+          accountId,
+          domain: "PARTY",
+          matchStatus: pendingCandidates.matchStatus,
+          targetEntityType: "LEGAL_ENTITY",
+          targetEntityId: newEntity.id,
+          inputPayload: { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null },
+          candidatesJson: pendingCandidates.candidatesJson,
+        });
+      } catch (error) {
+        logger.warn("entityResolutionService: recordPendingMatchProposal failed, entity stays unbridged", {
+          accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return newEntity;
   }

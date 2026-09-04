@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { getErpProvider } from "@/lib/integrations/erp";
 import type { ErpEntity, ErpProduct } from "@/lib/integrations/erp";
+import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 export type ProposalAction = "create" | "link_existing" | "skip";
 
@@ -199,6 +201,28 @@ export async function pullErpData(
   for (let i = 0; i < entities.length; i++) {
     const erp = entities[i];
     const dedupeCandidates = await findEntityCandidates(accountId, erp);
+
+    // Call resolvePartyForCompany for party master resolution
+    try {
+      const resolved = await resolvePartyForCompany(
+        { accountId, userId: null, requestId: null },
+        { legalName: erp.legalName, country: erp.countryOfFormation || "US", taxId: erp.ein ?? null }
+      );
+      if (resolved.outcome === "CANDIDATES") {
+        await recordPendingMatchProposal({
+          accountId,
+          domain: "PARTY",
+          matchStatus: resolved.status,
+          targetEntityType: "ERP_IMPORT",
+          source: "ERP",
+          inputPayload: { legalName: erp.legalName, country: erp.countryOfFormation || "US", taxId: erp.ein ?? null },
+          candidatesJson: resolved.candidates as any,
+        });
+      }
+    } catch {
+      // Fail-open for ERP import loop
+    }
+
     proposals.push({
       proposalId: `entity-${i}`,
       type: "entity",

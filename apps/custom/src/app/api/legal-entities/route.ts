@@ -3,6 +3,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
 import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 import { z } from "zod";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
@@ -70,6 +71,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   // a failure or an uncertain (POSSIBLE_MATCH/AMBIGUOUS) match just leaves
   // this entity unbridged, exactly today's behavior.
   let partyId: string | null = null;
+  let pendingCandidates: { matchStatus: string; candidatesJson: unknown[] } | null = null;
   try {
     const resolved = await resolvePartyForCompany(
       { accountId: ctx.accountId, userId: ctx.userId, requestId: null },
@@ -89,7 +91,12 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
           : null,
       }
     );
-    partyId = resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+    if (resolved.outcome === "CANDIDATES") {
+      partyId = null;
+      pendingCandidates = { matchStatus: resolved.status, candidatesJson: resolved.candidates as any };
+    } else {
+      partyId = resolved.partyId;
+    }
   } catch (error) {
     logger.warn("legal-entities: resolvePartyForCompany failed, creating the entity without a party link", {
       accountId: ctx.accountId,
@@ -119,6 +126,25 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       importerOfRecord: true,
     },
 });
+
+  if (pendingCandidates) {
+    try {
+      await recordPendingMatchProposal({
+        accountId: ctx.accountId,
+        domain: "PARTY",
+        matchStatus: pendingCandidates.matchStatus,
+        targetEntityType: "LEGAL_ENTITY",
+        targetEntityId: entity.id,
+        inputPayload: { legalName: data.legalName, country, taxId: data.taxIdentifier || null },
+        candidatesJson: pendingCandidates.candidatesJson,
+      });
+    } catch (error) {
+      logger.warn("legal-entities: recordPendingMatchProposal failed, entity stays unbridged", {
+        accountId: ctx.accountId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return NextResponse.json({ legalEntity: entity }, { status: 201 });
 

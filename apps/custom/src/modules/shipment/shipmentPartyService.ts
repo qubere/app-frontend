@@ -16,6 +16,7 @@ export type ShipmentPartyRole =
   | "DELIVERY_TO"
   | "BROKER"
   | "FORWARDER"
+  | "NOTIFY_PARTY"
   | "OTHER";
 
 export interface AssignPartyInput {
