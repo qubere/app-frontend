@@ -34,7 +34,7 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       country: true,
       procedureCode: true,
       messageName: true,
-      transactionType: true,
+      filingSchemaId: true,
     },
     orderBy: [
       { country: "asc" },

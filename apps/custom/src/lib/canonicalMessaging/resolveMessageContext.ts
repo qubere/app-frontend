@@ -20,6 +20,20 @@ export interface ResolvedMessageContext {
 }
 
 /**
+ * Derives the IMPORT/EXPORT wrapper type from a FilingSchema's schemaPath
+ * (e.g. ".../filing-schemas/export/1.0.0/ExportDeclaration.schema.json").
+ * Replaces the old FilingProcedureConfig.transactionType string column --
+ * FilingProcedureConfig now points at a FilingSchema row via filingSchemaId,
+ * and the schema path itself is the single source of truth for which
+ * wrapper a procedure+message uses. Defaults to "IMPORT" when no schema is
+ * linked, matching the previous column's default.
+ */
+function deriveTransactionTypeFromSchemaPath(schemaPath: string | null | undefined): string {
+  if (schemaPath && schemaPath.toLowerCase().includes("export")) return "EXPORT";
+  return "IMPORT";
+}
+
+/**
  * Derives country/procedure/messageName from filing data and the new
  * multi-country configuration tables (FilingProcedureConfig, FilingActionMessageMapping).
  * 
@@ -98,6 +112,7 @@ export async function resolveMessageContext(
       },
       isActive: true,
     },
+    include: { filingSchema: true },
   });
 
   if (!procedureConfig) {
@@ -124,16 +139,16 @@ export async function resolveMessageContext(
     );
   }
 
-  const transactionType = procedureConfig.transactionType ?? "IMPORT";
+  const transactionType = deriveTransactionTypeFromSchemaPath(procedureConfig.filingSchema?.schemaPath);
 
   const procedureCatalogRow = await db.filingProcedureCatalog.findFirst({
     where: { procedureCode: transactionType, isActive: true },
   });
   if (!procedureCatalogRow) {
     throw new Error(
-      `Transaction type "${transactionType}" (from FilingProcedureConfig for ` +
-        `country "${country}", procedure "${procedureCode}") is not a valid, active ` +
-        `FilingProcedureCatalog procedure code. Valid codes: IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE, etc.`
+      `Transaction type "${transactionType}" (derived from the FilingSchema linked to ` +
+        `FilingProcedureConfig for country "${country}", procedure "${procedureCode}") is not a valid, ` +
+        `active FilingProcedureCatalog procedure code. Valid codes: IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE, etc.`
     );
   }
 
@@ -150,8 +165,9 @@ export async function resolveMessageContext(
  * combination, for callers that already know their messageName and only need
  * the transaction type (e.g. to pick the ImportDeclaration/ExportDeclaration
  * wrapper) without running the full action → message resolution above.
- * Falls back to "IMPORT" when no config row exists, matching the same
- * backwards-compatibility default used for unmigrated US filings.
+ * Falls back to "IMPORT" when no config row exists (or none is linked to a
+ * FilingSchema), matching the same backwards-compatibility default used for
+ * unmigrated US filings.
  */
 export async function resolveTransactionType(
   country: string | null | undefined,
@@ -174,7 +190,9 @@ export async function resolveTransactionType(
       },
       isActive: true,
     },
+    include: { filingSchema: true },
   });
 
-  return procedureConfig?.transactionType ?? "IMPORT";
+  return deriveTransactionTypeFromSchemaPath(procedureConfig?.filingSchema?.schemaPath);
 }
+

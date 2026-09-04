@@ -29,16 +29,18 @@ export default async function FilingConfigPage() {
 
   // Get table metadata - extract only serializable parts (no functions/schemas)
   const tableKeys: FilingConfigTableKey[] = [
+    "filing-schema",
+    "country-customs-version",
+    "customer-customs-version",
     "procedure-catalog",
+    "message-catalog",
+    "status-catalog",
     "action-catalog",
     "procedure-config",
     "action-message-mapping",
     "action-configuration",
     "action-data-requirement",
     "ui-configuration",
-    "country-customs-version",
-    "customer-customs-version",
-    "status-catalog",
     "code-list-type",
     "code-list",
     // "master-data-source" - removed, will implement later

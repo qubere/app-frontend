@@ -66,7 +66,6 @@ async function seedUSFilingConfig() {
         country: "US",
         procedureCode: entryType.code,
         messageName: "CBP_ENTRY_7501",
-        transactionType: importType.procedureCode,
         isActive: true,
       },
       update: {

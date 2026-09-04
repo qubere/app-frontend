@@ -696,7 +696,7 @@ model IdempotencyRecord {
 
 model Shipment {
   entryProofs EntryProof[]
-  pgaHolds PgaHold[]
+  pgaHolds    PgaHold[]
 
   id                 String                 @id @default(cuid())
   accountId          String
@@ -1256,10 +1256,10 @@ model TrackingSubscription {
 // ---------------------------------------------------------------------------
 model ComplianceDeadline {
   customerActionable Boolean @default(false)
-  customerLabel String?
-  id        String  @id @default(cuid())
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customerLabel      String?
+  id                 String  @id @default(cuid())
+  accountId          String
+  account            Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   // Exactly one of shipmentId / filingId is set.
   shipmentId String?
@@ -1301,8 +1301,8 @@ model ComplianceDeadline {
 }
 
 model ShipmentDocument {
-  inboundRoutedAt DateTime?
-  inboundProofPending Boolean @default(false)
+  inboundRoutedAt        DateTime?
+  inboundProofPending    Boolean                @default(false)
   inboundDocumentReview  InboundDocumentReview?
   id                     String                 @id @default(cuid())
   // Nullable: a document can be detached from its shipment (keeping the
@@ -1498,7 +1498,7 @@ model InboundSenderRoute {
 /// the sender is routed -- an email can exist here and still never touch a
 /// tenant's document library.
 model InboundEmail {
-  autoReplyAttemptedAt DateTime?
+  autoReplyAttemptedAt  DateTime?
   clientId              String?
   client                Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   inboundAddressId      String?
@@ -1826,8 +1826,8 @@ model AgentPolicyConfig {
 }
 
 model CustomsFiling {
-  entryProofs EntryProof[]
-  assistDecisions AssistDecision[]
+  entryProofs        EntryProof[]
+  assistDecisions    AssistDecision[]
   assistDeclarations AssistDeclaration[]
 
   id                 String            @id @default(cuid())
@@ -1968,7 +1968,7 @@ model CustomsFiling {
 // =============================================================================
 
 model CustomerRequest {
-  metadata Json?
+  metadata        Json?
   id              String    @id @default(cuid())
   accountId       String
   account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -3383,8 +3383,8 @@ model PgaRequirement {
 }
 
 model ComplianceFinding {
-  lineNumber Int?
-  metadata Json?
+  lineNumber       Int?
+  metadata         Json?
   id               String        @id @default(cuid())
   accountId        String
   account          Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -6080,6 +6080,10 @@ model FilingTransactionType {
 model FilingProcedureCatalog {
   id            String   @id @default(cuid())
   procedureCode String   @unique // IMPORT, EXPORT, NCTS, TEMP_STORAGE, BONDED_WAREHOUSE
+  /// Key-value map of locale code -> translated description, e.g.
+  /// { "en": "Import", "fr": "Importation" }. Powers the localized
+  /// Procedure Code dropdowns across Filing Configuration.
+  descriptions  Json?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -6093,15 +6097,66 @@ model FilingProcedureCatalog {
 /// Universal action catalog (SUBMIT, AMENDMENT, CANCELLATION, etc.).
 /// These are the user-initiated actions that can be performed on a filing.
 model FilingActionCatalog {
-  id        String   @id @default(cuid())
-  code      String   @unique // SUBMIT, AMENDMENT, CANCELLATION, INVALIDATION, WITHDRAWAL
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String?
-  updatedBy String?
+  id           String   @id @default(cuid())
+  code         String   @unique // SUBMIT, AMENDMENT, CANCELLATION, INVALIDATION, WITHDRAWAL
+  /// Key-value map of locale code -> translated description, e.g.
+  /// { "en": "Amendment", "fr": "Modification" }. Powers the localized
+  /// Action dropdowns across Filing Configuration.
+  descriptions Json?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?
+  updatedBy    String?
 
   @@index([code])
+  @@index([isActive])
+}
+
+/// Master catalog of outbound/inbound customs message names (IE015, IE013,
+/// CBP_ENTRY_7501, etc.) with per-locale descriptions, so Message Name
+/// dropdowns across Filing Configuration can show a localized label instead
+/// of the bare code. Distinct from -- and not related to -- the old, already
+/// -removed FilingMessageCatalog referenced in the "OLD FILING CONFIGURATION
+/// TABLES" comment above (that one routed messages to queues; this one is
+/// pure display metadata).
+model FilingMessageCatalog {
+  id           String   @id @default(cuid())
+  messageName  String   @unique // IE015, IE013, CBP_ENTRY_7501, etc.
+  /// Key-value map of locale code -> translated description, e.g.
+  /// { "en": "Import Declaration", "fr": "Déclaration d'importation" }.
+  descriptions Json?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?
+  updatedBy    String?
+
+  @@index([messageName])
+  @@index([isActive])
+}
+
+/// Registry of canonical JSON Schema documents tracked for a filing
+/// procedure (e.g. the Import/Export declaration schemas served from
+/// public/schemas). Stores only a path reference + version -- the schema
+/// body itself is not duplicated here, it's read from schemaPath at request
+/// time (see /api/schemas/[country]/[procedure]/[message]/[type]/route.ts).
+/// FilingProcedureConfig.filingSchemaId references a row here so the
+/// import/export wrapper can be derived from the schema instead of a
+/// separately-maintained transactionType string.
+model FilingSchema {
+  id            String   @id @default(cuid())
+  schemaPath String @db.Text // e.g. "customs-filing/filing-schemas/import/1.0.0/ImportDeclaration.schema.json"
+  schemaVersion String // e.g. "1.0.0"
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  procedureConfigs FilingProcedureConfig[]
+
+  @@index([schemaVersion])
   @@index([isActive])
 }
 
@@ -6216,7 +6271,7 @@ model FilingCodeListItem {
   /// this is set explicitly in codeListService.ts, only on genuine updates.
   updatedAt    DateTime? @map("updatedat") @db.Timestamptz
 
-  header       FilingCodeListHeader           @relation(fields: [codeListId], references: [codeListId], onDelete: Cascade)
+  header       FilingCodeListHeader            @relation(fields: [codeListId], references: [codeListId], onDelete: Cascade)
   translations FilingCodeListItemTranslation[]
 
   @@unique([codeListId, code], map: "uq_filingitem_code")
@@ -6254,19 +6309,21 @@ model FilingCodeListItemTranslation {
 /// Replaces the old FilingProcedureMapping which was US-centric (entryType-based).
 /// Example: (NL, NCTS, 5100, IE015) means Netherlands NCTS procedure 5100 uses message IE015.
 model FilingProcedureConfig {
-  id                 String   @id @default(cuid())
+  id                 String        @id @default(cuid())
   country            String // ISO 3166-1 alpha-2 (NL, IE, FR, IN, etc.)
   procedureCode      String // Country-specific procedure code (5100, 4000, etc.)
   messageName        String // Official customs message code (IE015, IE013, ICEGATE_BOE, etc.)
-  /// Filing procedure catalog code (IMPORT, EXPORT, NCTS, etc.) from FilingProcedureCatalog.procedureCode.
-  /// Restored 2026-08-21 -- bb8ad90 dropped the transactionTypeId FK that used to carry this,
-  /// which left resolveMessageContext with no real source for transactionType and caused
-  /// callers to pass the country-specific procedureCode value in its place instead.
-  transactionType    String?
-  canCreateNewFiling Boolean  @default(true) // If true, can be used for new declaration; if false, only for amendments/cancellations/etc.
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  /// Which canonical JSON Schema document (and therefore which
+  /// Import/Export declaration wrapper) this procedure+message uses.
+  /// Replaces the old `transactionType` string column: the transaction type
+  /// (IMPORT/EXPORT) is now derived from the referenced FilingSchema's
+  /// schemaPath instead of being stored redundantly here.
+  filingSchemaId     String?
+  filingSchema       FilingSchema? @relation(fields: [filingSchemaId], references: [id], onDelete: SetNull)
+  canCreateNewFiling Boolean       @default(true) // If true, can be used for new declaration; if false, only for amendments/cancellations/etc.
+  isActive           Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
   createdBy          String?
   updatedBy          String?
 
@@ -6274,6 +6331,7 @@ model FilingProcedureConfig {
   @@index([country, procedureCode])
   @@index([isActive])
   @@index([canCreateNewFiling])
+  @@index([filingSchemaId])
 }
 
 /// Maps user actions to outbound message names per country/procedure.
@@ -7658,12 +7716,12 @@ enum NotificationDeliveryStatus {
 /// same result/type collide on it (caught as already-queued) instead of
 /// needing a separate idempotency key.
 model ComplianceNotification {
-  portalEventKey String? @unique
-  assistAlertKey String? @unique
+  portalEventKey  String?   @unique
+  assistAlertKey  String?   @unique
   bellDeliveredAt DateTime?
-  id        String  @id @default(cuid())
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id              String    @id @default(cuid())
+  accountId       String
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   notificationType ComplianceNotificationType
   channel          String                     @default("EMAIL")
@@ -8953,7 +9011,7 @@ model UsageEvent {
 }
 
 model ShipmentCharge {
-  portalVisible Boolean @default(false)
+  portalVisible     Boolean          @default(false)
   id                String           @id @default(cuid())
   accountId         String
   account           Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -10566,27 +10624,27 @@ model OnboardingEvent {
   @@index([caseId, createdAt])
 }
 
-
 model PgaHold {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  shipmentId String
-  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  externalKey String
-  agencyCode String
-  holdCode String
-  reasonText String
-  rawNotice String
-  status String @default("Open")
+  id               String              @id @default(cuid())
+  accountId        String
+  account          Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId       String
+  shipment         Shipment            @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  externalKey      String
+  agencyCode       String
+  holdCode         String
+  reasonText       String
+  rawNotice        String
+  status           String              @default("Open")
   commodityLineRef String?
-  issuedAt DateTime
-  closedAt DateTime?
-  version Int @default(0)
-  draftFormInput Json?
-  draftUpdatedAt DateTime?
-  createdAt DateTime @default(now())
-  submissions PgaHoldSubmission[]
+  issuedAt         DateTime
+  closedAt         DateTime?
+  version          Int                 @default(0)
+  draftFormInput   Json?
+  draftUpdatedAt   DateTime?
+  createdAt        DateTime            @default(now())
+  submissions      PgaHoldSubmission[]
+
   @@unique([accountId, externalKey])
   @@index([accountId, status, issuedAt])
   @@index([accountId, agencyCode, issuedAt])
@@ -10594,160 +10652,166 @@ model PgaHold {
 }
 
 model PgaHoldSubmission {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  pgaHoldId String
-  pgaHold PgaHold @relation(fields: [pgaHoldId], references: [id], onDelete: Cascade)
-  idempotencyKey String @unique
-  requestKey String
-  attemptNumber Int
-  messageSetText String
-  formInputJson Json
-  status String @default("Sent")
-  transmissionMode String @default("MANUAL")
+  id                String    @id @default(cuid())
+  accountId         String
+  account           Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  pgaHoldId         String
+  pgaHold           PgaHold   @relation(fields: [pgaHoldId], references: [id], onDelete: Cascade)
+  idempotencyKey    String    @unique
+  requestKey        String
+  attemptNumber     Int
+  messageSetText    String
+  formInputJson     Json
+  status            String    @default("Sent")
+  transmissionMode  String    @default("MANUAL")
   externalReference String
-  rejectionCode String?
-  rejectionReason String?
-  rejectedFields Json?
-  rawResponse String?
-  operatorUserId String
-  submittedAt DateTime @default(now())
-  responseAt DateTime?
+  rejectionCode     String?
+  rejectionReason   String?
+  rejectedFields    Json?
+  rawResponse       String?
+  operatorUserId    String
+  submittedAt       DateTime  @default(now())
+  responseAt        DateTime?
+
   @@unique([accountId, requestKey])
   @@unique([pgaHoldId, attemptNumber])
   @@index([accountId, pgaHoldId, submittedAt])
 }
 
 model Assist {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  importerOfRecordId String?
-  importerOfRecord ImporterOfRecord? @relation(fields: [importerOfRecordId], references: [id], onDelete: Restrict)
-  type String
-  description String
-  totalValue Decimal @db.Decimal(18, 2)
-  currency String
-  remainingValue Decimal @db.Decimal(18, 2)
-  allocationMethod String
-  allocationBasis String @default("entries")
-  estimatedVolume Decimal? @db.Decimal(18, 6)
-  estimatedImportValue Decimal? @db.Decimal(18, 2)
-  skuPattern String?
-  status String @default("Draft")
-  effectiveFrom DateTime
-  effectiveTo DateTime?
-  version Int @default(0)
-  warningEpoch Int @default(0)
-  createdByUserId String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  suppliers AssistParty[]
-  hts AssistHtsScope[]
-  decisions AssistDecision[]
-  declarations AssistDeclaration[]
+  id                   String              @id @default(cuid())
+  accountId            String
+  account              Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importerOfRecordId   String?
+  importerOfRecord     ImporterOfRecord?   @relation(fields: [importerOfRecordId], references: [id], onDelete: Restrict)
+  type                 String
+  description          String
+  totalValue           Decimal             @db.Decimal(18, 2)
+  currency             String
+  remainingValue       Decimal             @db.Decimal(18, 2)
+  allocationMethod     String
+  allocationBasis      String              @default("entries")
+  estimatedVolume      Decimal?            @db.Decimal(18, 6)
+  estimatedImportValue Decimal?            @db.Decimal(18, 2)
+  skuPattern           String?
+  status               String              @default("Draft")
+  effectiveFrom        DateTime
+  effectiveTo          DateTime?
+  version              Int                 @default(0)
+  warningEpoch         Int                 @default(0)
+  createdByUserId      String
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  suppliers            AssistParty[]
+  hts                  AssistHtsScope[]
+  decisions            AssistDecision[]
+  declarations         AssistDeclaration[]
+
   @@index([accountId, status, effectiveTo])
   @@index([accountId, importerOfRecordId, status])
 }
 
 model AssistParty {
-  id String @id @default(cuid())
+  id       String @id @default(cuid())
   assistId String
-  assist Assist @relation(fields: [assistId], references: [id], onDelete: Cascade)
-  partyId String
-  party Party @relation(fields: [partyId], references: [id], onDelete: Restrict)
-  role String
+  assist   Assist @relation(fields: [assistId], references: [id], onDelete: Cascade)
+  partyId  String
+  party    Party  @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  role     String
+
   @@unique([assistId, partyId, role])
   @@index([partyId])
 }
 
 model AssistHtsScope {
-  id String @id @default(cuid())
+  id       String @id @default(cuid())
   assistId String
-  assist Assist @relation(fields: [assistId], references: [id], onDelete: Cascade)
-  prefix String
+  assist   Assist @relation(fields: [assistId], references: [id], onDelete: Cascade)
+  prefix   String
+
   @@unique([assistId, prefix])
 }
 
 model AssistDecision {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  assistId String
-  assist Assist @relation(fields: [assistId], references: [id], onDelete: Restrict)
-  filingId String
-  filing CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
-  decision String
-  amount Decimal @db.Decimal(18, 2)
-  customsAmount Decimal @db.Decimal(18, 2)
-  exchangeRate Decimal @db.Decimal(24, 12)
-  basisHash String
-  assistVersion Int
+  id                 String        @id @default(cuid())
+  accountId          String
+  account            Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  assistId           String
+  assist             Assist        @relation(fields: [assistId], references: [id], onDelete: Restrict)
+  filingId           String
+  filing             CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  decision           String
+  amount             Decimal       @db.Decimal(18, 2)
+  customsAmount      Decimal       @db.Decimal(18, 2)
+  exchangeRate       Decimal       @db.Decimal(24, 12)
+  basisHash          String
+  assistVersion      Int
   overrideReasonCode String?
-  operatorUserId String
-  updatedAt DateTime @updatedAt
+  operatorUserId     String
+  updatedAt          DateTime      @updatedAt
+
   @@unique([assistId, filingId])
   @@index([accountId, filingId])
 }
 
 model AssistDeclaration {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  assistId String
-  assist Assist @relation(fields: [assistId], references: [id], onDelete: Restrict)
-  filingId String
-  filing CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Restrict)
-  amountDeclared Decimal @db.Decimal(18, 2)
-  customsAmount Decimal @db.Decimal(18, 2)
-  currency String
-  customsCurrency String
-  exchangeRate Decimal @db.Decimal(24, 12)
-  lineAmounts Json
-  wasOverride Boolean @default(false)
+  id                 String        @id @default(cuid())
+  accountId          String
+  account            Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  assistId           String
+  assist             Assist        @relation(fields: [assistId], references: [id], onDelete: Restrict)
+  filingId           String
+  filing             CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Restrict)
+  amountDeclared     Decimal       @db.Decimal(18, 2)
+  customsAmount      Decimal       @db.Decimal(18, 2)
+  currency           String
+  customsCurrency    String
+  exchangeRate       Decimal       @db.Decimal(24, 12)
+  lineAmounts        Json
+  wasOverride        Boolean       @default(false)
   overrideReasonCode String?
-  operatorUserId String
-  declaredAt DateTime @default(now())
+  operatorUserId     String
+  declaredAt         DateTime      @default(now())
+
   @@unique([assistId, filingId])
   @@index([accountId, filingId])
 }
 
-
 // Immutable customer-safe proof. Publication serializes on the parent filing.
 model EntryProof {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  filingId String
-  filing CustomsFiling @relation(fields: [filingId], references: [id], onDelete: Cascade)
-  shipmentId String?
-  shipment Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  clientId String
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  version Int
-  status String @default("DRAFT")
-  scoreOverall Int
-  scoreBand String
-  linesTotal Int
-  linesVerified Int
-  linesReview Int
-  linesAtRisk Int
-  dutyAndFeesUsd Decimal @db.Decimal(16, 2)
-  dutySavingsIdentifiedUsd Decimal @default(0) @db.Decimal(16, 2)
-  openFindingsCount Int @default(0)
-  payload Json
-  htsReleaseId String?
-  referenceDataAsOf DateTime?
-  generatedByUserId String?
-  publishedByUserId String?
-  publishedAt DateTime?
-  supersededById String?
-  supersededBy EntryProof? @relation("EntryProofSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
-  supersedes EntryProof[] @relation("EntryProofSupersession")
-  events EntryProofEvent[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                       String            @id @default(cuid())
+  accountId                String
+  account                  Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId                 String
+  filing                   CustomsFiling     @relation(fields: [filingId], references: [id], onDelete: Cascade)
+  shipmentId               String?
+  shipment                 Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  clientId                 String
+  client                   Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  version                  Int
+  status                   String            @default("DRAFT")
+  scoreOverall             Int
+  scoreBand                String
+  linesTotal               Int
+  linesVerified            Int
+  linesReview              Int
+  linesAtRisk              Int
+  dutyAndFeesUsd           Decimal           @db.Decimal(16, 2)
+  dutySavingsIdentifiedUsd Decimal           @default(0) @db.Decimal(16, 2)
+  openFindingsCount        Int               @default(0)
+  payload                  Json
+  htsReleaseId             String?
+  referenceDataAsOf        DateTime?
+  generatedByUserId        String?
+  publishedByUserId        String?
+  publishedAt              DateTime?
+  supersededById           String?
+  supersededBy             EntryProof?       @relation("EntryProofSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes               EntryProof[]      @relation("EntryProofSupersession")
+  events                   EntryProofEvent[]
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
   @@unique([filingId, version])
   @@index([accountId])
   @@index([filingId])
@@ -10756,69 +10820,71 @@ model EntryProof {
 }
 
 model EntryProofEvent {
-  id String @id @default(cuid())
+  id           String     @id @default(cuid())
   entryProofId String
-  entryProof EntryProof @relation(fields: [entryProofId], references: [id], onDelete: Cascade)
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  type String
-  actorUserId String?
-  actorType String
-  detail Json?
-  createdAt DateTime @default(now())
+  entryProof   EntryProof @relation(fields: [entryProofId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type         String
+  actorUserId  String?
+  actorType    String
+  detail       Json?
+  createdAt    DateTime   @default(now())
+
   @@index([entryProofId])
   @@index([accountId, createdAt])
 }
 
 model ClientStakeholder {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  clientId String
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  name String
-  email String
-  title String?
-  role String
-  isSigner Boolean @default(false)
-  userId String?
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-  invitationId String?
-  loginStatus String @default("NOT_INVITED")
-  notifyPrefs Json?
+  id                 String   @id @default(cuid())
+  accountId          String
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name               String
+  email              String
+  title              String?
+  role               String
+  isSigner           Boolean  @default(false)
+  userId             String?
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invitationId       String?
+  loginStatus        String   @default("NOT_INVITED")
+  notifyPrefs        Json?
   onboardingEntityId String?
-  sourceEvent String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  sourceEvent        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
   @@unique([clientId, email])
   @@index([accountId])
   @@index([clientId, role])
 }
 
 model ClientDocument {
-  id String @id @default(cuid())
-  accountId String
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  clientId String
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  kind String
-  title String
-  storageUrl String
-  contentType String @default("application/pdf")
-  status String @default("ACTIVE")
-  effectiveDate DateTime?
+  id             String    @id @default(cuid())
+  accountId      String
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  kind           String
+  title          String
+  storageUrl     String
+  contentType    String    @default("application/pdf")
+  status         String    @default("ACTIVE")
+  effectiveDate  DateTime?
   expirationDate DateTime?
-  portalVisible Boolean @default(true)
-  sourceModel String?
-  sourceId String?
-  supersededById String? @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  portalVisible  Boolean   @default(true)
+  sourceModel    String?
+  sourceId       String?
+  supersededById String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
   @@unique([clientId, kind, sourceModel, sourceId])
   @@index([accountId])
   @@index([clientId, kind, status])
 }
-
 
 model InboundAddress {
   id                      String         @id @default(cuid())
