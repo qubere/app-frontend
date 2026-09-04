@@ -2,16 +2,19 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, Package, Users, ArrowRight, X } from "lucide-react";
+import { Search, Loader2, Package, Users, FileText, ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui";
 
 export interface SearchResultItem {
   id: string;
-  kind: "party" | "product";
+  kind: "party" | "product" | "document";
   title: string;
   subtitle: string;
   status: string;
   reviewStatus?: string | null;
+  matchReason: string;
+  sourceLabel: string;
+  sourceDocumentId?: string | null;
   href: string;
 }
 
@@ -116,7 +119,7 @@ export function OmniboxSearch() {
       >
         <div className="flex items-center space-x-2 truncate">
           <Search className="w-3.5 h-3.5 text-ink-muted group-hover:text-brand transition-colors shrink-0" />
-          <span className="truncate">Search parties & products...</span>
+          <span className="truncate">Search records & parsed documents...</span>
         </div>
         <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted bg-surface-muted border border-border rounded-md shrink-0">
           ⌘K
@@ -141,7 +144,7 @@ export function OmniboxSearch() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search across Party & Product master records..."
+                placeholder="Search parsed documents, parties, products, fields..."
                 className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted outline-none font-medium"
               />
               {loading && <Loader2 className="w-4 h-4 text-brand animate-spin shrink-0" />}
@@ -158,11 +161,11 @@ export function OmniboxSearch() {
               {!query.trim() ? (
                 <div className="p-8 text-center text-xs text-ink-muted space-y-1">
                   <p className="font-semibold text-ink">Universal Search Omnibox</p>
-                  <p>Type a party name, internal code, product name, SKU, or tariff code.</p>
+                  <p>Type a parsed field value, document name, party, product, SKU, or tariff code.</p>
                 </div>
               ) : results.length === 0 && !loading ? (
                 <div className="p-8 text-center text-xs text-ink-muted">
-                  No parties or products matched &quot;{query}&quot;.
+                  No records or parsed documents matched &quot;{query}&quot;.
                 </div>
               ) : (
                 results.map((item, idx) => {
@@ -183,13 +186,17 @@ export function OmniboxSearch() {
                           className={`p-2 rounded-lg shrink-0 ${
                             item.kind === "party"
                               ? "bg-blue-50 text-blue-600"
-                              : "bg-purple-50 text-purple-600"
+                              : item.kind === "product"
+                                ? "bg-purple-50 text-purple-600"
+                                : "bg-amber-50 text-amber-700"
                           }`}
                         >
                           {item.kind === "party" ? (
                             <Users className="w-4 h-4" />
-                          ) : (
+                          ) : item.kind === "product" ? (
                             <Package className="w-4 h-4" />
+                          ) : (
+                            <FileText className="w-4 h-4" />
                           )}
                         </div>
 
@@ -204,6 +211,11 @@ export function OmniboxSearch() {
                           </div>
                           <p className="text-sm font-bold text-ink truncate">{item.title}</p>
                           <p className="text-xs text-ink-muted truncate">{item.subtitle}</p>
+                          <p className="text-[11px] text-ink-muted truncate">
+                            Matched: <span className="font-medium text-ink">{item.matchReason}</span>
+                            <span aria-hidden="true"> · </span>
+                            Source: <span className="font-medium text-ink">{item.sourceLabel}</span>
+                          </p>
                         </div>
                       </div>
 
