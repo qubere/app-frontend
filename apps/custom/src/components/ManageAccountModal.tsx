@@ -260,6 +260,7 @@ export function ManageAccountModal({ isOpen, onClose, accountName, items, extern
             publicDocumentAddress={data.publicDocumentAddress}
             accountName={data.accountName}
             initialRoutes={data.routes}
+            onNavigate={onClose}
             compact
           />
         );

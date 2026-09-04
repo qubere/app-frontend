@@ -29,6 +29,7 @@ interface DocumentEmailPanelProps {
   initialRoutes: InboundSenderRouteRow[];
   teamMembers?: TeamMemberOption[];
   compact?: boolean;
+  onNavigate?: () => void;
 }
 
 function statusVariant(status: string): "success" | "warning" | "danger" | "neutral" {
@@ -209,5 +210,5 @@ export function DocumentEmailPanel(props: DocumentEmailPanelProps) {
   useEffect(() => { fetch('/api/settings/inbound-addresses').then(async r => { if (!r.ok) throw new Error(); return r.json(); }).then(d => setEnabled(d.enabled)).catch(() => setFailed(true)); }, []);
   if (failed) return <p role="alert" className="text-sm text-red-700">Document email settings could not load. Refresh to try again.</p>;
   if (enabled === null) return <p className="text-sm text-ink-muted">Loading document email settings…</p>;
-  return enabled ? <ClientInboundAddresses /> : <LegacyDocumentEmailPanel {...props} />;
+  return enabled ? <ClientInboundAddresses onNavigate={props.onNavigate} /> : <LegacyDocumentEmailPanel {...props} />;
 }
