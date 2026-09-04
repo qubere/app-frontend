@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AlsoKnownAsPanel } from "../src/app/app/importers/[id]/page";
+import { AlsoKnownAsPanel } from "../src/app/app/importers/[id]/AlsoKnownAsPanel";
 import { AlsoKnownAsSection } from "../src/app/app/parties/[id]/PartyTabs";
 import type { AlsoKnownAsSummary } from "../src/modules/importers/alsoKnownAs";
 
