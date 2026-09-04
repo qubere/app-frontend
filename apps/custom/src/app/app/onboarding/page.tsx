@@ -1,10 +1,12 @@
-import { getAccountContext } from "@/lib/auth";
+import { getAccountContext, hasPermission } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { CaseListClient } from "./CaseListClient";
 import { db, type DataMode } from "@/lib/db";
 
 export default async function OnboardingPage() {
   const context = await getAccountContext();
-  if (!context) return null;
+  if (!context) redirect("/sign-in");
+  if (!(await hasPermission("onboarding.manage"))) redirect("/app/dashboard");
 
   const [cases, brokerProfile] = await Promise.all([
       db.onboardingCase.findMany({

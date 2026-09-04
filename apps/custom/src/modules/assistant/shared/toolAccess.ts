@@ -15,7 +15,7 @@
  */
 
 import type { AccountContext } from "@/lib/auth";
-import { canAccessHref } from "@/lib/navigation";
+import { canAccessHref, navAccessFromContext } from "@/lib/navigation";
 import { holdsPermission } from "@/modules/product/productActor";
 import type { AnyCopilotTool, CopilotToolAccess } from "./toolTypes";
 
@@ -23,14 +23,7 @@ export function canUseTool(context: AccountContext, access?: CopilotToolAccess):
   if (!access) return true;
 
   if (access.navHref) {
-    const allowed = canAccessHref(
-      {
-        roleNames: context.roleNames,
-        permissions: context.permissions,
-        isPlatformAdmin: context.isPlatformAdmin,
-      },
-      access.navHref
-    );
+    const allowed = canAccessHref(navAccessFromContext(context), access.navHref);
     if (!allowed) return false;
   }
 

@@ -15,6 +15,7 @@ interface HeaderProps {
   userName?: string;
   isPlatformAdmin?: boolean;
   roleNames?: string[];
+  permissions?: string[];
 }
 
 const PANEL_META: Record<PanelItemId, { icon: LucideIcon; description: string; endpoint: string }> = {
@@ -35,7 +36,9 @@ export function Header({
   tenantName = "Acme Corporation",
   userName = "User",
   isPlatformAdmin = false,
-  roleNames = ["OWNER"],
+  // Deny by default: an absent prop must not widen the account menu.
+  roleNames = [],
+  permissions = [],
 }: HeaderProps) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -48,7 +51,7 @@ export function Header({
 
   const manageAccountItems: ManageAccountPanelItem[] = accountAdminItems({
     roleNames,
-    permissions: [],
+    permissions,
     isPlatformAdmin,
   })
     .filter((item) => isPanelItemId(item.id))

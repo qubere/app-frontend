@@ -4,6 +4,26 @@ export interface NavAccess {
   isPlatformAdmin: boolean;
 }
 
+/** Deny-by-default access, returned fresh so a caller can never mutate a shared value. */
+export const emptyNavAccess = (): NavAccess => ({ roleNames: [], permissions: [], isPlatformAdmin: false });
+
+/**
+ * The single place that projects an auth context onto the navigation model. Call
+ * sites pass this rather than hand-picking fields, so a component can never be
+ * handed roles without the matching permissions (the omission that used to hide
+ * every permission-gated item from non-owners).
+ */
+export function navAccessFromContext(
+  context: { roleNames: string[]; permissions: string[]; isPlatformAdmin: boolean } | null | undefined,
+): NavAccess {
+  if (!context) return emptyNavAccess();
+  return {
+    roleNames: context.roleNames ?? [],
+    permissions: context.permissions ?? [],
+    isPlatformAdmin: context.isPlatformAdmin ?? false,
+  };
+}
+
 export type NavIcon =
   | "inbox"
   | "dashboard"
