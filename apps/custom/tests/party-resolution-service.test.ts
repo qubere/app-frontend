@@ -11,6 +11,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const findPartyMatches = vi.fn();
 const createParty = vi.fn();
 const getParty = vi.fn();
+const addRole = vi.fn();
 
 vi.mock("@/modules/party/partyService", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/modules/party/partyService")>();
@@ -19,10 +20,14 @@ vi.mock("@/modules/party/partyService", async (importOriginal) => {
     findPartyMatches: (...args: unknown[]) => findPartyMatches(...args),
     createParty: (...args: unknown[]) => createParty(...args),
     getParty: (...args: unknown[]) => getParty(...args),
+    addRole: (...args: unknown[]) => addRole(...args),
   };
 });
 
-const { resolvePartyForCompany } = await import("@/modules/party/partyResolutionService");
+const mockDb = { partyRole: { findFirst: vi.fn() } };
+vi.mock("@/lib/db", () => ({ db: mockDb }));
+
+const { resolvePartyForCompany, ensurePartyRole } = await import("@/modules/party/partyResolutionService");
 
 const actor = { accountId: "acct_1", userId: "user_1" };
 
@@ -36,6 +41,8 @@ beforeEach(() => {
   findPartyMatches.mockReset();
   createParty.mockReset();
   getParty.mockReset();
+  addRole.mockReset();
+  mockDb.partyRole.findFirst.mockReset();
 });
 
 describe("resolvePartyForCompany", () => {
@@ -137,5 +144,41 @@ describe("resolvePartyForCompany", () => {
     expect(passedActor).toBe(actor);
     const [createActor] = createParty.mock.calls[0]!;
     expect(createActor).toBe(actor);
+  });
+});
+
+describe("ensurePartyRole", () => {
+  it("adds the role when the party does not already actively hold it", async () => {
+    mockDb.partyRole.findFirst.mockResolvedValue(null);
+
+    await ensurePartyRole(actor, "party_1", "IMPORTER");
+
+    expect(mockDb.partyRole.findFirst).toHaveBeenCalledWith({
+      where: { accountId: "acct_1", partyId: "party_1", roleType: "IMPORTER", status: "ACTIVE" },
+      select: { id: true },
+    });
+    expect(addRole).toHaveBeenCalledWith(actor, "party_1", { roleType: "IMPORTER", sourceType: "USER" });
+  });
+
+  it("is idempotent -- does nothing when the party already actively holds the role", async () => {
+    mockDb.partyRole.findFirst.mockResolvedValue({ id: "role_1" });
+
+    await ensurePartyRole(actor, "party_1", "IMPORTER");
+
+    expect(addRole).not.toHaveBeenCalled();
+  });
+
+  it("fails open -- never throws when addRole itself fails", async () => {
+    mockDb.partyRole.findFirst.mockResolvedValue(null);
+    addRole.mockRejectedValue(new Error("db unavailable"));
+
+    await expect(ensurePartyRole(actor, "party_1", "IMPORTER")).resolves.toBeUndefined();
+  });
+
+  it("fails open -- never throws when the lookup itself fails", async () => {
+    mockDb.partyRole.findFirst.mockRejectedValue(new Error("db unavailable"));
+
+    await expect(ensurePartyRole(actor, "party_1", "IMPORTER")).resolves.toBeUndefined();
+    expect(addRole).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logging/logger";
-import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { ensurePartyRole, resolvePartyForCompany } from "@/modules/party/partyResolutionService";
 
 const entitySchema = z.object({
   importerNumberType: z.enum(["EIN", "SSN", "CBP_ASSIGNED"]),
@@ -92,6 +92,12 @@ export const POST = withAuthenticatedRoute(
     // Outside the transaction: party resolution can trigger Restricted Party
     // Screening, and nothing here should hold the transaction's locks open.
     const partyId = await resolveNewEntityParty(ctx.accountId, ctx.userId, requestId, data);
+    // Adding this entity to a case is a deliberate importer registration, so
+    // ensure the IMPORTER role on whatever party it resolved to -- fail-open,
+    // same as ensurePartyRole always is.
+    if (partyId) {
+      await ensurePartyRole({ accountId: ctx.accountId, userId: ctx.userId, requestId: requestId ?? null }, partyId, "IMPORTER");
+    }
 
     try {
       const result = await db.$transaction(async (tx) => {

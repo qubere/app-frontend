@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
-import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { ensurePartyRole, resolvePartyForCompany } from "@/modules/party/partyResolutionService";
 
 export class ImporterCreateError extends Error {
   constructor(
@@ -95,15 +95,40 @@ export async function createImporter(input: CreateImporterInput) {
     throw new ImporterCreateError("CONFLICT", "Choose a new legal entity or one existing legal entity.");
   }
 
-  // Resolving/creating a Party can trigger Restricted Party Screening, so it
-  // is worth a cheap existence check first -- an invalid clientId should fail
-  // fast with today's error, not after an unnecessary party resolution. The
-  // transaction below still re-validates this itself; this is a read-only
-  // pre-check, not a replacement for it.
-  const newEntityPartyId =
-    input.legalEntity && (await db.client.findFirst({ where: { id: input.clientId, accountId: input.accountId }, select: { id: true } }))
-      ? await resolveNewLegalEntityParty(input, input.legalEntity)
-      : null;
+  // Resolving/creating a Party (and, below, adding a role) can trigger
+  // Restricted Party Screening, so it is worth a cheap existence check first
+  // -- an invalid clientId should fail fast with today's error, not after
+  // unnecessary work. The transaction below still re-validates this itself;
+  // this is a read-only pre-check, not a replacement for it.
+  const clientExists = Boolean(
+    await db.client.findFirst({ where: { id: input.clientId, accountId: input.accountId }, select: { id: true } })
+  );
+
+  // The party a brand-new legal entity resolves to, or the party an
+  // already-existing legal entity is already bridged to (from a prior
+  // resolution, or the backfill script). Either way, this call is
+  // deliberately registering that company as an importer, so this is where
+  // the IMPORTER role gets ensured -- outside the transaction, same
+  // reasoning as resolveNewLegalEntityParty.
+  const actor = { accountId: input.accountId, userId: input.userId, requestId: input.requestId ?? null };
+  let resolvedPartyId: string | null = null;
+  if (clientExists) {
+    if (input.legalEntity) {
+      resolvedPartyId = await resolveNewLegalEntityParty(input, input.legalEntity);
+    } else if (input.legalEntityId) {
+      const existing = await db.legalEntity.findFirst({
+        where: { id: input.legalEntityId, accountId: input.accountId },
+        select: { partyId: true },
+      });
+      resolvedPartyId = existing?.partyId ?? null;
+    }
+    if (resolvedPartyId) {
+      await ensurePartyRole(actor, resolvedPartyId, "IMPORTER");
+    }
+  }
+  // Only ever read below inside the new-legal-entity branch -- mutually
+  // exclusive with the legalEntityId branch, which never reads it.
+  const newEntityPartyId = resolvedPartyId;
 
   return db.$transaction(async (tx) => {
     const client = await tx.client.findFirst({

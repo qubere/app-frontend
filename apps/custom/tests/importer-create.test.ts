@@ -16,8 +16,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ db: mocks.db }));
 
 const resolvePartyForCompany = vi.fn();
+const ensurePartyRole = vi.fn();
 vi.mock("@/modules/party/partyResolutionService", () => ({
   resolvePartyForCompany: (...args: unknown[]) => resolvePartyForCompany(...args),
+  ensurePartyRole: (...args: unknown[]) => ensurePartyRole(...args),
 }));
 
 const { createImporter } = await import("../src/modules/importers/importerCreate.service");
@@ -39,6 +41,7 @@ beforeEach(() => {
   mocks.db.$transaction.mockImplementation((callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
   mocks.db.client.findFirst.mockResolvedValue({ id: "client-1", name: "Northwind Trade Group" });
   resolvePartyForCompany.mockResolvedValue({ outcome: "CREATED", partyId: "party-1", party: { id: "party-1" } });
+  ensurePartyRole.mockResolvedValue(undefined);
   mocks.db.legalEntity.create.mockResolvedValue({
     id: "legal-1",
     accountId: "broker-1",
@@ -104,9 +107,14 @@ describe("createImporter", () => {
       data: expect.objectContaining({ partyId: "party-1" }),
       include: expect.anything(),
     });
+    expect(ensurePartyRole).toHaveBeenCalledWith(
+      { accountId: "broker-1", userId: "user-1", requestId: null },
+      "party-1",
+      "IMPORTER"
+    );
   });
 
-  it("leaves the legal entity unlinked when resolution only finds candidates -- never auto-links", async () => {
+  it("leaves the legal entity unlinked when resolution only finds candidates -- never auto-links, and never adds a role for an unlinked party", async () => {
     resolvePartyForCompany.mockResolvedValue({ outcome: "CANDIDATES", status: "POSSIBLE_MATCH", candidates: [{ partyId: "party-maybe" }] });
 
     await createImporter({
@@ -121,6 +129,7 @@ describe("createImporter", () => {
       data: expect.objectContaining({ partyId: null }),
       include: expect.anything(),
     });
+    expect(ensurePartyRole).not.toHaveBeenCalled();
   });
 
   it("still creates the importer when party resolution fails -- the bridge is additive, never a blocker", async () => {
@@ -139,6 +148,7 @@ describe("createImporter", () => {
       data: expect.objectContaining({ partyId: null }),
       include: expect.anything(),
     });
+    expect(ensurePartyRole).not.toHaveBeenCalled();
   });
 
   it("does not resolve a party for the CBP-assigned-number path -- that number is not a tax identifier", async () => {
@@ -154,7 +164,7 @@ describe("createImporter", () => {
     expect(resolveInput.taxId).toBeNull();
   });
 
-  it("reuses an eligible legal entity instead of duplicating it", async () => {
+  it("reuses an eligible legal entity instead of duplicating it, and adds the IMPORTER role to its already-bridged party", async () => {
     mocks.db.legalEntity.findFirst.mockResolvedValue({
       id: "legal-existing",
       accountId: "broker-1",
@@ -168,6 +178,7 @@ describe("createImporter", () => {
       city: "Oakland",
       stateProvince: "CA",
       postalCode: "94607",
+      partyId: "party-existing",
       importerOfRecord: null,
     });
 
@@ -186,6 +197,35 @@ describe("createImporter", () => {
     // Backfilling an already-existing legal entity's party link is the
     // dedicated backfill script's job (#320 §6.2), not this route's.
     expect(resolvePartyForCompany).not.toHaveBeenCalled();
+    // But the deliberate act of registering it as an importer NOW still
+    // adds the role to whatever party it's already bridged to -- this is
+    // the "known supplier becomes an importer" payoff scenario (spec §3.3).
+    expect(ensurePartyRole).toHaveBeenCalledWith(
+      { accountId: "broker-1", userId: "user-1", requestId: null },
+      "party-existing",
+      "IMPORTER"
+    );
+  });
+
+  it("does not add a party role when the existing legal entity has no party link yet", async () => {
+    mocks.db.legalEntity.findFirst.mockResolvedValue({
+      id: "legal-existing",
+      accountId: "broker-1",
+      clientId: "client-1",
+      legalName: "Northwind Foods LLC",
+      partyId: null,
+      importerOfRecord: null,
+    });
+
+    await createImporter({
+      accountId: "broker-1",
+      userId: "user-1",
+      clientId: "client-1",
+      path: "SWITCHING",
+      legalEntityId: "legal-existing",
+    });
+
+    expect(ensurePartyRole).not.toHaveBeenCalled();
   });
 
   it("returns the existing importer when the filing identity is already registered", async () => {
@@ -221,5 +261,6 @@ describe("createImporter", () => {
     // An invalid client should fail fast, before the wasted work (and
     // Restricted Party Screening) of resolving a party that will never be used.
     expect(resolvePartyForCompany).not.toHaveBeenCalled();
+    expect(ensurePartyRole).not.toHaveBeenCalled();
   });
 });
