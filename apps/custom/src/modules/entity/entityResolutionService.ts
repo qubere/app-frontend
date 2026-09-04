@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
 import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 export interface EntityMatchCandidate {
   legalEntityId: string;
@@ -72,46 +73,6 @@ export class EntityResolutionService {
     const candidates: EntityMatchCandidate[] = [];
 
     for (const entity of entities) {
-      let score = 0;
-      const reasons: string[] = [];
-
-      // A. CBP Importer Number exact match (High confidence: +100)
-      const matchingCustomsProfile = entity.customsProfiles.find(
-        (cp: any) =>
-          input.cbpImporterNumber &&
-          cp.cbpImporterNumber &&
-          cp.cbpImporterNumber.replace(/[^a-zA-Z0-9]/g, "") ===
-            input.cbpImporterNumber.replace(/[^a-zA-Z0-9]/g, "")
-      );
-
-      if (matchingCustomsProfile) {
-        score += 100;
-        reasons.push(`Exact CBP Importer Number match (${matchingCustomsProfile.cbpImporterNumber})`);
-      }
-
-      // B. Tax Identifier / EIN match (+90)
-      if (
-        input.taxIdentifier &&
-        entity.taxIdentifier &&
-        input.taxIdentifier.replace(/[^0-9]/g, "") === entity.taxIdentifier.replace(/[^0-9]/g, "")
-      ) {
-        score += 90;
-        reasons.push(`Tax ID / EIN match (${entity.taxIdentifier})`);
-      }
-
-      // C. Exact Legal Name match (+95)
-      if (entity.legalName.toLowerCase().trim() === input.rawName.toLowerCase().trim()) {
-        score += 95;
-        reasons.push("Exact legal name match");
-      } else {
-        // D. Normalized Name match (+80)
-        const normEntityName = this.normalizeName(entity.legalName);
-        if (normEntityName && normInputName && (normEntityName === normInputName || normEntityName.includes(normInputName) || normInputName.includes(normEntityName))) {
-          score += 80;
-          reasons.push("Normalized company name match");
-        }
-      }
-
       const normLegalName = this.normalizeName(entity.legalName);
       let matchScore = 0;
       const matchReasons: string[] = [];

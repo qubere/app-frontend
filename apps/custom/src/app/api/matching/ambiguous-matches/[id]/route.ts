@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withAuthenticatedRoute } from "@/lib/api/withAuthenticatedRoute";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { resolveMatchProposal } from "@/modules/matching/ambiguousMatchService";
 import { z } from "zod";
 
@@ -9,9 +9,9 @@ const resolveSchema = z.object({
   selectedProductId: z.string().nullable().optional(),
 });
 
-export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, request, params }) => {
+export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, params }) => {
   const { id } = await params;
-  const json = await request.json();
+  const json = await req.json();
   const parsed = resolveSchema.parse(json);
 
   const updated = await resolveMatchProposal(

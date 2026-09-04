@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { withAuthenticatedRoute } from "@/lib/api/withAuthenticatedRoute";
+import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { listPendingMatchProposals } from "@/modules/matching/ambiguousMatchService";
 import { MatchProposalDomain, MatchProposalStatus } from "@prisma/client";
 
-export const GET = withAuthenticatedRoute(async ({ ctx, request }) => {
-  const url = new URL(request.url);
+export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
+  const url = new URL(req.url);
   const domainRaw = url.searchParams.get("domain");
   const statusRaw = url.searchParams.get("status");
   const pageRaw = url.searchParams.get("page");
