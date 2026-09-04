@@ -155,6 +155,73 @@ describe("buildReviewFields — verification and needsReview alias", () => {
     const field = fields.find((f) => f.fieldName === "invoice_number")!;
     expect(field.verification).toBe("AUTO_VERIFIED");
   });
+
+  it("merges an OCR_AI_AGENT freeform label and a DOC_INTEL_STRUCTURED key for the same fact into one field", () => {
+    const fields = buildReviewFields(
+      [
+        row({
+          id: "row-ocr",
+          fieldName: "Invoice Number",
+          value: "INV-100",
+          confidence: 60,
+          source: "OCR_AI_AGENT",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+        row({
+          id: "row-structured",
+          fieldName: "invoiceNumber",
+          value: "INV-100",
+          confidence: 95,
+          source: "DOC_INTEL_STRUCTURED",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        }),
+      ],
+      "COMMERCIAL_INVOICE"
+    );
+
+    const matches = fields.filter((f) => f.fieldName === "invoice_number");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].history).toHaveLength(2);
+    expect(matches[0].verification).toBe("AUTO_VERIFIED");
+  });
+
+  it("keeps an unresolvable freeform label in its own bucket", () => {
+    const fields = buildReviewFields(
+      [row({ fieldName: "Some Unrecognized Freeform Label", source: "OCR_AI_AGENT" })],
+      "COMMERCIAL_INVOICE"
+    );
+
+    expect(fields.find((f) => f.fieldName === "Some Unrecognized Freeform Label")).toBeDefined();
+  });
+
+  it("flags the merged field as CONFLICT when the reconciliation-vocabulary name is in conflictedFieldNames, even though the current value comes from the OCR_AI_AGENT row", () => {
+    const fields = buildReviewFields(
+      [
+        row({
+          id: "row-ocr",
+          fieldName: "Invoice Number",
+          value: "INV-100",
+          confidence: 95,
+          source: "OCR_AI_AGENT",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        }),
+        row({
+          id: "row-structured",
+          fieldName: "invoiceNumber",
+          value: "INV-999",
+          confidence: 95,
+          source: "DOC_INTEL_STRUCTURED",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+      "COMMERCIAL_INVOICE",
+      new Set(["invoiceNumber"])
+    );
+
+    const field = fields.find((f) => f.fieldName === "invoice_number")!;
+    expect(field.verification).toBe("CONFLICT");
+    expect(field.currentValue).toBe("INV-100");
+  });
 });
 
 function reviewField(overrides: Partial<ReviewField> = {}): ReviewField {

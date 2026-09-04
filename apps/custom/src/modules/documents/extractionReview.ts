@@ -10,6 +10,7 @@
  */
 import type { DocumentType } from "@prisma/client";
 import { getFieldExpectation, getRequiredFields, type FieldExpectation } from "@/lib/documents/extractionSchemas";
+import { resolveField, canonicalizeFieldKey } from "@/lib/documents/fieldDictionary";
 import { FIELD_VERIFICATION_STATES, type FieldVerificationState } from "./fieldVerification";
 
 export const HUMAN_CORRECTION_SOURCE = "HUMAN_CORRECTION";
@@ -146,16 +147,39 @@ export function buildReviewFields(
   docType?: DocumentType | null,
   conflictedFieldNames?: ReadonlySet<string>
 ): ReviewField[] {
+  // ExtractionField rows come from sources that speak different fieldName
+  // vocabularies (OCR_AI_AGENT's freeform LLM labels vs. DOC_INTEL_STRUCTURED's
+  // fixed reconciliation keys) for the same real-world fact. Group by the
+  // dictionary's canonical key when a row's name resolves, so both spellings
+  // land in one ReviewField instead of two; an unresolvable freeform label
+  // just keeps its own bucket, same as before this normalization existed.
   const byName = new Map<string, RawExtractionField[]>();
   for (const row of rows) {
-    const bucket = byName.get(row.fieldName);
+    const key = resolveField(row.fieldName)?.canonicalKey ?? row.fieldName;
+    const bucket = byName.get(key);
     if (bucket) bucket.push(row);
-    else byName.set(row.fieldName, [row]);
+    else byName.set(key, [row]);
   }
 
-  const fields: ReviewField[] = [];
+  const conflictedCanonicalKeys = conflictedFieldNames
+    ? new Set([...conflictedFieldNames].map((name) => canonicalizeFieldKey(name) ?? name))
+    : null;
 
-  for (const [fieldName, group] of byName) {
+  const fields: ReviewField[] = [];
+  const presentSchemaNames = new Set<string>();
+
+  for (const [groupKey, group] of byName) {
+    const resolved = resolveField(groupKey);
+    // Display/schema-facing name: prefer the extractionSchemas.ts snake_case
+    // spelling, then the reconciliation camelCase spelling, so getFieldExpectation
+    // and existing callers (including the cross-document reconcile route, which
+    // keys its own rules by the reconciliation vocabulary) keep working against
+    // their expected vocabulary regardless of which source wrote this. Falling
+    // back to the dictionary's dotted canonicalKey here would hand callers a
+    // spelling nothing else in the app uses, so fall back to the row's own
+    // fieldName instead -- identical to groupKey when nothing resolved.
+    const fieldName = resolved?.extractionSchemaKeys[0] ?? resolved?.reconciliationKey ?? group[0].fieldName;
+    presentSchemaNames.add(fieldName);
     const history: FieldRevision[] = group
       .map((row) => ({
         id: row.id,
@@ -199,7 +223,7 @@ export function buildReviewFields(
       confidence: bestMachineRead?.confidence ?? null,
       expectation: docType ? getFieldExpectation(docType, fieldName) : "OPTIONAL",
       hasMachineRead: machineReads.length > 0,
-      hasConflict: conflictedFieldNames?.has(fieldName) ?? false,
+      hasConflict: conflictedCanonicalKeys?.has(resolved?.canonicalKey ?? groupKey) ?? false,
     });
 
     fields.push({
@@ -223,7 +247,7 @@ export function buildReviewFields(
   // "genuinely missing" is visible and flagged.
   if (docType) {
     for (const schemaField of getRequiredFields(docType)) {
-      if (byName.has(schemaField.fieldName)) continue;
+      if (presentSchemaNames.has(schemaField.fieldName)) continue;
       fields.push({
         fieldName: schemaField.fieldName,
         currentValue: "",

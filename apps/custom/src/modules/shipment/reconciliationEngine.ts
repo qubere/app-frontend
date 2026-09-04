@@ -5,8 +5,17 @@ import { recomputeShipmentDeadlines } from "@/modules/deadlines/deadline.service
 import { createExceptionItem } from "@/lib/exceptions/createException";
 import { ShipmentPartyService } from "./shipmentPartyService";
 import { matchPartMaster } from "@/modules/product/partMasterMatch";
+import { reconciliationKeyFor } from "@/lib/documents/fieldDictionary";
 
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
+
+// OCR_AI_AGENT rows carry a freeform LLM label while DOC_INTEL_STRUCTURED rows
+// already use the reconciliation vocabulary; resolve the former through the
+// dictionary so it can participate too when recognizable, falling back to the
+// raw name (today's behavior) when it can't be resolved.
+export function toReconciliationFieldName(rawFieldName: string): string {
+  return reconciliationKeyFor(rawFieldName) ?? rawFieldName;
+}
 
 interface ComplianceAuditFinding {
   ruleId: string;
@@ -102,7 +111,7 @@ export class ReconciliationEngine {
         documentId: d.id,
         docType: d.docType,
         fields: d.extractionFields.map((f) => ({
-          fieldName: f.fieldName,
+          fieldName: toReconciliationFieldName(f.fieldName),
           value: f.value,
           confidence: f.confidence,
         })),

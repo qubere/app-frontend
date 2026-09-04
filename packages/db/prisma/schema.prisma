@@ -3271,12 +3271,17 @@ model ExtractionField {
   id                 String           @id @default(cuid())
   documentId         String
   document           ShipmentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// Vocabulary varies by source: OCR_AI_AGENT writes Gemini's freeform entity
+  /// label, DOC_INTEL_STRUCTURED writes a fixed reconciliationRules.ts-style
+  /// camelCase key. Never compare raw fieldName across sources — resolve
+  /// through @/lib/documents/fieldDictionary's resolveField()/canonicalizeFieldKey()
+  /// first (see extractionReview.ts's buildReviewFields for the reference use).
   fieldName          String // e.g. invoiceNumber, invoiceDate, totalValue, htsCandidate
   value              String
   confidence         Int? // null until the extractor reports one
   pageNumber         Int?
   bbox               Json? // { x: 120, y: 340, width: 200, height: 24 } — PDF points
-  source             String           @default("OCR_AI_AGENT") // OCR_AI_AGENT | HUMAN_CORRECTION | PARSER
+  source             String           @default("OCR_AI_AGENT") // OCR_AI_AGENT | DOC_INTEL_STRUCTURED | HUMAN_CORRECTION
   /// Set when source = HUMAN_CORRECTION. The value before the correction.
   correctedFromValue String?
   /// userId of the reviewer who made the correction.
