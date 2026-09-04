@@ -23,6 +23,7 @@ export const es: TranslationKeys = {
     parties: "Partes",
     clients: "Clientes",
     importersOfRecord: "Importadores de Registro",
+    importers: "Importadores",
     bonds: "Fianzas",
     poa: "Poder Notarial",
     tradeDocuments: "Documentos Comerciales",

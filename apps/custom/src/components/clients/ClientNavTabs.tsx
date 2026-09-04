@@ -2,32 +2,40 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Contact2, Building2, ShieldCheck, FileSignature } from "lucide-react";
+import { Contact2, Building2, ShieldCheck, FileSignature, ClipboardCheck } from "lucide-react";
 
 export const CLIENT_NAV_ITEMS = [
   {
-    label: "Clients & Legal Entities",
+    label: "Clients",
     href: "/app/clients",
     icon: Contact2,
   },
   {
-    label: "Importers of Record (IOR)",
-    href: "/app/importers-of-record",
+    label: "Importers",
+    href: "/app/importers",
     icon: Building2,
+    view: "importers",
   },
   {
-    label: "Customs Bonds",
-    href: "/app/bonds",
+    label: "Bonds",
+    href: "/app/importers?view=bonds",
     icon: ShieldCheck,
+    view: "bonds",
   },
   {
-    label: "Powers of Attorney (POA)",
-    href: "/app/poa",
+    label: "POAs",
+    href: "/app/importers?view=poa",
     icon: FileSignature,
+    view: "poa",
+  },
+  {
+    label: "Onboarding",
+    href: "/app/onboarding",
+    icon: ClipboardCheck,
   },
 ];
 
-export function ClientNavTabs() {
+export function ClientNavTabs({ activeView = "importers" }: { activeView?: "importers" | "bonds" | "poa" }) {
   const pathname = usePathname();
 
   return (
@@ -35,8 +43,9 @@ export function ClientNavTabs() {
       {CLIENT_NAV_ITEMS.map((item) => {
         const Icon = item.icon;
         const isActive =
-          pathname === item.href ||
-          (item.href !== "/app/clients" && pathname.startsWith(item.href));
+          (item.view
+            ? pathname.startsWith("/app/importers") && item.view === activeView
+            : pathname === item.href || (item.href !== "/app/clients" && pathname.startsWith(item.href)));
 
         return (
           <Link

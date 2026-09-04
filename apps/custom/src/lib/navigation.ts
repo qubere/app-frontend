@@ -227,12 +227,13 @@ export const NAV_SECTIONS: NavSection[] = [
  *   - reconciliation: reached from the Post-Entry hub (/app/post-entry)
  *   - tariffs: the old hub, now redirects to /app/regulatory
  *   - compliance-reports: now the "Reports" tab of /app/compliance
- *   - importers-of-record / bonds / poa: tabs under Clients and Importers
+ *   - importers / bonds / poa: tabs under Clients and Importers
  * navItemByHref() falls back to this list so canAccessHref() (and the Copilot's
  * tool gate) still resolve them.
  */
 export const UNLISTED_NAV_ITEMS: NavItem[] = [
-  { id: "importers-of-record", labelKey: "importersOfRecord", href: "/app/importers-of-record", icon: "importersOfRecord", sidebarHref: "/app/clients" },
+  { id: "importers", labelKey: "importers", href: "/app/importers", icon: "importersOfRecord", sidebarHref: "/app/clients" },
+  { id: "importers-of-record", labelKey: "importers", href: "/app/importers-of-record", icon: "importersOfRecord", sidebarHref: "/app/clients" },
   { id: "bonds", labelKey: "bonds", href: "/app/bonds", icon: "bonds", sidebarHref: "/app/clients" },
   { id: "poa", labelKey: "poa", href: "/app/poa", icon: "poa", sidebarHref: "/app/clients" },
   { id: "support", labelKey: "helpCenter", href: "/app/support", icon: "support" },
