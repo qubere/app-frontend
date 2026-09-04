@@ -3124,7 +3124,7 @@ model ExceptionItem {
   document         ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
   fieldKey         String? // "exporterName" | "importerName" | "originCountry", set together with documentId
   code             String?
-  category         String? // MISSING_DATA | CONFLICT | VALIDATION | COMPLIANCE | DOCUMENT | CLASSIFICATION | VALUATION | FILING
+  category         String? // MISSING_DATA | CONFLICT | VALIDATION | COMPLIANCE | DOCUMENT | CLASSIFICATION | VALUATION | FILING | PLAN_CHANGE
   type             String // missing_document | data_mismatch | broker_hold | compliance_flag
   severity         String            @default("Medium") // High | Medium | Low | Critical
   description      String
@@ -3308,7 +3308,7 @@ model ReconciliationIssue {
   sourceDocuments    String[] // e.g. ["Commercial Invoice", "Packing List"]
   sourceDocumentIds  String[] @default([]) // ShipmentDocument.id values backing sourceDocuments, for per-document linking
   status             String    @default("Open") // Open | Resolved | Ignored
-  issueType          String    @default("DOCUMENT_CONFLICT") // DOCUMENT_CONFLICT | ENTRY_DISCREPANCY | PSC_CANDIDATE
+  issueType          String    @default("DOCUMENT_CONFLICT") // DOCUMENT_CONFLICT | ENTRY_DISCREPANCY | PSC_CANDIDATE | PLAN_CHANGED
   // C-2: Resolution detail — which value was accepted and by whom
   resolution         String? // ACCEPTED_A | ACCEPTED_B | BOTH_WRONG | ACKNOWLEDGED
   note               String? // free-text resolution note entered by the reviewer

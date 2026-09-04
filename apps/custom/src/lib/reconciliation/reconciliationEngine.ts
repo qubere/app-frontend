@@ -59,7 +59,7 @@ const LEGAL_SUFFIX_MAP: Record<string, string> = {
   " pvt": " private",
 };
 
-function applyNorm(value: string, fn: NormalizationFn): string | null {
+export function applyNorm(value: string, fn: NormalizationFn): string | null {
   const raw = value.trim();
   if (raw === "") return null;
 
@@ -117,7 +117,7 @@ function applyNorm(value: string, fn: NormalizationFn): string | null {
   }
 }
 
-function withinTolerance(a: string, b: string, tolerancePct: number): boolean {
+export function withinTolerance(a: string, b: string, tolerancePct: number): boolean {
   if (tolerancePct === 0) return a === b;
   const na = Number(a);
   const nb = Number(b);

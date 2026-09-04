@@ -8,6 +8,7 @@ import { matchPartMaster } from "@/modules/product/partMasterMatch";
 import { reconciliationKeyFor } from "@/lib/documents/fieldDictionary";
 
 import { runReconciliationEngine, type DocumentGroup } from "@/lib/reconciliation/reconciliationEngine";
+import { detectPlanChanges, type PlanFieldReading } from "@/lib/reconciliation/planChangeDetector";
 
 // OCR_AI_AGENT rows carry a freeform LLM label while DOC_INTEL_STRUCTURED rows
 // already use the reconciliation vocabulary; resolve the former through the
@@ -120,6 +121,21 @@ export class ReconciliationEngine {
     const { results, evaluatedRuleIds } = runReconciliationEngine(documentGroups);
     const conflictsDetected = results.length;
 
+    // Planned-vs-actual drift: the first-ever reading of a tracked field is
+    // its implicit "plan" -- flag when a later reading (a correction or a
+    // newly-extracted document) disagrees with that baseline.
+    const planReadings: PlanFieldReading[] = shipment.documents.flatMap((d) =>
+      d.extractionFields.map((f) => ({
+        fieldKey: toReconciliationFieldName(f.fieldName),
+        value: f.value,
+        createdAt: f.createdAt.toISOString(),
+        documentId: d.id,
+        docType: d.docType,
+      }))
+    );
+    const { results: planChangeResults, evaluatedFieldKeys: planEvaluatedFieldKeys } =
+      detectPlanChanges(planReadings);
+
     const severityMap: Record<string, string> = {
       BLOCKING: "Critical",
       WARNING: "Warning",
@@ -199,6 +215,77 @@ export class ReconciliationEngine {
         data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource, resolvedByName: "Reconciliation Engine" },
       });
       exceptionsResolved += staleIssues.length;
+    }
+
+    const PLAN_CHANGE_CODE_PREFIX = "PLAN_CHANGED:";
+    const openPlanIssues = openIssues.filter((i) => i.issueType === "PLAN_CHANGED");
+
+    for (const result of planChangeResults) {
+      const existing = openPlanIssues.find((i) => i.field === result.fieldKey);
+      const data = {
+        field: result.fieldKey,
+        severity: "Warning",
+        issueType: "PLAN_CHANGED",
+        expectedValue: `${result.baselineValue} (baseline, ${result.baselineDocType})`,
+        actualValue: `${result.currentValue} (current, ${result.currentDocType})`,
+        sourceDocuments: [result.baselineDocType, result.currentDocType],
+        sourceDocumentIds: [result.baselineDocumentId, result.currentDocumentId],
+      };
+
+      if (existing) {
+        await db.reconciliationIssue.update({ where: { id: existing.id }, data });
+      } else {
+        await db.reconciliationIssue.create({
+          data: { ...data, shipmentId: shipment.id, accountId: shipment.accountId, status: "Open" },
+        });
+      }
+
+      const exCode = `${PLAN_CHANGE_CODE_PREFIX}${result.fieldKey}`;
+      const exDescription = `"${result.fieldKey}" changed from "${result.baselineValue}" to "${result.currentValue}" after the shipment's original extraction.`;
+      const existingEx = await db.exceptionItem.findFirst({
+        where: { shipmentId: shipment.id, accountId: shipment.accountId, code: exCode, status: { not: "Resolved" } },
+        select: { id: true },
+      });
+      if (!existingEx) {
+        await createExceptionItem({
+          shipmentId: shipment.id,
+          accountId: shipment.accountId,
+          code: exCode,
+          category: "PLAN_CHANGE",
+          type: "plan_drift",
+          severity: "Medium",
+          blocking: false,
+          description: exDescription,
+          requiredAction: "Confirm whether this change is expected, then resolve this exception.",
+          sourceAgent: "Reconciliation Engine",
+        });
+        exceptionsGenerated++;
+        affectedAgentsSet.add("RECONCILIATION_ENGINE");
+      } else {
+        await db.exceptionItem.update({
+          where: { id: existingEx.id },
+          data: { description: exDescription },
+        });
+      }
+    }
+
+    const resolvedPlanFieldKeys = new Set(planChangeResults.map((r) => r.fieldKey));
+    const stalePlanIssues = openPlanIssues.filter(
+      (i) => planEvaluatedFieldKeys.includes(i.field) && !resolvedPlanFieldKeys.has(i.field)
+    );
+    const stalePlanIds = stalePlanIssues.map((i) => i.id);
+
+    if (stalePlanIds.length > 0) {
+      await db.reconciliationIssue.updateMany({
+        where: { id: { in: stalePlanIds } },
+        data: { status: "Resolved", resolvedAt: new Date() },
+      });
+      const stalePlanCodes = stalePlanIssues.map((i) => `${PLAN_CHANGE_CODE_PREFIX}${i.field}`);
+      await db.exceptionItem.updateMany({
+        where: { shipmentId: shipment.id, accountId: shipment.accountId, code: { in: stalePlanCodes }, status: { not: "Resolved" } },
+        data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource, resolvedByName: "Reconciliation Engine" },
+      });
+      exceptionsResolved += stalePlanIssues.length;
     }
 
     const activeExceptions = shipment.exceptionItems || [];

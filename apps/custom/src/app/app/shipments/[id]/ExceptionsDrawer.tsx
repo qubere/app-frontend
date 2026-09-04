@@ -304,6 +304,20 @@ export function ExceptionsDrawer({
       desc = dbEx.description;
     }
 
+    // Planned-vs-actual drift findings are grounded in the real DB `category`
+    // column too -- their description embeds the raw field name (e.g.
+    // "totalQuantity"), which can coincidentally contain a keyword phrase
+    // above (e.g. "quantity") and get mislabeled as a cross-document mismatch
+    // with an action that doesn't apply to a single-field drift finding.
+    if (dbEx.category === "PLAN_CHANGE") {
+      category = "CONFLICTS";
+      title = dbEx.description.split('"')[1]?.trim() || "Plan Changed";
+      desc = dbEx.description;
+      icon = <AlertTriangle className="w-4 h-4 text-amber-500" />;
+      actionText = "Resolve Exception →";
+      actionType = "DEFAULT";
+    }
+
     // A per-document field exception always resolves by supplying the value —
     // this overrides any keyword match above (e.g. "Country of Origin was not
     // extracted" must not open the HTS/COO flows).
