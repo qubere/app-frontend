@@ -291,7 +291,11 @@ codebase has already solved twice.
 - `LegalEntity` creation call sites (`entityResolutionService.ts`, `/api/legal-entities`) also create/link a
   `Party` twin, but **keep** writing `LegalEntity` exactly as before — `ShipmentParty`/`ProductParty` reads
   are untouched.
-- **Ships independently of #316's later slices** — see §7 for why this should land before #316 S3.
+- **As of 2026-09-04, PR #317 (#316) has already shipped S1–S5**, including `ImporterOfRecord.legalEntityId
+  @unique` — see §7's revised sequencing. Phase 1 here now **bridges through that existing column**
+  (`ImporterOfRecord.legalEntityId → LegalEntity.partyId → Party`) instead of adding a fresh
+  `ImporterOfRecord.partyId` column on day one. Adding a direct `partyId` short-cut column is deferred to
+  Phase 1b (§7) so #317's already-shipped and tested importer workspace isn't touched by this issue's first PR.
 
 ### 6.3 Phase 2 — migrate the matcher (next slice)
 
@@ -328,22 +332,37 @@ instead of re-discovering it.
 
 ---
 
-## 7. Sequencing with #316
+## 7. Sequencing with #316 — revised 2026-09-04
 
-**Recommendation: land this issue's Phase 1 before #316's S2.**
+**Original recommendation** (when this doc was first written) was to land this issue's Phase 1 before #316's
+S2, so `ImporterOfRecord` would get `partyId` instead of `legalEntityId` from the start. **That window has
+closed:** PR #317 shipped S1 through S5 — including `ImporterOfRecord.legalEntityId @unique`, the unified
+importer workspace (S3), the client-portfolio redesign (S4), and mandatory-importer shipment intake (S5) — all
+tested (60 passing) and built against `legalEntityId`/`LegalEntity`. Reworking that now, mid-flight, would be
+a strictly worse trade than the rework this doc originally warned about: it would touch already-shipped,
+already-tested UI and API surface instead of code that didn't exist yet.
 
-#316 §5.1 (S2) plans to add `ImporterOfRecord.legalEntityId @unique` as the 1:1 link. This issue's §5.1 adds
-`ImporterOfRecord.partyId @unique` instead, which does the same job better (identity space shared with every
-other role, not just legal-entity duplication) and makes #316's `legalEntityId` column dead on arrival.
+**Revised plan: sequence #320 fully after #316, and adjust Phase 1 to bridge rather than replace.**
 
-- #316 **S1** (Combobox component) is already shipped (`5cffa0f5` on `codex/issue-316-clients-importers-onboarding`) — unaffected, no overlap.
-- #316 **S2** (client-link column + backfill) — **swap its column** from `legalEntityId` to `partyId` before
-  building it, using this issue's §5/§6.2 instead. Saves building and then un-building the same join.
-- #316 **S3+** (unified importer record, clients page redesign) — build directly against `partyId` from the
-  start; the "Also known as" panel (§3.5 here) becomes a natural addition to #316's Overview tab.
-- If #316 is already past S2 by the time this is prioritized, the migration in §6.2 handles it exactly the
-  same way (backfill), just with one extra column (`legalEntityId`) to eventually retire — not a blocker,
-  just slightly more cleanup.
+1. **Finish #316 first.** Land S6 (gated required-client enforcement) + demo seed + expanded E2E + final
+   sales-demo verification — PR #317's own remaining checklist. Merge it. Nothing in #320 blocks this.
+2. **Then start #320 Phase 1, revised:**
+   - Backfill `LegalEntity.partyId` for every `LegalEntity` reachable from an `ImporterOfRecord.legalEntityId`
+     (this is the bridge column that already exists — it was simply never populated).
+   - `resolvePartyForCompany` becomes the identity-resolution path for *new* importers, called from the
+     already-shipped `POST /api/importers` (#317) instead of its current `db.legalEntity.create` /
+     `db.importerOfRecord.create` pair — this is a small, contained change to one route, not a rewrite of S3/S4.
+   - Read-through for the "Also known as" panel (§3.5) walks `importerOfRecord.legalEntity.party`, using the
+     existing `legalEntityId` FK — no new `ImporterOfRecord.partyId` column needed for this to work.
+   - **Phase 1b (optional, later):** once every `ImporterOfRecord.legalEntityId` has a populated
+     `LegalEntity.partyId`, a direct `ImporterOfRecord.partyId` shortcut column can be added purely as a
+     read-performance optimization (skip one join) — not a correctness requirement. Low priority.
+3. **Phase 2 and Phase 3 (§6.3, §6.4) are unchanged** by this revision — they were already sequenced after
+   Phase 1 regardless of #316's state.
+
+Net effect of the delay: one extra join (`legalEntityId → legalEntity.partyId`) stays in the read path
+indefinitely, or until Phase 1b. That is a small, acceptable cost against not reworking five already-shipped
+slices.
 
 ---
 
