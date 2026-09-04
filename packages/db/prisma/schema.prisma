@@ -1335,6 +1335,11 @@ model ShipmentDocument {
   displayOrder           Int?
   extractedJson          String?                @db.Text
   rawContent             String?                @db.Text
+  /// Complete searchable text from the active normalized parser result. This
+  /// includes section headings/content and every table cell; it is separate
+  /// from the bounded agent context so repository search never silently omits
+  /// parsed values that did not fit an AI prompt.
+  parsedSearchText       String?                @db.Text
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
   pendingMatchProposals  PendingMatchProposal[]

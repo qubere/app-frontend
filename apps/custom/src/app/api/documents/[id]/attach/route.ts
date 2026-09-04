@@ -41,8 +41,13 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
   }
 
   const targetShipment = await db.shipment.findFirst({
-    where: { id: shipmentId, accountId: ctx.accountId, deletedAt: null, ...(doc.source === "INBOUND_EMAIL" ? { clientId: doc.clientId } : {}) },
-    select: { id: true },
+    where: {
+      id: shipmentId,
+      accountId: ctx.accountId,
+      deletedAt: null,
+      ...(doc.clientId ? { clientId: doc.clientId } : {}),
+    },
+    select: { id: true, clientId: true },
   });
 
   if (!targetShipment) {
@@ -51,7 +56,11 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
 
   const updated = await db.shipmentDocument.update({
     where: { id },
-    data: { shipmentId, ...(doc.source === "INBOUND_EMAIL" ? { inboundProofPending: true } : {}) },
+    data: {
+      shipmentId,
+      clientId: doc.clientId ?? targetShipment.clientId,
+      ...(doc.source === "INBOUND_EMAIL" ? { inboundProofPending: true } : {}),
+    },
   });
 
   if (doc.source === "INBOUND_EMAIL") {

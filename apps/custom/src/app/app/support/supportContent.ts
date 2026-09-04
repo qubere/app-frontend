@@ -414,15 +414,15 @@ export const BASE_SUPPORT_ARTICLES: SupportArticle[] = [
   {
     id: "trade-repository-overview",
     moduleId: "documents",
-    question: "What is the Trade Repository and what does it show?",
-    answer: "Trade Repository links documents to the shipments, parties, products, or licenses they support, so you can find every document tied to a given entity instead of searching shipment by shipment.",
+    question: "Where can I search and manage trade documents?",
+    answer: "Documents combines intake, review, parsed-content search, and links to the shipments, parties, products, licenses, or filings each document supports.",
     steps: [
-      "Open Trade Repository from the main navigation.",
+      "Open Documents from the main navigation and select All documents.",
       "Filter by entity type and id, or search across linked documents.",
       "Open a linked document to review its extraction or attach it to another entity.",
     ],
-    href: "/app/trade-repository",
-    actionLabel: "Open Trade Repository",
+    href: "/app/documents",
+    actionLabel: "Open Documents",
     tags: ["trade repository", "linked document", "entity", "party", "product", "license"],
   },
 

@@ -1,7 +1,7 @@
 export const DOCUMENT_PAGE_SIZE_DEFAULT = 25;
 export const DOCUMENT_PAGE_SIZE_MAX = 100;
 
-import type { DocumentEntityType } from "@prisma/client";
+import type { DocumentEntityType, Prisma } from "@prisma/client";
 
 const DOCUMENT_ENTITY_TYPES: readonly DocumentEntityType[] = [
   "SHIPMENT",
@@ -10,6 +10,15 @@ const DOCUMENT_ENTITY_TYPES: readonly DocumentEntityType[] = [
   "LICENSE",
   "FILING",
 ];
+
+export function isParsedSearchCompatibilityError(error: unknown): boolean {
+  const record = error && typeof error === "object"
+    ? error as { code?: unknown; meta?: unknown }
+    : null;
+  const detail = `${error instanceof Error ? error.message : String(error)} ${JSON.stringify(record?.meta ?? {})}`;
+  return detail.includes("parsedSearchText") &&
+    (record?.code === "P2022" || detail.includes("Unknown argument") || detail.includes("does not exist"));
+}
 
 function parseEntityType(value: string | null): DocumentEntityType | null {
   return value && (DOCUMENT_ENTITY_TYPES as readonly string[]).includes(value)
@@ -150,29 +159,21 @@ export function buildDocumentOrderBy(query: DocumentQuery): DocumentOrderBy[] {
   return query.sort === "createdAt" ? [primary, { id: "desc" }] : [primary, { createdAt: "desc" }, { id: "desc" }];
 }
 
-export interface DocumentWhere {
-  accountId: string;
-  docType?: string;
-  status?: string;
-  shipmentId?: string | null;
-  shipment?: {
-    clientId?: string | null;
-    assignedBrokerId?: { in: string[] };
-    OR?: Array<Record<string, unknown>>;
-  };
-  associations?: {
-    some: { entityType: DocumentEntityType; entityId: string; active: true };
-  };
-  createdAt?: { gte?: Date; lte?: Date };
-  OR?: Array<Record<string, unknown>>;
-}
-
 /**
  * accountId is always present so the filter cannot be widened past the caller's tenant
  * by any combination of query parameters.
  */
-export function buildDocumentWhere(accountId: string, query: DocumentQuery): DocumentWhere {
-  const where: DocumentWhere = { accountId };
+export function buildDocumentWhere(accountId: string, query: DocumentQuery): Prisma.ShipmentDocumentWhereInput {
+  return buildDocumentWhereWithOptions(accountId, query);
+}
+
+export function buildDocumentWhereWithOptions(
+  accountId: string,
+  query: DocumentQuery,
+  options: { includeParsedSearchText?: boolean } = {}
+): Prisma.ShipmentDocumentWhereInput {
+  const where: Prisma.ShipmentDocumentWhereInput = { accountId };
+  const predicates: Prisma.ShipmentDocumentWhereInput[] = [];
 
   if (query.docType) where.docType = query.docType;
   if (query.status) where.status = query.status;
@@ -182,35 +183,45 @@ export function buildDocumentWhere(accountId: string, query: DocumentQuery): Doc
       query.shipmentId === UNATTACHED_SHIPMENT ? null : query.shipmentId;
   }
 
-  if (query.linkedEntityType && query.linkedEntityId) {
+  if (query.linkedEntityType) {
     where.associations = {
-      some: { entityType: query.linkedEntityType, entityId: query.linkedEntityId, active: true },
+      some: {
+        entityType: query.linkedEntityType,
+        ...(query.linkedEntityId ? { entityId: query.linkedEntityId } : {}),
+        active: true,
+      },
     };
   }
 
-  // Client and assignee both live on the shipment, so the document is filtered through it.
+  // New capture paths stamp clientId directly on the document; legacy attached
+  // documents inherit it from their shipment. Search/filter both representations.
   if (query.clientId) {
-    where.shipment = {
-      ...where.shipment,
-      clientId: query.clientId === UNASSIGNED_CLIENT ? null : query.clientId,
-    };
+    predicates.push(
+      query.clientId === UNASSIGNED_CLIENT
+        ? { clientId: null, OR: [{ shipmentId: null }, { shipment: { clientId: null } }] }
+        : { OR: [{ clientId: query.clientId }, { shipment: { clientId: query.clientId } }] }
+    );
   }
 
   if (query.assignedBrokerIds.length > 0) {
-    where.shipment = { ...where.shipment, assignedBrokerId: { in: query.assignedBrokerIds } };
+    predicates.push({
+      OR: [
+        { assignedToUserId: { in: query.assignedBrokerIds } },
+        { shipment: { assignedBrokerId: { in: query.assignedBrokerIds } } },
+      ],
+    });
   }
 
   // The vault: a document belongs here once its shipment is done with filing,
   // or the shipment itself was deleted -- either way it has left the active
   // workflow and become a compliance record rather than work in progress.
   if (query.archivedOnly) {
-    where.shipment = {
-      ...where.shipment,
-      OR: [
+    predicates.push({
+      shipment: { OR: [
         { status: { in: ARCHIVE_SHIPMENT_STATUSES } },
         { deletedAt: { not: null } },
-      ],
-    };
+      ] },
+    });
   }
 
   if (query.createdFrom || query.createdTo) {
@@ -220,13 +231,25 @@ export function buildDocumentWhere(accountId: string, query: DocumentQuery): Doc
   }
 
   if (query.search) {
-    where.OR = [
-      { fileName: { contains: query.search, mode: "insensitive" } },
-      { docType: { contains: query.search, mode: "insensitive" } },
-      { shipment: { shipmentNumber: { contains: query.search, mode: "insensitive" } } },
-      { shipment: { client: { name: { contains: query.search, mode: "insensitive" } } } },
-    ];
+    const contains = { contains: query.search, mode: "insensitive" as const };
+    predicates.push({
+      OR: [
+        { fileName: contains },
+        { docType: contains },
+        { uploadedByName: contains },
+        { uploadedByEmail: contains },
+        ...(options.includeParsedSearchText === false ? [] : [{ parsedSearchText: contains }]),
+        { extractedJson: contains },
+        { rawContent: contains },
+        { extractionFields: { some: { OR: [{ fieldName: contains }, { value: contains }] } } },
+        { client: { name: contains } },
+        { shipment: { shipmentNumber: contains } },
+        { shipment: { client: { name: contains } } },
+      ],
+    });
   }
+
+  if (predicates.length > 0) where.AND = predicates;
 
   return where;
 }
