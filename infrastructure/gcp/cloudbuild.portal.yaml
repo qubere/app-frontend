@@ -20,7 +20,20 @@ steps:
       - "--all-tags"
       - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/portal-web"
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: run-migrations
+    waitFor: ["push"]
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "jobs"
+      - "execute"
+      - "qubere-migrate-demo"
+      - "--project=$PROJECT_ID"
+      - "--region=us-west1"
+      - "--wait"
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy
+    waitFor: ["run-migrations"]
     entrypoint: gcloud
     args:
       - "run"
