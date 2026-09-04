@@ -15,9 +15,20 @@
  *
  * This is a sibling of rejectionReasons.ts, not an extension of it —
  * rejection reasons record why a human rejected a decision; these record why
- * the system itself flagged a field. `CROSS_DOCUMENT_CONFLICT` and
- * `UNREADABLE_FIELD` deliberately echo fieldStateGenerator.ts's
- * FIELD_CONFLICT/UNREADABLE_FIELD naming rather than inventing synonyms.
+ * the system itself flagged a field. `CROSS_DOCUMENT_CONFLICT` deliberately
+ * echoes fieldStateGenerator.ts's FIELD_CONFLICT naming rather than inventing
+ * a synonym.
+ *
+ * This list intentionally excludes UNREADABLE_FIELD and NORMALIZATION_FAILED:
+ * nothing upstream of evaluateFieldVerification (extractionReview.ts) can
+ * currently tell "unreadable" or "failed to normalize" apart from a plain low
+ * confidence score -- ExtractionField has no per-row legibility flag, and
+ * there is no normalization step in this pipeline to fail. A hydration-module
+ * pipeline (fieldStateGenerator.ts, fieldReviewService.ts) does have a real
+ * per-candidate isUnreadable/reasonCodes signal, but it is a separate data
+ * model (HydrationCandidate, not ExtractionField) feeding a separate review
+ * surface -- add a matching reason code here only once this pipeline gains an
+ * equivalent real signal, not preemptively.
  *
  * Plain data plus pure functions — no imports — safe in client and server code.
  */
@@ -57,16 +68,6 @@ export const REVIEW_REASONS: readonly ReviewReason[] = [
     code: "CROSS_DOCUMENT_CONFLICT",
     label: "Conflicts with another document",
     hint: "This value disagrees with the same field on another shipment document.",
-  },
-  {
-    code: "UNREADABLE_FIELD",
-    label: "Field unreadable",
-    hint: "The document image or text was too degraded to extract this field.",
-  },
-  {
-    code: "NORMALIZATION_FAILED",
-    label: "Could not normalize value",
-    hint: "The extracted value couldn't be converted to a comparable unit or format.",
   },
 ] as const;
 

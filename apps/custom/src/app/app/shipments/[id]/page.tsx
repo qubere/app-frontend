@@ -42,6 +42,8 @@ import {
   extractedValueFor,
   resolveField,
 } from "@/lib/documents/fieldDictionary";
+import { fieldKeyForRuleId } from "@/lib/reconciliation/reconciliationRules";
+import type { FieldVerificationState } from "@/modules/documents/fieldVerification";
 import type { ExtractedLineItem } from "./workspaceTypes";
 import type { CategoryDetail } from "./PreFilingReadiness";
 import type { ReadinessBreakdown } from "@/lib/shipmentReadiness";
@@ -367,10 +369,16 @@ export default async function ShipmentWorkspacePage(props: {
   // FieldApproval rows are written under whatever key form the surface used
   // (canonical `shipment.originCountry`, tradeMetadata `portOfDischarge`, ...);
   // index them by canonical id so a lookup matches regardless.
-  const latestApprovalByField: Record<string, { name: string; approvedAt: string }> = {};
-  const approvalByDocField = new Map<string, { name: string; approvedAt: string }>();
+  type ApprovalSnapshot = { name: string; approvedAt: string; value: string; action: string | null };
+  const latestApprovalByField: Record<string, ApprovalSnapshot> = {};
+  const approvalByDocField = new Map<string, ApprovalSnapshot>();
   for (const fa of fieldApprovals) {
-    const snapshot = { name: fa.approvedByName, approvedAt: fa.approvedAt.toISOString() };
+    const snapshot: ApprovalSnapshot = {
+      name: fa.approvedByName,
+      approvedAt: fa.approvedAt.toISOString(),
+      value: fa.value,
+      action: fa.action,
+    };
     const canon = canonicalizeFieldKey(fa.fieldKey) ?? fa.fieldKey;
     if (!latestApprovalByField[canon]) latestApprovalByField[canon] = snapshot;
     if (!latestApprovalByField[fa.fieldKey]) latestApprovalByField[fa.fieldKey] = snapshot;
@@ -379,12 +387,38 @@ export default async function ShipmentWorkspacePage(props: {
     }
   }
 
+  // Canonical keys of fields with an open cross-document conflict -- never
+  // bulk-accepted, per the reconciliation-before-approval rule (a value that
+  // disagrees with another document must be resolved, not silently approved
+  // as part of a batch). `issue.field` on a ReconciliationIssue row is the
+  // rule id (e.g. "QTY_INV_PACK"), not the field itself, so resolve it back
+  // through the rule table before comparing against document field keys.
+  const conflictedFieldKeys = new Set(
+    reconciliationIssues
+      .filter((issue) => issue.status === "Open")
+      .map((issue) => fieldKeyForRuleId(issue.field))
+      .filter((key): key is string => Boolean(key))
+      .map((key) => canonicalizeFieldKey(key) ?? key)
+  );
+
   // "What fields do we expect from THIS document type, and did we get them" --
   // driven by the shared field dictionary (fieldDictionary.ts), so a Packing
   // List is asked for weight/carton count and a Bill of Lading for vessel /
   // ports / B-L number, instead of every document getting the same 13-field
   // checklist (finding #7). HTS is a line-item concern, reviewed in
   // LineItemsTable, so the dictionary deliberately excludes it here (finding #3).
+  //
+  // Status is resolved through a single precedence order so this is the one
+  // place a field's review state is decided -- ExceptionsDrawer/
+  // DocumentFieldReviewModal just render whichever of the 8
+  // FieldVerificationState values comes back:
+  //   1. approval sentinel value "[NOT_APPLICABLE]" -> NOT_APPLICABLE
+  //   2. approval sentinel value "[REJECTED]"       -> REJECTED
+  //   3. no extracted value                          -> MISSING_REQUIRED
+  //   4. open cross-document conflict                -> CONFLICT
+  //   5. approved, and that approval was an EDIT      -> HUMAN_CORRECTED
+  //   6. approved otherwise                            -> HUMAN_CONFIRMED
+  //   7. else                                          -> NEEDS_REVIEW
   const documentFieldSummaries = documents
     .filter((d) => Boolean(d.extractedJson))
     .map((d) => {
@@ -395,7 +429,7 @@ export default async function ShipmentWorkspacePage(props: {
         tradeMetadata = parsed.tradeMetadata || {};
         extractedLineItems = Array.isArray(parsed.lineItems) ? parsed.lineItems : [];
       } catch {
-        // Stored JSON that no longer parses leaves every field reading MISSING.
+        // Stored JSON that no longer parses leaves every field reading MISSING_REQUIRED.
       }
 
       const fields = expectedFieldsForDocType(d.docType).map((spec) => {
@@ -404,11 +438,23 @@ export default async function ShipmentWorkspacePage(props: {
         const approval =
           approvalByDocField.get(`${d.id}:${spec.canonicalKey}`) ??
           approvalByDocField.get(`${d.id}:${key}`);
-        const status: "MISSING" | "CONFIRMED" | "NEEDS_REVIEW" = !value
-          ? "MISSING"
-          : approval
-            ? "CONFIRMED"
-            : "NEEDS_REVIEW";
+        const isConflicted = conflictedFieldKeys.has(canonicalizeFieldKey(key) ?? key);
+
+        let status: FieldVerificationState;
+        if (approval?.value === "[NOT_APPLICABLE]") {
+          status = "NOT_APPLICABLE";
+        } else if (approval?.value === "[REJECTED]") {
+          status = "REJECTED";
+        } else if (!value) {
+          status = "MISSING_REQUIRED";
+        } else if (isConflicted) {
+          status = "CONFLICT";
+        } else if (approval) {
+          status = approval.action === "EDIT" ? "HUMAN_CORRECTED" : "HUMAN_CONFIRMED";
+        } else {
+          status = "NEEDS_REVIEW";
+        }
+
         return {
           key,
           label: spec.label,
@@ -419,10 +465,18 @@ export default async function ShipmentWorkspacePage(props: {
         };
       });
 
+      const settledCount = fields.filter(
+        (f) =>
+          f.status === "HUMAN_CONFIRMED" ||
+          f.status === "HUMAN_CORRECTED" ||
+          f.status === "REJECTED" ||
+          f.status === "NOT_APPLICABLE"
+      ).length;
+
       return {
         documentId: d.id as string,
         fileName: d.fileName as string,
-        confirmedCount: fields.filter((f) => f.status === "CONFIRMED").length,
+        confirmedCount: settledCount,
         totalCount: fields.length,
         fields,
       };

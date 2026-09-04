@@ -16,6 +16,7 @@ const dbMock = {
   agentDecision: { findFirst: vi.fn(), create: vi.fn() },
   extractionField: { deleteMany: vi.fn(), createMany: vi.fn() },
   auditLog: { create: vi.fn() },
+  fieldApproval: { findMany: vi.fn() },
 };
 
 const assignParty = vi.fn();
@@ -59,9 +60,19 @@ const PARSED_CONTEXT = {
   truncated: false,
 };
 
-/** The condition the UPDATE carried, or undefined when it was unconditional. */
+/** The full WHERE clause the UPDATE carried. */
+function writeWhere(): Record<string, unknown> | undefined {
+  return dbMock.shipmentDocument.updateMany.mock.calls[0]?.[0]?.where;
+}
+
+/** The precedence-rank guard, or undefined when the write was unconditional. */
 function writeGuard(): unknown {
-  return dbMock.shipmentDocument.updateMany.mock.calls[0]?.[0]?.where?.activeParseVersionId;
+  return writeWhere()?.OR;
+}
+
+/** The rank persisted alongside extractedJson on this write. */
+function writtenRank(): unknown {
+  return dbMock.shipmentDocument.updateMany.mock.calls[0]?.[0]?.data?.extractedJsonPrecedenceRank;
 }
 
 beforeEach(() => {
@@ -76,23 +87,58 @@ beforeEach(() => {
   dbMock.shipmentDocument.updateMany.mockResolvedValue({ count: 1 });
   dbMock.documentParseVersion.create.mockResolvedValue({ id: "pv_1" });
   dbMock.agentDecision.create.mockResolvedValue({ id: "dec_1" });
+  dbMock.fieldApproval.findMany.mockResolvedValue([]);
 });
 
 describe("extraction write precedence", () => {
-  it("guards a background vision write on no parse having been accepted", async () => {
+  it("guards a background vision write with its own precedence rank", async () => {
     await DocumentIntelligenceAgent.execute(baseInput());
 
     // The guard is part of the UPDATE, not a prior read: two concurrent runs
-    // must not both observe "no parse yet" and then both write.
-    expect(writeGuard()).toBeNull();
+    // must not both observe "nothing stored yet" and then both write. It is a
+    // real sequence-number comparison (rank = tier offset + this run's own
+    // DocumentParseVersion.version), not an existence check, so a second
+    // same-tier run racing in is ordered correctly instead of always winning
+    // or always losing.
+    expect(writeGuard()).toEqual([
+      { extractedJsonPrecedenceRank: null },
+      { extractedJsonPrecedenceRank: { lt: 1 } },
+    ]);
+    expect(writtenRank()).toBe(1);
     expect(dbMock.shipmentDocument.updateMany).toHaveBeenCalledTimes(1);
   });
 
-  it("lets a context-backed write proceed unconditionally", async () => {
+  it("guards a context-backed write with a rank that outranks any vision run", async () => {
     await DocumentIntelligenceAgent.execute({ ...baseInput(), documentContext: PARSED_CONTEXT });
 
-    // No condition: an extraction carrying provenance always supersedes.
-    expect(writeGuard()).toBeUndefined();
+    // Still a real condition -- not unconditional -- but its tier offset
+    // means no vision-only rank (bounded by run count) could ever reach it.
+    expect(writeGuard()).toEqual([
+      { extractedJsonPrecedenceRank: null },
+      { extractedJsonPrecedenceRank: { lt: 1_000_001 } },
+    ]);
+    expect(writtenRank()).toBe(1_000_001);
+  });
+
+  it("orders two context-backed runs by version instead of arrival order", async () => {
+    // A second reprocess starting while an earlier one is still in flight is
+    // the race the old existence-check couldn't order: both are context-backed,
+    // so the old rule let whichever finished last win outright.
+    dbMock.shipmentDocument.findFirst.mockResolvedValue({
+      id: DOCUMENT,
+      fileName: "INV-1.pdf",
+      documentType: "COMMERCIAL_INVOICE",
+      parseVersions: [{ id: "pv_0" }, { id: "pv_1" }],
+    });
+
+    await DocumentIntelligenceAgent.execute({ ...baseInput(), documentContext: PARSED_CONTEXT });
+
+    // version 3 (two existing runs already recorded) ranks above version 1,
+    // so a stale, slower run finishing later cannot displace this one.
+    expect(writeGuard()).toEqual([
+      { extractedJsonPrecedenceRank: null },
+      { extractedJsonPrecedenceRank: { lt: 1_000_003 } },
+    ]);
   });
 
   it("lets an explicitly requested re-extraction overwrite a parse-derived one", async () => {

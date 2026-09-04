@@ -5,12 +5,13 @@ import { CheckCircle2, AlertTriangle, FileText, Sparkles, Pencil } from "lucide-
 import { Modal, ModalHeader, ModalBody } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { caughtMessage } from "@/lib/utils";
+import type { FieldVerificationState } from "@/modules/documents/fieldVerification";
 
 export interface FieldSummaryItem {
   key: string;
   label: string;
   value: string | null;
-  status: "MISSING" | "CONFIRMED" | "NEEDS_REVIEW";
+  status: FieldVerificationState;
   approvedByName?: string;
   approvedAt?: string;
 }
@@ -30,17 +31,34 @@ interface DocumentFieldReviewModalProps {
   summary: DocumentFieldSummary | null;
 }
 
-const STATUS_VARIANTS: Record<FieldSummaryItem["status"], "danger" | "warning" | "success"> = {
-  MISSING: "danger",
+const STATUS_VARIANTS: Record<FieldSummaryItem["status"], "danger" | "warning" | "success" | "info" | "neutral"> = {
+  MISSING_REQUIRED: "danger",
   NEEDS_REVIEW: "warning",
-  CONFIRMED: "success",
+  CONFLICT: "warning",
+  AUTO_VERIFIED: "success",
+  HUMAN_CONFIRMED: "success",
+  HUMAN_CORRECTED: "success",
+  REJECTED: "danger",
+  NOT_APPLICABLE: "neutral",
 };
 
 const STATUS_LABELS: Record<FieldSummaryItem["status"], string> = {
-  MISSING: "Missing",
+  MISSING_REQUIRED: "Missing",
   NEEDS_REVIEW: "Needs Review",
-  CONFIRMED: "Confirmed",
+  CONFLICT: "Conflicting",
+  AUTO_VERIFIED: "Auto-verified",
+  HUMAN_CONFIRMED: "Confirmed",
+  HUMAN_CORRECTED: "Corrected",
+  REJECTED: "Rejected",
+  NOT_APPLICABLE: "Not applicable",
 };
+
+const SETTLED_STATUSES = new Set<FieldSummaryItem["status"]>([
+  "HUMAN_CONFIRMED",
+  "HUMAN_CORRECTED",
+  "REJECTED",
+  "NOT_APPLICABLE",
+]);
 
 const TITLE_ID = "document-field-review-title";
 
@@ -121,14 +139,14 @@ export function DocumentFieldReviewModal({ isOpen, onClose, shipmentId, summary 
                       ) : (
                         <p className="text-xs text-ink-muted italic">Not found on document</p>
                       )}
-                      {field.status === "CONFIRMED" && field.approvedByName && field.approvedAt && (
+                      {SETTLED_STATUSES.has(field.status) && field.approvedByName && field.approvedAt && (
                         <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">
-                          Approved by {field.approvedByName} · {new Date(field.approvedAt).toLocaleDateString()}
+                          {field.status === "HUMAN_CORRECTED" ? "Corrected" : "Approved"} by {field.approvedByName} · {new Date(field.approvedAt).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                     <div className="flex items-center space-x-2 shrink-0">
-                      {field.status === "NEEDS_REVIEW" && (
+                      {(field.status === "NEEDS_REVIEW" || field.status === "CONFLICT") && (
                         <button
                           onClick={() => submit(field.key, "APPROVE", field.value || "")}
                           disabled={isSaving}

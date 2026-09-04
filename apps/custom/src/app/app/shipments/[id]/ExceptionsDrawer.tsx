@@ -10,7 +10,6 @@ import { DocumentReviewPanel } from "@/components/DocumentReviewPanel";
 import { Modal } from "@/components/ui/Modal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { canonicalizeFieldKey } from "@/lib/documents/fieldDictionary";
-import { fieldKeyForRuleId } from "@/lib/reconciliation/reconciliationRules";
 import { normalizeExceptionStatus, isTerminalExceptionState } from "@/modules/exceptions/exceptionState";
 import {
   isResolvableException,
@@ -57,20 +56,6 @@ export function ExceptionsDrawer({
   reconciliationIssues = [],
 }: ExceptionsDrawerProps) {
   const router = useRouter();
-
-  // Canonical keys of fields with an open cross-document conflict -- never
-  // bulk-accepted, per the reconciliation-before-approval rule (a value that
-  // disagrees with another document must be resolved, not silently approved
-  // as part of a batch). `issue.field` on a ReconciliationIssue row is the
-  // rule id (e.g. "QTY_INV_PACK"), not the field itself, so resolve it back
-  // through the rule table before comparing against document field keys.
-  const conflictedFieldKeys = new Set(
-    reconciliationIssues
-      .filter((issue) => issue.status === "Open")
-      .map((issue) => fieldKeyForRuleId(issue.field))
-      .filter((key): key is string => Boolean(key))
-      .map((key) => canonicalizeFieldKey(key) ?? key)
-  );
 
   const [panelTab, setPanelTab] = useState<"EXCEPTIONS" | "FIELD_REVIEW">("EXCEPTIONS");
   const [selectedException, setSelectedException] = useState<ResolvableException | null>(null);
@@ -157,17 +142,26 @@ export function ExceptionsDrawer({
     }
   };
 
-  const handleResolveConflict = async (issueId: string, action: "resolve" | "ignore") => {
+  const handleResolveConflict = async (
+    issueId: string,
+    action: "resolve" | "ignore",
+    resolution?: "ACCEPTED_A" | "ACCEPTED_B" | "BOTH_WRONG" | "ACKNOWLEDGED"
+  ) => {
     setResolvingConflictId(issueId);
+    setFieldReviewError(null);
     try {
-      await fetch(`/api/shipments/${shipmentId}/reconcile/issues/${issueId}`, {
+      const res = await fetch(`/api/shipments/${shipmentId}/reconcile/issues/${issueId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, resolution }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error?.message ?? data.message ?? `Could not resolve conflict (${res.status})`);
+      }
       router.refresh();
     } catch (err) {
-      console.error("Conflict resolution failed", err);
+      setFieldReviewError(err instanceof Error ? err.message : "Conflict resolution failed");
     } finally {
       setResolvingConflictId(null);
     }
@@ -196,9 +190,7 @@ export function ExceptionsDrawer({
     setBatchApprovingDoc(doc.documentId);
     setFieldReviewError(null);
     try {
-      const unconfirmed = doc.fields.filter(
-        (f) => f.status === "NEEDS_REVIEW" && f.value && !conflictedFieldKeys.has(canonicalizeFieldKey(f.key) ?? f.key)
-      );
+      const unconfirmed = doc.fields.filter((f) => f.status === "NEEDS_REVIEW" && f.value);
       const results = await Promise.allSettled(
         unconfirmed.map((f) =>
           postFieldReview(doc.documentId, { fieldKey: f.key, action: "APPROVE", value: f.value! })
@@ -594,21 +586,47 @@ export function ExceptionsDrawer({
                     )}
                   </div>
                 ) : ex.actionType === "CONFLICT" && "conflictIssueId" in ex ? (
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => handleResolveConflict((ex as typeof ex & { conflictIssueId: string }).conflictIssueId, "resolve")}
-                      disabled={resolvingConflictId === (ex as typeof ex & { conflictIssueId: string }).conflictIssueId}
-                      className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      {resolvingConflictId === (ex as typeof ex & { conflictIssueId: string }).conflictIssueId ? "Resolving…" : "✓ Resolve"}
-                    </button>
-                    <button
-                      onClick={() => handleResolveConflict((ex as typeof ex & { conflictIssueId: string }).conflictIssueId, "ignore")}
-                      disabled={resolvingConflictId === (ex as typeof ex & { conflictIssueId: string }).conflictIssueId}
-                      className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      Ignore
-                    </button>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {(() => {
+                      const conflictEx = ex as typeof ex & { conflictIssueId: string };
+                      const isResolving = resolvingConflictId === conflictEx.conflictIssueId;
+                      const [sourceA, sourceB] = conflictEx.conflict?.sources ?? [];
+                      return (
+                        <>
+                          <button
+                            onClick={() => handleResolveConflict(conflictEx.conflictIssueId, "resolve", "ACCEPTED_A")}
+                            disabled={isResolving}
+                            title={conflictEx.conflict?.expectedValue}
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Use {sourceA || "first"} value
+                          </button>
+                          <button
+                            onClick={() => handleResolveConflict(conflictEx.conflictIssueId, "resolve", "ACCEPTED_B")}
+                            disabled={isResolving}
+                            title={conflictEx.conflict?.actualValue}
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Use {sourceB || "second"} value
+                          </button>
+                          <button
+                            onClick={() => handleResolveConflict(conflictEx.conflictIssueId, "resolve", "ACKNOWLEDGED")}
+                            disabled={isResolving}
+                            title="Neither value is corrected yet — defer for investigation without picking a winner."
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {isResolving ? "Resolving…" : "Defer"}
+                          </button>
+                          <button
+                            onClick={() => handleResolveConflict(conflictEx.conflictIssueId, "ignore")}
+                            disabled={isResolving}
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Ignore
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
                 ) : ex.actionType ? (
                   <button
@@ -669,12 +687,7 @@ export function ExceptionsDrawer({
                   const allConfirmed = doc.confirmedCount === doc.totalCount;
                   const unconfirmedCount = doc.totalCount - doc.confirmedCount;
                   const isBatchLoading = batchApprovingDoc === doc.documentId;
-                  const bulkEligibleCount = doc.fields.filter(
-                    (f) =>
-                      f.status === "NEEDS_REVIEW" &&
-                      f.value &&
-                      !conflictedFieldKeys.has(canonicalizeFieldKey(f.key) ?? f.key)
-                  ).length;
+                  const bulkEligibleCount = doc.fields.filter((f) => f.status === "NEEDS_REVIEW" && f.value).length;
                   return (
                     <div
                       key={doc.documentId}
@@ -723,8 +736,6 @@ export function ExceptionsDrawer({
                           const fieldKeyId = `${doc.documentId}:${f.key}`;
                           const fieldLoading = approvingField === fieldKeyId;
                           const isEditing = editingFieldKey === fieldKeyId;
-                          const isConflicted =
-                            f.status !== "CONFIRMED" && conflictedFieldKeys.has(canonicalizeFieldKey(f.key) ?? f.key);
 
                           if (isEditing) {
                             return (
@@ -797,12 +808,20 @@ export function ExceptionsDrawer({
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
                                 )}
-                                {f.status === "CONFIRMED" ? (
+                                {f.status === "HUMAN_CONFIRMED" || f.status === "HUMAN_CORRECTED" || f.status === "AUTO_VERIFIED" ? (
                                   <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
                                     <CheckCircle2 className="w-3 h-3" />
-                                    Confirmed
+                                    {f.status === "HUMAN_CORRECTED" ? "Corrected" : "Confirmed"}
                                   </span>
-                                ) : isConflicted ? (
+                                ) : f.status === "NOT_APPLICABLE" ? (
+                                  <span className="text-[10px] font-bold text-ink-muted bg-surface-muted border border-border px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    Not applicable
+                                  </span>
+                                ) : f.status === "REJECTED" ? (
+                                  <span className="text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    Rejected
+                                  </span>
+                                ) : f.status === "CONFLICT" ? (
                                   <span
                                     title="This value conflicts with another document. Resolve it from the Cross-document conflicts cards above."
                                     className="text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md flex items-center gap-1"

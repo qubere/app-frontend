@@ -1372,6 +1372,18 @@ model ShipmentDocument {
   /// partial run, and a late-finishing older run cannot claim it.
   activeParseVersionId String?
 
+  /// Precedence rank of whichever DocumentIntelligenceAgent run last wrote
+  /// `extractedJson`: (parsed-context tier offset) + that run's
+  /// DocumentParseVersion.version. A context-backed extraction always
+  /// outranks a vision-only one regardless of version, but within a tier a
+  /// run only overwrites `extractedJson` when its own version number is
+  /// strictly newer than whatever produced the current rank -- a real
+  /// sequence-number comparison instead of the old "has any parse been
+  /// accepted yet" existence check, which let two same-tier runs racing
+  /// (e.g. concurrent reprocess attempts) overwrite each other in
+  /// whichever order they happened to finish.
+  extractedJsonPrecedenceRank Int?
+
   /// Where this document row originated. EMAIL rows are created by the
   /// inbound-email worker; UPLOAD rows by the manual upload route; API rows by
   /// the /v1/intake/document ingest endpoint. EMAIL and API rows both run

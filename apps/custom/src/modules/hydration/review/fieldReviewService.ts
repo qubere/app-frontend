@@ -20,7 +20,8 @@ import { ExceptionService } from "../../../modules/exceptions/exception.service"
 import { MaterializerRegistry } from "../promotion/materializers";
 import { HydrationLogger } from "../logging/hydrationLogger";
 import type { FieldState, GroundedEvidenceReference } from "../types/canonicalRegistry";
-import { resolveField, type DictionaryField } from "@/lib/documents/fieldDictionary";
+import { resolveField, canonicalizeFieldKey, type DictionaryField } from "@/lib/documents/fieldDictionary";
+import { fieldKeyForRuleId } from "@/lib/reconciliation/reconciliationRules";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 
 export interface FieldReviewSummaryItem {
@@ -151,6 +152,24 @@ export class FieldReviewService {
   }
 
   /**
+   * Open ReconciliationIssue rows whose rule targets this canonical field key.
+   * ReconciliationIssue.field stores a rule id (e.g. "QTY_INV_PACK"), not the
+   * field key itself, so the lookup goes through fieldKeyForRuleId the same
+   * way page.tsx's client-side conflict badge does.
+   */
+  private static async findOpenConflictIssues(accountId: string, shipmentId: string, canonicalKey: string) {
+    const openIssues = await db.reconciliationIssue.findMany({
+      where: { accountId, shipmentId, status: "Open" },
+      select: { id: true, field: true },
+    });
+    return openIssues.filter((issue) => {
+      const issueFieldKey = fieldKeyForRuleId(issue.field);
+      if (!issueFieldKey) return false;
+      return (canonicalizeFieldKey(issueFieldKey) ?? issueFieldKey) === (canonicalizeFieldKey(canonicalKey) ?? canonicalKey);
+    });
+  }
+
+  /**
    * Review path for document-scoped fields (ports, vessel, voyage, B/L number):
    * fields with no Shipment column and no canonical registry entry. The
    * corrected value is written back onto `ShipmentDocument.extractedJson`
@@ -184,6 +203,23 @@ export class FieldReviewService {
     });
     if (!doc) {
       return { success: false, status: 404, errorCode: "DOCUMENT_NOT_FOUND", message: "The document is not attached to this shipment." };
+    }
+
+    // Confirming a value as-is must not be a way to silently paper over an open
+    // cross-document conflict -- the client's own eligibility filter (never
+    // offering "Accept" on a CONFLICT-status field) is a convenience, not a
+    // safety boundary: this is the actual boundary a bulk-accept loop and a
+    // single-field confirm both pass through. EDIT is still allowed, since
+    // entering a definitive value is how a human resolves a conflict.
+    const openConflicts =
+      action === "APPROVE" ? await this.findOpenConflictIssues(accountId, shipmentId, dictField.canonicalKey) : [];
+    if (openConflicts.length > 0) {
+      return {
+        success: false,
+        status: 409,
+        errorCode: "FIELD_HAS_OPEN_CONFLICT",
+        message: "This field conflicts with another document. Resolve the conflict or correct the value instead of confirming it as-is.",
+      };
     }
 
     // Merge the corrected value into extractedJson.tradeMetadata so every reader
@@ -234,6 +270,26 @@ export class FieldReviewService {
       { userId, name: userName },
       action === "EDIT" ? "Corrected via document field review" : "Confirmed via document field review"
     );
+
+    // A correction is how a human resolves a cross-document conflict on this
+    // field -- close the matching open ReconciliationIssue(s) so the conflict
+    // card doesn't keep showing a value that's already been overwritten.
+    if (action === "EDIT") {
+      const conflictsToClose = await this.findOpenConflictIssues(accountId, shipmentId, dictField.canonicalKey);
+      if (conflictsToClose.length > 0) {
+        await db.reconciliationIssue.updateMany({
+          where: { id: { in: conflictsToClose.map((c) => c.id) } },
+          data: {
+            status: "Resolved",
+            resolvedAt: new Date(),
+            resolution: "BOTH_WRONG",
+            resolvedByUserId: userId,
+            resolvedByUserName: userName,
+            note: "Resolved automatically: field was corrected via document field review.",
+          },
+        });
+      }
+    }
 
     const annotationAuditAction =
       action === "REJECT"

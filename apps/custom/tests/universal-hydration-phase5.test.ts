@@ -206,4 +206,75 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
       }),
     }));
   });
+
+  describe("document-scoped field review vs. an open cross-document conflict", () => {
+    // "notifyParty" is a document-scoped dictionary field (canonicalKey
+    // "annotation.notifyParty", no CANONICAL_FIELD_REGISTRY_V1 entry), so it
+    // takes the submitDocumentAnnotation path rather than the registry/Fact
+    // path. "NOTIFY_INV_BL" is a real reconciliation rule id that
+    // reconciliationRules.ts maps back to fieldKey "notifyParty", so an Open
+    // issue on that rule id is the same field this review action targets --
+    // exercising the real fieldKeyForRuleId/canonicalizeFieldKey path
+    // FieldReviewService.findOpenConflictIssues uses, not a stubbed one.
+    const conflictedFieldKey = "notifyParty";
+    const openWeightConflict = { id: "issue_weight_1", field: "NOTIFY_INV_BL" };
+
+    it("rejects APPROVE with 409 FIELD_HAS_OPEN_CONFLICT when the field has an open reconciliation issue", async () => {
+      vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({
+        id: testDocument,
+        extractedJson: null,
+      } as any);
+      const updateSpy = vi.spyOn(db.shipmentDocument, "update").mockResolvedValue({ id: testDocument } as any);
+      vi.spyOn(db.reconciliationIssue, "findMany").mockResolvedValue([openWeightConflict] as any);
+
+      const result = await FieldReviewService.submitFieldReviewAction({
+        accountId: testAccount,
+        userId: "user_rev_1",
+        userName: "Jane Reviewer",
+        shipmentId: testShipment,
+        documentId: testDocument,
+        fieldKey: conflictedFieldKey,
+        action: "APPROVE",
+        value: "Acme Notify Co.",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe(409);
+      expect(result.errorCode).toBe("FIELD_HAS_OPEN_CONFLICT");
+      // Confirming as-is must not have written the value while rejecting it.
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it("lets EDIT through on a conflicted field and auto-resolves the matching reconciliation issue", async () => {
+      vi.spyOn(db.shipmentDocument, "findFirst").mockResolvedValue({
+        id: testDocument,
+        extractedJson: null,
+      } as any);
+      vi.spyOn(db.shipmentDocument, "update").mockResolvedValue({ id: testDocument } as any);
+      vi.spyOn(db.reconciliationIssue, "findMany").mockResolvedValue([openWeightConflict] as any);
+      const updateManySpy = vi.spyOn(db.reconciliationIssue, "updateMany").mockResolvedValue({ count: 1 } as any);
+      vi.spyOn(db.fieldApproval, "create").mockResolvedValue({ id: "app_weight_1" } as any);
+      vi.spyOn(db.exceptionItem, "findMany").mockResolvedValue([]);
+      vi.spyOn(db.exceptionItem, "updateMany").mockResolvedValue({ count: 0 } as any);
+
+      const result = await FieldReviewService.submitFieldReviewAction({
+        accountId: testAccount,
+        userId: "user_rev_1",
+        userName: "Jane Reviewer",
+        shipmentId: testShipment,
+        documentId: testDocument,
+        fieldKey: conflictedFieldKey,
+        action: "EDIT",
+        value: "Acme Notify Co.",
+      });
+
+      expect(result.success).toBe(true);
+      expect(updateManySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: { in: [openWeightConflict.id] } },
+          data: expect.objectContaining({ status: "Resolved", resolution: "BOTH_WRONG" }),
+        })
+      );
+    });
+  });
 });

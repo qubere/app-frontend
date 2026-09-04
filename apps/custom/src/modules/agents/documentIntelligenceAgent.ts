@@ -21,6 +21,7 @@ import {
   expectedFieldsForDocType,
   extractedValueFor,
   reconciliationFieldValues,
+  tradeMetadataKeyFor,
 } from "@/lib/documents/fieldDictionary";
 import { syncTrackingIdentifiersFromExtraction } from "@/modules/shipments/trackingIdentifierSync";
 import { getAgentPolicyConfig, applyAutoApprovalPolicy } from "@/modules/decisions/autoApprovalPolicy";
@@ -95,15 +96,20 @@ Classify the document using this taxonomy (or "other" + description if
 nothing genuinely fits):
 
   Commercial: Commercial Invoice, Pro Forma Invoice, Packing List,
-    Shipper's Letter of Instruction, Letter of Credit, Insurance Certificate
+    Shipper's Letter of Instruction, Letter of Credit, Insurance Certificate,
+    Purchase Order, Delivery Note
 
-  Transport: Bill of Lading (Ocean), Airway Bill, Inland/Truck Bill of
-    Lading (CMR), Dock/Warehouse Receipt, Arrival Notice, Delivery Order
+  Transport: Bill of Lading (Ocean), Sea Waybill, Airway Bill, CMR/
+    International Consignment Note, Dock/Warehouse Receipt, Arrival Notice,
+    Delivery Order, Forwarding Instruction, Booking Request/Booking
+    Confirmation, Shipping Instruction
 
   Origin & preference: Certificate of Origin, USMCA/NAFTA Certificate,
-    GSP Certificate, other FTA Certificate
+    GSP Certificate, EUR.1 Movement Certificate, A.TR Certificate,
+    other FTA Certificate
 
   Customs & regulatory filings: Customs Entry Summary (CBP Form 7501),
+    Bill of Entry/Customs Entry, Export Declaration, Import Declaration,
     Importer Security Filing (ISF/10+2), Power of Attorney,
     Binding Ruling Letter/HTS Classification Ruling, Duty Drawback Claim,
     Anti-Dumping/Countervailing Duty Documentation
@@ -952,6 +958,35 @@ ${scopedInstructions}`;
         });
 
         if (docToUpdate) {
+          // A human review of a document-scoped field (submitDocumentAnnotation,
+          // fieldReviewService.ts) lives only in extractedJson.tradeMetadata --
+          // there is no separate human-locked column for it the way Facts have.
+          // `extractedBlob.tradeMetadata` above was just rebuilt from scratch off
+          // this run's own model output, which would silently discard that
+          // review on the next reparse/retry (finding #20/#46). Re-apply the
+          // latest human decision per field on top before writing, the same way
+          // FactService.record already protects registry-materialized fields.
+          const priorApprovals = await db.fieldApproval
+            .findMany({
+              where: { documentId: docToUpdate.id, accountId: input.accountId },
+              orderBy: { approvedAt: "desc" },
+              select: { fieldKey: true, value: true },
+            })
+            .catch(() => []);
+          const latestValueByTmKey = new Map<string, string>();
+          for (const approval of priorApprovals) {
+            const tmKey = tradeMetadataKeyFor(approval.fieldKey) ?? approval.fieldKey;
+            if (!latestValueByTmKey.has(tmKey)) {
+              latestValueByTmKey.set(tmKey, approval.value);
+            }
+          }
+          const tradeMetadata = extractedBlob.tradeMetadata as Record<string, unknown>;
+          for (const [tmKey, value] of latestValueByTmKey) {
+            if (tmKey in tradeMetadata) {
+              tradeMetadata[tmKey] = value;
+            }
+          }
+
           const nextVersion = (docToUpdate.parseVersions?.length || 0) + 1;
 
           // One upload can produce two extractions: this agent runs once over the
@@ -961,30 +996,44 @@ ${scopedInstructions}`;
           // whichever happened to finish last.
           //
           // The rule: an extraction derived from an accepted parse carries page
-          // and bounding-box provenance; one read straight off the image cannot.
-          // The weaker reading must never replace the stronger one, in either
-          // arrival order. `activeParseVersionId` is exactly "a parse has been
-          // accepted for this document", so it is the condition.
+          // and bounding-box provenance; one read straight off the image cannot,
+          // so a context-backed run must always outrank a vision-only one. But
+          // "has a parse merely been accepted yet" is an existence check, not a
+          // sequence comparison -- it can't order two runs *within* the same
+          // tier, so two context-backed runs racing (e.g. a manual reprocess
+          // firing while an earlier one is still in flight) just overwrote each
+          // other in whichever order they happened to finish.
           //
-          // Expressed as a condition on the UPDATE rather than a read-then-write:
-          // two concurrent executions could both read "no parse yet" and then
-          // both write, which is the race this is here to remove.
+          // `extractedJsonPrecedenceRank` fixes both: it combines the tier
+          // (context beats vision, via a large fixed offset) with this run's own
+          // DocumentParseVersion sequence number, so a write is only accepted
+          // when its rank is a real, strict improvement on whatever produced the
+          // value currently stored -- expressed as a condition on the UPDATE
+          // itself (not a read-then-write) so two concurrent executions can't
+          // both read "nothing stored yet" and both write.
           const fromParsedContext = Boolean(input.documentContext);
+          const CONTEXT_TIER_OFFSET = 1_000_000;
+          const precedenceRank = (fromParsedContext ? CONTEXT_TIER_OFFSET : 0) + nextVersion;
           const persistedWrite = await db.shipmentDocument.updateMany({
             where: {
               id: docToUpdate.id,
-              // A context-backed run always persists. A vision run persists only
-              // while no parse has been accepted -- unless a user explicitly
-              // asked for this re-extraction, which is a deliberate override.
-              ...(fromParsedContext || input.forceOverwrite
+              // A user-requested re-extraction is a deliberate override of
+              // whatever precedence would otherwise apply.
+              ...(input.forceOverwrite
                 ? {}
-                : { activeParseVersionId: null }),
+                : {
+                    OR: [
+                      { extractedJsonPrecedenceRank: null },
+                      { extractedJsonPrecedenceRank: { lt: precedenceRank } },
+                    ],
+                  }),
             },
             data: {
               extractedJson: JSON.stringify(extractedBlob, null, 2),
               rawContent: Object.entries(rawDiscoveredKeyValues)
                 .map(([k, v]) => `${k}: ${v}`)
                 .join("\n"),
+              extractedJsonPrecedenceRank: precedenceRank,
             },
           });
 
