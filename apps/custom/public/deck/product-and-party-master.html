@@ -188,6 +188,51 @@
     </div>
   </section>
 
+  <!-- 6b · FEATURE — One party, every role -->
+  <section class="slide slide-pale">
+    <div class="feature-layout">
+      <div class="feature-left">
+        <p class="feature-eyebrow">One party, every role</p>
+        <h2 class="feature-headline">The same company, wherever it shows up.</h2>
+        <p class="feature-pain">A supplier that later becomes your client's importer of record doesn't start a second life as a new record. It's the same party gaining a role &mdash; its screening history, its known aliases, every document already linked to it, all carried forward. Search for the company once and see everything it does for you, not whichever module happened to create it first.</p>
+        <ul class="feature-bullets">
+          <li>Registering an existing party as an importer adds a role &mdash; it never duplicates identity</li>
+          <li>The importer's CBP registration, POA, and bond are extensions on the role, the same way a carrier's SCAC and insurance status are</li>
+        </ul>
+        <div class="demo-tip">
+          <div class="demo-tip-label">How to demo</div>
+          <div class="demo-tip-text">Search <strong>"Meridian"</strong> &rarr; one party, tagged Supplier. Run <strong>Register as importer</strong> from onboarding &rarr; search "Meridian" again &rarr; same party, now Supplier + Importer, with a full "also known as" trail.</div>
+        </div>
+      </div>
+      <div class="feature-right">
+        <div class="app-frame">
+          <div class="app-topbar">
+            <div style="display:flex;align-items:center;gap:12px;"><div class="app-logo"><div class="app-logo-icon"><svg viewBox="0 0 48 48" fill="none"><path d="m29 40-5 3L6 33V15L24 5l18 10v15" stroke="#1D1D1F" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m23.5 27 19.74 9.99-4.47 6.02L23.5 27Z" fill="#0071E3"/></svg></div><span class="app-logo-name">Qubere</span></div><div class="app-breadcrumb"><span>Parties</span><span style="color:var(--slate-300)">/</span><span>Meridian Components GmbH</span></div></div>
+            <div class="app-topbar-right"><div class="app-avatar">AC</div><span class="app-username">Alice · Acme</span></div>
+          </div>
+          <div class="app-body" style="height:380px;">
+            <div class="app-main"><div class="app-content">
+              <div class="page-header"><div><div class="page-title">Meridian Components GmbH</div><div class="page-sub">PTY-4127 · one identity, two roles</div></div></div>
+              <div class="panel">
+                <div class="panel-title">Roles</div>
+                <div class="field-row"><span class="field-k">Supplier</span><span class="field-v">since 2025 &middot; 3 products</span></div>
+                <div class="field-row"><span class="field-k">Importer of record</span><span class="field-v"><span class="chip chip-verified">Ready to file</span></span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Also known as</div>
+                <div class="chain">
+                  <div class="chain-node"><span class="dot-b"></span>Supplier on 3 products</div>
+                  <div class="chain-node"><span class="dot-b"></span>Importer of record for Northwind Retail Inc.</div>
+                </div>
+              </div>
+              <div class="field-row"><span class="field-k">Screening summary</span><span class="field-v">CLEAR · carried forward from the supplier record</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- 7 · FEATURE — Change detection + import -->
   <section class="slide slide-pale">
     <div class="feature-layout">
@@ -240,7 +285,7 @@
       <div class="rule"></div>
       <h2 class="hero-title" style="font-size:36px;margin-bottom:18px;">Everything that hangs off identity is its own managed record.</h2>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 40px;font-family:var(--font-body);font-size:14px;color:rgba(255,255,255,0.8);">
-        <div>◇ <strong style="color:#fff">Importers of Record</strong> &mdash; CBP number validation, linked to filings</div>
+        <div>◇ <strong style="color:#fff">Importer registration</strong> &mdash; an importer role on the party: CBP number, POA, and bond, linked to filings</div>
         <div>◇ <strong style="color:#fff">Power of Attorney</strong> &mdash; POA records per client</div>
         <div>◇ <strong style="color:#fff">Bonds</strong> &mdash; amount, expiry, sufficiency checks feed filing validation</div>
         <div>◇ <strong style="color:#fff">Clients</strong> &mdash; the account relationship, auto-routing, portal scope</div>
@@ -259,6 +304,7 @@
         <tr><td class="obj-q">"We already have an ERP item master / MDM."</td><td class="obj-a">Qubere isn't replacing the commercial item master &mdash; it's the <em>customs</em> master: per-jurisdiction classification, origin determination, sourcing evidence, screening summary. Import from the ERP; be the system of record for the trade attributes the ERP models badly.</td></tr>
         <tr><td class="obj-q">"Auto-classification?"</td><td class="obj-a">AI assists (GRI analysis, ruling references) and can auto-approve above a confidence threshold <em>you</em> set. Assisted, auditable, reversible &mdash; never a black box that silently sets the field.</td></tr>
         <tr><td class="obj-q">"PEP / beneficial ownership on parties?"</td><td class="obj-a">Not yet &mdash; same known gap as the screening module. Identity, roles, registrations, and screening-summary are what's real.</td></tr>
+        <tr><td class="obj-q">"If a supplier becomes an importer, do we lose their history?"</td><td class="obj-a">No &mdash; it's the same party gaining a role. Screening history, aliases, and every document link carry forward; nothing restarts from zero.</td></tr>
       </table>
     </div>
   </section>
