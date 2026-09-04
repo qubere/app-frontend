@@ -205,6 +205,19 @@ export interface LineItemExtraction {
   unitOfMeasure?: string | null;
   countryOfOrigin?: string | null;
   htsCode?: string | null;
+  /** Dangerous-goods / transport-property source facts, present where the document actually states them (any doc type). See §16 -- never inferred from a section label. */
+  dangerousGoodsIndicator?: boolean | null;
+  unNumber?: string | null;
+  unProperShippingName?: string | null;
+  dangerousGoodsClass?: string | null;
+  subsidiaryRisk?: string | null;
+  packingGroup?: string | null;
+  marinePollutantIndicator?: boolean | null;
+  minimumTransportTemperature?: number | null;
+  maximumTransportTemperature?: number | null;
+  temperatureUom?: string | null;
+  handlingInstructions?: string[] | null;
+  productProperties?: string[] | null;
 }
 
 /** Container-level structure, present on transport documents (Ocean BOL, Forwarding
@@ -580,6 +593,18 @@ const intelligenceSchema: Schema = {
           unitOfMeasure: { type: Type.STRING, nullable: true },
           countryOfOrigin: { type: Type.STRING, nullable: true },
           htsCode: { type: Type.STRING, nullable: true },
+          dangerousGoodsIndicator: { type: Type.BOOLEAN, nullable: true },
+          unNumber: { type: Type.STRING, nullable: true },
+          unProperShippingName: { type: Type.STRING, nullable: true },
+          dangerousGoodsClass: { type: Type.STRING, nullable: true },
+          subsidiaryRisk: { type: Type.STRING, nullable: true },
+          packingGroup: { type: Type.STRING, nullable: true },
+          marinePollutantIndicator: { type: Type.BOOLEAN, nullable: true },
+          minimumTransportTemperature: { type: Type.NUMBER, nullable: true },
+          maximumTransportTemperature: { type: Type.NUMBER, nullable: true },
+          temperatureUom: { type: Type.STRING, nullable: true },
+          handlingInstructions: { type: Type.ARRAY, items: { type: Type.STRING } },
+          productProperties: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
         required: ["lineNumber", "description"],
       },
@@ -719,7 +744,8 @@ INSTRUCTIONS:
 6. Do NOT mutate or invent missing values. Set unverified values to null.
 7. Set 'hasCommercialInvoice' to true ONLY if financial line items and subtotal pricing are present on the document.
 8. On an Ocean Bill of Lading, Forwarding Instruction, Booking Request, or Packing List that lists one or more shipping containers, populate 'containers' with one entry per container actually named on the document (containerNumber, seal numbers, size/type, and its weight/volume/package-count if stated). Leave 'containers' empty if the document names no container.
-9. On a Packing List (or any document that itemizes individually numbered packages/cartons distinct from the commercial line items), populate 'packages' with one entry per package/carton, including which container it was packed into ('containerNumber') if the document says so. Leave 'packages' empty if the document has no such package-level breakdown.`;
+9. On a Packing List (or any document that itemizes individually numbered packages/cartons distinct from the commercial line items), populate 'packages' with one entry per package/carton, including which container it was packed into ('containerNumber') if the document says so. Leave 'packages' empty if the document has no such package-level breakdown.
+10. On any line item, if the document itself states dangerous-goods or transport-property facts (a UN number, proper shipping name, DG class, packing group, marine pollutant marking, or a required transport temperature range/handling instructions), populate the matching fields on that 'lineItems' entry. Do NOT infer dangerousGoodsIndicator merely from a section heading like "Dangerous Goods" -- only set it when the document itself declares the goods as dangerous/hazardous. Leave every dangerous-goods field null/empty when the document says nothing about it.`;
 
         const schemaScopedInstructions = buildSchemaScopedInstructions(input.documentTypeHint);
         const scopedInstructions = schemaScopedInstructions

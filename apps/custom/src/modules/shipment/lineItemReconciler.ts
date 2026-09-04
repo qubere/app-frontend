@@ -64,6 +64,19 @@ export interface LineItemDiscovery {
   declaredHsCode?: string | null;
   declaredCountryOfOrigin?: string | null;
   declaredExportControlCode?: string | null;
+  /** Dangerous-goods / transport-property source facts -- captured where present, never inferred. See §16 / the ShipmentLineItem schema comment. */
+  dangerousGoodsIndicator?: boolean | null;
+  unNumber?: string | null;
+  unProperShippingName?: string | null;
+  dangerousGoodsClass?: string | null;
+  subsidiaryRisk?: string | null;
+  packingGroup?: string | null;
+  marinePollutantIndicator?: boolean | null;
+  minimumTransportTemperature?: number | null;
+  maximumTransportTemperature?: number | null;
+  temperatureUom?: string | null;
+  handlingInstructions?: string[] | null;
+  productProperties?: string[] | null;
 }
 
 export interface ApplyDiscoveriesInput {
@@ -126,6 +139,18 @@ export class LineItemReconciler {
     push("declaredHsCode", item.declaredHsCode);
     push("declaredCountryOfOrigin", item.declaredCountryOfOrigin);
     push("declaredExportControlCode", item.declaredExportControlCode);
+    push("dangerousGoodsIndicator", item.dangerousGoodsIndicator == null ? null : String(item.dangerousGoodsIndicator));
+    push("unNumber", item.unNumber);
+    push("unProperShippingName", item.unProperShippingName);
+    push("dangerousGoodsClass", item.dangerousGoodsClass);
+    push("subsidiaryRisk", item.subsidiaryRisk);
+    push("packingGroup", item.packingGroup);
+    push("marinePollutantIndicator", item.marinePollutantIndicator == null ? null : String(item.marinePollutantIndicator));
+    push("minimumTransportTemperature", item.minimumTransportTemperature);
+    push("maximumTransportTemperature", item.maximumTransportTemperature);
+    push("temperatureUom", item.temperatureUom);
+    push("handlingInstructions", item.handlingInstructions?.length ? item.handlingInstructions.join(",") : null);
+    push("productProperties", item.productProperties?.length ? item.productProperties.join(",") : null);
     await FactService.recordMany(facts, tx);
   }
 
@@ -189,6 +214,20 @@ export class LineItemReconciler {
         declaredHsCode: item.declaredHsCode ?? null,
         declaredCountryOfOrigin: item.declaredCountryOfOrigin ?? null,
         declaredExportControlCode: item.declaredExportControlCode ?? null,
+        dangerousGoodsIndicator: item.dangerousGoodsIndicator ?? null,
+        unNumber: item.unNumber ?? null,
+        unProperShippingName: item.unProperShippingName ?? null,
+        dangerousGoodsClass: item.dangerousGoodsClass ?? null,
+        subsidiaryRisk: item.subsidiaryRisk ?? null,
+        packingGroup: item.packingGroup ?? null,
+        marinePollutantIndicator: item.marinePollutantIndicator ?? null,
+        minimumTransportTemperature:
+          item.minimumTransportTemperature != null ? new Prisma.Decimal(item.minimumTransportTemperature) : null,
+        maximumTransportTemperature:
+          item.maximumTransportTemperature != null ? new Prisma.Decimal(item.maximumTransportTemperature) : null,
+        temperatureUom: item.temperatureUom ?? null,
+        handlingInstructions: item.handlingInstructions ?? [],
+        productProperties: item.productProperties ?? [],
         status: wasDefaulted ? "Review Required" : "Unreviewed",
         dutyStack: dutyStackJson,
       },
@@ -221,6 +260,18 @@ export class LineItemReconciler {
     if (existing.declaredHsCode == null && item.declaredHsCode) data.declaredHsCode = item.declaredHsCode;
     if (existing.declaredCountryOfOrigin == null && item.declaredCountryOfOrigin) data.declaredCountryOfOrigin = item.declaredCountryOfOrigin;
     if (existing.declaredExportControlCode == null && item.declaredExportControlCode) data.declaredExportControlCode = item.declaredExportControlCode;
+    if (existing.dangerousGoodsIndicator == null && item.dangerousGoodsIndicator != null) data.dangerousGoodsIndicator = item.dangerousGoodsIndicator;
+    if (existing.unNumber == null && item.unNumber) data.unNumber = item.unNumber;
+    if (existing.unProperShippingName == null && item.unProperShippingName) data.unProperShippingName = item.unProperShippingName;
+    if (existing.dangerousGoodsClass == null && item.dangerousGoodsClass) data.dangerousGoodsClass = item.dangerousGoodsClass;
+    if (existing.subsidiaryRisk == null && item.subsidiaryRisk) data.subsidiaryRisk = item.subsidiaryRisk;
+    if (existing.packingGroup == null && item.packingGroup) data.packingGroup = item.packingGroup;
+    if (existing.marinePollutantIndicator == null && item.marinePollutantIndicator != null) data.marinePollutantIndicator = item.marinePollutantIndicator;
+    if (existing.minimumTransportTemperature == null && item.minimumTransportTemperature != null) data.minimumTransportTemperature = new Prisma.Decimal(item.minimumTransportTemperature);
+    if (existing.maximumTransportTemperature == null && item.maximumTransportTemperature != null) data.maximumTransportTemperature = new Prisma.Decimal(item.maximumTransportTemperature);
+    if (existing.temperatureUom == null && item.temperatureUom) data.temperatureUom = item.temperatureUom;
+    if (existing.handlingInstructions.length === 0 && item.handlingInstructions?.length) data.handlingInstructions = item.handlingInstructions;
+    if (existing.productProperties.length === 0 && item.productProperties?.length) data.productProperties = item.productProperties;
     if (existing.description === LINE_ITEM_SENTINELS.description && item.description) data.description = item.description;
 
     if (Object.keys(data).length === 0) return;

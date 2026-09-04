@@ -963,6 +963,18 @@ export class PipelineOrchestrator {
         // spec, and the ShipmentLineItem schema comment).
         declaredHsCode: li.htsCode,
         declaredCountryOfOrigin: li.countryOfOrigin ?? output.originCountry ?? null,
+        dangerousGoodsIndicator: li.dangerousGoodsIndicator,
+        unNumber: li.unNumber,
+        unProperShippingName: li.unProperShippingName,
+        dangerousGoodsClass: li.dangerousGoodsClass,
+        subsidiaryRisk: li.subsidiaryRisk,
+        packingGroup: li.packingGroup,
+        marinePollutantIndicator: li.marinePollutantIndicator,
+        minimumTransportTemperature: li.minimumTransportTemperature,
+        maximumTransportTemperature: li.maximumTransportTemperature,
+        temperatureUom: li.temperatureUom,
+        handlingInstructions: li.handlingInstructions,
+        productProperties: li.productProperties,
       })),
     });
 

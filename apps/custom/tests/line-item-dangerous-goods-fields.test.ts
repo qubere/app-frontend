@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: {
@@ -21,8 +21,12 @@ vi.mock("@/lib/tariff/dutyEngine", () => ({
 
 import { LineItemReconciler } from "@/modules/shipment/lineItemReconciler";
 
-describe("LineItemReconciler declared source-document fields", () => {
-  it("records declared* fields as Facts and on the created row, distinct from the working fields", async () => {
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("LineItemReconciler dangerous-goods / transport-property fields", () => {
+  it("records dangerous-goods facts and fills the created row when the document declares them", async () => {
     await LineItemReconciler.applyDiscoveries({
       shipmentId: "shp_1",
       accountId: "acc_1",
@@ -31,28 +35,33 @@ describe("LineItemReconciler declared source-document fields", () => {
       items: [
         {
           lineNumber: 1,
-          description: "Widget",
-          countryOfOrigin: "Germany",
-          htsCode: "8481.80.5090",
-          declaredHsCode: "8481.80.5090",
-          declaredCountryOfOrigin: "Germany",
-          declaredExportControlCode: "3A002",
+          description: "Lithium Battery Pack",
+          dangerousGoodsIndicator: true,
+          unNumber: "UN3480",
+          unProperShippingName: "Lithium ion batteries",
+          dangerousGoodsClass: "9",
+          packingGroup: "II",
+          minimumTransportTemperature: -10,
+          maximumTransportTemperature: 35,
+          temperatureUom: "C",
+          handlingInstructions: ["Keep upright", "Fragile"],
+          productProperties: ["Rechargeable"],
         },
       ],
     });
 
     const rows = dbMock.fact.createMany.mock.calls[0][0].data as Array<Record<string, unknown>>;
-    expect(rows.find((r) => String(r.field).endsWith(".declaredHsCode"))?.value).toBe("8481.80.5090");
-    expect(rows.find((r) => String(r.field).endsWith(".declaredCountryOfOrigin"))?.value).toBe("Germany");
-    expect(rows.find((r) => String(r.field).endsWith(".declaredExportControlCode"))?.value).toBe("3A002");
+    expect(rows.find((r) => String(r.field).endsWith(".unNumber"))?.value).toBe("UN3480");
+    expect(rows.find((r) => String(r.field).endsWith(".dangerousGoodsIndicator"))?.value).toBe("true");
 
     const created = dbMock.shipmentLineItem.create.mock.calls[0][0].data;
-    expect(created.declaredHsCode).toBe("8481.80.5090");
-    expect(created.declaredCountryOfOrigin).toBe("Germany");
-    expect(created.declaredExportControlCode).toBe("3A002");
+    expect(created.dangerousGoodsIndicator).toBe(true);
+    expect(created.unNumber).toBe("UN3480");
+    expect(created.dangerousGoodsClass).toBe("9");
+    expect(created.handlingInstructions).toEqual(["Keep upright", "Fragile"]);
   });
 
-  it("never overwrites an already-recorded declared value with a later, differing one", async () => {
+  it("never overwrites an already-set dangerous-goods field, but fills a still-empty one", async () => {
     dbMock.shipmentLineItem.findFirst.mockResolvedValueOnce({
       id: "li_1",
       status: "Unreviewed",
@@ -64,11 +73,11 @@ describe("LineItemReconciler declared source-document fields", () => {
       description: "Unspecified Item",
       partNumber: null,
       eccnCode: null,
-      declaredHsCode: "8481.80.5090",
-      declaredCountryOfOrigin: "Germany",
+      declaredHsCode: null,
+      declaredCountryOfOrigin: null,
       declaredExportControlCode: null,
-      dangerousGoodsIndicator: null,
-      unNumber: null,
+      dangerousGoodsIndicator: true,
+      unNumber: "UN3480",
       unProperShippingName: null,
       dangerousGoodsClass: null,
       subsidiaryRisk: null,
@@ -89,16 +98,16 @@ describe("LineItemReconciler declared source-document fields", () => {
       items: [
         {
           lineNumber: 1,
-          declaredHsCode: "9999.99.9999",
-          declaredCountryOfOrigin: "France",
-          declaredExportControlCode: "5A002",
+          dangerousGoodsIndicator: false,
+          unNumber: "UN9999",
+          packingGroup: "III",
         },
       ],
     });
 
     const updateData = dbMock.shipmentLineItem.update.mock.calls[0][0].data;
-    expect(updateData.declaredHsCode).toBeUndefined();
-    expect(updateData.declaredCountryOfOrigin).toBeUndefined();
-    expect(updateData.declaredExportControlCode).toBe("5A002");
+    expect(updateData.dangerousGoodsIndicator).toBeUndefined();
+    expect(updateData.unNumber).toBeUndefined();
+    expect(updateData.packingGroup).toBe("III");
   });
 });

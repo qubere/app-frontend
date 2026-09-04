@@ -1690,9 +1690,27 @@ model ShipmentLineItem {
   declaredHsCode            String?
   declaredCountryOfOrigin   String?
   declaredExportControlCode String?
-  dutyStack                 Json?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+
+  /// Dangerous-goods / transport-property facts, captured where present on
+  /// the source document (any doc type). These are source facts only -- never
+  /// inferred from a document section label -- and are not a compliance
+  /// determination; a downstream compliance engine validates them if needed.
+  dangerousGoodsIndicator     Boolean?
+  unNumber                    String?
+  unProperShippingName        String?
+  dangerousGoodsClass         String?
+  subsidiaryRisk              String?
+  packingGroup                String?
+  marinePollutantIndicator    Boolean?
+  minimumTransportTemperature Decimal?
+  maximumTransportTemperature Decimal?
+  temperatureUom              String?
+  handlingInstructions        String[]
+  productProperties           String[]
+
+  dutyStack Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Optional link to the tenant's Product Master. Null means the line has not
   /// been matched to a product yet -- never a reason to withhold the line, and
