@@ -211,6 +211,22 @@ const DETAIL_INCLUDE = {
     orderBy: { createdAt: "desc" },
     include: { fromParty: { select: { id: true, internalPartyCode: true } } },
   },
+  // Role-specific capacity extensions (#320 §2.1's "capacity extension"
+  // layer), read the same way regardless of which role produced them --
+  // this is the "Also known as" panel's data (spec §3.5): a supplier who
+  // later registers as an importer is one Party with a CarrierProfile-shaped
+  // extension for each role it actually holds, not two separate records.
+  carrierProfile: true,
+  legalEntities: {
+    select: {
+      id: true,
+      legalName: true,
+      importerOfRecord: {
+        select: { id: true, registrationStatus: true, cbpImporterNumber: true, clientId: true },
+      },
+      _count: { select: { productParties: true, shipmentParties: true } },
+    },
+  },
 } satisfies Prisma.PartyInclude;
 
 export type PartyDetail = Prisma.PartyGetPayload<{ include: typeof DETAIL_INCLUDE }>;

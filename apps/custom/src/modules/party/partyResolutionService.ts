@@ -8,19 +8,34 @@
  * master" through this one function instead of three separate ad hoc
  * comparisons.
  *
- * Deliberately role-agnostic: this only resolves or creates the `Party`
- * identity. It never creates a `PartyRole`, and it never merges two parties
- * on its own judgment — an ambiguous or merely-possible match is handed back
- * to the caller as candidates, exactly like `findPartyMatches` already
- * refuses to auto-decide (see `partyMatching.ts`'s module comment: a shared
- * name is evidence for a person, never a determination). Every caller
+ * `resolvePartyForCompany` is deliberately role-agnostic: it only resolves or
+ * creates the `Party` identity, never a `PartyRole`, and it never merges two
+ * parties on its own judgment — an ambiguous or merely-possible match is
+ * handed back to the caller as candidates, exactly like `findPartyMatches`
+ * already refuses to auto-decide (see `partyMatching.ts`'s module comment: a
+ * shared name is evidence for a person, never a determination). Every caller
  * remains responsible for its own role and its own "yes, that's the same
- * company" confirmation step.
+ * company" confirmation step -- `ensurePartyRole` below is that explicit,
+ * separate step, for callers that make one.
  */
 
 import type { PartyIdentifierType, PartyKind, PartyMatchStatus, PartySourceType } from "@prisma/client";
-import { createParty, getParty, findPartyMatches, PartyNotFoundError, type PartyActor, type PartyDetail } from "./partyService";
+import type { z } from "zod";
+import { db } from "@/lib/db";
+import { addRole, createParty, getParty, findPartyMatches, PartyNotFoundError, type PartyActor, type PartyDetail } from "./partyService";
 import type { PartyMatchCandidate } from "./partyMatching";
+import type { partyRoleTypeSchema } from "./partySchemas";
+import { logger } from "@/lib/logging/logger";
+
+/**
+ * `addRole`'s own input is typed off `partyRoleTypeSchema`, which is
+ * narrower than the Prisma `PartyRoleType` enum (missing WAREHOUSE,
+ * TERMINAL, DRAYAGE_PROVIDER -- a pre-existing gap between the schema and
+ * the zod enum, not something this change introduces or widens). Typed off
+ * the same schema here so this stays exactly as permissive as `addRole`
+ * actually is, rather than accepting a value `addRole` would reject.
+ */
+type EnsurableRoleType = z.infer<typeof partyRoleTypeSchema>;
 
 export interface ResolvePartyForCompanyAddress {
   addressLine1: string;
@@ -97,4 +112,39 @@ export async function resolvePartyForCompany(
   });
 
   return { outcome: "CREATED", partyId: created.id, party: created };
+}
+
+/**
+ * Adds `roleType` to a party if it does not already actively hold it.
+ *
+ * Deliberately a separate, explicitly-opted-into step from
+ * `resolvePartyForCompany` above -- resolving identity and declaring a role
+ * are different decisions (see this module's own doc comment), and this
+ * function exists for callers that make a *deliberate* role assignment (a
+ * person registering a company as an importer), not for passive or
+ * low-confidence sources like unverified document extraction.
+ *
+ * Idempotent (checked here -- `addRole` itself has no such guard, since it
+ * is also used to record a genuinely repeated role after one was removed)
+ * and fail-open: this is the same additive-bridge shape as
+ * `resolvePartyForCompany`'s callers already use, so a failure here must
+ * never block whatever the caller is actually doing (e.g. registering an
+ * importer). Errors are logged, not thrown.
+ */
+export async function ensurePartyRole(actor: PartyActor, partyId: string, roleType: EnsurableRoleType): Promise<void> {
+  try {
+    const existing = await db.partyRole.findFirst({
+      where: { accountId: actor.accountId, partyId, roleType, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (existing !== null) return;
+    await addRole(actor, partyId, { roleType, sourceType: "USER" });
+  } catch (error) {
+    logger.warn("ensurePartyRole: failed to add party role", {
+      accountId: actor.accountId,
+      partyId,
+      roleType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
