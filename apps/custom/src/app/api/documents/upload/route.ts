@@ -43,11 +43,15 @@ export const maxDuration = 60;
 export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const accountId = ctx.accountId;
   const userId = ctx.userId;
+  const isClientScopedUser = ctx.roleNames.some((role) =>
+    role.toUpperCase().startsWith("CUSTOMER_") || role.toUpperCase() === "PORTER"
+  );
   const correlationId = randomUUID();
 
   const formData = await req.formData();
   const file = formData.get("file");
   const rawDocType = formData.get("docType");
+  const rawClientId = formData.get("clientId");
 
   if (!(file instanceof File)) {
     return buildErrorResponse(400, "NO_FILE", "No file was provided.", undefined, requestId);
@@ -114,6 +118,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     : null;
 
   let targetShipmentId: string | null = null;
+  let shipmentClientId: string | null = null;
   if (shipmentIdParam) {
     try {
       targetShipmentId = await resolveTenantShipmentId(accountId, shipmentIdParam);
@@ -125,7 +130,48 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       }
       throw err;
     }
+    const targetShipment = await db.shipment.findFirst({
+      where: { id: targetShipmentId, accountId, deletedAt: null },
+      select: { clientId: true },
+    });
+    shipmentClientId = targetShipment?.clientId ?? null;
+    if (
+      isClientScopedUser &&
+      (!shipmentClientId || !ctx.authorizedClientIds.includes(shipmentClientId))
+    ) {
+      return buildErrorResponse(404, "SHIPMENT_NOT_FOUND", "Shipment not found.", undefined, requestId);
+    }
   }
+
+  const requestedClientId =
+    typeof rawClientId === "string" && rawClientId.trim() ? rawClientId.trim() : null;
+  if (requestedClientId) {
+    const client = await db.client.findFirst({
+      where: { id: requestedClientId, accountId },
+      select: { id: true },
+    });
+    if (!client || (isClientScopedUser && !ctx.authorizedClientIds.includes(requestedClientId))) {
+      return buildErrorResponse(404, "CLIENT_NOT_FOUND", "Client not found.", undefined, requestId);
+    }
+    if (shipmentClientId && shipmentClientId !== requestedClientId) {
+      return buildErrorResponse(
+        409,
+        "CLIENT_SHIPMENT_MISMATCH",
+        "The selected client does not own the selected shipment.",
+        undefined,
+        requestId
+      );
+    }
+  }
+
+  // Prefer explicit capture context, then the selected shipment. A customer
+  // user with exactly one authorized client has an unambiguous workspace
+  // fallback; brokers with several clients remain unassigned rather than being
+  // silently attributed to the wrong customer.
+  const targetClientId =
+    requestedClientId ??
+    shipmentClientId ??
+    (isClientScopedUser && ctx.authorizedClientIds.length === 1 ? ctx.authorizedClientIds[0] : null);
 
   const { DocumentTypeCatalog } = await import("@/modules/intake/documentTypeCatalog");
   const declaredDocType = typeof rawDocType === "string" ? rawDocType : null;
@@ -150,6 +196,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   // Superset of what upstream wrote: the original's size and media type are
   // recorded alongside its SHA-256 so the immutable original is fully described.
   const documentFields = {
+    clientId: targetClientId,
     docType: resolvedDocType,
     fileUrl: storageResult.url,
     checksum: storageResult.checksum,
@@ -158,10 +205,22 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     status: targetShipmentId ? "Received" : "Parked",
   };
 
+  const provenance = await buildDocumentProvenance({
+    channel: "WEB_APP",
+    uploadedByType: "INTERNAL_USER",
+    uploadedByUserId: userId,
+  });
+
   const docRecord = existingDoc
     ? await db.shipmentDocument.update({
         where: { id: existingDoc.id },
-        data: { fileName: file.name, ...documentFields },
+        data: {
+          fileName: file.name,
+          ...documentFields,
+          // Backfill provenance only for legacy rows. For an already-attributed
+          // document the original capture identity remains immutable.
+          ...(!existingDoc.uploadedByName && !existingDoc.uploadedByEmail ? provenance : {}),
+        },
       })
     : await db.shipmentDocument.create({
         data: {
@@ -169,11 +228,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
           shipmentId: targetShipmentId,
           fileName: file.name,
           ...documentFields,
-          ...(await buildDocumentProvenance({
-            channel: "WEB_APP",
-            uploadedByType: "INTERNAL_USER",
-            uploadedByUserId: userId,
-          })),
+          ...provenance,
         },
       });
 
