@@ -442,9 +442,9 @@ export function DocumentsClient({
   const [queueView, setQueueView] = useState<"NEEDS_ACTION" | "ALL" | "QUARANTINE">("NEEDS_ACTION");
   const [quarantineCount, setQuarantineCount] = useState<number>(() => initialQuarantineCount ?? 0);
 
-  // Paginated over the filtered list, matching the shipments workbench: the six
-  // filters and the search all read every document, so limiting the rows on screen
-  // must not limit what they search.
+  // The action queue is filtered locally because its rows arrive with the page.
+  // The full repository is filtered and paginated by /api/documents so search
+  // always evaluates the complete account-scoped document set.
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
   const [page, setPage] = useState(1);
 
@@ -1108,7 +1108,11 @@ export function DocumentsClient({
 
           <select
             value={linkedEntityType}
-            onChange={(e) => setLinkedEntityType(e.target.value)}
+            onChange={(e) => {
+              setLinkedEntityType(e.target.value);
+              setQueueView("ALL");
+              setPage(1);
+            }}
             className="px-3 py-2 rounded-xl border border-border bg-white text-xs text-ink focus:outline-none focus:border-brand cursor-pointer font-medium"
             aria-label="Filter by linked record type"
           >
