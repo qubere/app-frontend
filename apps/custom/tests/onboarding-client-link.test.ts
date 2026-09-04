@@ -13,6 +13,8 @@ const m = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ db: m.db }));
 vi.mock('@/lib/audit', () => ({ createAuditLog: m.audit }));
 vi.mock('@qubere/db/services/client-setup-service', () => ({ syncClientSetup: m.sync }));
+const resolvePartyForCompany = vi.fn();
+vi.mock('@/modules/party/partyResolutionService', () => ({ resolvePartyForCompany: (...args: unknown[]) => resolvePartyForCompany(...args) }));
 vi.mock('@/lib/api/auth-guards', () => ({ withAuthenticatedRoute: (handler: (...a: any[]) => any, options: any) => {
   m.options.push(options);
   return (req: Request) => handler({ req, ctx: { accountId: 'broker', userId: 'staff' }, params: { caseId: 'case' }, requestId: 'test' });
@@ -37,6 +39,7 @@ beforeEach(() => {
   m.db.onboardingEntity.count.mockResolvedValue(1);
   m.db.powerOfAttorney.findFirst.mockResolvedValue({ importerOfRecord: { clientId: null } });
   m.db.$transaction.mockImplementation((fn: (tx: any) => any) => fn(m.db));
+  resolvePartyForCompany.mockResolvedValue({ outcome: 'CREATED', partyId: 'party-1', party: { id: 'party-1' } });
 });
 describe('Onboarding client ownership', () => {
   it('uses the explicitly chosen existing client without creating a duplicate', async () => {
@@ -60,6 +63,26 @@ describe('Onboarding client ownership', () => {
     const response = await entity.POST(new Request('http://custom/api/onboarding/cases/case/entities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importerNumberType: 'EIN', importerNumber: '123', legalName: 'Target', entityType: 'CORPORATION', addressLine1: 'One St', city: 'City', postalCode: '12345' }) }));
     expect(response.status).toBe(201);
     expect(m.db.importerOfRecord.create).toHaveBeenCalledWith({ data: expect.objectContaining({ accountId: 'broker', clientId: 'target' }) });
+  });
+
+  it('resolves and links a Party for the new entity (#320 Phase 1)', async () => {
+    await entity.POST(new Request('http://custom/api/onboarding/cases/case/entities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importerNumberType: 'EIN', importerNumber: '123', legalName: 'Target', entityType: 'CORPORATION', addressLine1: 'One St', city: 'City', postalCode: '12345' }) }));
+    expect(resolvePartyForCompany).toHaveBeenCalledWith(
+      { accountId: 'broker', userId: 'staff', requestId: 'test' },
+      expect.objectContaining({ legalName: 'Target', taxId: '123' })
+    );
+    expect(m.db.legalEntity.create).toHaveBeenCalledWith({ data: expect.objectContaining({ partyId: 'party-1' }) });
+  });
+
+  it('creates the entity without a party link when resolution finds only candidates or fails', async () => {
+    resolvePartyForCompany.mockResolvedValue({ outcome: 'CANDIDATES', status: 'AMBIGUOUS', candidates: [] });
+    const response = await entity.POST(new Request('http://custom/api/onboarding/cases/case/entities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importerNumberType: 'EIN', importerNumber: '123', legalName: 'Target', entityType: 'CORPORATION', addressLine1: 'One St', city: 'City', postalCode: '12345' }) }));
+    expect(response.status).toBe(201);
+    expect(m.db.legalEntity.create).toHaveBeenCalledWith({ data: expect.objectContaining({ partyId: null }) });
+
+    resolvePartyForCompany.mockRejectedValue(new Error('screening down'));
+    const second = await entity.POST(new Request('http://custom/api/onboarding/cases/case/entities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importerNumberType: 'EIN', importerNumber: '124', legalName: 'Target Two', entityType: 'CORPORATION', addressLine1: 'One St', city: 'City', postalCode: '12345' }) }));
+    expect(second.status).toBe(201);
   });
   it('limits client picker results to this account and 50 small records', async () => {
     expect((await clients.GET(new Request('http://custom/api/onboarding/clients?q=Target'))).status).toBe(200);
