@@ -1676,6 +1676,16 @@ model ShipmentLineItem {
   htsConfidence   Int? // model confidence, null until classified
   eccnCode        String?
   status          String   @default("Unreviewed") // Unreviewed, Valid, Review Required, Issue
+
+  /// Source-document facts, kept distinct from the curated fields above.
+  /// `countryOfOrigin`/`htsCode`/`eccnCode` are working values an agent may
+  /// fill once and a human then reviews/approves; these three are simply
+  /// what the source document said, preserved as-is even after an approved
+  /// classification/origin/export-control decision is reached elsewhere, so
+  /// the original declaration is never lost or silently conflated with it.
+  declaredHsCode            String?
+  declaredCountryOfOrigin   String?
+  declaredExportControlCode String?
   dutyStack       Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

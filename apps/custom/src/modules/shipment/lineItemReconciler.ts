@@ -60,6 +60,10 @@ export interface LineItemDiscovery {
   htsCode?: string | null;
   htsConfidence?: number | null;
   eccnCode?: string | null;
+  /** Source-document facts -- see the schema comment on ShipmentLineItem for why these are kept separate from countryOfOrigin/htsCode/eccnCode. */
+  declaredHsCode?: string | null;
+  declaredCountryOfOrigin?: string | null;
+  declaredExportControlCode?: string | null;
 }
 
 export interface ApplyDiscoveriesInput {
@@ -119,6 +123,9 @@ export class LineItemReconciler {
     push("countryOfOrigin", item.countryOfOrigin);
     push("htsCode", item.htsCode, item.htsConfidence);
     push("eccnCode", item.eccnCode);
+    push("declaredHsCode", item.declaredHsCode);
+    push("declaredCountryOfOrigin", item.declaredCountryOfOrigin);
+    push("declaredExportControlCode", item.declaredExportControlCode);
     await FactService.recordMany(facts, tx);
   }
 
@@ -179,6 +186,9 @@ export class LineItemReconciler {
         htsCode,
         htsConfidence: item.htsConfidence ?? null,
         eccnCode: item.eccnCode ?? null,
+        declaredHsCode: item.declaredHsCode ?? null,
+        declaredCountryOfOrigin: item.declaredCountryOfOrigin ?? null,
+        declaredExportControlCode: item.declaredExportControlCode ?? null,
         status: wasDefaulted ? "Review Required" : "Unreviewed",
         dutyStack: dutyStackJson,
       },
@@ -208,6 +218,9 @@ export class LineItemReconciler {
     }
     if (existing.partNumber == null && item.partNumber) data.partNumber = item.partNumber;
     if (existing.eccnCode == null && item.eccnCode) data.eccnCode = item.eccnCode;
+    if (existing.declaredHsCode == null && item.declaredHsCode) data.declaredHsCode = item.declaredHsCode;
+    if (existing.declaredCountryOfOrigin == null && item.declaredCountryOfOrigin) data.declaredCountryOfOrigin = item.declaredCountryOfOrigin;
+    if (existing.declaredExportControlCode == null && item.declaredExportControlCode) data.declaredExportControlCode = item.declaredExportControlCode;
     if (existing.description === LINE_ITEM_SENTINELS.description && item.description) data.description = item.description;
 
     if (Object.keys(data).length === 0) return;

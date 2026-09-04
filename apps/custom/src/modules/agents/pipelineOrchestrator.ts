@@ -957,6 +957,11 @@ export class PipelineOrchestrator {
         totalValue: li.totalAmount,
         countryOfOrigin: li.countryOfOrigin ?? output.originCountry ?? null,
         htsCode: li.htsCode,
+        // What the source document itself declared -- preserved separately
+        // from the working countryOfOrigin/htsCode above (see §18 in the
+        // spec, and the ShipmentLineItem schema comment).
+        declaredHsCode: li.htsCode,
+        declaredCountryOfOrigin: li.countryOfOrigin ?? output.originCountry ?? null,
       })),
     });
 
