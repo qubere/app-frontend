@@ -76,7 +76,11 @@ async function ensureActionCatalog() {
  * Lists valid messages for Netherlands Import procedures
  */
 async function seedNlImportProcedures() {
-  // Get IMPORT procedure catalog code
+  // Sanity check: IMPORT procedure catalog code must exist before seeding
+  // procedure configs that logically belong to it (no FK is written here --
+  // FilingProcedureConfig no longer stores a transactionType column; the
+  // import/export wrapper is now derived from FilingSchema via
+  // filingSchemaId, which this seed leaves unset).
   const importType = await db.filingProcedureCatalog.findUnique({
     where: { procedureCode: "IMPORT" },
   });
@@ -87,62 +91,17 @@ async function seedNlImportProcedures() {
 
   const procedures = [
     // Standard Import Declaration - H1 Procedure
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H1",
-      messageName: "IE501", // Import Declaration
-    },
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H1",
-      messageName: "IE503", // Amendment
-    },
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H1",
-      messageName: "IE504", // Cancellation
-    },
+    { country: "NL", procedureCode: "H1", messageName: "IE501" }, // Import Declaration
+    { country: "NL", procedureCode: "H1", messageName: "IE503" }, // Amendment
+    { country: "NL", procedureCode: "H1", messageName: "IE504" }, // Cancellation
     // Simplified Import Declaration - H4 Procedure
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H4",
-      messageName: "IE501", // Simplified Import Declaration
-    },
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H4",
-      messageName: "IE503", // Amendment
-    },
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H4",
-      messageName: "IE504", // Cancellation
-    },
+    { country: "NL", procedureCode: "H4", messageName: "IE501" }, // Simplified Import Declaration
+    { country: "NL", procedureCode: "H4", messageName: "IE503" }, // Amendment
+    { country: "NL", procedureCode: "H4", messageName: "IE504" }, // Cancellation
     // Pre-Arrival Declaration - H7 Procedure
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H7",
-      messageName: "IE501", // Pre-Arrival Declaration
-    },
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H7",
-      messageName: "IE503", // Amendment
-    },
-    {
-      transactionType: importType.procedureCode,
-      country: "NL",
-      procedureCode: "H7",
-      messageName: "IE504", // Cancellation
-    },
+    { country: "NL", procedureCode: "H7", messageName: "IE501" }, // Pre-Arrival Declaration
+    { country: "NL", procedureCode: "H7", messageName: "IE503" }, // Amendment
+    { country: "NL", procedureCode: "H7", messageName: "IE504" }, // Cancellation
   ];
 
   for (const proc of procedures) {
@@ -155,13 +114,11 @@ async function seedNlImportProcedures() {
         },
       },
       update: {
-        transactionType: proc.transactionType,
         isActive: true,
         updatedAt: new Date(),
         updatedBy: "system",
       },
       create: {
-        transactionType: proc.transactionType,
         country: proc.country,
         procedureCode: proc.procedureCode,
         messageName: proc.messageName,

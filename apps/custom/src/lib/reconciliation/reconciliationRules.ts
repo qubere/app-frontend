@@ -27,7 +27,9 @@ export type NormalizationFn =
   | "number"        // strip non-numeric chars, parse float
   | "currency_amount" // strip currency symbols + commas, parse float
   | "party_name"    // normalize punctuation & legal suffixes (Ltd → Limited, etc.)
-  | "container_id"; // uppercase, strip spaces and dashes
+  | "container_id"  // uppercase, strip spaces and dashes
+  | "quantity_unit" // strip unit words (EA/PCS/pieces/units), parse to a bare count
+  | "weight_unit";  // parse value + unit (kg/g/lb) and convert to kilograms
 
 export interface ReconciliationRule {
   id: string;
@@ -57,7 +59,7 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     docTypeA: "Invoice",
     docTypeB: "Packing",
     discrepancyType: "QUANTITY",
-    normalizationFn: "number",
+    normalizationFn: "quantity_unit",
     tolerancePct: 0,
     blocksFiling: true,
     description: "Invoice quantity vs. packing list quantity",
@@ -68,7 +70,7 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     docTypeA: "Invoice",
     docTypeB: "Lading",
     discrepancyType: "QUANTITY",
-    normalizationFn: "number",
+    normalizationFn: "quantity_unit",
     tolerancePct: 5,
     blocksFiling: false,
     description: "Invoice quantity vs. bill of lading quantity",
@@ -129,7 +131,7 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     docTypeA: "Invoice",
     docTypeB: "Packing",
     discrepancyType: "WEIGHT",
-    normalizationFn: "number",
+    normalizationFn: "weight_unit",
     tolerancePct: 5,
     blocksFiling: false,
     description: "Invoice gross weight vs. packing list gross weight",
@@ -140,7 +142,7 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     docTypeA: "Packing",
     docTypeB: "Lading",
     discrepancyType: "WEIGHT",
-    normalizationFn: "number",
+    normalizationFn: "weight_unit",
     tolerancePct: 5,
     blocksFiling: false,
     description: "Packing list gross weight vs. bill of lading gross weight",
@@ -151,7 +153,7 @@ export const RECONCILIATION_RULES: readonly ReconciliationRule[] = [
     docTypeA: "Invoice",
     docTypeB: "Packing",
     discrepancyType: "WEIGHT",
-    normalizationFn: "number",
+    normalizationFn: "weight_unit",
     tolerancePct: 3,
     blocksFiling: false,
     description: "Invoice net weight vs. packing list net weight",

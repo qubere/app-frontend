@@ -21,6 +21,7 @@ import {
   reconciliationFieldValues,
 } from "@/lib/documents/fieldDictionary";
 import { syncTrackingIdentifiersFromExtraction } from "@/modules/shipments/trackingIdentifierSync";
+import { getAgentPolicyConfig, applyAutoApprovalPolicy } from "@/modules/decisions/autoApprovalPolicy";
 
 export const DOCUMENT_INTELLIGENCE_SYSTEM_PROMPT = `
 ROLE
@@ -807,7 +808,21 @@ ${instructions}`;
       }
     }
 
-    const requiresReview = !hasCommercialInvoice || missingFields.length > 0 || !mathValidationPassed || confidence < 90;
+    // Data-integrity gates are unconditional (not a confidence judgment call);
+    // only the confidence threshold itself is configurable via AgentPolicyConfig.
+    const policyConfig = await getAgentPolicyConfig(input.accountId, "DOCUMENT_EXTRACTION");
+    const confidencePolicy = applyAutoApprovalPolicy(
+      {
+        confidence,
+        partMasterMatch: true,
+        partMasterHtsAgrees: true,
+        agentName: "DOCUMENT_EXTRACTION",
+        policyConfig,
+      },
+      policyConfig
+    );
+    const requiresReview =
+      !hasCommercialInvoice || missingFields.length > 0 || !mathValidationPassed || confidencePolicy.outcome !== "AUTO";
     const status = requiresReview ? "Review Required" : "Completed";
 
     const agencyReasoning = filingDetermination?.reasoning ? ` PGA Routing: ${filingDetermination.primaryAgency} (${filingDetermination.reasoning}).` : "";

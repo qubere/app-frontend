@@ -17,7 +17,9 @@ import { z } from "zod";
 export type FilingConfigTableKey =
   // NEW TABLES (multi-country design)
   | "procedure-catalog"
+  | "message-catalog"
   | "action-catalog"
+  | "filing-schema"
   | "procedure-config"
   | "action-message-mapping"
   | "action-configuration"
@@ -36,11 +38,14 @@ export type FilingConfigTableKey =
   // DROPPED TABLES (commented out - kept for reference)
   // | "procedure-mapping" // DROPPED - replaced by procedure-config
   // | "authority-config" // DROPPED - authority names in UI layer
-  // | "message-catalog" // DROPPED - replaced by action-message-mapping
   // | "response-status-mapping" // DROPPED - response handling redesigned
   // | "action-rule" // DROPPED - merged into action-configuration
   // | "child-action-rule" // DROPPED - merged into action-configuration
   // | "message-action-catalog"; // DROPPED - replaced by action-catalog
+  // NOTE: "message-catalog" above is a NEW table (added 2026-09-04), not a
+  // revival of the old routing-oriented FilingMessageCatalog that used to be
+  // listed here as dropped -- this one is pure display metadata (messageName
+  // + localized descriptions) for Message Name dropdowns.
 
 
 /**
@@ -57,6 +62,8 @@ export interface SubFieldDef {
   label: string;
   type: "text" | "boolean" | "select" | "fieldArray";
   options?: string[];
+  optionsSource?: string;
+  optionLabels?: Record<string, string>;
   help?: string;
   itemFields?: SubFieldDef[];
 }
@@ -93,15 +100,58 @@ interface TableDef<TRow> {
 // NEW MULTI-COUNTRY SCHEMAS
 // ============================================================================
 
+// FilingProcedureCatalog.descriptions / FilingActionCatalog.descriptions /
+// FilingMessageCatalog.descriptions / FilingStatusCatalog.localeDescription
+// are all stored as a JSON key-value map (locale code -> translated
+// description), but the generic fieldArray editor in FilingConfigClient only
+// knows how to edit a list of flat entries, so the wire/UI shape is an array
+// of { locale, description } rows -- converted to/from the map at the
+// registry boundary (see localeArrayToMap/localeMapToArray). Moved above the
+// schemas that use it since these are `const`s (not hoisted like the
+// function declarations below).
+const localeDescriptionEntrySchema = z.object({
+  locale: z.string().trim().min(1).max(20),
+  description: z.string().trim().min(1).max(500),
+});
+
+const descriptionsFieldDef: FieldDef = {
+  key: "descriptions",
+  label: "Descriptions",
+  type: "fieldArray",
+  help: "Per-language display description. Add one row per locale (e.g. en, fr, nl).",
+  itemFields: [
+    { key: "locale", label: "Locale", type: "text", help: "Locale/language code, e.g. en, fr, nl" },
+    { key: "description", label: "Description", type: "text" },
+  ],
+};
+
 const procedureCatalogSchema = z.object({
   procedureCode: z.string().trim().min(1).max(50),
   isActive: z.boolean(),
+  descriptions: z.array(localeDescriptionEntrySchema).max(50).optional().default([]),
   createdBy: z.string().trim().max(100).optional(),
   updatedBy: z.string().trim().max(100).optional(),
 });
 
 const actionCatalogSchema = z.object({
   code: z.string().trim().min(1).max(50),
+  isActive: z.boolean(),
+  descriptions: z.array(localeDescriptionEntrySchema).max(50).optional().default([]),
+  createdBy: z.string().trim().max(100).optional(),
+  updatedBy: z.string().trim().max(100).optional(),
+});
+
+const messageCatalogSchema = z.object({
+  messageName: z.string().trim().min(1).max(100),
+  isActive: z.boolean(),
+  descriptions: z.array(localeDescriptionEntrySchema).max(50).optional().default([]),
+  createdBy: z.string().trim().max(100).optional(),
+  updatedBy: z.string().trim().max(100).optional(),
+});
+
+const filingSchemaSchema = z.object({
+  schemaPath: z.string().trim().min(1).max(2000),
+  schemaVersion: z.string().trim().min(1).max(30),
   isActive: z.boolean(),
   createdBy: z.string().trim().max(100).optional(),
   updatedBy: z.string().trim().max(100).optional(),
@@ -111,6 +161,7 @@ const procedureConfigSchema = z.object({
   country: z.string().trim().min(1).max(50),
   procedureCode: z.string().trim().min(1).max(50),
   messageName: z.string().trim().min(1).max(100),
+  filingSchemaId: z.string().trim().max(50).optional().nullable().transform(val => val || null),
   isActive: z.boolean(),
   createdBy: z.string().trim().max(100).optional(),
   updatedBy: z.string().trim().max(100).optional(),
@@ -137,16 +188,6 @@ const actionConfigurationSchema = z.object({
   isActive: z.boolean(),
   createdBy: z.string().trim().max(100).optional(),
   updatedBy: z.string().trim().max(100).optional(),
-});
-
-// FilingStatusCatalog.localeDescription is stored as a JSON key-value map
-// (locale code -> translated description), but the generic fieldArray editor
-// in FilingConfigClient only knows how to edit a list of flat entries, so the
-// wire/UI shape is an array of { locale, description } rows -- converted
-// to/from the map at the registry boundary (see localeArrayToMap/localeMapToArray).
-const localeDescriptionEntrySchema = z.object({
-  locale: z.string().trim().min(1).max(20),
-  description: z.string().trim().min(1).max(500),
 });
 
 const statusCatalogCreateSchema = z.object({
@@ -347,33 +388,145 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
   // ============================================================================
   "procedure-catalog": {
     label: "Procedure Catalog",
-    description: "Universal filing procedures (IMPORT, EXPORT, NCTS, etc.)",
+    description: "Universal filing procedures (IMPORT, EXPORT, NCTS, etc.) with optional per-locale display descriptions",
     idField: "id",
     fields: [
       { key: "procedureCode", label: "Procedure Code", type: "text" },
       { key: "isActive", label: "Is Active", type: "boolean" },
+      descriptionsFieldDef,
     ],
-    list: () => db.filingProcedureCatalog.findMany({ orderBy: { procedureCode: "asc" } }),
-    create: (data) => wrapPrismaErrors(() => db.filingProcedureCatalog.create({ data: procedureCatalogSchema.parse(data) })),
-    update: (id, data) => wrapPrismaErrors(() => db.filingProcedureCatalog.update({ where: { id }, data: procedureCatalogSchema.parse(data) })),
+    list: async () => {
+      const rows = await db.filingProcedureCatalog.findMany({ orderBy: { procedureCode: "asc" } });
+      return rows.map((row) => ({ ...row, descriptions: localeMapToArray(row.descriptions) }));
+    },
+    create: (data) => wrapPrismaErrors(async () => {
+      const parsed = procedureCatalogSchema.parse(data);
+      const row = await db.filingProcedureCatalog.create({
+        data: {
+          procedureCode: parsed.procedureCode,
+          isActive: parsed.isActive,
+          descriptions: localeArrayToMap(parsed.descriptions),
+          createdBy: parsed.createdBy ?? null,
+        },
+      });
+      return { ...row, descriptions: localeMapToArray(row.descriptions) };
+    }),
+    update: (id, data) => wrapPrismaErrors(async () => {
+      const parsed = procedureCatalogSchema.parse(data);
+      const row = await db.filingProcedureCatalog.update({
+        where: { id },
+        data: {
+          procedureCode: parsed.procedureCode,
+          isActive: parsed.isActive,
+          descriptions: localeArrayToMap(parsed.descriptions),
+          updatedBy: parsed.updatedBy,
+        },
+      });
+      return { ...row, descriptions: localeMapToArray(row.descriptions) };
+    }),
     remove: (id) => wrapPrismaErrors(() => db.filingProcedureCatalog.delete({ where: { id } })).then(() => undefined),
     createSchema: procedureCatalogSchema,
     updateSchema: procedureCatalogSchema,
   },
+  "message-catalog": {
+    label: "Message Catalog",
+    description: "Universal customs message names (IE015, IE013, CBP_ENTRY_7501, etc.) with optional per-locale display descriptions",
+    idField: "id",
+    fields: [
+      { key: "messageName", label: "Message Name", type: "text" },
+      { key: "isActive", label: "Is Active", type: "boolean" },
+      descriptionsFieldDef,
+    ],
+    list: async () => {
+      const rows = await db.filingMessageCatalog.findMany({ orderBy: { messageName: "asc" } });
+      return rows.map((row) => ({ ...row, descriptions: localeMapToArray(row.descriptions) }));
+    },
+    create: (data) => wrapPrismaErrors(async () => {
+      const parsed = messageCatalogSchema.parse(data);
+      const row = await db.filingMessageCatalog.create({
+        data: {
+          messageName: parsed.messageName,
+          isActive: parsed.isActive,
+          descriptions: localeArrayToMap(parsed.descriptions),
+          createdBy: parsed.createdBy ?? null,
+        },
+      });
+      return { ...row, descriptions: localeMapToArray(row.descriptions) };
+    }),
+    update: (id, data) => wrapPrismaErrors(async () => {
+      const parsed = messageCatalogSchema.parse(data);
+      const row = await db.filingMessageCatalog.update({
+        where: { id },
+        data: {
+          messageName: parsed.messageName,
+          isActive: parsed.isActive,
+          descriptions: localeArrayToMap(parsed.descriptions),
+          updatedBy: parsed.updatedBy,
+        },
+      });
+      return { ...row, descriptions: localeMapToArray(row.descriptions) };
+    }),
+    remove: (id) => wrapPrismaErrors(() => db.filingMessageCatalog.delete({ where: { id } })).then(() => undefined),
+    createSchema: messageCatalogSchema,
+    updateSchema: messageCatalogSchema,
+  },
   "action-catalog": {
     label: "Action Catalog",
-    description: "Universal action codes (SUBMIT, AMENDMENT, CANCELLATION, etc.)",
+    description: "Universal action codes (SUBMIT, AMENDMENT, CANCELLATION, etc.) with optional per-locale display descriptions",
     idField: "id",
     fields: [
       { key: "code", label: "Code", type: "text" },
       { key: "isActive", label: "Is Active", type: "boolean" },
+      descriptionsFieldDef,
     ],
-    list: () => db.filingActionCatalog.findMany({ orderBy: { code: "asc" } }),
-    create: (data) => wrapPrismaErrors(() => db.filingActionCatalog.create({ data: actionCatalogSchema.parse(data) })),
-    update: (id, data) => wrapPrismaErrors(() => db.filingActionCatalog.update({ where: { id }, data: actionCatalogSchema.parse(data) })),
+    list: async () => {
+      const rows = await db.filingActionCatalog.findMany({ orderBy: { code: "asc" } });
+      return rows.map((row) => ({ ...row, descriptions: localeMapToArray(row.descriptions) }));
+    },
+    create: (data) => wrapPrismaErrors(async () => {
+      const parsed = actionCatalogSchema.parse(data);
+      const row = await db.filingActionCatalog.create({
+        data: {
+          code: parsed.code,
+          isActive: parsed.isActive,
+          descriptions: localeArrayToMap(parsed.descriptions),
+          createdBy: parsed.createdBy ?? null,
+        },
+      });
+      return { ...row, descriptions: localeMapToArray(row.descriptions) };
+    }),
+    update: (id, data) => wrapPrismaErrors(async () => {
+      const parsed = actionCatalogSchema.parse(data);
+      const row = await db.filingActionCatalog.update({
+        where: { id },
+        data: {
+          code: parsed.code,
+          isActive: parsed.isActive,
+          descriptions: localeArrayToMap(parsed.descriptions),
+          updatedBy: parsed.updatedBy,
+        },
+      });
+      return { ...row, descriptions: localeMapToArray(row.descriptions) };
+    }),
     remove: (id) => wrapPrismaErrors(() => db.filingActionCatalog.delete({ where: { id } })).then(() => undefined),
     createSchema: actionCatalogSchema,
     updateSchema: actionCatalogSchema,
+  },
+  "filing-schema": {
+    label: "Schema Catalog",
+    description: "Registry of canonical JSON Schema documents (path + version) that a Procedure Configuration row can reference",
+    idField: "id",
+    fields: [
+      { key: "schemaPath", label: "Schema Path", type: "text", help: "e.g. customs-filing/filing-schemas/import/1.0.0/ImportDeclaration.schema.json" },
+      { key: "schemaVersion", label: "Schema Version", type: "text", help: "e.g. 1.0.0" },
+      { key: "isActive", label: "Is Active", type: "boolean" },
+    ],
+    list: () => db.filingSchema.findMany({ orderBy: [{ schemaPath: "asc" }, { schemaVersion: "asc" }] }),
+    create: (data) => wrapPrismaErrors(() => db.filingSchema.create({ data: filingSchemaSchema.parse(data) })),
+    update: (id, data) => wrapPrismaErrors(() => db.filingSchema.update({ where: { id }, data: filingSchemaSchema.parse(data) })),
+    remove: (id) => wrapPrismaErrors(() => db.filingSchema.delete({ where: { id } })).then(() => undefined),
+    createSchema: filingSchemaSchema,
+    updateSchema: filingSchemaSchema,
   },
   "procedure-config": {
     label: "Procedure Configuration",
@@ -382,7 +535,8 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     fields: [
       { key: "country", label: "Country", type: "text" },
       { key: "procedureCode", label: "Procedure Code", type: "select", optionsSource: "/api/filing-config/procedure-catalog-codes" },
-      { key: "messageName", label: "Message Name", type: "text" },
+      { key: "messageName", label: "Message Name", type: "select", optionsSource: "/api/filing-config/message-names" },
+      { key: "filingSchemaId", label: "Filing Schema", type: "select", optionsSource: "/api/filing-config/filing-schemas", help: "Which canonical JSON Schema (and Import/Export wrapper) this procedure+message uses" },
       { key: "isActive", label: "Is Active", type: "boolean" },
     ],
     list: () => db.filingProcedureConfig.findMany({
@@ -436,8 +590,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
             key: "action", 
             label: "Action", 
             type: "select",
-            // Will be populated dynamically - see getFilingConfigTableMeta()
-            options: [],
+            optionsSource: "/api/filing-config/actions",
             help: "Select an action from the catalog" 
           }
         ]
@@ -469,7 +622,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     updateSchema: actionConfigurationSchema,
   },
   "status-catalog": {
-    label: "Filing Status Catalog",
+    label: "Status Catalog",
     description: "Master list of filing status codes with a default description and optional per-locale (multi-language) description overrides",
     idField: "id",
     fields: [
@@ -583,7 +736,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
     fields: [
       { key: "country", label: "Country", type: "text" },
       { key: "procedureCode", label: "Procedure Code", type: "text" },
-      { key: "messageName", label: "Message Name", type: "text" },
+      { key: "messageName", label: "Message Name", type: "select", optionsSource: "/api/filing-config/message-names" },
       { key: "messageType", label: "Message Type", type: "text", help: "request or response" },
       { key: "version", label: "Version", type: "text" },
       { key: "description", label: "Description", type: "text" },
@@ -939,7 +1092,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
   // ============================================================================
 
   "code-list-type": {
-    label: "Filing Code List Type",
+    label: "Code List Type",
     description: "Lookup of code-list categories (e.g. PACKAGE_TYPES, INCOTERMS) that a code list header belongs to",
     idField: "listType",
     fields: [
@@ -989,7 +1142,7 @@ export const FILING_CONFIG_TABLES: Record<FilingConfigTableKey, TableDef<unknown
   // best-effort header-level list/CRUD so the type stays sound if the
   // generic endpoint is ever hit directly.
   "code-list": {
-    label: "Filing Code List",
+    label: "Code List",
     description: "Country/procedure-scoped customs reference codes (headers, items, and per-language translations)",
     idField: "codeListId",
     fields: [

@@ -35,15 +35,13 @@ async function verifyUSConfig() {
     select: {
       procedureCode: true,
       messageName: true,
-      transactionType: {
-        select: { code: true }
-      }
+      filingSchemaId: true,
     }
   });
 
   console.log("📋 Sample Procedures:");
   sampleProcedures.forEach(p => {
-    console.log(`   ${p.procedureCode} → ${p.messageName} (${p.transactionType.code})`);
+    console.log(`   ${p.procedureCode} → ${p.messageName} (schema: ${p.filingSchemaId ?? "N/A"})`);
   });
 
   // Check if entry type "01" works

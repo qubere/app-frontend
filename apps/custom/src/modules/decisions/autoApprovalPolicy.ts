@@ -41,14 +41,20 @@ export async function getAgentPolicyConfig(
   accountId: string,
   agentName: string
 ): Promise<AgentPolicyConfigLike | null> {
+  // Settings stores agent keys as SCREAMING_SNAKE_CASE with no "Agent" suffix
+  // (e.g. "HTS_CLASSIFICATION", "DOCUMENT_EXTRACTION"), while callers pass their
+  // own display name (e.g. "HTS Classification Agent"). Strip a trailing
+  // "Agent" word before deriving variants so the lookup works for any agent
+  // name, not just a hardcoded one.
+  const stripped = agentName.replace(/[\s_]+agent$/i, "").trim();
   const possibleNames = Array.from(
-    new Set([
-      agentName,
-      agentName.replace(/\s+/g, "_").toUpperCase(),
-      agentName.replace(/_/g, " "),
-      "HTS_CLASSIFICATION",
-      "HTS Classification Agent",
-    ])
+    new Set(
+      [agentName, stripped].flatMap((name) => [
+        name,
+        name.replace(/\s+/g, "_").toUpperCase(),
+        name.replace(/_/g, " "),
+      ])
+    )
   );
   try {
     return await db.agentPolicyConfig.findFirst({

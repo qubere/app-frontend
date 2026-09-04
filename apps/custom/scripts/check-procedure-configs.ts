@@ -20,28 +20,27 @@ async function check() {
       console.log('\nExample for NL Import:');
       console.log(`
   INSERT INTO "FilingProcedureConfig" (
-    id, transactionType, country, procedureCode, messageName, 
-    canCreateNewFiling, isActive, createdAt, updatedAt
+      id, country, procedureCode, messageName, 
+      canCreateNewFiling, isActive, createdAt, updatedAt
   ) VALUES (
-    'sample-nl-import', 
-    'IMPORT',
-    'NL', 'NCTS', 'IE501', true, true, NOW(), NOW()
+      'sample-nl-import', 
+      'NL', 'NCTS', 'IE501', true, true, NOW(), NOW()
   );
-      `);
-    } else {
-      const records = await prisma.filingProcedureConfig.findMany({
-        where: {
-          isActive: true,
-          canCreateNewFiling: true
-        },
-        select: { country: true, procedureCode: true, messageName: true, transactionType: true },
-        take: 10
-      });
+        `);
+      } else {
+        const records = await prisma.filingProcedureConfig.findMany({
+          where: {
+            isActive: true,
+            canCreateNewFiling: true
+          },
+          select: { country: true, procedureCode: true, messageName: true, filingSchemaId: true },
+          take: 10
+        });
       
-      console.log('✅ Available procedures:\n');
-      records.forEach(rec => {
-        console.log(`  ${rec.country} | ${rec.procedureCode} | ${rec.messageName} | ${rec.transactionType || 'N/A'}`);
-      });
+        console.log('✅ Available procedures:\n');
+        records.forEach(rec => {
+          console.log(`  ${rec.country} | ${rec.procedureCode} | ${rec.messageName} | schema: ${rec.filingSchemaId ?? 'N/A'}`);
+        });
     }
     
   } catch (error) {

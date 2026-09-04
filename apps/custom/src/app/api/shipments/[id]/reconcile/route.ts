@@ -76,6 +76,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ ctx, request
       expectedValue: `${result.valueA} (${result.docTypeA})`,
       actualValue: `${result.valueB} (${result.docTypeB})`,
       sourceDocuments: [result.docTypeA, result.docTypeB],
+      sourceDocumentIds: [result.documentIdA, result.documentIdB],
     };
 
     if (existing) {

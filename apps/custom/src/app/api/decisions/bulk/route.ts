@@ -6,7 +6,7 @@ import { ReconciliationEngine } from "@/modules/shipment/reconciliationEngine";
 import { FactAuditService } from "@/modules/audit/factAuditService";
 import { FactService } from "@/modules/shipment/factService";
 import { lineItemFactField } from "@/modules/shipment/lineItemReconciler";
-import { normalizeDecisionStatus } from "@/modules/decisions/decisionState";
+import { canBulkAccept } from "@/modules/decisions/decisionState";
 import { isValidRejectionReasonCode, REJECTION_REASONS } from "@/modules/decisions/rejectionReasons";
 import { deliverWebhookEvent } from "@/lib/webhooks/deliver";
 import {
@@ -179,18 +179,9 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
     }
 
     // Skip if already in a terminal reviewed state — idempotent sweep
-    const normStatus = normalizeDecisionStatus(decision.status);
-    if (
-      decision.status === "Approved" ||
-      decision.status === "Rejected" ||
-      decision.status === "APPROVED" ||
-      decision.status === "REJECTED" ||
-      decision.triageState === "APPROVED" ||
-      decision.triageState === "REJECTED" ||
-      normStatus === "APPROVED" ||
-      normStatus === "REJECTED"
-    ) {
-      results.push({ id, status: "skipped", reason: "already_terminal" });
+    const eligibility = canBulkAccept(decision);
+    if (!eligibility.ok) {
+      results.push({ id, status: "skipped", reason: eligibility.reason ?? "already_terminal" });
       continue;
     }
 

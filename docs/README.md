@@ -1,5 +1,9 @@
 # Qubere Docs
 
+New engineers should begin with the [Development Guide](DEVELOPMENT_GUIDE.md),
+which explains repository navigation, file ownership, implementation workflow,
+tenant-safety rules, database migrations, testing, and debugging.
+
 App reference docs live under `docs/apps/<app>/`, organized by type. Shared
 release guidance, operations runbooks and demo walkthroughs also live under
 `docs/product-help/`, `docs/operations/` and `docs/sales/`.

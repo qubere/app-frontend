@@ -32,6 +32,7 @@
     "@qubere/storage": "*"
   },
   "devDependencies": {
+    "dotenv": "^16.6.1",
     "prisma": "^6.19.3",
     "tsx": "^4.23.5",
     "typescript": "^5",
