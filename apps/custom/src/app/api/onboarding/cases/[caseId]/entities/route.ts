@@ -5,6 +5,8 @@ import { parseAndValidateBody } from "@/lib/api/validation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import { logger } from "@/lib/logging/logger";
+import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
 
 const entitySchema = z.object({
   importerNumberType: z.enum(["EIN", "SSN", "CBP_ASSIGNED"]),
@@ -19,6 +21,48 @@ const entitySchema = z.object({
   country: z.string().default("US"),
   residentAgent: z.object({ name: z.string(), address: z.string().optional() }).nullable().optional(),
 });
+
+/**
+ * Resolves (or creates) the `Party` this new entity's legal identity bridges
+ * to (#320 Phase 1), the same way importerCreate.service.ts does for
+ * `POST /api/importers`. Never blocks entity creation -- `LegalEntity.partyId`
+ * stays nullable, and a resolution failure or an uncertain (POSSIBLE_MATCH /
+ * AMBIGUOUS) match just leaves this entity unbridged, exactly today's
+ * behavior, until a person confirms the match (Phase 2) or the backfill
+ * script picks it up.
+ */
+async function resolveNewEntityParty(
+  accountId: string,
+  userId: string,
+  requestId: string | undefined,
+  data: z.infer<typeof entitySchema>
+): Promise<string | null> {
+  try {
+    const taxId = data.importerNumberType === "CBP_ASSIGNED" ? null : (data.importerNumber?.trim() || null);
+    const resolved = await resolvePartyForCompany(
+      { accountId, userId, requestId: requestId ?? null },
+      {
+        legalName: data.legalName,
+        country: data.country,
+        taxId,
+        address: {
+          addressLine1: data.addressLine1,
+          city: data.city,
+          stateProvince: data.stateProvince ?? null,
+          postalCode: data.postalCode,
+          country: data.country,
+        },
+      }
+    );
+    return resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+  } catch (error) {
+    logger.warn("onboarding entities: resolvePartyForCompany failed, creating the entity without a party link", {
+      accountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 export const POST = withAuthenticatedRoute(
   async ({ req, params, ctx, requestId }) => {
@@ -45,6 +89,10 @@ export const POST = withAuthenticatedRoute(
       }
     }
 
+    // Outside the transaction: party resolution can trigger Restricted Party
+    // Screening, and nothing here should hold the transaction's locks open.
+    const partyId = await resolveNewEntityParty(ctx.accountId, ctx.userId, requestId, data);
+
     try {
       const result = await db.$transaction(async (tx) => {
         // Create the LegalEntity
@@ -61,6 +109,7 @@ export const POST = withAuthenticatedRoute(
             country: data.country,
             taxIdentifier: data.importerNumber ?? undefined,
             taxIdentifierType: data.importerNumberType,
+            partyId,
             updatedAt: new Date(),
           },
         });
