@@ -287,6 +287,9 @@ describe("summarizeVerification", () => {
       CONFLICT: 1,
       MISSING_REQUIRED: 0,
       NOT_APPLICABLE: 0,
+      HUMAN_CONFIRMED: 0,
+      HUMAN_CORRECTED: 0,
+      REJECTED: 0,
     });
   });
 
@@ -297,6 +300,9 @@ describe("summarizeVerification", () => {
       CONFLICT: 0,
       MISSING_REQUIRED: 0,
       NOT_APPLICABLE: 0,
+      HUMAN_CONFIRMED: 0,
+      HUMAN_CORRECTED: 0,
+      REJECTED: 0,
     });
   });
 });
