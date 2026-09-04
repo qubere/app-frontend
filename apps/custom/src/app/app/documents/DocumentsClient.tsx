@@ -421,6 +421,9 @@ export function DocumentsClient({
   const [reprocessingDocId, setReprocessingDocId] = useState<string | null>(null);
   const [attachingDocId, setAttachingDocId] = useState<string | null>(null);
   const [attachDocPending, setAttachDocPending] = useState(false);
+  const [parserHealth, setParserHealth] = useState<
+    { provider: string; configured: boolean; isMock: boolean; blocker: string | null } | null
+  >(null);
 
   const attachDocumentToShipment = async (docId: string, shipmentId: string) => {
     setAttachDocPending(true);
@@ -598,6 +601,10 @@ export function DocumentsClient({
           .catch((error) => console.error("Failed to fetch quarantine count:", error));
       }
     }
+    fetch("/api/documents/parser-health", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => body && setParserHealth(body))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -748,6 +755,23 @@ export function DocumentsClient({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {parserHealth && (parserHealth.blocker || parserHealth.isMock) && (
+        <div
+          role="alert"
+          className={`rounded-2xl border p-4 text-sm ${
+            parserHealth.isMock && parserHealth.configured
+              ? "border-amber-300 bg-amber-50 text-amber-900"
+              : "border-red-300 bg-red-50 text-red-800"
+          }`}
+        >
+          <p className="font-semibold">
+            {parserHealth.isMock && parserHealth.configured
+              ? "Document parsing is running the mock provider — results are NOT evidence."
+              : "Document parsing is unavailable."}
+          </p>
+          {parserHealth.blocker && <p className="mt-1 text-xs">{parserHealth.blocker}</p>}
+        </div>
+      )}
       <div className="rounded-2xl border border-border bg-white p-5 shadow-xs">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

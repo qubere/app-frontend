@@ -43,9 +43,7 @@ export async function refreshInboundEntryProof(accountId: string, documentId: st
 
 export async function attachInboundDocument(accountId: string, documentId: string, shipmentId: string, userId?: string) {
   await db.$transaction(async tx => {
-    if (typeof (tx as any).$queryRaw === 'function') {
-      await (tx as any).$queryRaw`SELECT id FROM "ShipmentDocument" WHERE id = ${documentId} AND "accountId" = ${accountId} FOR UPDATE`;
-    }
+    await tx.$queryRaw`SELECT id FROM "ShipmentDocument" WHERE id = ${documentId} AND "accountId" = ${accountId} FOR UPDATE`;
     const document = await tx.shipmentDocument.findFirst({ where: { id: documentId, accountId } });
     if (!document || document.status === 'DISCARDED') throw new Error('DOCUMENT_NOT_FOUND');
     const shipment = await tx.shipment.findFirst({ where: { id: shipmentId, accountId, deletedAt: null, clientId: document.clientId }, select: { id: true } });
@@ -61,14 +59,28 @@ export async function attachInboundDocument(accountId: string, documentId: strin
 /** Called after parsing, when the existing deterministic matcher has usable text. */
 export async function routeParsedInboundDocument(accountId: string, documentId: string, parsedText: string | null, extractionFailed = false) {
   const document = await db.shipmentDocument.findFirst({ where: { id: documentId, accountId }, include: { inboundAttachment: { include: { inboundEmail: true } }, inboundDocumentReview: true } });
-  const email = document?.inboundAttachment?.inboundEmail;
   if (!document || document.status === 'DISCARDED') return null;
-  if (document.shipmentId) { await attachInboundDocument(accountId, documentId, document.shipmentId); await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } }); return document.shipmentId; }
+  // Only inbound-email documents route here. The parse worker calls this on its
+  // generic failure / needs-review paths for every document, so a doc with no
+  // inbound context is a no-op rather than being pushed through attach logic.
+  if (!document.inboundAttachment && document.source !== 'INBOUND_EMAIL') return null;
+  const email = document.inboundAttachment?.inboundEmail ?? null;
+  if (document.shipmentId) {
+    // Already attached. The first route links the document + refreshes the
+    // entry proof; repeating that on every worker tick regenerates proofs and
+    // re-notifies filing approvers, so skip once it has been done.
+    if (document.inboundRoutedAt && !document.inboundProofPending) return document.shipmentId;
+    await attachInboundDocument(accountId, documentId, document.shipmentId);
+    await db.shipmentDocument.updateMany({ where: { id: documentId, accountId }, data: { inboundRoutedAt: new Date() } });
+    return document.shipmentId;
+  }
   if (document.inboundDocumentReview && document.inboundDocumentReview.status !== 'OPEN') return null;
-  const address = email?.inboundAddressId && db.inboundAddress?.findUnique ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
-  const senders = address && email?.normalizedFromAddress && db.inboundSenderRoute?.findMany ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
+  const address = email?.inboundAddressId ? await db.inboundAddress.findUnique({ where: { id: email.inboundAddressId } }) : null;
+  const senders = address && email?.normalizedFromAddress ? await db.inboundSenderRoute.findMany({ where: { accountId, normalizedSenderEmail: email.normalizedFromAddress, OR: [{ clientId: document.clientId }, { clientId: null }] } }) : [];
+  // Evaluate the *live* sender policy — not a stale review reason. A sender that
+  // has since been approved must be able to auto-attach on a reprocess.
   const senderDecision = address ? evaluateSenderPolicy(address.senderPolicy, senders.map(s => s.status), !!email?.senderApprovedAt) : 'ACCEPT';
-  const unknownSender = senderDecision !== 'ACCEPT' || document.inboundDocumentReview?.reason === 'UNKNOWN_SENDER';
+  const unknownSender = senderDecision !== 'ACCEPT';
   const result = await matchShipmentForDocument({ accountId, clientId: document.clientId, documentId, fileName: document.fileName, parsedText, emailSubject: email?.subject ?? null, autoAttachThreshold: inboundAutoAttachThreshold(), requireReview: unknownSender || extractionFailed });
   if (result.matchedShipmentId) {
     await attachInboundDocument(accountId, documentId, result.matchedShipmentId);

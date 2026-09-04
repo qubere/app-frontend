@@ -7,12 +7,22 @@ import {
 import { runInboundEmailWorkerTick } from "../modules/documents/processing/inboundEmailWorker";
 import { runWorkerTick } from "../modules/documents/processing/documentProcessingWorker";
 import { countUnfinishedRuns } from "../modules/documents/processing/processingRuns";
+import { parserConfigurationReport } from "../modules/documents/parser/config";
+import { deploymentTier } from "@/lib/environment";
 
 const LEASE = "customs-document-worker";
 const LEASE_TTL_MS = 5 * 60_000;
 const BUDGET_MS = Number(process.env.DOCUMENT_JOB_BUDGET_MS || 13 * 60_000);
 
 export async function runCustomsDocumentJob(): Promise<void> {
+  const parser = parserConfigurationReport();
+  if (parser.blocker !== null && deploymentTier() !== "local") {
+    console.error(
+      `[CustomsDocumentJob] FATAL: parser not usable on a ${deploymentTier()} deployment — ${parser.blocker}`
+    );
+    process.exit(1);
+  }
+
   const owner = randomUUID();
   if (!(await acquireDocumentWorkerLease(LEASE, owner, LEASE_TTL_MS))) {
     console.log("[CustomsDocumentJob] another execution owns the lease; exiting");

@@ -26,8 +26,17 @@ steps:
       - "--image=us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/document-worker:$SHORT_SHA"
       - "--region=us-west1"
       - "--project=$PROJECT_ID"
+      # Re-assert the parser wiring: the registry no longer falls back to the
+      # mock provider, so a job with a missing DOCLING_API_BASE_URL now fails
+      # loudly instead of emitting fake results.
+      - "--update-env-vars=APP_ENV=demo,DOCUMENT_PARSER_PROVIDER=ibm-docling,DOCLING_API_BASE_URL=${_DOCLING_API_BASE_URL},DOCUMENT_PROCESSING_EXECUTOR=in-process"
+      - "--update-secrets=DOCLING_API_KEY=${_DOCLING_API_KEY_SECRET}:latest"
       - "--quiet"
 images:
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/document-worker:$SHORT_SHA"
   - "us-west1-docker.pkg.dev/$PROJECT_ID/qubere-demo/document-worker:latest"
 options: { logging: CLOUD_LOGGING_ONLY }
+substitutions:
+  # IBM-hosted Docling endpoint + Secret Manager key name. Override in the trigger.
+  _DOCLING_API_BASE_URL: https://docling.example.com
+  _DOCLING_API_KEY_SECRET: qubere-demo-docling-api-key

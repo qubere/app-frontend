@@ -1,6 +1,7 @@
 import { runWorkerTick } from "../modules/documents/processing/documentProcessingWorker";
 import { runInboundEmailWorkerTick } from "../modules/documents/processing/inboundEmailWorker";
 import { parserConfigurationReport, readProcessingLimits } from "../modules/documents/parser/config";
+import { deploymentTier } from "@/lib/environment";
 
 /**
  * Long-running Qubere document processing worker.
@@ -36,9 +37,19 @@ async function startDocumentWorker(): Promise<void> {
   });
 
   if (configuration.blocker !== null) {
-    // Started anyway rather than exiting, so a deployment that fixes the
-    // configuration does not also need a restart -- but the blocker is stated
-    // loudly rather than the worker looking healthy while parsing nothing.
+    const tier = deploymentTier();
+    if (tier !== "local") {
+      // On a deployed environment a missing/degraded parser (or a mock
+      // provider) is a hard failure: exiting non-zero makes the Cloud Run job
+      // visibly fail instead of looking healthy while parsing nothing — or
+      // worse, emitting mock results that are not evidence.
+      console.error(
+        `[DocumentWorker] FATAL: parser not usable on a ${tier} deployment — ${configuration.blocker}`
+      );
+      process.exit(1);
+    }
+    // Local dev: state it loudly but keep running so fixing the config does not
+    // also need a restart.
     console.error("[DocumentWorker] BLOCKED:", configuration.blocker);
   }
 
