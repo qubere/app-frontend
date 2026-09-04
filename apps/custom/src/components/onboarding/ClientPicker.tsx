@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
+import { Combobox, type ComboboxOption } from "@/components/ui";
 
 export type ClientOption = { id: string; name: string; contactEmail?: string | null };
 
@@ -9,7 +10,6 @@ export function ClientPicker({ value, onChange, disabled = false }: {
   onChange: (client: ClientOption | null) => void;
   disabled?: boolean;
 }) {
-  const id = useId();
   const [query, setQuery] = useState("");
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,17 +32,35 @@ export function ClientPicker({ value, onChange, disabled = false }: {
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query]);
-  const options = value && !clients.some(c => c.id === value.id) ? [value, ...clients] : clients;
-  return <div className="space-y-2">
-    <label className="block text-sm" htmlFor={`${id}-search`}>Find an existing client</label>
-    <input id={`${id}-search`} className="w-full rounded-lg border p-2 text-sm" placeholder="Search by client name" value={query} onChange={e => setQuery(e.target.value)} disabled={disabled} />
-    <label className="block text-sm" htmlFor={`${id}-select`}>Client</label>
-    <select id={`${id}-select`} className="w-full rounded-lg border p-2 text-sm" value={value?.id ?? ""} onChange={e => onChange(options.find(c => c.id === e.target.value) ?? null)} disabled={disabled || loading}>
-      <option value="">{loading ? "Loading clients…" : "Choose a client"}</option>
-      {options.map(c => <option key={c.id} value={c.id}>{c.name}{c.contactEmail ? ` · ${c.contactEmail}` : ""}</option>)}
-    </select>
-    {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-    {!loading && !error && clients.length === 0 && <p className="text-sm text-ink-muted">No clients match this search.</p>}
-    {clients.length === 50 && <p className="text-xs text-ink-muted">Showing the first 50 matches. Narrow your search if needed.</p>}
-  </div>;
+  const options = value && !clients.some((client) => client.id === value.id) ? [value, ...clients] : clients;
+  const comboboxValue = value ? toComboboxOption(value) : null;
+
+  return (
+    <div className="space-y-1.5">
+      <Combobox
+        label="Client"
+        value={comboboxValue}
+        options={options.map(toComboboxOption)}
+        onChange={(option) => onChange(option ? options.find((client) => client.id === option.id) ?? null : null)}
+        onQueryChange={setQuery}
+        placeholder="Search by client name or email"
+        emptyMessage="No clients match this search"
+        loading={loading}
+        disabled={disabled}
+        error={error}
+        required
+      />
+      {clients.length === 50 && (
+        <p className="text-xs text-ink-muted">Showing 50 matches. Type more to narrow the list.</p>
+      )}
+    </div>
+  );
+}
+
+function toComboboxOption(client: ClientOption): ComboboxOption {
+  return {
+    id: client.id,
+    label: client.name,
+    description: client.contactEmail,
+  };
 }

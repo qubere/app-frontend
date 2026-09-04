@@ -6,32 +6,34 @@ import Link from "next/link";
 import { ArrowLeft, Package, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
 import { Card, CardHeader, CardHeaderIcon } from "@/components/ui/Card";
 import { Button, buttonVariants } from "@/components/ui/Button";
-import { Input, Select, Label, FormField } from "@/components/ui/Input";
+import { Select, Label, FormField } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { ImporterPicker, type ImporterOption } from "@/components/importers/ImporterPicker";
 import { COUNTRIES } from "@/modules/shipment/countryCode";
 
 export default function NewShipmentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedImporter, setSelectedImporter] = useState<ImporterOption | null>(null);
+  const [clientScope, setClientScope] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    importerName: "",
+    importerOfRecordId: "",
     entryType: "",
     destinationCountry: "",
-    clientId: "",
   });
 
   useEffect(() => {
-    fetch("/api/clients")
-      .then((res) => res.json())
-      .then((data) => setClients(data.clients || []))
-      .catch((err) => console.error("Failed to fetch clients:", err));
+    setClientScope(new URLSearchParams(window.location.search).get("clientId"));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedImporter) {
+      setError("Choose the importer of record before initializing the shipment.");
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -39,7 +41,7 @@ export default function NewShipmentPage() {
       const res = await fetch("/api/shipments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, clientId: formData.clientId || undefined }),
+        body: JSON.stringify(formData),
       });
 
       const data = await res.json();
@@ -102,13 +104,15 @@ export default function NewShipmentPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField className="md:col-span-2">
-              <Label>Importer of Record Name *</Label>
-              <Input
-                required
+              <ImporterPicker
+                value={selectedImporter}
+                onChange={(importer) => {
+                  setSelectedImporter(importer);
+                  setFormData((current) => ({ ...current, importerOfRecordId: importer?.id ?? "" }));
+                  setError(null);
+                }}
+                clientId={clientScope}
                 disabled={loading}
-                value={formData.importerName}
-                onChange={(e) => setFormData({ ...formData, importerName: e.target.value })}
-                placeholder="e.g. ABC Manufacturing India Pvt Ltd"
               />
             </FormField>
 
@@ -145,21 +149,6 @@ export default function NewShipmentPage() {
               </Select>
             </FormField>
 
-            <FormField className="md:col-span-2">
-              <Label>Client (Optional)</Label>
-              <Select
-                disabled={loading}
-                value={formData.clientId}
-                onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-              >
-                <option value="">No Client</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
           </div>
 
           {/* Submit Actions */}
@@ -190,4 +179,3 @@ export default function NewShipmentPage() {
     </div>
   );
 }
-

@@ -9,6 +9,7 @@ const auditMock = vi.fn();
 
 const dbMock = {
   shipment: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
+  importerOfRecord: { findFirst: vi.fn() },
   customsCase: { create: vi.fn() },
   customsCaseShipment: { create: vi.fn() },
   agentDecision: { findMany: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
@@ -51,6 +52,8 @@ function context(overrides: Record<string, unknown> = {}) {
     firstName: "Jane",
     lastName: "Broker",
     roleNames: ["ADMIN"],
+    isAllClients: true,
+    authorizedClientIds: [],
     permissions: [
       "decisions.approve",
       "decisions.reject",
@@ -75,6 +78,7 @@ beforeEach(() => {
   dbMock.shipment.findMany.mockResolvedValue([]);
   dbMock.shipment.count.mockResolvedValue(0);
   dbMock.regulatoryUpdate.findMany.mockResolvedValue([]);
+  dbMock.importerOfRecord.findFirst.mockResolvedValue({ id: "ior_1", name: "Global Logistics", clientId: "client_1" });
   dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => Promise<unknown>) =>
     fn(dbMock)
   );
@@ -179,18 +183,41 @@ describe("GET /api/shipments", () => {
 });
 
 describe("POST /api/shipments", () => {
-  it("rejects a payload with no importer name", async () => {
+  it("rejects a payload with no importer selection", async () => {
     const res = await shipments.POST(post("http://t/api/shipments", { poReference: "PO-1" }));
 
     expect(res.status).toBe(400);
-    expect((await res.json()).fieldErrors.importerName).toBeDefined();
+    expect((await res.json()).fieldErrors.importerOfRecordId).toBeDefined();
     expect(dbMock.shipment.create).not.toHaveBeenCalled();
   });
 
-  it("rejects an importer name that is only whitespace", async () => {
-    const res = await shipments.POST(post("http://t/api/shipments", { importerName: "   " }));
+  it("rejects an importer id that is only whitespace", async () => {
+    const res = await shipments.POST(post("http://t/api/shipments", { importerOfRecordId: "   " }));
 
     expect(res.status).toBe(400);
+    expect(dbMock.shipment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an importer outside the broker account", async () => {
+    dbMock.importerOfRecord.findFirst.mockResolvedValueOnce(null);
+    const res = await shipments.POST(post("http://t/api/shipments", { importerOfRecordId: "ior_other" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).fieldErrors.importerOfRecordId).toBeDefined();
+    expect(dbMock.shipment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a caller-supplied client that conflicts with the importer", async () => {
+    const res = await shipments.POST(post("http://t/api/shipments", { importerOfRecordId: "ior_1", clientId: "client_other" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("CLIENT_IMPORTER_MISMATCH");
+    expect(dbMock.shipment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an importer outside the caller's authorized client scope", async () => {
+    ctxMock.mockResolvedValue(context({ isAllClients: false, authorizedClientIds: ["client_allowed"] }));
+    const res = await shipments.POST(post("http://t/api/shipments", { importerOfRecordId: "ior_1" }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("FORBIDDEN");
     expect(dbMock.shipment.create).not.toHaveBeenCalled();
   });
 
@@ -203,12 +230,15 @@ describe("POST /api/shipments", () => {
     dbMock.customsCase.create.mockResolvedValue({ id: "case_1" });
 
     const res = await shipments.POST(
-      post("http://t/api/shipments", { importerName: "Global Logistics", poReference: "PO-990011" })
+      post("http://t/api/shipments", { importerOfRecordId: "ior_1", poReference: "PO-990011" })
     );
 
     expect(res.status).toBe(201);
     const data = dbMock.shipment.create.mock.calls[0][0].data;
     expect(data.accountId).toBe(ACCOUNT);
+    expect(data.importerOfRecordId).toBe("ior_1");
+    expect(data.importerName).toBe("Global Logistics");
+    expect(data.clientId).toBe("client_1");
     expect(data.shipmentNumber).toBe("SHP-2026-000002");
     expect(data.status).toBe("Draft");
     expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({ action: "shipment.create" }));
@@ -219,7 +249,7 @@ describe("POST /api/shipments", () => {
     dbMock.customsCase.create.mockResolvedValue({ id: "case_1" });
 
     await shipments.POST(
-      post("http://t/api/shipments", { importerName: "Acme", accountId: "acc_someone_else" })
+      post("http://t/api/shipments", { importerOfRecordId: "ior_1", accountId: "acc_someone_else" })
     );
 
     expect(dbMock.shipment.create.mock.calls[0][0].data.accountId).toBe(ACCOUNT);

@@ -104,6 +104,33 @@ beforeEach(() => {
 });
 
 describe("POST /api/filing/[id]/transmit -- standalone-filing maker/checker", () => {
+  it("blocks transmission when the selected importer is not filing-ready", async () => {
+    ctxMock.mockResolvedValue(context(CHECKER));
+    dbMock.customsFiling.findFirst.mockResolvedValue(standaloneFiling({
+      importerOfRecord: {
+        id: "ior_1",
+        clientId: "client_1",
+        registrationStatus: "registered",
+        bond: { status: "verified", expirationDate: null, bondAmount: 100_000, continuousBondFormulaAmount: 50_000 },
+        powersOfAttorney: [],
+        onboardingEntities: [{ screeningStatus: "passed", bondCoverage: "own" }],
+      },
+    }));
+
+    const transmitRoute = await import("@/app/api/filing/[id]/transmit/route");
+    const res = await transmitRoute.POST(
+      new Request("http://localhost/api/filing/filing_standalone_1/transmit", { method: "POST" }),
+      { params: Promise.resolve({ id: "filing_standalone_1" }) },
+    );
+
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatchObject({
+      code: "IMPORTER_NOT_ONBOARDED",
+      blockers: [expect.objectContaining({ code: "POA", href: "/app/importers/ior_1?tab=poa" })],
+    });
+    expect(transmitFilingMock).not.toHaveBeenCalled();
+  });
+
   it("blocks transmission when the preparer attempts to transmit their own standalone filing", async () => {
     ctxMock.mockResolvedValue(context(PREPARER));
     dbMock.customsFiling.findFirst.mockResolvedValue(standaloneFiling());

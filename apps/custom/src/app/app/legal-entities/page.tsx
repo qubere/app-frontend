@@ -1,5 +1,5 @@
 import { permanentRedirect } from "next/navigation";
 
-export default function LegacyImportersPage() {
+export default function LegacyLegalEntitiesPage() {
   permanentRedirect("/app/importers");
 }

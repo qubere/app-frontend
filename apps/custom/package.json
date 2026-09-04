@@ -23,6 +23,8 @@
     "presync:product-help": "npm --workspace @qubere/db run db:generate",
     "sync:product-help": "tsx scripts/sync-product-help.ts",
     "backfill:inbound-addresses": "tsx scripts/backfill-inbound-addresses.ts",
+    "check:importer-client-gate": "tsx scripts/check-importer-client-gate.ts",
+    "seed:clients-importers": "node --import tsx scripts/seed-clients-importers-demo.ts",
     "seed:inbound-email": "tsx scripts/seed-inbound-email-demo.ts"
   },
   "dependencies": {
