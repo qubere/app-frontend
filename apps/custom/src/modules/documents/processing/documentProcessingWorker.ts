@@ -33,6 +33,7 @@ import { pollDelayMs, readProcessingLimits } from "../parser/config";
 import { getDocumentParserProvider } from "../parser/registry";
 import { assessQuality, qualifiesAsActive } from "../parser/qualityGate";
 import { persistRunArtifacts, parseArtifactIndex, loadNormalizedResult } from "../parser/artifactStore";
+import { buildParsedDocumentSearchText } from "../parser/searchText";
 import { resolveShipmentForDocument, isMatchConflict, plainTextFromParsedResult } from "@/modules/shipments/shipmentMatching";
 import { notifyAccountRoleHolders } from "@/modules/notifications/notifyAccount";
 import { scanDocumentForMalware } from "@/lib/security/scanDocument";
@@ -474,6 +475,12 @@ async function finishRun(
       accountId: run.document.accountId,
     });
     promoted = promotion.promoted;
+    if (promoted) {
+      await db.shipmentDocument.updateMany({
+        where: { id: run.documentId, accountId: run.document.accountId },
+        data: { parsedSearchText: buildParsedDocumentSearchText(parsed.normalized) },
+      });
+    }
     if (!promoted) {
       log("finish.notPromoted", { runId: run.id, reason: promotion.reason });
     }
@@ -779,9 +786,13 @@ async function tryAutoMatchShipment(run: DueRun): Promise<string | null> {
     return null;
   }
 
+  const matchedShipment = await db.shipment.findFirst({
+    where: { id: matchedShipmentId, accountId: run.document.accountId, deletedAt: null },
+    select: { clientId: true },
+  });
   await db.shipmentDocument.update({
     where: { id: run.documentId },
-    data: { shipmentId: matchedShipmentId },
+    data: { shipmentId: matchedShipmentId, clientId: run.document.clientId ?? matchedShipment?.clientId ?? null },
   });
   await createAuditLog({
     accountId: run.document.accountId,
