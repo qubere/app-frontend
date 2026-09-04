@@ -14,6 +14,7 @@ export const CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.7;
 type Matcher = { keywords: string[]; type: DocumentType };
 
 const MATCHERS: Matcher[] = [
+  { keywords: ["carrier invoice", "freight invoice", "freight bill"], type: "CARRIER_INVOICE" },
   { keywords: ["commercial invoice", "invoice"], type: "COMMERCIAL_INVOICE" },
   { keywords: ["packing list", "packing slip", "weight list"], type: "PACKING_LIST" },
   { keywords: ["bill of lading", "bl", "ocean bill", "master bill", "house bill"], type: "BILL_OF_LADING" },
@@ -25,6 +26,7 @@ const MATCHERS: Matcher[] = [
   { keywords: ["power of attorney", "poa"], type: "POWER_OF_ATTORNEY" },
   { keywords: ["entry summary", "cbp form 7501", "7501", "entry type"], type: "ENTRY_SUMMARY" },
   { keywords: ["importer security filing", "isf", "10+2", "10 2"], type: "ISF" },
+  { keywords: ["proof of delivery", "delivery receipt", "signed pod"], type: "PROOF_OF_DELIVERY" },
 ];
 
 /**
