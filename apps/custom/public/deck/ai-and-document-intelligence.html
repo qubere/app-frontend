@@ -68,6 +68,7 @@
         <ul class="feature-bullets">
           <li>Layout-aware parsing (tables, sections, OCR fallback) via IBM Docling</li>
           <li>Cross-document reconciliation blocks filing on a value conflict</li>
+          <li>Every flagged field carries a machine-readable reason &mdash; low confidence, missing on the source document, or a cross-document conflict &mdash; not just a "needs review" flag</li>
         </ul>
         <div class="demo-tip">
           <div class="demo-tip-label">How to demo</div>
@@ -95,6 +96,11 @@
                 <div class="field-row"><span class="field-k">OCR</span><span class="field-v" style="color:var(--slate-400);">null · no OCR pass (born-digital)</span></div>
                 <div class="field-row"><span class="field-k">Extraction model</span><span class="field-v">0.93</span></div>
                 <div class="field-row"><span class="field-k">Deterministic validation</span><span class="field-v" style="color:var(--green);">PASS</span></div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Why this field needs a look</div>
+                <div class="field-row"><span class="field-k">Verification state</span><span class="field-v" style="color:var(--amber);">NEEDS_REVIEW</span></div>
+                <div class="field-row"><span class="field-k">Reason code</span><span class="field-v mono">LOW_CONFIDENCE</span></div>
               </div>
             </div></div>
           </div>
@@ -291,7 +297,7 @@
       <h2 class="hero-title" style="font-size:40px;">"Ask it for value-at-risk. Then open the dashboard. Same number &mdash; because it's the same code."</h2>
       <p class="hero-lede">Evidence you can click. An assistant that can't outrun its own audit log.</p>
       <div class="dark-card"><p>Next step: upload one of your commercial invoices on a screen-share. We'll show you the extraction, click into the provenance, and let you try to break the assistant.</p></div>
-      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/sales/ai-and-document-intelligence.md</span></p>
+      <p style="font-family:var(--font-body);font-size:12px;color:rgba(255,255,255,0.4);margin-top:22px;">Full detail: <span class="mono">docs/apps/customs/sales/ai-and-document-intelligence.md</span></p>
     </div>
   </section>
 
