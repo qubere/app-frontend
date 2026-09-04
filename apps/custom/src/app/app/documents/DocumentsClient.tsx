@@ -1191,7 +1191,6 @@ export function DocumentsClient({
               <tr>
                 <SortHeader label={t.documents.colName} field="name" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader label={t.documents.colShipment} field="shipment" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
-                <th className="py-3 px-5">Next action</th>
                 <SortHeader label="Client" field="client" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 {isEnterpriseAdmin && <SortHeader label="Owner" field="owner" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />}
                 <SortHeader label={t.documents.colDate} field="date" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
@@ -1201,7 +1200,7 @@ export function DocumentsClient({
             <tbody className="divide-y divide-border">
               {filteredDocs.length === 0 ? (
                 <tr>
-                  <td colSpan={isEnterpriseAdmin ? 7 : 6} className="py-12 text-center text-ink-muted">
+                  <td colSpan={isEnterpriseAdmin ? 6 : 5} className="py-12 text-center text-ink-muted">
                     <FileText className="w-8 h-8 mx-auto text-ink-muted/40 mb-2" />
                     <p className="font-semibold text-xs text-ink">{queueView === "NEEDS_ACTION" ? "Action queue clear" : "No trade documents uploaded yet"}</p>
                     <p className="text-[11px] text-ink-muted mt-1">
@@ -1243,6 +1242,16 @@ export function DocumentsClient({
                                 {Math.round(doc.documentTypeConfidence * 100)}%
                               </span>
                             )}
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${
+                              needsClassification || doc.status === "Review Required"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}>
+                              {needsClassification || doc.status === "Review Required"
+                                ? <AlertTriangle className="w-2.5 h-2.5" />
+                                : <CheckCircle2 className="w-2.5 h-2.5" />}
+                              {needsClassification ? "Needs classification" : doc.status || "Received"}
+                            </span>
                             {(doc.linkedEntityCount ?? 0) > 0 && (
                               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
                                 {doc.linkedEntityCount} linked {doc.linkedEntityCount === 1 ? "record" : "records"}
@@ -1322,60 +1331,6 @@ export function DocumentsClient({
                       )}
                     </td>
 
-                    {/* Next action drives the row: classify, review, or attach --
-                        clicking it takes the operator straight to that control
-                        instead of just labeling a state they then have to hunt for. */}
-                    <td className="py-3.5 px-5">
-                      {needsClassification ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setClassifyingDocId(classifyingDocId === doc.id ? null : doc.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
-                          >
-                            <AlertTriangle className="w-3 h-3" />
-                            <span>Classify document</span>
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                          {classifyingDocId === doc.id && (
-                            <>
-                              <div className="fixed inset-0 z-10" onClick={() => setClassifyingDocId(null)} />
-                              <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-border rounded-xl shadow-lg z-20 overflow-hidden">
-                                <p className="px-3 py-2 text-[10px] font-bold text-ink-muted uppercase tracking-wide border-b border-border">
-                                  Set document type
-                                </p>
-                                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                                  <button
-                                    key={value}
-                                    type="button"
-                                    onClick={() => classifyDocument(doc.id, value)}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-surface-muted transition-colors cursor-pointer"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ) : doc.status === "Review Required" ? (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDoc(doc)}
-                          className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors cursor-pointer"
-                          title="Open the document to review its extracted data"
-                        >
-                          <AlertTriangle className="w-3 h-3" />
-                          <span>Review document</span>
-                        </button>
-                      ) : (
-                        <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{doc.status || "Received"}{doc.confidenceScore != null ? ` (${doc.confidenceScore}% Conf)` : ""}</span>
-                        </span>
-                      )}
-                    </td>
-
                     <td className="py-3.5 px-5">
                       {doc.clientId ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-brand/10 text-brand">
@@ -1396,6 +1351,47 @@ export function DocumentsClient({
 
                     <td className="py-3.5 px-5 text-right">
                       <div className="inline-flex items-center gap-2">
+                        {needsClassification && (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setClassifyingDocId(classifyingDocId === doc.id ? null : doc.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                            >
+                              Classify
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                            {classifyingDocId === doc.id && (
+                              <>
+                                <div className="fixed inset-0 z-10" onClick={() => setClassifyingDocId(null)} />
+                                <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-border rounded-xl shadow-lg z-20 overflow-hidden text-left">
+                                  <p className="px-3 py-2 text-[10px] font-bold text-ink-muted uppercase tracking-wide border-b border-border">
+                                    Set document type
+                                  </p>
+                                  {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onClick={() => classifyDocument(doc.id, value)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-surface-muted transition-colors cursor-pointer"
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {doc.status === "Review Required" && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc(doc)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                          >
+                            Review
+                          </button>
+                        )}
                         <DocumentProcessingBadge documentId={doc.id} nonce={processingNonce[doc.id] ?? 0} />
                         <button
                           type="button"
