@@ -202,10 +202,10 @@ export async function unifiedSearch(input: UnifiedSearchInput): Promise<{
 
   const partyResults: SearchResultItem[] = parties.map((p) => {
     const evidence = p.evidence[0];
-    const matchReason = includesIgnoreCase(p.internalPartyCode, queryTrimmed)
-      ? "Internal party code"
-      : p.names.some((name) => includesIgnoreCase(name.rawName, queryTrimmed))
-        ? "Party name"
+    const matchReason = p.names.some((name) => includesIgnoreCase(name.rawName, queryTrimmed))
+      ? "Party name"
+      : includesIgnoreCase(p.internalPartyCode, queryTrimmed)
+        ? "Internal party code"
         : "Party identifier";
     return {
       id: p.id,
@@ -231,7 +231,7 @@ export async function unifiedSearch(input: UnifiedSearchInput): Promise<{
         : [prod.brand, prod.model, prod.commercialDescription, prod.customsDescription]
             .some((value) => includesIgnoreCase(value, queryTrimmed))
           ? "Product description"
-          : prod.classifications.some((classification) =>
+          : productDigits.length >= 4 && prod.classifications.some((classification) =>
               classification.normalizedCode.startsWith(productDigits)
             )
             ? "Tariff classification"
