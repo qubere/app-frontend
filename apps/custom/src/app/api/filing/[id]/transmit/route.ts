@@ -9,6 +9,7 @@ import { recordUsageEvent } from "@/lib/billing/telemetry";
 import { FilingService } from "@/modules/filings/filing.service";
 import { simulateAndApplyResponse } from "@/lib/canonicalMessaging/devStub";
 import { runFilingValidation, type ValidatorInput } from "@/lib/filing/filingValidator";
+import { importerReadiness } from "@/modules/importers/importerReadiness";
 import { deliverWebhookEvent } from "@/lib/webhooks/deliver";
 import { z } from "zod";
 
@@ -27,7 +28,13 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
   const filingForValidation = await db.customsFiling.findFirst({
     where: { id, accountId: ctx.accountId },
     include: {
-      importerOfRecord: true,
+      importerOfRecord: {
+        include: {
+          bond: true,
+          powersOfAttorney: { orderBy: { signedDate: "desc" } },
+          onboardingEntities: { select: { screeningStatus: true, bondCoverage: true } },
+        },
+      },
       bond: true,
       shipment: {
         include: {
@@ -49,6 +56,20 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
 
   const rawBody = await req.clone().json().catch(() => ({}));
   const auditSource = (req.headers?.get?.("x-qubere-source") === "CHAT" || rawBody?.source === "CHAT") ? "CHAT" : "UI";
+
+  if (filingForValidation.importerOfRecord) {
+    const importerStatus = importerReadiness(filingForValidation.importerOfRecord);
+    if (!importerStatus.ready) {
+      return NextResponse.json({
+        error: {
+          code: "IMPORTER_NOT_ONBOARDED",
+          message: "Transmission blocked: the selected importer is not ready to file.",
+          blockers: importerStatus.blockers,
+        },
+        requestId,
+      }, { status: 422 });
+    }
+  }
 
   const isStandalone = !filingForValidation.shipmentId || !filingForValidation.shipment;
 

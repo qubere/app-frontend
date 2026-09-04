@@ -56,9 +56,18 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
   const parsed = validateQueryParams(new URL(req.url).toString(), querySchema, requestId);
   if ("response" in parsed) return parsed.response;
   const query = parsed.data;
+  if (!ctx.isAllClients && query.client && !ctx.authorizedClientIds.includes(query.client)) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Client is outside your authorized scope." }, requestId }, { status: 403 });
+  }
   const where: Prisma.ImporterOfRecordWhereInput = {
     accountId: ctx.accountId,
-    ...(query.client === "none" ? { clientId: null } : query.client ? { clientId: query.client } : {}),
+    ...(query.client === "none"
+      ? { clientId: null }
+      : query.client
+        ? { clientId: query.client }
+        : !ctx.isAllClients
+          ? { clientId: { in: ctx.authorizedClientIds } }
+          : {}),
     ...(query.path ? { onboardingCases: { some: { path: query.path } } } : {}),
     ...(query.q ? { OR: [
       { name: { contains: query.q, mode: "insensitive" } },
