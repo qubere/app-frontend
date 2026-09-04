@@ -9,10 +9,12 @@ import { generateShipmentNumber } from "@/modules/shipments/shipmentNumber";
 import { ENTRY_TYPE_CODES, normalizeEntryType } from "@/modules/filing/entryType";
 import { COUNTRY_CODES, normalizeCountryCode } from "@/modules/shipment/countryCode";
 import { MANUAL_INTAKE_INITIAL_STATUS } from "@/modules/shipments/shipmentStatus";
-import { resolveImporterContext } from "@/modules/onboarding/importerContext";
 
 const createShipmentSchema = z.object({
-  importerName: z.string().trim().min(1, "Importer name is required").max(200),
+  importerOfRecordId: z.string().trim().min(1, "Choose an importer of record"),
+  // Older callers may still send this field. Filing identity always comes from
+  // the selected importer record, so free text can never override it.
+  importerName: z.string().trim().max(200).optional(),
   poReference: z.string().trim().max(100).optional(),
   entryType: z.string().trim().max(100).optional(),
   incoterm: z.string().trim().max(100).optional(),
@@ -199,17 +201,34 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     }
   }
 
-  if (input.clientId) {
-    const client = await db.client.findFirst({
-      where: { id: input.clientId, accountId: ctx.accountId },
-    });
-    if (!client) {
-      return NextResponse.json({ error: "Invalid clientId: Client not found in this account" }, { status: 400 });
-    }
+  const importer = await db.importerOfRecord.findFirst({
+    where: { id: input.importerOfRecordId, accountId: ctx.accountId },
+    select: { id: true, name: true, clientId: true },
+  });
+  if (!importer) {
+    return NextResponse.json({
+      error: "ValidationError",
+      fieldErrors: { importerOfRecordId: ["Importer not found in this broker account."] },
+      requestId,
+    }, { status: 400 });
   }
-
-  const importerCtx = await resolveImporterContext(ctx.accountId, input.clientId);
-  const resolvedImporterName = importerCtx.importerName ?? input.importerName;
+  if (!importer.clientId) {
+    return NextResponse.json({
+      error: "ValidationError",
+      fieldErrors: { importerOfRecordId: ["Assign this importer to a client before creating a shipment."] },
+      requestId,
+    }, { status: 400 });
+  }
+  if (!ctx.isAllClients && !ctx.authorizedClientIds.includes(importer.clientId)) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Importer is outside your authorized client scope." }, requestId }, { status: 403 });
+  }
+  if (input.clientId && input.clientId !== importer.clientId) {
+    return NextResponse.json({
+      error: { code: "CLIENT_IMPORTER_MISMATCH", message: "The selected client does not own this importer. Client is derived from the importer selection." },
+      fieldErrors: { clientId: ["Client does not match the selected importer."] },
+      requestId,
+    }, { status: 400 });
+  }
 
   const auditSource = req.headers?.get?.("x-qubere-source") === "CHAT" ? "CHAT" : "UI";
 
@@ -221,8 +240,8 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
       data: {
         accountId: ctx.accountId,
         shipmentNumber,
-        importerName: resolvedImporterName,
-        importerOfRecordId: importerCtx.importerOfRecordId ?? null,
+        importerName: importer.name,
+        importerOfRecordId: importer.id,
         poReference: input.poReference,
         entryType: entryTypeCode,
         incoterm: input.incoterm,
@@ -235,7 +254,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
         ownerName: [ctx.firstName, ctx.lastName].filter(Boolean).join(" ") || null,
         assignedBrokerId: ctx.roleNames.includes("PLANNER") ? ctx.userId : null,
         masterShipmentId: input.masterShipmentId || null,
-        clientId: input.clientId || null,
+        clientId: importer.clientId,
         customsRequired: true,
         productWorkspaces: {
           create: {
@@ -280,7 +299,7 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx, requestId }) => {
     entity: "Shipment",
     entityId: shipment.id,
     source: auditSource,
-    metadata: { shipmentNumber, masterShipmentId: input.masterShipmentId ?? null },
+    metadata: { shipmentNumber, importerOfRecordId: importer.id, clientId: importer.clientId, masterShipmentId: input.masterShipmentId ?? null },
   });
 
   return NextResponse.json({ shipment, requestId }, { status: 201 });

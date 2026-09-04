@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { getAccountContext } from "@/lib/auth";
+import { navAccessFromContext } from "@/lib/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
@@ -64,6 +65,7 @@ async function SidebarSlot() {
   const context = await getAccountContext();
   if (!context) redirect("/sign-in");
   const displayName = displayNameFor(context);
+  const access = navAccessFromContext(context);
 
   return (
     <Sidebar
@@ -71,8 +73,9 @@ async function SidebarSlot() {
       accountName={context.accountName}
       accountType={context.accountType}
       dataMode={context.dataMode as any}
-      roleNames={context.roleNames}
-      isPlatformAdmin={context.isPlatformAdmin}
+      roleNames={access.roleNames}
+      permissions={access.permissions}
+      isPlatformAdmin={access.isPlatformAdmin}
       memberships={context.memberships}
       isImpersonating={context.isImpersonating}
       actorUserName={context.actorUserName || "Frank Multiaccount"}
@@ -85,13 +88,15 @@ async function SidebarSlot() {
 async function HeaderSlot() {
   const context = await getAccountContext();
   if (!context) redirect("/sign-in");
+  const access = navAccessFromContext(context);
 
   return (
     <Header
       tenantName={context.accountName}
       userName={displayNameFor(context)}
-      isPlatformAdmin={context.isPlatformAdmin}
-      roleNames={context.roleNames}
+      isPlatformAdmin={access.isPlatformAdmin}
+      roleNames={access.roleNames}
+      permissions={access.permissions}
     />
   );
 }

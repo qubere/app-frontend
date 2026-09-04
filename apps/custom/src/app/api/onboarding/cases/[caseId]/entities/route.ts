@@ -70,6 +70,7 @@ export const POST = withAuthenticatedRoute(
           data: {
             accountId: ctx.accountId,
             clientId: existingCase.clientId,
+            legalEntityId: legalEntity.id,
             name: data.legalName,
             irsEin: data.importerNumber ?? "",
             cbpImporterNumber: data.importerNumberType === "CBP_ASSIGNED" ? null : (data.importerNumber ?? null),

@@ -2726,6 +2726,10 @@ model ImporterOfRecord {
   // entities on file -- e.g. separate CBP importer numbers per subsidiary.
   clientId           String?
   client             Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  // Transitional 1:1 bridge to the legal-identity graph. Nullable while
+  // existing importer records are reviewed and backfilled.
+  legalEntityId      String?      @unique
+  legalEntity        LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -2963,6 +2967,7 @@ model LegalEntity {
   party   Party?  @relation(fields: [partyId], references: [id], onDelete: SetNull)
 
   customsProfiles    CustomsProfile[]
+  importerOfRecord   ImporterOfRecord?
   shipmentParties    ShipmentParty[]
   productParties     ProductParty[]
   productIdentifiers ProductIdentifier[]

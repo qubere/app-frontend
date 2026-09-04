@@ -177,11 +177,13 @@ export async function clamdHttpScan(
 
   const text = await res.text();
   const lower = text.toLowerCase();
-  if (lower.includes("everything ok : false") || lower.includes("everything ok: false")) {
+  // clamav-rest plaintext mode (ajilaag/lokori): "Everything ok : true" == no virus.
+  if (lower.includes("everything ok : true") || lower.includes("everything ok: true")) {
     return { status: "CLEAN", scanner: "clamav" };
   }
-  if (lower.includes("everything ok : true") || lower.includes("everything ok: true")) {
-    return { status: "INFECTED", detail: "ClamAV virus detected", scanner: "clamav" };
+  if (lower.includes("everything ok : false") || lower.includes("everything ok: false")) {
+    const sig = text.match(/([A-Za-z0-9_.\-]+)\s+FOUND/i)?.[1];
+    return { status: "INFECTED", detail: sig ?? "ClamAV virus detected", scanner: "clamav" };
   }
 
   let body: { status?: string; virus?: string } = {};

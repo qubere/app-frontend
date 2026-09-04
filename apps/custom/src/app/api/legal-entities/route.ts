@@ -8,7 +8,12 @@ export const GET = withAuthenticatedRoute(async ({ ctx }) => {
     where: { accountId: ctx.accountId },
     include: {
       client: true,
-      customsProfiles: true,
+      importerOfRecord: {
+        include: {
+          bond: true,
+          powersOfAttorney: { orderBy: { signedDate: "desc" }, take: 1 },
+        },
+      },
     },
     orderBy: { legalName: "asc" },
   });
@@ -28,11 +33,19 @@ const createLegalEntitySchema = z.object({
   stateProvince: z.string().optional(),
   postalCode: z.string().optional(),
   taxIdentifier: z.string().optional(),
-  cbpImporterNumber: z.string().optional(),
 });
 
 export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   const body = await req.json();
+  if (Object.prototype.hasOwnProperty.call(body, "cbpImporterNumber")) {
+    return NextResponse.json({
+      error: {
+        code: "IMPORTER_WORKFLOW_REQUIRED",
+        message: "CBP importer numbers must be created through Add importer so registration, POA, bond, and screening stay linked.",
+        href: "/app/importers",
+      },
+    }, { status: 400 });
+  }
   const val = createLegalEntitySchema.safeParse(body);
   if (!val.success) {
     return NextResponse.json({ error: "Invalid payload", details: val.error.format() });
@@ -62,20 +75,10 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
       postalCode: data.postalCode || null,
       taxIdentifier: data.taxIdentifier || null,
       status: "ACTIVE",
-      ...(data.cbpImporterNumber
-        ? {
-            customsProfiles: {
-              create: {
-                cbpImporterNumber: data.cbpImporterNumber,
-                active: true,
-              },
-            },
-          }
-        : {}),
     },
     include: {
       client: true,
-      customsProfiles: true,
+      importerOfRecord: true,
     },
 });
 

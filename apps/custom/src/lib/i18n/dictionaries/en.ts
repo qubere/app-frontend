@@ -21,6 +21,7 @@ export const en = {
     parties: "Parties",
     clients: "Clients",
     importersOfRecord: "Importers of Record",
+    importers: "Importers",
     bonds: "Bonds",
     poa: "Power of Attorney",
     tradeDocuments: "Trade Documents",
