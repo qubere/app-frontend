@@ -5,7 +5,7 @@ import {
   normalizeClassificationCode,
   normalizeIdentifier as productNormalizeIdentifier,
 } from "@/modules/product/productNormalization";
-import type { Prisma } from "@prisma/client";
+import { PartyFactStatus, type Prisma } from "@prisma/client";
 
 export interface UnifiedSearchInput {
   accountId: string;
@@ -37,14 +37,6 @@ export async function unifiedSearch(input: UnifiedSearchInput): Promise<{
   const limit = Math.min(50, Math.max(1, input.limit ?? 20));
   const halfLimit = Math.ceil(limit / 2);
 
-  // Client scoping helper
-  let clientFilter: Prisma.PartyWhereInput["clientId"] = undefined;
-  if (input.clientId === "unassigned") {
-    clientFilter = null;
-  } else if (input.clientId) {
-    clientFilter = { in: [input.clientId, null] };
-  }
-
   const containsInsensitive = { contains: queryTrimmed, mode: "insensitive" as const };
 
   // Party query construction
@@ -52,15 +44,14 @@ export async function unifiedSearch(input: UnifiedSearchInput): Promise<{
   const partyWhere: Prisma.PartyWhereInput = {
     accountId: input.accountId,
     deletedAt: null,
-    ...(clientFilter !== undefined ? { clientId: clientFilter } : {}),
     OR: [
       { internalPartyCode: containsInsensitive },
-      { names: { some: { rawName: containsInsensitive, status: "ACTIVE" } } },
+      { names: { some: { rawName: containsInsensitive, status: PartyFactStatus.ACTIVE } } },
       ...(partyNormalizedId !== ""
         ? [
             {
               identifiers: {
-                some: { normalizedValue: { contains: partyNormalizedId }, status: "ACTIVE" },
+                some: { normalizedValue: { contains: partyNormalizedId }, status: PartyFactStatus.ACTIVE },
               },
             },
           ]
@@ -75,7 +66,6 @@ export async function unifiedSearch(input: UnifiedSearchInput): Promise<{
   const productWhere: Prisma.ProductWhereInput = {
     accountId: input.accountId,
     deletedAt: null,
-    ...(clientFilter !== undefined ? { clientId: clientFilter } : {}),
     OR: [
       { productName: containsInsensitive },
       { internalSku: containsInsensitive },
@@ -92,12 +82,20 @@ export async function unifiedSearch(input: UnifiedSearchInput): Promise<{
     ],
   };
 
+  if (input.clientId === "unassigned") {
+    partyWhere.clientId = null;
+    productWhere.clientId = null;
+  } else if (input.clientId) {
+    partyWhere.clientId = input.clientId;
+    productWhere.clientId = input.clientId;
+  }
+
   // Execute database queries in parallel
   const [parties, partyCount, products, productCount] = await Promise.all([
     db.party.findMany({
       where: partyWhere,
       include: {
-        names: { where: { status: "ACTIVE" } },
+        names: { where: { status: PartyFactStatus.ACTIVE } },
       },
       orderBy: { updatedAt: "desc" },
       take: halfLimit,
