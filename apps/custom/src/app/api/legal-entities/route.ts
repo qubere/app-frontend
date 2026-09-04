@@ -3,6 +3,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
 import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 import { z } from "zod";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
@@ -89,7 +90,19 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
           : null,
       }
     );
-    partyId = resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+    if (resolved.outcome === "CANDIDATES") {
+      partyId = null;
+      await recordPendingMatchProposal({
+        accountId: ctx.accountId,
+        domain: "PARTY",
+        matchStatus: resolved.status,
+        targetEntityType: "LEGAL_ENTITY",
+        inputPayload: { legalName: data.legalName, country, taxId: data.taxIdentifier || null },
+        candidatesJson: resolved.candidates as any,
+      });
+    } else {
+      partyId = resolved.partyId;
+    }
   } catch (error) {
     logger.warn("legal-entities: resolvePartyForCompany failed, creating the entity without a party link", {
       accountId: ctx.accountId,

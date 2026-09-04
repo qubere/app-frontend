@@ -207,7 +207,19 @@ export class EntityResolutionService {
           { accountId, userId: null, requestId: null },
           { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null }
         );
-        partyId = resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+        if (resolved.outcome === "CANDIDATES") {
+          partyId = null;
+          await recordPendingMatchProposal({
+            accountId,
+            domain: "PARTY",
+            matchStatus: resolved.status,
+            targetEntityType: "LEGAL_ENTITY",
+            inputPayload: { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null },
+            candidatesJson: resolved.candidates as any,
+          });
+        } else {
+          partyId = resolved.partyId;
+        }
       } catch (error) {
         logger.warn("entityResolutionService: resolvePartyForCompany failed, creating the entity without a party link", {
           accountId,

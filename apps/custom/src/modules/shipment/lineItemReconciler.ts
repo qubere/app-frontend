@@ -3,6 +3,7 @@ import { ProductMatchStatus, Prisma, ShipmentLineItem } from "@prisma/client";
 import { FactService, FactSourceType, RecordFactInput } from "./factService";
 import { loadHtsCodesMap, calculateDutyStack } from "@/lib/tariff/dutyEngine";
 import { findProductMatches } from "@/modules/product/productService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 /**
  * Placeholder values LineItemReconciler writes itself when extraction didn't
@@ -187,6 +188,17 @@ export class LineItemReconciler {
         productMatchedAt = new Date();
         if (matchResult.status === "EXACT_MATCH" && matchResult.candidates[0]) {
           productId = matchResult.candidates[0].productId;
+        } else if (matchResult.status === "POSSIBLE_MATCH" || matchResult.status === "AMBIGUOUS") {
+          await recordPendingMatchProposal({
+            accountId: ctx.accountId,
+            domain: "PRODUCT",
+            matchStatus: matchResult.status,
+            targetEntityType: "SHIPMENT_LINE_ITEM",
+            targetEntityId: ctx.shipmentId,
+            sourceDocumentId: ctx.documentId ?? null,
+            inputPayload: matchInput,
+            candidatesJson: matchResult.candidates as any,
+          });
         }
       }
     } catch (err) {

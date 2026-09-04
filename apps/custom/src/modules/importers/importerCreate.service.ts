@@ -1,7 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
-import { ensurePartyRole, resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import {
+  ensurePartyRole,
+  resolvePartyForCompany,
+} from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 export class ImporterCreateError extends Error {
   constructor(
@@ -80,7 +84,18 @@ async function resolveNewLegalEntityParty(
         },
       }
     );
-    return resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+    if (resolved.outcome === "CANDIDATES") {
+      await recordPendingMatchProposal({
+        accountId: input.accountId,
+        domain: "PARTY",
+        matchStatus: resolved.status,
+        targetEntityType: "IMPORTER",
+        inputPayload: { legalName: legal.legalName.trim(), country: legal.country, taxId },
+        candidatesJson: resolved.candidates as any,
+      });
+      return null;
+    }
+    return resolved.partyId;
   } catch (error) {
     logger.warn("importerCreate: resolvePartyForCompany failed, creating the importer without a party link", {
       accountId: input.accountId,
