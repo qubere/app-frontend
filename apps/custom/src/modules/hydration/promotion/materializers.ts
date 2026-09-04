@@ -182,7 +182,7 @@ export class MaterializerRegistry {
         case "PartyRoleMaterializer": {
           const role = definition.materializerConfig.role as ShipmentPartyRole;
           if (shipmentId && role && valStr) {
-            const resolvedEntity = await EntityResolutionService.findOrCreateEntity(accountId, valStr);
+            const resolvedEntity = await EntityResolutionService.findOrCreateEntity(accountId, valStr, undefined, tx);
             if (resolvedEntity) {
               await ShipmentPartyService.assignParty({
                 shipmentId,

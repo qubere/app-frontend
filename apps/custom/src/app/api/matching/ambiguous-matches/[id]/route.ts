@@ -25,4 +25,4 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, pa
   );
 
   return NextResponse.json({ success: true, proposal: updated });
-});
+}, { permission: "parties.manage", write: true });

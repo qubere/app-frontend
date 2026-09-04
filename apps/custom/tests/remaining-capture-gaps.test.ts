@@ -37,7 +37,7 @@ describe("Remaining Capture Entry Points (#343 Phase 5)", () => {
     vi.clearAllMocks();
   });
 
-  it("Hydration PartyRoleMaterializer executes entity resolution cleanly without tx lock issue", async () => {
+  it("Hydration PartyRoleMaterializer threads the hydration tx through to findOrCreateEntity", async () => {
     mocks.findOrCreateEntity.mockResolvedValue({ id: "entity_999", legalName: "Acme Supply Corp" });
     mocks.assignParty.mockResolvedValue({ id: "shp_party_1" });
 
@@ -61,7 +61,13 @@ describe("Remaining Capture Entry Points (#343 Phase 5)", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(mocks.findOrCreateEntity).toHaveBeenCalledWith(accountId, "Acme Supply Corp");
+    // Passing `tx` here is required: findOrCreateEntity skips
+    // resolvePartyForCompany/Restricted Party Screening only when it knows
+    // it's nested inside this hydration transaction. Without it, that extra
+    // work runs on a separate connection inside the transaction's lock hold,
+    // and any LegalEntity/Party it creates isn't rolled back if the
+    // transaction later fails its Shipment.version check.
+    expect(mocks.findOrCreateEntity).toHaveBeenCalledWith(accountId, "Acme Supply Corp", undefined, expect.anything());
     expect(mocks.assignParty).toHaveBeenCalledWith(
       expect.objectContaining({
         shipmentId: "shipment_123",

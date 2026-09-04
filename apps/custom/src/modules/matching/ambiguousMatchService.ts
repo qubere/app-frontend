@@ -145,7 +145,8 @@ export async function resolveMatchProposal(
       },
     });
 
-    // Deferred attachment if target is a ShipmentParty
+    // Deferred attachment: write the resolved party back onto whatever
+    // originally recorded this proposal.
     if (proposal.targetEntityType === "SHIPMENT_PARTY" && proposal.targetEntityId && proposal.targetRole) {
       const legalEntity = await db.legalEntity.findFirst({
         where: { partyId: partyIdToAttach, accountId: actor.accountId },
@@ -153,11 +154,14 @@ export async function resolveMatchProposal(
 
       let legalEntityId = legalEntity?.id;
       if (!legalEntityId) {
-        const party = await db.party.findUnique({ where: { id: partyIdToAttach } });
+        const party = await db.party.findUnique({
+          where: { id: partyIdToAttach },
+          include: { names: { orderBy: { isPrimary: "desc" }, take: 1 } },
+        });
         const createdLe = await db.legalEntity.create({
           data: {
             accountId: actor.accountId,
-            legalName: party?.internalPartyCode ?? "Linked Legal Entity",
+            legalName: party?.names[0]?.rawName ?? party?.internalPartyCode ?? "Linked Legal Entity",
             country: "US",
             status: "ACTIVE",
             partyId: partyIdToAttach,
@@ -173,6 +177,15 @@ export async function resolveMatchProposal(
         accountId: actor.accountId,
         source: "USER",
         isVerified: true,
+      });
+    } else if (
+      (proposal.targetEntityType === "LEGAL_ENTITY" || proposal.targetEntityType === "IMPORTER") &&
+      proposal.targetEntityId
+    ) {
+      // Both types bridge a LegalEntity row to the resolved Party.
+      await db.legalEntity.updateMany({
+        where: { id: proposal.targetEntityId, accountId: actor.accountId },
+        data: { partyId: partyIdToAttach },
       });
     }
 

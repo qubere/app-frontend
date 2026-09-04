@@ -16,8 +16,10 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       ? (statusRaw as MatchProposalStatus)
       : undefined;
 
-  const page = pageRaw ? parseInt(pageRaw, 10) : 1;
-  const pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 20;
+  const pageParsed = pageRaw ? parseInt(pageRaw, 10) : 1;
+  const pageSizeParsed = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 20;
+  const page = Number.isInteger(pageParsed) && pageParsed > 0 ? pageParsed : 1;
+  const pageSize = Number.isInteger(pageSizeParsed) && pageSizeParsed > 0 ? pageSizeParsed : 20;
 
   const result = await listPendingMatchProposals(
     { accountId: ctx.accountId },

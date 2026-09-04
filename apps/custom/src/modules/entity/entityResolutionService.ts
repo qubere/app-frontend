@@ -162,6 +162,7 @@ export class EntityResolutionService {
     // a dedicated look at that pipeline) picks it up -- same as it is today.
     const country = options?.country || "US";
     let partyId: string | null = null;
+    let pendingCandidates: { matchStatus: string; candidatesJson: unknown[] } | null = null;
     if (!tx) {
       try {
         const resolved = await resolvePartyForCompany(
@@ -170,14 +171,7 @@ export class EntityResolutionService {
         );
         if (resolved.outcome === "CANDIDATES") {
           partyId = null;
-          await recordPendingMatchProposal({
-            accountId,
-            domain: "PARTY",
-            matchStatus: resolved.status,
-            targetEntityType: "LEGAL_ENTITY",
-            inputPayload: { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null },
-            candidatesJson: resolved.candidates as any,
-          });
+          pendingCandidates = { matchStatus: resolved.status, candidatesJson: resolved.candidates as any };
         } else {
           partyId = resolved.partyId;
         }
@@ -212,6 +206,25 @@ export class EntityResolutionService {
       },
       include: { customsProfiles: true },
     });
+
+    if (pendingCandidates) {
+      try {
+        await recordPendingMatchProposal({
+          accountId,
+          domain: "PARTY",
+          matchStatus: pendingCandidates.matchStatus,
+          targetEntityType: "LEGAL_ENTITY",
+          targetEntityId: newEntity.id,
+          inputPayload: { legalName: rawName.trim(), country, taxId: options?.taxIdentifier || null },
+          candidatesJson: pendingCandidates.candidatesJson,
+        });
+      } catch (error) {
+        logger.warn("entityResolutionService: recordPendingMatchProposal failed, entity stays unbridged", {
+          accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return newEntity;
   }

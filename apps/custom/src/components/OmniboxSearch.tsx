@@ -56,22 +56,28 @@ export function OmniboxSearch() {
     }
 
     setLoading(true);
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}`);
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}`, {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           setResults(data.results || []);
           setSelectedIndex(0);
         }
-      } catch {
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return;
         // Silent error fallback
-      } finally {
-        setLoading(false);
       }
+      if (!controller.signal.aborted) setLoading(false);
     }, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query]);
 
   // Modal keyboard navigation (Up, Down, Enter, Escape)
