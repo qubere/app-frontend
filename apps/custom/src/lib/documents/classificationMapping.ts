@@ -55,6 +55,42 @@ export function mapToDocumentType(raw: string): DocumentType {
 }
 
 /**
+ * Canonical display string for each DocumentType enum value. This is what
+ * ShipmentDocument.docType (the free-text field reconciliation rules match
+ * against) gets synced to once classification succeeds -- see
+ * documentIntelligenceAgent.ts's classification-write step.
+ */
+export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
+  COMMERCIAL_INVOICE: "Commercial Invoice",
+  PACKING_LIST: "Packing List",
+  BILL_OF_LADING: "Bill of Lading",
+  AIR_WAYBILL: "Air Waybill",
+  CERTIFICATE_OF_ORIGIN: "Certificate of Origin",
+  PHYTOSANITARY_CERTIFICATE: "Phytosanitary Certificate",
+  FUMIGATION_CERTIFICATE: "Fumigation Certificate",
+  CUSTOMS_BOND: "Customs Bond",
+  POWER_OF_ATTORNEY: "Power of Attorney",
+  ENTRY_SUMMARY: "Entry Summary",
+  ISF: "ISF",
+  PROOF_OF_DELIVERY: "Proof of Delivery",
+  CARRIER_INVOICE: "Carrier Invoice",
+  FORWARDING_INSTRUCTION: "Forwarding Instruction",
+  BOOKING_REQUEST: "Booking Request",
+  ARRIVAL_NOTICE: "Arrival Notice",
+  PURCHASE_ORDER: "Purchase Order",
+  DELIVERY_NOTE: "Delivery Note",
+  SHIPPING_INSTRUCTION: "Shipping Instruction",
+  CMR: "CMR Consignment Note",
+  SEA_WAYBILL: "Sea Waybill",
+  CUSTOMS_ENTRY: "Customs Entry",
+  EUR1_CERTIFICATE: "EUR.1 Certificate",
+  ATR_CERTIFICATE: "A.TR Certificate",
+  EXPORT_DECLARATION: "Export Declaration",
+  IMPORT_DECLARATION: "Import Declaration",
+  OTHER: "Other",
+};
+
+/**
  * Normalises a classifier confidence value to the 0–1 scale this module
  * uses. The AI returns 0–100; everything else is clamped.
  */

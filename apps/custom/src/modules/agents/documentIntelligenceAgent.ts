@@ -15,6 +15,7 @@ import {
   mapToDocumentType,
   normaliseConfidence,
   CLASSIFICATION_CONFIDENCE_THRESHOLD,
+  DOCUMENT_TYPE_LABEL,
 } from "@/lib/documents/classificationMapping";
 import { buildSchemaScopedInstructions } from "@/lib/documents/extractionSchemas";
 import {
@@ -1062,6 +1063,10 @@ ${scopedInstructions}`;
                 data: {
                   documentType: mappedType,
                   documentTypeConfidence: classificationConfidence,
+                  // Sync the free-text docType (what reconciliation rules match
+                  // against) to the classifier's result so it stops reflecting a
+                  // stale upload-time guess once classification actually runs.
+                  docType: DOCUMENT_TYPE_LABEL[mappedType],
                   // Route to human review when the model is uncertain. Status is
                   // not reset here if already NEEDS_CLASSIFICATION — a reviewer
                   // who has not yet acted should not lose their queue entry.

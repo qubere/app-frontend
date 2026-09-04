@@ -28,6 +28,11 @@ const AWB = "Air Waybill";
 const COO = "Certificate of Origin";
 const ISF = "ISF";
 const ENTRY = "Entry Summary";
+const EUR1 = "EUR.1 Certificate";
+const ATR = "A.TR Certificate";
+const SEA_WB = "Sea Waybill";
+const ARR_NOTICE = "Arrival Notice";
+const CUST_ENTRY = "Customs Entry";
 
 export const FIELD_INVENTORY: FieldInventoryItem[] = [
   // ---------------------------------------------------------------------------
@@ -57,9 +62,9 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     entityKind: "SHIPMENT",
     isDriftKey: false,
     scope: "shipment",
-    extractionSchemaKeys: ["country_of_origin"],
+    extractionSchemaKeys: ["country_of_origin", "origin_country", "exporting_country"],
     reconciliationKey: "countryOfOrigin",
-    docTypes: [CI, COO, PACK, ISF],
+    docTypes: [CI, COO, PACK, ISF, EUR1, ATR],
     notes: "Mapped via dedicated originCountry handler in field-review route.",
   },
   {
@@ -122,9 +127,9 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     entityKind: "SHIPMENT",
     isDriftKey: false,
     scope: "shipment",
-    extractionSchemaKeys: ["invoice_number"],
+    extractionSchemaKeys: ["invoice_number", "invoice_reference"],
     reconciliationKey: "invoiceNumber",
-    docTypes: [CI, PACK],
+    docTypes: [CI, PACK, EUR1],
   },
   {
     legacyKey: "invoiceDate",
@@ -147,9 +152,9 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     entityKind: "SHIPMENT",
     isDriftKey: true,
     scope: "shipment",
-    extractionSchemaKeys: ["total_value"],
+    extractionSchemaKeys: ["total_value", "total_customs_value"],
     reconciliationKey: "totalValue",
-    docTypes: [CI],
+    docTypes: [CI, CUST_ENTRY],
     notes:
       "Drift: extracted as 'invoiceSubtotal' or 'totalAmount', Fact uses 'totalAmount', no dedicated Shipment column.",
   },
@@ -209,9 +214,9 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     entityKind: "TRACKING_IDENTIFIER",
     isDriftKey: true,
     scope: "document",
-    extractionSchemaKeys: ["bl_number"],
+    extractionSchemaKeys: ["bl_number", "bol_or_awb_reference"],
     reconciliationKey: "billOfLadingNumber",
-    docTypes: [BOL],
+    docTypes: [BOL, ARR_NOTICE],
     notes: "Drift: extracted as 'transportDocumentNumber' or 'billOfLading'; TrackingMaterializer is a stub.",
   },
   {
@@ -308,7 +313,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     scope: "document",
     extractionSchemaKeys: ["gross_weight"],
     reconciliationKey: "grossWeight",
-    docTypes: [PACK, BOL, AWB],
+    docTypes: [PACK, BOL, AWB, SEA_WB, ARR_NOTICE],
     notes: "Drift: tradeMetadata uses 'totalWeight', Fact uses 'grossWeight'. grossWeight column is not materializer-allowlisted → annotation scope.",
   },
   {
@@ -343,7 +348,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     reconciliationKey: "totalQuantity",
-    docTypes: [CI, PACK, BOL],
+    docTypes: [CI, PACK, BOL, "CMR", CUST_ENTRY],
     notes: "Computed from the sum of extracted line-item quantities when the scalar is absent — this is what the invoice↔packing quantity reconciliation compares.",
   },
 
