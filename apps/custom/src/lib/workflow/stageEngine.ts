@@ -7,6 +7,7 @@ import {
   INITIAL_STAGE,
   StageCheckContext,
 } from "./stages";
+import type { ExceptionCategory, ExceptionType } from "@/lib/exceptions/exceptionTaxonomy";
 
 export interface StageAdvanceResult {
   advanced: boolean;
@@ -357,8 +358,8 @@ export async function recordStageFailureAndCheckBreaker(
       data: {
         accountId,
         shipmentId,
-        category: "SYSTEM",
-        type: "broker_hold",
+        category: "SYSTEM" satisfies ExceptionCategory,
+        type: "broker_hold" satisfies ExceptionType,
         severity: "Critical",
         description: `${def.label} stage failed ${consecutive}× — manual review required.`,
         requiredAction: `Review execution error: ${failureReason}. Reset breaker from stage stepper when resolved.`,

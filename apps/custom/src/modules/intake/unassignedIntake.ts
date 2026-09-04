@@ -6,7 +6,9 @@
  * nothing in the record says the target was a guess.
  */
 
-export const UNASSIGNED_INTAKE_TYPE = "unassigned_intake";
+import type { ExceptionType } from "@/lib/exceptions/exceptionTaxonomy";
+
+export const UNASSIGNED_INTAKE_TYPE: ExceptionType = "unassigned_intake";
 export const UNASSIGNED_INTAKE_SEVERITY = "High";
 
 export type IntakeSource = "document_upload" | "intake_agent" | "agent_run";
@@ -37,7 +39,7 @@ export function unassignedIntakeDescription(intake: UnassignedIntake): string {
 export interface UnassignedIntakeStore {
   create(input: {
     accountId: string;
-    type: string;
+    type: ExceptionType;
     severity: string;
     description: string;
     status: string;

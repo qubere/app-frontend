@@ -1,6 +1,12 @@
 import { db } from "@/lib/db";
 import { deliverWebhookEvent } from "@/lib/webhooks/deliver";
 import type { Prisma } from "@prisma/client";
+import type { ExceptionCategory, ExceptionType } from "./exceptionTaxonomy";
+
+type ExceptionItemInput = Omit<Prisma.ExceptionItemUncheckedCreateInput, "category" | "type"> & {
+  category?: ExceptionCategory | null;
+  type: ExceptionType;
+};
 
 /**
  * Creates an ExceptionItem and automatically dispatches the `exception.created` webhook event.
@@ -12,9 +18,7 @@ import type { Prisma } from "@prisma/client";
  * exists, it's returned as-is instead of creating a new one -- no webhook
  * fires for a reused row, since nothing new actually happened.
  */
-export async function createExceptionItem(
-  data: Prisma.ExceptionItemUncheckedCreateInput | Prisma.ExceptionItemCreateInput
-) {
+export async function createExceptionItem(data: ExceptionItemInput) {
   const uncheckedData = data as Prisma.ExceptionItemUncheckedCreateInput;
   const existing = await db.exceptionItem.findFirst({
     where: {
@@ -29,7 +33,7 @@ export async function createExceptionItem(
   });
   if (existing) return existing;
 
-  const item = await db.exceptionItem.create({ data });
+  const item = await db.exceptionItem.create({ data: data as Prisma.ExceptionItemUncheckedCreateInput });
 
   // Work Management: stamp the resolve SLA clock and auto-route to the client's
   // owner. Best-effort — never block exception creation on it.

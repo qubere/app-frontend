@@ -3124,8 +3124,8 @@ model ExceptionItem {
   document         ShipmentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
   fieldKey         String? // "exporterName" | "importerName" | "originCountry", set together with documentId
   code             String?
-  category         String? // MISSING_DATA | CONFLICT | VALIDATION | COMPLIANCE | DOCUMENT | CLASSIFICATION | VALUATION | FILING | PLAN_CHANGE
-  type             String // missing_document | data_mismatch | broker_hold | compliance_flag
+  category         String? // MISSING_DATA | CONFLICT | VALIDATION | COMPLIANCE | DOCUMENT | CLASSIFICATION | VALUATION | FILING | PLAN_CHANGE | SYSTEM
+  type             String // missing_document | data_mismatch | broker_hold | compliance_flag | plan_drift | rdps_recall_gap | rdps_worsening_transition | unassigned_intake
   severity         String            @default("Medium") // High | Medium | Low | Critical
   description      String
   status           String            @default("Open") // Open | InProgress | Resolved

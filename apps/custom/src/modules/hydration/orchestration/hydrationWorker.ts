@@ -148,8 +148,8 @@ export class HydrationWorker {
           accountId,
           shipmentId: options.shipmentId,
           fieldKey: resCand.proposal.targetFieldKey,
-          category: "DATA_MISMATCH",
-          type: "FIELD_CONFLICT",
+          category: "CONFLICT",
+          type: "data_mismatch",
           severity: "Critical",
           description: resCand.conflictReason || "Contradictory values detected across documents.",
         }).catch((err) => {

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { createAuditLog } from "@/lib/audit";
 import { createExceptionItem } from "@/lib/exceptions/createException";
+import type { ExceptionCategory } from "@/lib/exceptions/exceptionTaxonomy";
 import { DocumentIntakeAgent } from "@/modules/intake/documentIntakeAgent";
 import { DocumentIntelligenceAgent, DocumentIntelligenceInput, DocumentIntelligenceOutput } from "./documentIntelligenceAgent";
 import { buildContextForDocument } from "@/modules/documents/context/documentContextService";
@@ -1089,7 +1090,7 @@ export class PipelineOrchestrator {
     lineNumber: number,
     profile: ProductIntelligenceOutput["profiles"][number]
   ): Promise<void> {
-    const findings: Array<{ code: string; category: string; description: string }> = [];
+    const findings: Array<{ code: string; category: ExceptionCategory; description: string }> = [];
 
     for (const conflict of profile.conflicts) {
       findings.push({
