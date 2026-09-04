@@ -4,6 +4,7 @@ import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse } from "@/lib/api/error";
 import { parseAndValidateBody, validatePathParams } from "@/lib/api/validation";
 import { db } from "@/lib/db";
+import { buildAlsoKnownAs } from "@/modules/importers/alsoKnownAs";
 import { ImporterClientLinkError, linkImporterClient } from "@/modules/importers/importerClientLink.service";
 import { importerReadiness } from "@/modules/importers/importerReadiness";
 
@@ -20,7 +21,21 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params, 
     where: { id: path.data.id, accountId: ctx.accountId },
     include: {
       client: { select: { id: true, name: true, paymentTermsDays: true } },
-      legalEntity: true,
+      legalEntity: {
+        include: {
+          // #320 Phase 1 bridge (spec §3.5's "Also known as" panel): present
+          // only once resolvePartyForCompany has linked this legal entity to
+          // a Party -- null until then, which is an expected, unremarkable
+          // state (pre-backfill, or a resolution that only found candidates).
+          party: {
+            select: {
+              id: true,
+              roles: { where: { status: "ACTIVE" }, select: { roleType: true, status: true } },
+              legalEntities: { select: { id: true, _count: { select: { productParties: true, shipmentParties: true } } } },
+            },
+          },
+        },
+      },
       bond: { include: { verifications: { orderBy: { performedAt: "desc" }, take: 10 } } },
       powersOfAttorney: { include: { envelope: true }, orderBy: { createdAt: "desc" } },
       onboardingEntities: { include: { case: { select: { id: true, path: true, status: true, currentStep: true } } }, orderBy: { updatedAt: "desc" } },
@@ -30,7 +45,14 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, params, 
     },
   });
   if (!importer) return buildErrorResponse(404, "NOT_FOUND", "Importer not found.", undefined, requestId);
-  return NextResponse.json({ importer: { ...importer, readiness: importerReadiness(importer) }, requestId }, {
+
+  const party = importer.legalEntity?.party ?? null;
+  const enriched = {
+    ...importer,
+    readiness: importerReadiness(importer),
+    party: party ? { id: party.id, roles: party.roles, alsoKnownAs: buildAlsoKnownAs(party, importer.legalEntity!.id) } : null,
+  };
+  return NextResponse.json({ importer: enriched, requestId }, {
     headers: { "Cache-Control": "no-store" },
   });
 }, { permission: { any: ["parties.manage", "client.read"] } });
