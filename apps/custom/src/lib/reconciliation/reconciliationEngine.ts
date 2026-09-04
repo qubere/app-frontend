@@ -10,6 +10,7 @@
  */
 
 import { RECONCILIATION_RULES, type DiscrepancyType, type NormalizationFn } from "./reconciliationRules";
+import { REVIEW_REQUIRED_BELOW } from "@/modules/documents/extractionReview";
 
 export interface FieldRow {
   fieldName: string;
@@ -27,8 +28,10 @@ export interface ReconciliationResult {
   ruleId: string;
   fieldName: string;
   docTypeA: string;
+  documentIdA: string;
   valueA: string;
   docTypeB: string;
+  documentIdB: string;
   valueB: string;
   match: boolean;
   discrepancyType: DiscrepancyType;
@@ -87,6 +90,30 @@ function applyNorm(value: string, fn: NormalizationFn): string | null {
 
     case "container_id":
       return raw.toUpperCase().replace(/[\s\-]/g, "");
+
+    case "quantity_unit": {
+      // Strip unit words (EA, PCS, PC, PIECE(S), UNIT(S)) and separators, keep the number.
+      const stripped = raw
+        .toLowerCase()
+        .replace(/\b(ea|pcs?|pieces?|units?)\b/g, "")
+        .replace(/[^0-9.\-]/g, "");
+      const parsed = Number(stripped);
+      return Number.isFinite(parsed) && stripped !== "" ? String(parsed) : null;
+    }
+
+    case "weight_unit": {
+      // Extract the numeric part and a recognized weight unit, convert to kilograms.
+      const m = raw.toLowerCase().match(/(-?[0-9,.]+)\s*(kgs?|kilograms?|g|grams?|lbs?|pounds?)?/);
+      if (!m) return null;
+      const num = Number(m[1].replace(/,/g, ""));
+      if (!Number.isFinite(num)) return null;
+      const unit = m[2] ?? "kg";
+      let kg: number;
+      if (/^(g|grams?)$/.test(unit)) kg = num / 1000;
+      else if (/^(lbs?|pounds?)$/.test(unit)) kg = num * 0.453592;
+      else kg = num; // kg/kilograms, or no unit given → assume kg
+      return String(kg);
+    }
   }
 }
 
@@ -104,9 +131,16 @@ function docTypeMatches(docType: string, pattern: string): boolean {
   return docType.toLowerCase().includes(pattern.toLowerCase());
 }
 
-function pickField(group: DocumentGroup, fieldKey: string): string | null {
+function pickField(group: DocumentGroup, fieldKey: string): FieldRow | null {
   const row = group.fields.find((f) => f.fieldName === fieldKey);
-  return row?.value?.trim() || null;
+  return row?.value?.trim() ? row : null;
+}
+
+/** BLOCKING -> WARNING -> INFO, one step down. INFO stays INFO. */
+function downgradeSeverity(severity: ReconciliationResult["severity"]): ReconciliationResult["severity"] {
+  if (severity === "BLOCKING") return "WARNING";
+  if (severity === "WARNING") return "INFO";
+  return "INFO";
 }
 
 export function runReconciliationEngine(documents: DocumentGroup[]): EngineOutput {
@@ -135,13 +169,16 @@ export function runReconciliationEngine(documents: DocumentGroup[]): EngineOutpu
       continue;
     }
 
-    const rawA = pickField(groupA, rule.fieldKey);
-    const rawB = pickField(groupB, rule.fieldKey);
+    const fieldA = pickField(groupA, rule.fieldKey);
+    const fieldB = pickField(groupB, rule.fieldKey);
 
-    if (rawA === null || rawB === null) {
+    if (fieldA === null || fieldB === null) {
       skippedRuleIds.push(rule.id);
       continue;
     }
+
+    const rawA = fieldA.value.trim();
+    const rawB = fieldB.value.trim();
 
     const normA = applyNorm(rawA, rule.normalizationFn);
     const normB = applyNorm(rawB, rule.normalizationFn);
@@ -152,11 +189,18 @@ export function runReconciliationEngine(documents: DocumentGroup[]): EngineOutpu
     }
 
     const match = withinTolerance(normA, normB, rule.tolerancePct);
-    const severity: ReconciliationResult["severity"] = match
+    let severity: ReconciliationResult["severity"] = match
       ? "INFO"
       : rule.blocksFiling
         ? "BLOCKING"
         : "WARNING";
+
+    const lowConfidence =
+      (fieldA.confidence != null && fieldA.confidence < REVIEW_REQUIRED_BELOW) ||
+      (fieldB.confidence != null && fieldB.confidence < REVIEW_REQUIRED_BELOW);
+    if (!match && lowConfidence) {
+      severity = downgradeSeverity(severity);
+    }
 
     evaluatedRuleIds.push(rule.id);
 
@@ -165,8 +209,10 @@ export function runReconciliationEngine(documents: DocumentGroup[]): EngineOutpu
         ruleId: rule.id,
         fieldName: rule.fieldKey,
         docTypeA: groupA.docType,
+        documentIdA: groupA.documentId,
         valueA: rawA,
         docTypeB: groupB.docType,
+        documentIdB: groupB.documentId,
         valueB: rawB,
         match: false,
         discrepancyType: rule.discrepancyType,

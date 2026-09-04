@@ -98,7 +98,35 @@ function pendingBlob(doc: DocumentWithRelations) {
   };
 }
 
-function serialize(doc: DocumentWithRelations, extractedJson: unknown, requestId: string) {
+/**
+ * Cross-document conflicts (ReconciliationIssue) that touch this document, so
+ * the review panel can surface them alongside the document's own fields
+ * instead of only on the separate /app/reconciliation page.
+ *
+ * Newer rows are linked by sourceDocumentIds; older rows predate that column
+ * and are matched by docType label against sourceDocuments instead.
+ */
+async function getReconciliationIssuesForDocument(doc: DocumentWithRelations, accountId: string) {
+  if (!doc.shipmentId) return [];
+
+  const issues = await db.reconciliationIssue.findMany({
+    where: { shipmentId: doc.shipmentId, accountId, status: "Open" },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return issues.filter((issue) =>
+    issue.sourceDocumentIds.length > 0
+      ? issue.sourceDocumentIds.includes(doc.id)
+      : issue.sourceDocuments.some((label) => doc.docType?.includes(label) || label.includes(doc.docType ?? ""))
+  );
+}
+
+function serialize(
+  doc: DocumentWithRelations,
+  extractedJson: unknown,
+  requestId: string,
+  reconciliationIssues: Awaited<ReturnType<typeof getReconciliationIssuesForDocument>> = []
+) {
   return {
     documentId: doc.id,
     shipmentId: doc.shipmentId,
@@ -115,6 +143,8 @@ function serialize(doc: DocumentWithRelations, extractedJson: unknown, requestId
     // Each entry is the current authoritative reading for one field name, with
     // BoundingBox parsed from the stored JSON and full correction history attached.
     reviewFields: buildReviewFields(doc.extractionFields),
+    // Cross-document conflicts open against this document (see plan gap #1).
+    reconciliationIssues,
     requestId,
   };
 }
@@ -136,7 +166,8 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
     }
 
     const extractedJson = parseStoredJson(doc) ?? pendingBlob(doc);
-    return NextResponse.json(serialize(doc, extractedJson, requestId));
+    const reconciliationIssues = await getReconciliationIssuesForDocument(doc, ctx.accountId);
+    return NextResponse.json(serialize(doc, extractedJson, requestId, reconciliationIssues));
   } catch (error: unknown) {
     return buildErrorResponse(
       500,
@@ -174,7 +205,8 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
 
     const existing = parseStoredJson(doc);
     if (existing && !force) {
-      return NextResponse.json({ ...serialize(doc, existing, requestId), extracted: false });
+      const reconciliationIssues = await getReconciliationIssuesForDocument(doc, ctx.accountId);
+      return NextResponse.json({ ...serialize(doc, existing, requestId, reconciliationIssues), extracted: false });
     }
 
     if (!doc.fileUrl) {
@@ -250,8 +282,9 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     });
     const source = updated ?? doc;
     const extractedJson = parseStoredJson(source) ?? pendingBlob(source);
+    const reconciliationIssues = await getReconciliationIssuesForDocument(source, ctx.accountId);
 
-    return NextResponse.json({ ...serialize(source, extractedJson, requestId), extracted: true });
+    return NextResponse.json({ ...serialize(source, extractedJson, requestId, reconciliationIssues), extracted: true });
   } catch (error: unknown) {
     return buildErrorResponse(
       500,
@@ -358,8 +391,9 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, r
     });
     const source = updatedDoc ?? doc;
     const extractedJson = parseStoredJson(source) ?? pendingBlob(source);
+    const reconciliationIssues = await getReconciliationIssuesForDocument(source, ctx.accountId);
 
-    return NextResponse.json(serialize(source, extractedJson, requestId));
+    return NextResponse.json(serialize(source, extractedJson, requestId, reconciliationIssues));
   } catch (error: unknown) {
     return buildErrorResponse(
       500,

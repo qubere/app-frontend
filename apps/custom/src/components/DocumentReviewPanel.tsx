@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock, User, Mail } from "lucide-react";
+import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock, User, Mail, AlertTriangle } from "lucide-react";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor, reviewCategory } from "@/modules/decisions/editableFields";
 import { triageDecision } from "@/modules/decisions/decisionState";
 import { type ReviewField, nextReviewIndex } from "@/modules/documents/extractionReview";
@@ -310,12 +310,25 @@ interface ExtractionFieldRow {
   bbox?: { x: number; y: number; width: number; height: number } | null;
 }
 
+interface ReconciliationIssueRow {
+  id: string;
+  field: string;
+  severity: string;
+  expectedValue: string;
+  actualValue: string;
+  sourceDocuments: string[];
+  status: string;
+}
+
 interface ExtractionPayload {
   extractedJson?: Record<string, unknown> | null;
   rawContent?: string | null;
   extractionFields?: Array<ExtractionFieldRow>;
   // C-3: Grouped, bbox-parsed review fields returned by the updated GET endpoint.
   reviewFields?: ReviewField[];
+  // Cross-document conflicts open against this document (see reconciliationEngine.ts).
+  reconciliationIssues?: ReconciliationIssueRow[];
+  shipmentId?: string | null;
   metadata?: {
     docType?: string | null;
     pageCount?: number | null;
@@ -517,6 +530,37 @@ export function DocumentReviewPanel({
   // -1 means no field is focused.
   const [activeFieldIndex, setActiveFieldIndex] = useState(-1);
   const fieldListRef = useRef<HTMLDivElement>(null);
+
+  // Resolving a cross-document conflict surfaced from ReconciliationIssue rows.
+  const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
+
+  const handleResolveConflict = useCallback(
+    async (issueId: string, action: "resolve" | "ignore") => {
+      const shipmentId = data?.shipmentId;
+      if (!shipmentId) return;
+      setResolvingConflictId(issueId);
+      try {
+        await fetch(`/api/shipments/${shipmentId}/reconcile/issues/${issueId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                reconciliationIssues: (prev.reconciliationIssues ?? []).filter((i) => i.id !== issueId),
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error("Conflict resolution failed", err);
+      } finally {
+        setResolvingConflictId(null);
+      }
+    },
+    [data?.shipmentId]
+  );
 
   // This panel can stay mounted across document selections when embedded
   // inline on a page (unlike a modal, which unmounts on close), so switching
@@ -1275,6 +1319,7 @@ export function DocumentReviewPanel({
               ) : isPdfFile(proxyUrl, fileName) ? (
                 (() => {
                   const reviewFields = data?.reviewFields ?? [];
+                  const openConflicts = (data?.reconciliationIssues ?? []).filter((i) => i.status === "Open");
                   return (
                     <div className="flex-1 w-full h-full flex flex-col overflow-hidden">
                       {/* PDF Action Bar */}
@@ -1380,12 +1425,52 @@ export function DocumentReviewPanel({
                           />
                         </div>
 
-                        {/* Right: extracted field list with "view source" buttons */}
-                        {reviewFields.length > 0 && (
+                        {/* Right: conflicts + extracted field list with "view source" buttons */}
+                        {(reviewFields.length > 0 || openConflicts.length > 0) && (
                           <div
                             ref={fieldListRef}
                             className="w-72 shrink-0 border-l border-white/10 overflow-y-auto bg-[#1a1b1f] flex flex-col text-xs"
                           >
+                            {openConflicts.length > 0 && (
+                              <div className="border-b border-white/10 shrink-0">
+                                <div className="px-3 py-2 flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                                    Conflicts ({openConflicts.length})
+                                  </p>
+                                </div>
+                                <div className="divide-y divide-white/5">
+                                  {openConflicts.map((issue) => (
+                                    <div key={issue.id} className="px-3 py-2.5 space-y-1.5">
+                                      <p className="text-[10px] text-slate-400">
+                                        {issue.sourceDocuments.join(" vs ") || issue.field}
+                                      </p>
+                                      <p className="font-mono text-[11px] text-slate-200 break-words">
+                                        <span className="text-emerald-400">{issue.expectedValue}</span>
+                                        {" ≠ "}
+                                        <span className="text-rose-400">{issue.actualValue}</span>
+                                      </p>
+                                      <div className="flex gap-1.5 pt-0.5">
+                                        <button
+                                          onClick={() => handleResolveConflict(issue.id, "resolve")}
+                                          disabled={resolvingConflictId === issue.id}
+                                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors cursor-pointer disabled:opacity-50"
+                                        >
+                                          {resolvingConflictId === issue.id ? "Resolving…" : "✓ Resolve"}
+                                        </button>
+                                        <button
+                                          onClick={() => handleResolveConflict(issue.id, "ignore")}
+                                          disabled={resolvingConflictId === issue.id}
+                                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white/5 text-slate-400 hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50"
+                                        >
+                                          Ignore
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="px-3 py-2 border-b border-white/10 shrink-0">
                               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 Extracted Fields

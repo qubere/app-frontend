@@ -9,6 +9,22 @@ function makeGroup(docType: string, fields: Record<string, string>, id?: string)
   };
 }
 
+function makeGroupWithConfidence(
+  docType: string,
+  fields: Record<string, { value: string; confidence?: number | null }>,
+  id?: string
+): DocumentGroup {
+  return {
+    documentId: id ?? `doc_${docType.replace(/\s/g, "_")}`,
+    docType,
+    fields: Object.entries(fields).map(([fieldName, { value, confidence }]) => ({
+      fieldName,
+      value,
+      confidence,
+    })),
+  };
+}
+
 describe("runReconciliationEngine — quantity discrepancies", () => {
   it("creates a BLOCKING result when invoice and packing list quantities differ", () => {
     const { results } = runReconciliationEngine([
@@ -21,6 +37,8 @@ describe("runReconciliationEngine — quantity discrepancies", () => {
     expect(hit?.match).toBe(false);
     expect(hit?.severity).toBe("BLOCKING");
     expect(hit?.discrepancyType).toBe("QUANTITY");
+    expect(hit?.documentIdA).toBe("doc_Commercial_Invoice");
+    expect(hit?.documentIdB).toBe("doc_Packing_List");
   });
 
   it("produces no result when invoice and packing list quantities match", () => {
@@ -148,6 +166,115 @@ describe("runReconciliationEngine — skips", () => {
     ]);
 
     expect(skippedRuleIds).toContain("QTY_INV_PACK");
+  });
+});
+
+describe("runReconciliationEngine — unit normalization", () => {
+  it("treats equal quantities in different unit words as matching", () => {
+    const { results } = runReconciliationEngine([
+      makeGroup("Commercial Invoice", { totalQuantity: "446 EA" }),
+      makeGroup("Packing List", { totalQuantity: "446 pieces" }),
+    ]);
+
+    expect(results.find((r) => r.ruleId === "QTY_INV_PACK")).toBeUndefined();
+  });
+
+  it("still flags a quantity mismatch once units are normalized away", () => {
+    const { results } = runReconciliationEngine([
+      makeGroup("Commercial Invoice", { totalQuantity: "446 EA" }),
+      makeGroup("Packing List", { totalQuantity: "400 pieces" }),
+    ]);
+
+    const hit = results.find((r) => r.ruleId === "QTY_INV_PACK");
+    expect(hit).toBeDefined();
+    expect(hit?.severity).toBe("BLOCKING");
+  });
+
+  it("converts grams to kilograms before comparing weight", () => {
+    const { results } = runReconciliationEngine([
+      makeGroup("Commercial Invoice", { grossWeight: "10 kg" }),
+      makeGroup("Packing List", { grossWeight: "10000 g" }),
+    ]);
+
+    expect(results.find((r) => r.ruleId === "WEIGHT_INV_PACK")).toBeUndefined();
+  });
+
+  it("converts pounds to kilograms before comparing weight", () => {
+    const { results } = runReconciliationEngine([
+      makeGroup("Commercial Invoice", { grossWeight: "22.0462 lb" }),
+      makeGroup("Packing List", { grossWeight: "10 kg" }),
+    ]);
+
+    expect(results.find((r) => r.ruleId === "WEIGHT_INV_PACK")).toBeUndefined();
+  });
+
+  it("still flags a genuine weight mismatch after unit conversion", () => {
+    const { results } = runReconciliationEngine([
+      makeGroup("Commercial Invoice", { grossWeight: "10 kg" }),
+      makeGroup("Packing List", { grossWeight: "5000 g" }),
+    ]);
+
+    const hit = results.find((r) => r.ruleId === "WEIGHT_INV_PACK");
+    expect(hit).toBeDefined();
+    expect(hit?.discrepancyType).toBe("WEIGHT");
+  });
+});
+
+describe("runReconciliationEngine — confidence-aware severity", () => {
+  it("downgrades a BLOCKING quantity mismatch to WARNING when a field's confidence is low", () => {
+    const { results } = runReconciliationEngine([
+      makeGroupWithConfidence("Commercial Invoice", {
+        totalQuantity: { value: "100", confidence: 65 },
+      }),
+      makeGroupWithConfidence("Packing List", {
+        totalQuantity: { value: "95", confidence: 98 },
+      }),
+    ]);
+
+    const hit = results.find((r) => r.ruleId === "QTY_INV_PACK");
+    expect(hit).toBeDefined();
+    expect(hit?.severity).toBe("WARNING");
+  });
+
+  it("keeps a mismatch BLOCKING when both fields have high confidence", () => {
+    const { results } = runReconciliationEngine([
+      makeGroupWithConfidence("Commercial Invoice", {
+        totalQuantity: { value: "100", confidence: 95 },
+      }),
+      makeGroupWithConfidence("Packing List", {
+        totalQuantity: { value: "95", confidence: 92 },
+      }),
+    ]);
+
+    const hit = results.find((r) => r.ruleId === "QTY_INV_PACK");
+    expect(hit?.severity).toBe("BLOCKING");
+  });
+
+  it("downgrades a WARNING mismatch to INFO when confidence is low", () => {
+    const { results } = runReconciliationEngine([
+      makeGroupWithConfidence("Commercial Invoice", {
+        totalQuantity: { value: "100", confidence: 99 },
+      }),
+      makeGroupWithConfidence("Bill of Lading", {
+        totalQuantity: { value: "80", confidence: 50 },
+      }),
+    ]);
+
+    const hit = results.find((r) => r.ruleId === "QTY_INV_BL");
+    expect(hit?.severity).toBe("INFO");
+  });
+
+  it("does not downgrade severity for a matching field even if confidence is low", () => {
+    const { results } = runReconciliationEngine([
+      makeGroupWithConfidence("Commercial Invoice", {
+        totalQuantity: { value: "100", confidence: 40 },
+      }),
+      makeGroupWithConfidence("Packing List", {
+        totalQuantity: { value: "100", confidence: 40 },
+      }),
+    ]);
+
+    expect(results.find((r) => r.ruleId === "QTY_INV_PACK")).toBeUndefined();
   });
 });
 

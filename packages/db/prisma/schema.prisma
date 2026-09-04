@@ -3301,6 +3301,7 @@ model ReconciliationIssue {
   expectedValue      String
   actualValue        String
   sourceDocuments    String[] // e.g. ["Commercial Invoice", "Packing List"]
+  sourceDocumentIds  String[] @default([]) // ShipmentDocument.id values backing sourceDocuments, for per-document linking
   status             String    @default("Open") // Open | Resolved | Ignored
   issueType          String    @default("DOCUMENT_CONFLICT") // DOCUMENT_CONFLICT | ENTRY_DISCREPANCY | PSC_CANDIDATE
   // C-2: Resolution detail — which value was accepted and by whom
