@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
-import { Prisma, ShipmentLineItem } from "@prisma/client";
+import { ProductMatchStatus, Prisma, ShipmentLineItem } from "@prisma/client";
 import { FactService, FactSourceType, RecordFactInput } from "./factService";
 import { loadHtsCodesMap, calculateDutyStack } from "@/lib/tariff/dutyEngine";
+import { findProductMatches } from "@/modules/product/productService";
 
 /**
  * Placeholder values LineItemReconciler writes itself when extraction didn't
@@ -162,6 +163,36 @@ export class LineItemReconciler {
       }
     }
 
+    let productId: string | null = null;
+    let productMatchStatus: ProductMatchStatus | null = null;
+    let productMatchedAt: Date | null = null;
+
+    try {
+      const identifiers: Array<{ identifierType: any; value: string }> = [];
+      if (item.partNumber && item.partNumber.trim() !== "") {
+        const val = item.partNumber.trim();
+        identifiers.push({ identifierType: "INTERNAL_SKU", value: val });
+        identifiers.push({ identifierType: "MANUFACTURER_PART_NUMBER", value: val });
+      }
+      const matchInput = {
+        identifiers: identifiers.length > 0 ? identifiers : undefined,
+        productName: description && description !== LINE_ITEM_SENTINELS.description ? description.trim() : null,
+      };
+      if (identifiers.length > 0 || matchInput.productName) {
+        const matchResult = await findProductMatches(
+          { accountId: ctx.accountId, userId: null },
+          matchInput
+        );
+        productMatchStatus = matchResult.status;
+        productMatchedAt = new Date();
+        if (matchResult.status === "EXACT_MATCH" && matchResult.candidates[0]) {
+          productId = matchResult.candidates[0].productId;
+        }
+      }
+    } catch (err) {
+      console.warn("[lineItemReconciler] Failed product matching:", err);
+    }
+
     await client.shipmentLineItem.create({
       data: {
         shipmentId: ctx.shipmentId,
@@ -178,6 +209,9 @@ export class LineItemReconciler {
         eccnCode: item.eccnCode ?? null,
         status: wasDefaulted ? "Review Required" : "Unreviewed",
         dutyStack: dutyStackJson,
+        productId,
+        productMatchStatus,
+        productMatchedAt,
       },
     });
   }
