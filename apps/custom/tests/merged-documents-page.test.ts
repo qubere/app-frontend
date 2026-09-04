@@ -44,6 +44,8 @@ describe("document capture attribution", () => {
 
     expect(upload).toContain("uploadedByUserId: userId");
     expect(upload).toContain("clientId: targetClientId");
+    expect(upload).toContain("const isClientScopedUser = !ctx.isAllClients");
+    expect(upload).toContain("OR: [{ clientId: targetClientId }, { clientId: null }]");
     expect(upload).toContain("shipmentClientId");
     expect(upload).toContain("ctx.authorizedClientIds.length === 1");
   });
