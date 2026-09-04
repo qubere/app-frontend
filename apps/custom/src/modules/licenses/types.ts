@@ -4,10 +4,12 @@
 //
 // NOTE: no jurisdiction-specific regulatory rule datasets are ingested in
 // this repo (only `commerce_control_list` = ECCN/CCL master exists). The
-// determination engine therefore never fabricates a NO_LICENSE_REQUIRED /
-// LICENSE_REQUIRED outcome from rules it doesn't have -- it returns
-// RULE_DATA_UNAVAILABLE / INCOMPLETE / REVIEW_REQUIRED instead. See
-// docs/LICENSE-DETERMINATION-GAP-MATRIX.md.
+// LicenseControlRule lookup table exists and is wired into the resolver,
+// but ships with zero rows -- the determination engine therefore never
+// fabricates a NO_LICENSE_REQUIRED / LICENSE_REQUIRED outcome from rules it
+// doesn't have -- it returns RULE_DATA_UNAVAILABLE / INCOMPLETE /
+// REVIEW_REQUIRED instead, until real rule content is ingested from an
+// authoritative source.
 import type { LicenseDeterminationStatus, LicenseOperationType } from "@prisma/client";
 
 /** A tri-plus-state flag: never collapse "unknown" into false. */
@@ -74,6 +76,13 @@ export interface LicenseDeterminationRequestInput {
   source?: string | null;
 }
 
+/**
+ * "GENERIC" -- the fail-safe path, no jurisdiction rule data was consulted
+ * (or none matched). "MATCHED_RULE" -- a LicenseControlRule row matched and
+ * its decision was used.
+ */
+export type LicenseRuleSource = "GENERIC" | "MATCHED_RULE";
+
 export interface LicenseDeterminationOutcome {
   status: LicenseDeterminationStatus;
   baseDecision: LicenseDeterminationStatus;
@@ -82,9 +91,31 @@ export interface LicenseDeterminationOutcome {
   exceptionCode?: string | null;
   exceptionDescription?: string | null;
   missingInputs?: string[];
-  ruleSource?: string | null;
+  ruleSource?: LicenseRuleSource | null;
   ruleVersion?: string | null;
   evidence?: Record<string, unknown> | null;
+}
+
+/**
+ * A candidate row from LicenseControlRule, decoupled from Prisma so
+ * ruleResolver.ts stays a pure, DB-free function -- callers load rows and
+ * map them to this shape before calling resolveLicenseDetermination, the
+ * same way AccountLicenseGates is loaded and passed in rather than fetched
+ * inside the resolver.
+ */
+export interface LicenseControlRuleCandidate {
+  operationType: LicenseOperationType;
+  /** ECCN | USML | HTS | SCHEDULE_B | ICN, or "*" wildcard. */
+  classificationType: string;
+  /** Exact classification value, or "*" wildcard. */
+  classificationValue: string;
+  /** ISO 3166-1 alpha-2, or "*" wildcard. */
+  country: string;
+  /** LICENSE_REQUIRED | NO_LICENSE_REQUIRED -- enforced by a DB check constraint. */
+  decision: LicenseDeterminationStatus;
+  authority?: string | null;
+  citation?: string | null;
+  ruleVersion: string;
 }
 
 export const MISSING_INPUT_CODES = {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveLicenseDetermination, type AccountLicenseGates } from "@/modules/licenses/ruleResolver";
-import type { LicenseDeterminationRequestInput } from "@/modules/licenses/types";
+import type { LicenseControlRuleCandidate, LicenseDeterminationRequestInput } from "@/modules/licenses/types";
 
 const ALL_ENABLED: AccountLicenseGates = {
   licenseDeterminationEnabled: true,
@@ -100,5 +100,66 @@ describe("resolveLicenseDetermination", () => {
     expect(result.status).toBe("RULE_DATA_UNAVAILABLE");
     expect(result.status).not.toBe("LICENSE_REQUIRED");
     expect(result.status).not.toBe("NO_LICENSE_REQUIRED");
+  });
+
+  it("uses a matching jurisdiction rule's decision when one is supplied", () => {
+    const rules: LicenseControlRuleCandidate[] = [
+      {
+        operationType: "EXPORT",
+        classificationType: "ECCN",
+        classificationValue: "5A002.A.1",
+        country: "CA",
+        decision: "LICENSE_REQUIRED",
+        authority: "EAR",
+        citation: "15 CFR 742.15",
+        ruleVersion: "test-fixture-v1",
+      },
+    ];
+    const result = resolveLicenseDetermination(
+      baseInput({
+        conditions: {
+          governmentEndUser: "FALSE",
+          militaryEndUser: "FALSE",
+          nuclearEndUse: "FALSE",
+          missileTechnologyEndUse: "FALSE",
+          chemicalBiologicalEndUse: "FALSE",
+          militaryEndUseCountry: "FALSE",
+        },
+      }),
+      ALL_ENABLED,
+      rules
+    );
+    expect(result.status).toBe("LICENSE_REQUIRED");
+    expect(result.ruleSource).toBe("MATCHED_RULE");
+    expect(result.ruleVersion).toBe("test-fixture-v1");
+  });
+
+  it("falls back to RULE_DATA_UNAVAILABLE when no supplied rule matches", () => {
+    const rules: LicenseControlRuleCandidate[] = [
+      {
+        operationType: "EXPORT",
+        classificationType: "ECCN",
+        classificationValue: "5A002.A.1",
+        country: "DE",
+        decision: "LICENSE_REQUIRED",
+        ruleVersion: "test-fixture-v1",
+      },
+    ];
+    const result = resolveLicenseDetermination(
+      baseInput({
+        conditions: {
+          governmentEndUser: "FALSE",
+          militaryEndUser: "FALSE",
+          nuclearEndUse: "FALSE",
+          missileTechnologyEndUse: "FALSE",
+          chemicalBiologicalEndUse: "FALSE",
+          militaryEndUseCountry: "FALSE",
+        },
+      }),
+      ALL_ENABLED,
+      rules
+    );
+    expect(result.status).toBe("RULE_DATA_UNAVAILABLE");
+    expect(result.ruleSource).toBe("GENERIC");
   });
 });

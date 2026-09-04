@@ -12,7 +12,8 @@ import { queueLicenseDeterminationReview } from "@/modules/compliance/notificati
 import type { Prisma } from "@prisma/client";
 import { resolveLicenseDetermination, type AccountLicenseGates } from "./ruleResolver";
 import { applyLicenseExceptionClaim, type LicenseExceptionClaim } from "./exceptionEvaluator";
-import type { LicenseDeterminationOutcome, LicenseDeterminationRequestInput } from "./types";
+import type { LicenseControlRuleCandidate, LicenseDeterminationOutcome, LicenseDeterminationRequestInput } from "./types";
+import type { LicenseOperationType } from "@prisma/client";
 
 export interface RunLicenseDeterminationOptions {
   exceptionClaim?: LicenseExceptionClaim;
@@ -33,6 +34,21 @@ async function loadAccountGates(accountId: string): Promise<AccountLicenseGates>
   };
 }
 
+/** Ships empty today -- this is a cheap no-op query until a real jurisdiction rule dataset is ingested. */
+async function loadCandidateRules(operationType: LicenseOperationType): Promise<LicenseControlRuleCandidate[]> {
+  const rows = await db.licenseControlRule.findMany({ where: { operationType } });
+  return rows.map((row) => ({
+    operationType: row.operationType,
+    classificationType: row.classificationType,
+    classificationValue: row.classificationValue,
+    country: row.country,
+    decision: row.decision,
+    authority: row.authority,
+    citation: row.citation,
+    ruleVersion: row.ruleVersion,
+  }));
+}
+
 /**
  * Runs a full License Determination: gates -> classification -> conditions
  * -> generic rule resolution (fail-safe) -> optional explicit license
@@ -48,7 +64,8 @@ export async function runLicenseDetermination(
 ): Promise<LicenseDeterminationRecord> {
   const startedAt = new Date();
   const gates = await loadAccountGates(input.accountId);
-  const baseOutcome = resolveLicenseDetermination(input, gates);
+  const rules = await loadCandidateRules(input.operationType);
+  const baseOutcome = resolveLicenseDetermination(input, gates, rules);
   const { outcome, rejectionReason } = applyLicenseExceptionClaim(baseOutcome, options.exceptionClaim);
 
   const evidence: Record<string, unknown> = {

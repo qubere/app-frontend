@@ -1,19 +1,20 @@
 // Canonical rule-routing/evaluation core for License Determination (prompt
 // sections 9-21). Deterministic only -- no LLM/AI call may influence any
-// value returned from here (prompt's hard constraint). Given that no
-// jurisdiction-specific regulatory rule datasets are ingested in this repo
-// (see schema.prisma's comment above LicenseDeterminationStatus and
-// docs/LICENSE-DETERMINATION-GAP-MATRIX.md), this resolver deliberately
-// fails safe to RULE_DATA_UNAVAILABLE for the actual controlled/not-
-// controlled call, rather than fabricating an outcome. It still performs
-// every check that IS safely decidable without that dataset: structural
-// classification validity, required-field completeness, universal
-// sensitive-end-use review escalation, and account-level enable/disable
-// gating.
-import type { LicenseDeterminationOutcome, LicenseDeterminationRequestInput } from "./types";
+// value returned from here (prompt's hard constraint). Given that the
+// LicenseControlRule table (see schema.prisma's comment above it) ships
+// empty -- no jurisdiction-specific regulatory rule content may be
+// fabricated -- this resolver deliberately fails safe to
+// RULE_DATA_UNAVAILABLE for the actual controlled/not-controlled call
+// whenever no matching rule row is supplied, rather than guessing. It still
+// performs every check that IS safely decidable without that dataset:
+// structural classification validity, required-field completeness,
+// universal sensitive-end-use review escalation, and account-level
+// enable/disable gating.
+import type { LicenseControlRuleCandidate, LicenseDeterminationOutcome, LicenseDeterminationRequestInput, LicenseRuleSource } from "./types";
 import { normalizeClassification } from "./classification";
 import { normalizeConditions } from "./conditions";
 import { MISSING_INPUT_CODES } from "./types";
+import { findMostSpecificMatch } from "@/lib/canonicalMessaging/wildcardLookup";
 
 const RULE_VERSION = "generic-fail-safe-v1";
 
@@ -30,7 +31,8 @@ export interface AccountLicenseGates {
  */
 export function resolveLicenseDetermination(
   input: LicenseDeterminationRequestInput,
-  gates: AccountLicenseGates
+  gates: AccountLicenseGates,
+  rules: LicenseControlRuleCandidate[] = []
 ): LicenseDeterminationOutcome {
   if (!gates.licenseDeterminationEnabled) {
     return outcome("BLOCKED", "License Determination is disabled for this account.");
@@ -90,6 +92,32 @@ export function resolveLicenseDetermination(
       "Item is flagged as an encryption item but self-classification status was not provided.",
       { missingInputs: [MISSING_INPUT_CODES.ENCRYPTION_CONDITIONS] }
     );
+  }
+
+  const country = input.operationType === "EXPORT" ? input.destinationCountry : input.originCountry;
+  const match = findMostSpecificMatch(
+    rules.filter((rule) => rule.operationType === input.operationType),
+    ["classificationType", "classificationValue", "country"],
+    {
+      classificationType: classification.type,
+      classificationValue: classification.normalizedValue,
+      country: country ?? "",
+    }
+  );
+
+  if (match) {
+    return outcome(match.decision, `Matched jurisdiction rule ${match.ruleVersion}.`, {
+      ruleSource: "MATCHED_RULE" as LicenseRuleSource,
+      ruleVersion: match.ruleVersion,
+      evidence: {
+        classification: { type: classification.type, normalizedValue: classification.normalizedValue },
+        conditions: conditions.flags,
+        replacementPartsAsserted: conditions.isReplacementParts,
+        encryptionExceptionReferenceNumbers: conditions.referenceNumbers,
+        authority: match.authority ?? null,
+        citation: match.citation ?? null,
+      },
+    });
   }
 
   // No jurisdiction-specific rule dataset is ingested -- fail safe rather

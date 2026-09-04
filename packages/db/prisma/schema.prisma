@@ -8169,12 +8169,14 @@ model ReportSchedule {
 //
 // Regulatory rule datasets (country export controls, license exceptions,
 // generic control numbers, EU/country rules, end-use/encryption/RPL rule
-// tables) are NOT modeled here yet -- no legacy source data for them has
-// been provided to this repo (only commerce_control_list exists). Per the
-// prompt's fail-safe rule (section 103), the determination engine returns
-// RULE_DATA_UNAVAILABLE/INCOMPLETE/REVIEW_REQUIRED rather than fabricating
-// jurisdiction-specific outcomes until those datasets are ingested -- see
-// docs/LICENSE-DETERMINATION-GAP-MATRIX.md.
+// tables) are NOT populated here yet -- no legacy source data for them has
+// been provided to this repo (only commerce_control_list exists). The
+// lookup mechanism (LicenseControlRule, below) exists and is wired into the
+// resolver, but ships with zero rows -- no jurisdiction-specific rule
+// content may be fabricated. Per the prompt's fail-safe rule (section 103),
+// the determination engine returns RULE_DATA_UNAVAILABLE/INCOMPLETE/
+// REVIEW_REQUIRED rather than guessing until a real dataset is ingested
+// into LicenseControlRule from an authoritative source.
 // =====================================================================
 
 /// Explicit result status -- never a boolean. ERROR/INCOMPLETE/
@@ -8196,6 +8198,36 @@ enum LicenseDeterminationStatus {
 enum LicenseOperationType {
   EXPORT
   IMPORT
+}
+
+/// Jurisdiction-specific export/import control rule lookup table. Global
+/// regulatory reference data (like TariffSchedule/CommerceControlList), not
+/// account-scoped. Ships empty -- no real rule content may be fabricated;
+/// rows may only be ingested from an authoritative regulatory source. The
+/// DB-level check constraint on `decision` (see migration) enforces that
+/// this table can only ever assert LICENSE_REQUIRED or NO_LICENSE_REQUIRED,
+/// never any of the other LicenseDeterminationStatus values.
+model LicenseControlRule {
+  id                  String               @id @default(cuid())
+  operationType       LicenseOperationType
+  /// ECCN | USML | HTS | SCHEDULE_B | ICN -- matches ClassificationInput.type
+  classificationType  String
+  /// Exact value, or "*" wildcard.
+  classificationValue String
+  /// ISO 3166-1 alpha-2, or "*" wildcard. destinationCountry for EXPORT,
+  /// originCountry for IMPORT.
+  country             String
+  decision            LicenseDeterminationStatus
+  /// e.g. "EAR", "ITAR" -- provenance, never fabricated when absent.
+  authority           String?
+  citation            String?
+  ruleVersion         String
+  effectiveFrom       DateTime?
+  effectiveTo         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([operationType, classificationType, country])
 }
 
 /// One row per LicenseDeterminationService invocation. Base and final
