@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { buildErrorResponse } from "@/lib/api/error";
 import { db } from "@/lib/db";
+import { getRequestLocale, localizeDescription } from "@/lib/i18n/serverLocale";
 
 /**
  * GET /api/filing-config/procedure-catalog-codes
- * Returns active filing procedure codes for procedureCode dropdowns.
+ * Returns active filing procedure codes for procedureCode dropdowns, with
+ * optionLabels localized to the caller's current UI locale (from
+ * FilingProcedureCatalog.descriptions).
  *
  * Deliberately NOT named "procedure-catalog" -- that exact path is also the
  * FilingConfigTableKey used by the generic CRUD route at
@@ -18,14 +21,19 @@ export const GET = withAuthenticatedRoute(async ({ ctx, requestId }) => {
     return buildErrorResponse(403, "FORBIDDEN", "Filing configuration is available to Platform Admins only.", undefined, requestId);
   }
 
+  const locale = await getRequestLocale();
   const procedures = await db.filingProcedureCatalog.findMany({
     where: { isActive: true },
-    select: { procedureCode: true },
+    select: { procedureCode: true, descriptions: true },
     orderBy: { procedureCode: "asc" },
   });
 
   return NextResponse.json({
     codes: procedures.map((procedure) => procedure.procedureCode),
+    optionLabels: Object.fromEntries(
+      procedures.map((procedure) => [procedure.procedureCode, localizeDescription(procedure.descriptions, locale, procedure.procedureCode)])
+    ),
     requestId,
   });
 });
+

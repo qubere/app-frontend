@@ -84,7 +84,11 @@ async function seedActionCatalog() {
  * Lists valid messages for Netherlands NCTS procedure
  */
 async function seedNlNctsProcedures() {
-  // Get NCTS procedure catalog code
+  // Sanity check: NCTS procedure catalog code must exist before seeding
+  // procedure configs that logically belong to it (no FK is written here --
+  // FilingProcedureConfig no longer stores a transactionType column; the
+  // import/export wrapper is now derived from FilingSchema via
+  // filingSchemaId, which this seed leaves unset).
   const nctsType = await db.filingProcedureCatalog.findUnique({
     where: { procedureCode: "NCTS" },
   });
@@ -94,24 +98,9 @@ async function seedNlNctsProcedures() {
   }
 
   const procedures = [
-    {
-      transactionType: nctsType.procedureCode,
-      country: "NL",
-      procedureCode: "NCTS",
-      messageName: "IE015", // Declaration
-    },
-    {
-      transactionType: nctsType.procedureCode,
-      country: "NL",
-      procedureCode: "NCTS",
-      messageName: "IE013", // Amendment
-    },
-    {
-      transactionType: nctsType.procedureCode,
-      country: "NL",
-      procedureCode: "NCTS",
-      messageName: "IE014", // Cancellation
-    },
+    { country: "NL", procedureCode: "NCTS", messageName: "IE015" }, // Declaration
+    { country: "NL", procedureCode: "NCTS", messageName: "IE013" }, // Amendment
+    { country: "NL", procedureCode: "NCTS", messageName: "IE014" }, // Cancellation
   ];
 
   for (const proc of procedures) {
@@ -124,13 +113,11 @@ async function seedNlNctsProcedures() {
         },
       },
       update: {
-        transactionType: proc.transactionType,
         isActive: true,
         updatedAt: new Date(),
         updatedBy: "system",
       },
       create: {
-        transactionType: proc.transactionType,
         country: proc.country,
         procedureCode: proc.procedureCode,
         messageName: proc.messageName,

@@ -43,7 +43,7 @@ function interpolate(template: string, values: Record<string, string | number>):
 }
 
 /**
- * Get value from row using dot notation (e.g., "transactionType.code")
+ * Get value from row using dot notation (e.g., "countryCustomsVersion.country")
  */
 function getNestedValue(row: Row, path: string): unknown {
   const parts = path.split('.');
@@ -101,6 +101,8 @@ export interface SubFieldMeta {
   label: string;
   type: "text" | "boolean" | "select" | "fieldArray";
   options?: string[];
+  optionsSource?: string;
+  optionLabels?: Record<string, string>;
   help?: string;
   /**
    * Only present when type === "fieldArray": the shape of each nested entry.
@@ -498,7 +500,8 @@ function RowFormModal({
   const [selectOptionLabels, setSelectOptionLabels] = useState<Record<string, Record<string, string>>>({});
 
   // Fetch dropdown options for any field that declares an optionsSource (e.g.
-  // procedure-config's transactionType, sourced from the FilingProcedureCatalog catalog).
+  // procedure-config's procedureCode, sourced from the FilingProcedureCatalog
+  // catalog, with optionLabels localized server-side to the caller's locale).
   // A transient 401 can happen right after sign-in while the auth session is
   // still settling, so failed/non-OK fetches are retried a couple of times
   // with a short backoff instead of silently leaving the field empty forever.
@@ -686,6 +689,33 @@ function FieldArrayEditor({
   dictPath?: Dict;
 }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [selectOptions, setSelectOptions] = useState<Record<string, string[]>>({});
+  const [selectOptionLabels, setSelectOptionLabels] = useState<Record<string, Record<string, string>>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const selectFields = itemFields.filter((field) => field.type === "select" && field.optionsSource);
+
+    async function loadOptions(field: SubFieldMeta) {
+      try {
+        const response = await fetch(field.optionsSource as string, { credentials: "include" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (cancelled) return;
+        setSelectOptions((current) => ({ ...current, [field.key]: data.codes ?? [] }));
+        if (data.optionLabels) {
+          setSelectOptionLabels((current) => ({ ...current, [field.key]: data.optionLabels }));
+        }
+      } catch (error) {
+        console.error(`Failed to load options for ${field.key}:`, error);
+      }
+    }
+
+    selectFields.forEach((field) => void loadOptions(field));
+    return () => {
+      cancelled = true;
+    };
+  }, [itemFields]);
 
   function toggle(i: number) {
     setExpanded((s) => {
@@ -760,11 +790,19 @@ function FieldArrayEditor({
                         onChange={(e) => updateEntry(i, { [sf.key]: e.target.value })}
                         className="w-full rounded-lg border border-border px-2.5 py-1.5 text-xs"
                       >
-                        {(sf.options ?? []).map((opt) => (
+                        {(sf.options?.length ? sf.options : selectOptions[sf.key] ?? []).map((opt) => (
                           <option key={opt} value={opt}>
-                            {opt}
+                            {selectOptionLabels[sf.key]?.[opt] ?? sf.optionLabels?.[opt] ?? opt}
                           </option>
                         ))}
+                        {Boolean(entry[sf.key]) &&
+                          !(sf.options?.length ? sf.options : selectOptions[sf.key] ?? []).includes(String(entry[sf.key])) && (
+                            <option value={String(entry[sf.key])}>
+                              {selectOptionLabels[sf.key]?.[String(entry[sf.key])] ??
+                                sf.optionLabels?.[String(entry[sf.key])] ??
+                                String(entry[sf.key])}
+                            </option>
+                          )}
                       </select>
                     ) : sf.type === "fieldArray" ? (
                       // Recursive: a "grid" field's own columns are themselves

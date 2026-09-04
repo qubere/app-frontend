@@ -62,7 +62,7 @@ interface ProcedureConfig {
   country: string;
   procedureCode: string;
   messageName: string;
-  transactionType: string | null;
+  filingSchemaId: string | null;
 }
 
 interface ReleaseRecord {
