@@ -132,7 +132,20 @@ export function DocumentProcessingBadge({
                     </span>
                   </span>
                 ))}
-              </span>
+            {data?.agentTimeline && data.agentTimeline.length > 0 && (
+              <>
+                <span className="mt-2 block border-t border-border pt-2 font-semibold text-ink-muted">
+                  Agent Execution History
+                </span>
+                <span className="mt-1 block space-y-1">
+                  {data.agentTimeline.slice(0, 5).map((step) => (
+                    <span key={step.id} className="block text-[11px]">
+                      <span className="font-medium text-ink">{step.agentName}</span>
+                      {step.summary && <span className="ml-1 text-ink-muted">— {step.summary}</span>}
+                    </span>
+                  ))}
+                </span>
+              </>
             )}
           </span>
         </>
