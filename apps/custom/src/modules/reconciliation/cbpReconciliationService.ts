@@ -27,7 +27,7 @@ export interface CbpReconFlagInput {
 export function calculateCbpReconciliationDeadline(entryDateStr: string | Date): Date {
   const entryDate = new Date(entryDateStr);
   const deadline = new Date(entryDate);
-  deadline.setMonth(deadline.getMonth() + 21);
+  deadline.setUTCMonth(deadline.getUTCMonth() + 21);
   return deadline;
 }
 

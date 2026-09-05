@@ -1,5 +1,15 @@
 import Link from "next/link";
-import { Coins, ArrowRightLeft, ReceiptText, Scale, ChevronRight } from "lucide-react";
+import {
+  Coins,
+  ArrowRightLeft,
+  ReceiptText,
+  Scale,
+  ChevronRight,
+  Ship,
+  ShieldAlert,
+  Banknote,
+  Activity,
+} from "lucide-react";
 import { getAccountContext } from "@/lib/auth";
 
 export const metadata = {
@@ -43,6 +53,51 @@ const TOOLS = [
     description:
       "Challenge CBP liquidation decisions under 19 U.S.C. § 1514 within the 180-day window. Track deemed denials and CIT appeal deadlines.",
     accent: "from-indigo-500 to-blue-600",
+  },
+  {
+    id: "isf",
+    href: "/app/post-entry/isf",
+    icon: Ship,
+    label: "ISF 10+2 Filings",
+    description:
+      "Prepare and submit Importer Security Filings. Tracks the 24-hour pre-lading deadline, missing 10+2 elements, bond coverage, and liquidated-damages exposure.",
+    accent: "from-sky-500 to-blue-500",
+  },
+  {
+    id: "prior-disclosure",
+    href: "/app/post-entry/prior-disclosure",
+    icon: ShieldAlert,
+    label: "Prior Disclosure (§1592)",
+    description:
+      "Model 19 U.S.C. § 1592 penalty exposure by culpability and record the tender. A valid prior disclosure caps the penalty at interest (or actual loss for fraud).",
+    accent: "from-rose-500 to-red-500",
+  },
+  {
+    id: "cbp-reconciliation",
+    href: "/app/post-entry/cbp-reconciliation",
+    icon: ArrowRightLeft,
+    label: "CBP Reconciliation Program",
+    description:
+      "Flag entries for the 21-month Reconciliation Program (value, classification, FTA, 9802) and bundle them into a reconciliation entry for transmission.",
+    accent: "from-teal-500 to-emerald-500",
+  },
+  {
+    id: "duty-payments",
+    href: "/app/post-entry/duty-payments",
+    icon: Banknote,
+    label: "Duty Statement Payments",
+    description:
+      "Track ACH payment instructions for daily and Periodic Monthly Statements — deadline math, scheduling, and settlement lifecycle. Does not move funds.",
+    accent: "from-lime-500 to-green-500",
+  },
+  {
+    id: "filer-health",
+    href: "/app/post-entry/filer-health",
+    icon: Activity,
+    label: "Filer Admin Health",
+    description:
+      "19 CFR 143 Subpart A monitoring: fatal-error rate from your filer export history, ABI credential state, and connection status for your filer code.",
+    accent: "from-fuchsia-500 to-purple-500",
   },
 ] as const;
 
