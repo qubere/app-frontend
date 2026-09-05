@@ -346,6 +346,71 @@ export interface TradeMetadata {
   endUseStatement?: string | null;
   /** Verbatim free-text narrative/remarks not captured by another field. Screened by antiBoycottScreening. */
   documentNarrativeText?: string | null;
+
+  // Delivery Note (see extractionSchemas.ts DELIVERY_NOTE_SCHEMA)
+  deliveryNoteNumber?: string | null;
+  deliveryNoteDate?: string | null;
+  deliveryLocation?: string | null;
+  receivedBy?: string | null;
+  receivedDate?: string | null;
+
+  // Shipping Instruction (see extractionSchemas.ts SHIPPING_INSTRUCTION_SCHEMA)
+  instructionNumber?: string | null;
+  instructionDate?: string | null;
+  bookingNumber?: string | null;
+  requestedSailingDate?: string | null;
+  /** Description of Goods -- also used by EUR.1/A.TR/Certificate of Origin (same field name in their schemas). */
+  goodsDescription?: string | null;
+
+  // CMR Consignment Note (see extractionSchemas.ts CMR_SCHEMA)
+  cmrNumber?: string | null;
+  /** Issue Date -- also used by EUR.1/A.TR (same field name in their schemas). */
+  issueDate?: string | null;
+  senderName?: string | null;
+  placeOfTakingOverGoods?: string | null;
+  placeOfDelivery?: string | null;
+  vehicleRegistration?: string | null;
+
+  // Sea Waybill (see extractionSchemas.ts SEA_WAYBILL_SCHEMA)
+  // Note: gross weight for this and Arrival Notice/AWB is already captured by
+  // the existing 'totalWeight' field (FIELD_INVENTORY already scopes its
+  // 'gross_weight' alias to these doc types) -- not duplicated here.
+  seaWaybillNumber?: string | null;
+
+  // Arrival Notice (see extractionSchemas.ts ARRIVAL_NOTICE_SCHEMA)
+  // Note: its 'bol_or_awb_reference' field is already captured by the existing
+  // 'transportDocumentNumber' field -- not duplicated here.
+  arrivalNoticeNumber?: string | null;
+  noticeDate?: string | null;
+  estimatedArrivalDate?: string | null;
+  lastFreeDate?: string | null;
+  /** Release Status -- also used by Customs Entry (same field name in its schema). */
+  releaseStatus?: string | null;
+
+  // Customs Entry (see extractionSchemas.ts CUSTOMS_ENTRY_SCHEMA)
+  // Note: 'total_customs_value' is already captured by the existing legacy
+  // top-level 'invoiceSubtotal' field (FIELD_INVENTORY already aliases it) --
+  // not duplicated here.
+  entryNumber?: string | null;
+  filingDate?: string | null;
+  portOfEntry?: string | null;
+  totalDuty?: number | null;
+  totalTax?: number | null;
+
+  // EUR.1 / A.TR / Certificate of Origin shared fields (see extractionSchemas.ts
+  // EUR1_CERTIFICATE_SCHEMA, ATR_CERTIFICATE_SCHEMA). Note: exporter name is
+  // already captured by the existing legacy top-level 'exporterName' field, and
+  // EUR.1's 'invoice_reference' by the existing 'invoiceNumber' field -- not
+  // duplicated here.
+  certificateNumber?: string | null;
+  customsEndorsement?: string | null;
+
+  // Air Waybill (see extractionSchemas.ts AIR_WAYBILL_SCHEMA)
+  // Note: 'airport_of_origin'/'airport_of_dest' are already captured by the
+  // existing 'portOfLoading'/'portOfDischarge' fields -- not duplicated here.
+  // 'airWaybill' fills a pre-existing FIELD_INVENTORY entry that referenced
+  // this exact key with no matching TradeMetadata field.
+  airWaybill?: string | null;
 }
 
 export interface FilingDetermination {
@@ -488,6 +553,36 @@ const intelligenceSchema: Schema = {
         onBoardDate: { type: Type.STRING, nullable: true },
         endUseStatement: { type: Type.STRING, nullable: true },
         documentNarrativeText: { type: Type.STRING, nullable: true },
+        deliveryNoteNumber: { type: Type.STRING, nullable: true },
+        deliveryNoteDate: { type: Type.STRING, nullable: true },
+        deliveryLocation: { type: Type.STRING, nullable: true },
+        receivedBy: { type: Type.STRING, nullable: true },
+        receivedDate: { type: Type.STRING, nullable: true },
+        instructionNumber: { type: Type.STRING, nullable: true },
+        instructionDate: { type: Type.STRING, nullable: true },
+        bookingNumber: { type: Type.STRING, nullable: true },
+        requestedSailingDate: { type: Type.STRING, nullable: true },
+        goodsDescription: { type: Type.STRING, nullable: true },
+        cmrNumber: { type: Type.STRING, nullable: true },
+        issueDate: { type: Type.STRING, nullable: true },
+        senderName: { type: Type.STRING, nullable: true },
+        placeOfTakingOverGoods: { type: Type.STRING, nullable: true },
+        placeOfDelivery: { type: Type.STRING, nullable: true },
+        vehicleRegistration: { type: Type.STRING, nullable: true },
+        seaWaybillNumber: { type: Type.STRING, nullable: true },
+        arrivalNoticeNumber: { type: Type.STRING, nullable: true },
+        noticeDate: { type: Type.STRING, nullable: true },
+        estimatedArrivalDate: { type: Type.STRING, nullable: true },
+        lastFreeDate: { type: Type.STRING, nullable: true },
+        releaseStatus: { type: Type.STRING, nullable: true },
+        entryNumber: { type: Type.STRING, nullable: true },
+        filingDate: { type: Type.STRING, nullable: true },
+        portOfEntry: { type: Type.STRING, nullable: true },
+        totalDuty: { type: Type.NUMBER, nullable: true },
+        totalTax: { type: Type.NUMBER, nullable: true },
+        certificateNumber: { type: Type.STRING, nullable: true },
+        customsEndorsement: { type: Type.STRING, nullable: true },
+        airWaybill: { type: Type.STRING, nullable: true },
       },
     },
     entities: {
@@ -1069,6 +1164,38 @@ ${scopedInstructions}`;
             totalQuantity: tradeMetadata?.totalQuantity || null,
             cartonCount: tradeMetadata?.cartonCount || null,
             onBoardDate: tradeMetadata?.onBoardDate || null,
+            endUseStatement: tradeMetadata?.endUseStatement || null,
+            documentNarrativeText: tradeMetadata?.documentNarrativeText || null,
+            deliveryNoteNumber: tradeMetadata?.deliveryNoteNumber || null,
+            deliveryNoteDate: tradeMetadata?.deliveryNoteDate || null,
+            deliveryLocation: tradeMetadata?.deliveryLocation || null,
+            receivedBy: tradeMetadata?.receivedBy || null,
+            receivedDate: tradeMetadata?.receivedDate || null,
+            instructionNumber: tradeMetadata?.instructionNumber || null,
+            instructionDate: tradeMetadata?.instructionDate || null,
+            bookingNumber: tradeMetadata?.bookingNumber || null,
+            requestedSailingDate: tradeMetadata?.requestedSailingDate || null,
+            goodsDescription: tradeMetadata?.goodsDescription || null,
+            cmrNumber: tradeMetadata?.cmrNumber || null,
+            issueDate: tradeMetadata?.issueDate || null,
+            senderName: tradeMetadata?.senderName || null,
+            placeOfTakingOverGoods: tradeMetadata?.placeOfTakingOverGoods || null,
+            placeOfDelivery: tradeMetadata?.placeOfDelivery || null,
+            vehicleRegistration: tradeMetadata?.vehicleRegistration || null,
+            seaWaybillNumber: tradeMetadata?.seaWaybillNumber || null,
+            arrivalNoticeNumber: tradeMetadata?.arrivalNoticeNumber || null,
+            noticeDate: tradeMetadata?.noticeDate || null,
+            estimatedArrivalDate: tradeMetadata?.estimatedArrivalDate || null,
+            lastFreeDate: tradeMetadata?.lastFreeDate || null,
+            releaseStatus: tradeMetadata?.releaseStatus || null,
+            entryNumber: tradeMetadata?.entryNumber || null,
+            filingDate: tradeMetadata?.filingDate || null,
+            portOfEntry: tradeMetadata?.portOfEntry || null,
+            totalDuty: tradeMetadata?.totalDuty ?? null,
+            totalTax: tradeMetadata?.totalTax ?? null,
+            certificateNumber: tradeMetadata?.certificateNumber || null,
+            customsEndorsement: tradeMetadata?.customsEndorsement || null,
+            airWaybill: tradeMetadata?.airWaybill || null,
           },
           lineItems,
           containers,
