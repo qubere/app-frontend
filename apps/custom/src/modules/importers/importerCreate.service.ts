@@ -62,13 +62,13 @@ function normalizedIdentifier(value: string | null | undefined, type: ImporterLe
  * itself enforces -- so this importer's legal entity stays unbridged until a
  * person confirms the match (Phase 2).
  */
-interface ResolvedLegalEntityParty {
+export interface ResolvedLegalEntityParty {
   partyId: string | null;
   pendingCandidates: { matchStatus: string; candidatesJson: unknown[]; inputPayload: Record<string, unknown> } | null;
 }
 
-async function resolveNewLegalEntityParty(
-  input: Pick<CreateImporterInput, "accountId" | "userId" | "requestId">,
+export async function resolveNewLegalEntityParty(
+  input: { accountId: string; userId: string | null; requestId?: string },
   legal: ImporterLegalEntityInput
 ): Promise<ResolvedLegalEntityParty> {
   try {

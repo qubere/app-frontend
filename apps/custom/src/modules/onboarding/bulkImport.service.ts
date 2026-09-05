@@ -6,6 +6,7 @@
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { createAuditLog } from "@/lib/audit";
+import { resolveNewLegalEntityParty } from "@/modules/importers/importerCreate.service";
 
 export interface BulkImportRow {
   legalName: string;
@@ -170,6 +171,40 @@ export async function commitBulkImport(
     });
 
     if (row.legalName && validation.status !== "invalid") {
+      // Same Party-graph bridge importerCreate.service.ts's UI onboarding flow
+      // uses: resolve (or create) the Party this legal entity matches -- fail-open,
+      // never blocks this row's commit -- then bridge the new LegalEntity to it.
+      const { partyId } = await resolveNewLegalEntityParty(
+        { accountId, userId },
+        {
+          legalName: row.legalName,
+          entityType: row.entityType || "US_CORPORATION",
+          country: row.country ?? "US",
+          importerNumberType: row.importerNumberType,
+          importerNumber: row.importerNumber ?? null,
+          addressLine1: row.addressLine1 ?? "",
+          city: row.city ?? "",
+          stateProvince: row.state ?? null,
+          postalCode: row.postalCode ?? "",
+        }
+      );
+
+      const legalEntity = await db.legalEntity.create({
+        data: {
+          accountId,
+          legalName: row.legalName,
+          entityType: row.entityType || "US_CORPORATION",
+          country: row.country ?? "US",
+          addressLine1: row.addressLine1 ?? null,
+          city: row.city ?? null,
+          stateProvince: row.state ?? null,
+          postalCode: row.postalCode ?? null,
+          taxIdentifier: row.importerNumber ?? null,
+          taxIdentifierType: row.importerNumberType,
+          partyId,
+        },
+      });
+
       const ior = await db.importerOfRecord.create({
         data: {
           accountId,
@@ -184,6 +219,7 @@ export async function commitBulkImport(
             postalCode: row.postalCode ?? "",
             country: row.country ?? "US",
           },
+          legalEntityId: legalEntity.id,
         },
       });
 
