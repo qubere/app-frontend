@@ -1,6 +1,55 @@
 {
   "version": 1,
-  "sourceCommit": null,
-  "articles": [],
+  "sourceCommit": "3985969b2955bdefcb30ef21214d53040648ff99",
+  "articles": [
+    {
+      "id": "embargo-screening",
+      "moduleId": "compliance",
+      "question": "How do I run and interpret an embargo screening?",
+      "answer": "View automatic embargo and sanctions screening findings directly on the shipment page, which runs automatically whenever documents are uploaded or shipment fields are modified.",
+      "steps": [
+        "Navigate to the shipment details workspace.",
+        "Locate the Automatic Embargo & Sanctions Screening panel.",
+        "Check the status badge for Clear, Attention, Blocked, or Not yet run states.",
+        "Review detailed findings listed per line item, including origin, destination, and private embargo rule checks."
+      ],
+      "href": "/app/shipments",
+      "actionLabel": "View embargo screening",
+      "tags": [
+        "embargo",
+        "country",
+        "clear",
+        "hit",
+        "skipped",
+        "error",
+        "screening"
+      ]
+    },
+    {
+      "id": "review-extraction",
+      "moduleId": "documents",
+      "question": "How do I review or correct extracted document fields?",
+      "answer": "Review and verify extracted document fields in the Document Review Panel or field review modal, edit unconfirmed or missing values, and clear document reconciliation conflicts directly against the document source.",
+      "steps": [
+        "Open the document in the Document Review Panel from the shipment workspace or Documents tab.",
+        "Inspect fields flagged with review warnings, missing values, or cross-document conflicts.",
+        "Click any field to highlight its bounding box and source page location on the document canvas.",
+        "Approve correct values or enter updated values for fields requiring human correction.",
+        "Resolve cross-document reconciliation conflicts directly from the document field review list."
+      ],
+      "href": "/app/documents",
+      "actionLabel": "Review document extractions",
+      "tags": [
+        "extraction",
+        "field",
+        "correct",
+        "approve",
+        "confidence",
+        "evidence",
+        "review"
+      ],
+      "popular": true
+    }
+  ],
   "archivedArticleIds": []
 }
