@@ -38,11 +38,12 @@ describe("fromStatementRecord DB integration", () => {
   };
 
   it("converts a daily StatementRecord to daily ABI statement input structures", () => {
-    const result = fromStatementRecord(dailyRecord);
+    const result = fromStatementRecord(dailyRecord, { entryNumber: "12345678" });
 
     expect(result.isPeriodic).toBe(false);
     expect(result.q1Daily).toBeDefined();
     expect(result.q1Daily?.entryFilerCode).toBe("123");
+    expect(result.q1Daily?.entryNumber).toBe("12345678");
     expect(result.q1Daily?.districtPortOfEntrySummary).toBe("3501");
     expect(result.q1Daily?.estimatedDutyAmount).toEqual(new Decimal(1500.5));
 
@@ -87,9 +88,13 @@ describe("fromStatementRecord DB integration", () => {
       statementNumber: "",
     };
 
-    const validation = validateStatementRecord(invalidRecord);
+    const validation = validateStatementRecord(invalidRecord, { entryNumber: "12345678" });
     expect(validation.valid).toBe(false);
 
-    expect(() => fromStatementRecord(invalidRecord)).toThrow(AbiFilingValidationError);
+    expect(() => fromStatementRecord(invalidRecord, { entryNumber: "12345678" })).toThrow(AbiFilingValidationError);
+  });
+
+  it("throws AbiFilingValidationError for a daily statement with no entryNumber, rather than substituting statementNumber", () => {
+    expect(() => fromStatementRecord(dailyRecord)).toThrow(AbiFilingValidationError);
   });
 });

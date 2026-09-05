@@ -1,5 +1,6 @@
 import { Decimal } from "@/lib/tariff/decimal";
 import { AbiFilingValidationError, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+export { AbiFilingValidationError };
 import type {
   HeaderInput,
   PrincipalInput,
@@ -50,6 +51,8 @@ export interface BondFilingOptions extends EnvelopeHeaderOptions {
 
 /**
  * Validates a Bond model and its BondParty records for eBond transmission.
+ * Every field the wire-format types require is checked here so the builder
+ * below never has to invent a surety code, agent ID, or effective date.
  */
 export function validateBond(
   bond: BondWithParties,
@@ -60,15 +63,22 @@ export function validateBond(
   if (!bond.bondType) {
     missingFields.push("bond.bondType");
   }
+  if (!bond.effectiveDate) {
+    missingFields.push("bond.effectiveDate");
+  }
 
   const parties = bond.bondParties || [];
   const principal = parties.find((p) => p.role.toUpperCase() === "PRINCIPAL");
   if (!principal) {
     missingFields.push("bondParties (requires at least one party with role 'PRINCIPAL')");
-  } else {
-    if (!principal.idNumber) {
-      missingFields.push("bondParties[PRINCIPAL].idNumber");
-    }
+  } else if (!principal.idNumber) {
+    missingFields.push("bondParties[PRINCIPAL].idNumber");
+  }
+  // Every eBond SuretyInput requires a real agentIdNumber (types.ts has no
+  // optional form); Bond itself carries no agent-id field, so at least one
+  // SURETY-role BondParty row is the only valid source. No synthesized row.
+  if (!parties.some((p) => p.role.toUpperCase() === "SURETY")) {
+    missingFields.push("bondParties (requires at least one party with role 'SURETY')");
   }
 
   // Validate all party roles against the allowed set
@@ -76,6 +86,18 @@ export function validateBond(
     const roleUpper = p.role.toUpperCase();
     if (!VALID_BOND_PARTY_ROLES.has(roleUpper)) {
       missingFields.push(`bondParties[${idx}].role (invalid role '${p.role}', expected one of ${Array.from(VALID_BOND_PARTY_ROLES).join(", ")})`);
+      return;
+    }
+    if (roleUpper === "SURETY" || roleUpper === "CO_SURETY" || roleUpper === "REINSURER") {
+      if (!bond.suretyCode) {
+        missingFields.push(`bond.suretyCode (required for bondParties[${idx}] with role '${roleUpper}')`);
+      }
+      if (!p.agentIdNumber && !p.idNumber) {
+        missingFields.push(`bondParties[${idx}].agentIdNumber (or idNumber)`);
+      }
+      if (roleUpper === "SURETY" && !p.name && !bond.suretyName) {
+        missingFields.push(`bondParties[${idx}].name (or bond.suretyName)`);
+      }
     }
   });
 
@@ -121,7 +143,7 @@ export function fromBond(
     bondTypeCode: isStb ? "9" : "8",
     bondActivityCode: (bond.activityCode || "1").slice(0, 2),
     bondAmount: new Decimal(bond.bondAmount),
-    effectiveDate: bond.effectiveDate || new Date(),
+    effectiveDate: bond.effectiveDate!,
     terminationDate: bond.expirationDate ?? undefined,
     bondNumber: bond.bondNumber,
     executionDate: options?.executionDate ?? undefined,
@@ -139,45 +161,35 @@ export function fromBond(
 
   const principal: PrincipalInput = {
     principalIdNumberType: normalizeIdType(principalRow.idNumberType),
-    principalIdNumber: (principalRow.idNumber || "000000000").replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+    principalIdNumber: principalRow.idNumber!.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     principalName: principalRow.name?.toUpperCase() ?? undefined,
   };
 
   const coPrincipals: CoPrincipalInput[] = coPrincipalRows.map((p) => ({
     coPrincipalIdNumberType: normalizeIdType(p.idNumberType),
-    coPrincipalIdNumber: (p.idNumber || "000000000").replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+    coPrincipalIdNumber: (p.idNumber || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     coPrincipalName: p.name?.toUpperCase() ?? undefined,
   }));
 
-  let sureties: SuretyInput[] = suretyRows.map((p) => ({
-    suretyCode: (bond.suretyCode || "000").slice(0, 3),
-    agentIdNumber: (p.agentIdNumber || p.idNumber || "000000000").replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+  // suretyCode/agentIdNumber presence for SURETY/CO_SURETY/REINSURER rows is
+  // validated above — never fabricated here.
+  const sureties: SuretyInput[] = suretyRows.map((p) => ({
+    suretyCode: bond.suretyCode!.slice(0, 3),
+    agentIdNumber: (p.agentIdNumber || p.idNumber)!.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     suretyName: (p.name || bond.suretyName).toUpperCase(),
     suretyLiabilityAmount: p.liabilityAmount ? new Decimal(p.liabilityAmount) : new Decimal(bond.bondAmount),
   }));
 
-  // Fallback to top-level bond surety if no SURETY row was explicitly created
-  if (sureties.length === 0 && bond.suretyCode) {
-    sureties = [
-      {
-        suretyCode: bond.suretyCode.slice(0, 3),
-        agentIdNumber: "000000000",
-        suretyName: bond.suretyName.toUpperCase(),
-        suretyLiabilityAmount: new Decimal(bond.bondAmount),
-      },
-    ];
-  }
-
   const coSureties: CoSuretyInput[] = coSuretyRows.map((p) => ({
-    coSuretyCode: (bond.suretyCode || "000").slice(0, 3),
-    agentIdNumber: (p.agentIdNumber || p.idNumber || "000000000").replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+    coSuretyCode: bond.suretyCode!.slice(0, 3),
+    agentIdNumber: (p.agentIdNumber || p.idNumber)!.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     coSuretyName: p.name?.toUpperCase() ?? undefined,
     coSuretyLiabilityAmount: p.liabilityAmount ? new Decimal(p.liabilityAmount) : new Decimal(bond.bondAmount),
   }));
 
   const reinsurers: ReinsurerInput[] = reinsurerRows.map((p) => ({
-    suretyCodeForReinsurer: (bond.suretyCode || "000").slice(0, 3),
-    agentIdNumber: (p.agentIdNumber || p.idNumber || "000000000").replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+    suretyCodeForReinsurer: bond.suretyCode!.slice(0, 3),
+    agentIdNumber: (p.agentIdNumber || p.idNumber)!.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     suretyName: p.name?.toUpperCase() ?? undefined,
   }));
 

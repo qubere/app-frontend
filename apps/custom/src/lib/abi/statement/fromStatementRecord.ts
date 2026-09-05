@@ -1,5 +1,6 @@
 import { Decimal } from "@/lib/tariff/decimal";
 import { AbiFilingValidationError, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+export { AbiFilingValidationError };
 import type {
   Q1DailyInput,
   Q3DailyInput,
@@ -32,12 +33,16 @@ export type StatementRecordWithLines = {
 };
 
 export interface StatementFilingOptions extends EnvelopeHeaderOptions {
+  /** Required for a daily statement's Q1 record — a statement number is not
+   * an entry number, so it is never substituted for one. */
   entryNumber?: string;
   entrySummaryPresentationDate?: Date;
 }
 
 /**
- * Validates a StatementRecord for ABI statement output building.
+ * Validates a StatementRecord for ABI statement output building. Every field
+ * the wire-format types require is checked here so the builder never has to
+ * invent a district/port, filer code, print/due date, or entry number.
  */
 export function validateStatementRecord(
   record: StatementRecordWithLines,
@@ -52,6 +57,28 @@ export function validateStatementRecord(
   const filerCode = record.filerCode || options?.processingFilerCode;
   if (!filerCode || filerCode.trim() === "") {
     missingFields.push("statementRecord.filerCode (requires record.filerCode or options.processingFilerCode)");
+  }
+
+  const districtPort = record.districtPort || options?.processingDistrictPortCode;
+  if (!districtPort || districtPort.trim() === "") {
+    missingFields.push("statementRecord.districtPort (requires record.districtPort or options.processingDistrictPortCode)");
+  }
+
+  if (!record.printDate) {
+    missingFields.push("statementRecord.printDate");
+  }
+
+  const isPeriodic = record.statementType.toLowerCase().includes("periodic");
+  if (isPeriodic && !record.dueDate) {
+    missingFields.push("statementRecord.dueDate (required for a periodic statement's Q3 record)");
+  }
+  if (!isPeriodic) {
+    if (!options?.entryNumber) {
+      missingFields.push("options.entryNumber (required for a daily statement's Q1 record; statementNumber is not an entry number)");
+    }
+    if (!record.entryType) {
+      missingFields.push("statementRecord.entryType (required for a daily statement's Q1 record)");
+    }
   }
 
   return {
@@ -109,15 +136,15 @@ export function fromStatementRecord(
     throw new AbiFilingValidationError(record.id, validation.missingFields);
   }
 
-  const filerCode = (record.filerCode || options?.processingFilerCode || "123").slice(0, 3).toUpperCase();
-  const districtPort = (record.districtPort || options?.processingDistrictPortCode || "3501").slice(0, 4);
-  const printDate = record.printDate || new Date();
-  const dueDate = record.dueDate || new Date();
+  const filerCode = (record.filerCode || options!.processingFilerCode)!.slice(0, 3).toUpperCase();
+  const districtPort = (record.districtPort || options!.processingDistrictPortCode)!.slice(0, 4);
+  const printDate = record.printDate!;
   const feeInputs = mapStatementFeeLines(record.statementFeeLines || []);
 
   const isPeriodic = record.statementType.toLowerCase().includes("periodic");
 
   if (isPeriodic) {
+    const dueDate = record.dueDate!;
     const q1Periodic: Q1PeriodicInput = {
       periodicDailyStatementNumber: record.statementNumber.slice(0, 10),
       periodicDailyStatementDistrictPort: districtPort,
@@ -150,12 +177,12 @@ export function fromStatementRecord(
   const q1Daily: Q1DailyInput = {
     districtPortOfEntrySummary: districtPort,
     entryFilerCode: filerCode,
-    entryNumber: (options?.entryNumber || record.statementNumber || "00000000").slice(0, 8),
+    entryNumber: options!.entryNumber!.slice(0, 8),
     importerOfRecordNumber: record.importerNumber ?? undefined,
     preliminaryDailyStatementPrintDate: printDate,
     estimatedDutyAmount: record.totalDuty ? new Decimal(record.totalDuty) : undefined,
     estimatedTaxAmount: record.totalTax ? new Decimal(record.totalTax) : undefined,
-    entryType: record.entryType || "01",
+    entryType: record.entryType!,
   };
 
   const q3Daily: Q3DailyInput = {
