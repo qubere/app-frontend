@@ -26,6 +26,25 @@
  * Also out of scope here: Chapter 99 (301/232/201) additional-duty child
  * lines. No table in this schema records "line N also owes an extra duty
  * under program X" — `chapter99Lines` is always `[]`.
+ *
+ * COLUMN-FACT SYNTHESIS: assembler.ts's own module doc says a DB-loading
+ * unit is "responsible for turning 'the current column value' into a Fact
+ * ... before calling this assembler" — this loader does exactly that via
+ * `synthesizeColumnFacts` below. Many real shipments (anything entered
+ * before the Fact-capture pipeline existed, or imported directly onto
+ * `ShipmentLineItem` columns) have live `description`/`htsCode`/
+ * `countryOfOrigin`/`quantity`/`totalValue` values with no corresponding
+ * `Fact` row at all. Without this step, the assembler would correctly (per
+ * its own contract) but uselessly mark every one of those blocks MISSING,
+ * even though the value is sitting right there on the row — which is what a
+ * live pass against a real shipment surfaced. Synthesized facts use
+ * `sourceType: "EXTRACTED"` (the closest honest fit — see FieldProvenance's
+ * `DOCUMENT` source) with a low, fixed confidence (`SYNTHESIZED_CONFIDENCE`)
+ * so any genuine higher-confidence extracted Fact for the same field still
+ * wins the precedence ladder's tie-break, and a deterministic
+ * epoch-anchored `createdAt` so a genuine Fact with any real timestamp also
+ * wins the "most recent" tie-break. They carry no `documentId` — there is
+ * no document to point to, only the row itself.
  */
 
 import type { Prisma } from "@prisma/client";
@@ -59,6 +78,109 @@ export class ShipmentNotFoundError extends Error {
     super(`Shipment ${shipmentId} not found for account ${accountId}.`);
     this.name = "ShipmentNotFoundError";
   }
+}
+
+/**
+ * Confidence assigned to a synthesized column-fact. Deliberately lower than
+ * any real extraction confidence would plausibly be, so a genuine Fact for
+ * the same field always outranks it in `pickBestExtracted`'s precedence
+ * tie-break — this is a floor, not a preferred source.
+ */
+export const SYNTHESIZED_FACT_CONFIDENCE = 1;
+
+/** Always older than any real Fact's `createdAt`, so genuine facts win the "most recent" tie-break too. */
+const SYNTHESIZED_FACT_CREATED_AT = new Date(0);
+
+export interface ColumnFactSource {
+  id: string;
+  createdAt: Date;
+}
+
+/**
+ * Builds one synthesized, traceable "column fact" for a live column value —
+ * `null`/`undefined`/empty-string values are skipped entirely (nothing to
+ * synthesize; the assembler correctly leaves the block MISSING).
+ */
+function columnFact(
+  field: string,
+  value: string | number | null | undefined,
+  source: ColumnFactSource,
+  entityRef: string | null
+): AssemblerFactLike | null {
+  if (value == null) return null;
+  const stringValue = String(value);
+  if (stringValue.length === 0) return null;
+  return {
+    id: `col:${source.id}:${field}`,
+    field,
+    value: stringValue,
+    sourceType: "EXTRACTED",
+    confidence: SYNTHESIZED_FACT_CONFIDENCE,
+    documentId: null,
+    documentPage: null,
+    createdAt: SYNTHESIZED_FACT_CREATED_AT,
+    entityRef,
+  };
+}
+
+/**
+ * Pure — exported and independently unit-tested
+ * (tests/entry-summary-dbloader-column-facts.test.ts). Turns the live
+ * column values on a shipment and its line items into `AssemblerFactLike`
+ * entries the assembler's Fact-based precedence levels can actually see,
+ * per the module-level "COLUMN-FACT SYNTHESIS" doc above.
+ */
+export function synthesizeColumnFacts(
+  shipment: {
+    id: string;
+    createdAt: Date;
+    entryType: string | null;
+    portOfEntry: string | null;
+    transportMode: string | null;
+    countryOfExport: string | null;
+  },
+  lineItems: Array<{
+    id: string;
+    lineNumber: number;
+    createdAt: Date;
+    description: string | null;
+    htsCode: string | null;
+    countryOfOrigin: string | null;
+    quantity: number | null;
+    totalValue: unknown;
+  }>
+): AssemblerFactLike[] {
+  const facts: AssemblerFactLike[] = [];
+
+  const headerSource: ColumnFactSource = { id: `shipment:${shipment.id}`, createdAt: shipment.createdAt };
+  const headerColumns: Array<[string, string | null]> = [
+    ["entryType", shipment.entryType],
+    ["portOfEntry", shipment.portOfEntry],
+    ["modeOfTransport", shipment.transportMode],
+    ["exportingCountry", shipment.countryOfExport],
+  ];
+  for (const [field, value] of headerColumns) {
+    const fact = columnFact(field, value, headerSource, null);
+    if (fact) facts.push(fact);
+  }
+
+  for (const li of lineItems) {
+    const lineSource: ColumnFactSource = { id: `shipmentLineItem:${li.id}`, createdAt: li.createdAt };
+    const entityRef = `line:${li.lineNumber}`;
+    const lineColumns: Array<[string, string | number | null]> = [
+      ["description", li.description],
+      ["htsCode", li.htsCode],
+      ["countryOfOrigin", li.countryOfOrigin],
+      ["netQuantity", li.quantity],
+      ["enteredValue", li.totalValue != null ? String(li.totalValue) : null],
+    ];
+    for (const [field, value] of lineColumns) {
+      const fact = columnFact(field, value, lineSource, entityRef);
+      if (fact) facts.push(fact);
+    }
+  }
+
+  return facts;
 }
 
 function addressToString(address: unknown): string | null {
@@ -173,7 +295,7 @@ export async function loadShipmentForEntrySummary(
     status: d.status,
   }));
 
-  const factLikes: AssemblerFactLike[] = facts.map((f) => ({
+  const realFactLikes: AssemblerFactLike[] = facts.map((f) => ({
     id: f.id,
     field: f.field,
     value: f.value,
@@ -184,6 +306,33 @@ export async function loadShipmentForEntrySummary(
     createdAt: f.createdAt,
     entityRef: f.entityRef,
   }));
+
+  const columnFacts = synthesizeColumnFacts(
+    {
+      id: shipment.id,
+      createdAt: shipment.createdAt,
+      entryType: shipment.entryType,
+      portOfEntry: shipment.portOfEntry,
+      transportMode: shipment.transportMode,
+      countryOfExport: shipment.countryOfExport,
+    },
+    shipment.lineItems.map((li) => ({
+      id: li.id,
+      lineNumber: li.lineNumber,
+      createdAt: li.createdAt,
+      description: li.description,
+      htsCode: li.htsCode,
+      countryOfOrigin: li.countryOfOrigin,
+      quantity: li.quantity,
+      totalValue: li.totalValue,
+    }))
+  );
+
+  // Real Facts first so the loader's own ordering also favors a genuine
+  // extraction/user-entry record over a synthesized column fallback for
+  // anyone inspecting `facts` directly (the assembler's own precedence
+  // logic doesn't depend on array order, only on confidence/createdAt/id).
+  const factLikes: AssemblerFactLike[] = [...realFactLikes, ...columnFacts];
 
   // GAP (choice b, documented above): always empty until AgentDecision/
   // FieldApproval carry a blockId.
