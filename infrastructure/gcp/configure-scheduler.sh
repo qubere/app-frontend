@@ -99,6 +99,10 @@ upsert_job qubere-reference-data-expiry-sweep "0 * * * *" /api/cron/reference-da
 upsert_job qubere-community-screening-dispatch "*/2 * * * *" /api/cron/community-screening-dispatch
 upsert_job qubere-compliance-batch-dispatch "*/2 * * * *" /api/cron/compliance-batch-dispatch
 upsert_job qubere-compliance-batch-retention-sweep "0 4 * * *" /api/cron/compliance-batch-retention-sweep
+upsert_job qubere-license-alerts "0 8 * * *" /api/cron/license-alerts
+upsert_job qubere-inbound-email-processing "*/5 * * * *" /api/cron/inbound-email-processing
+upsert_job qubere-report-cleanup "30 4 * * *" /api/cron/report-cleanup
+upsert_job qubere-report-schedules "0 * * * *" /api/cron/report-schedules
 # END GENERATED JOBS
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"

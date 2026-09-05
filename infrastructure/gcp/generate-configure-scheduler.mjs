@@ -9,7 +9,7 @@
 //   npx tsx infrastructure/gcp/generate-configure-scheduler.mjs         # write
 //   npx tsx infrastructure/gcp/generate-configure-scheduler.mjs --check # verify, no write (used in CI)
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CRON_JOB_DEFINITIONS } from "../../apps/custom/src/lib/admin/cronJobs.data.ts";
@@ -17,6 +17,48 @@ import { CRON_JOB_DEFINITIONS } from "../../apps/custom/src/lib/admin/cronJobs.d
 const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "configure-scheduler.sh");
 const BEGIN_MARKER = "# BEGIN GENERATED JOBS — do not edit by hand.";
 const END_MARKER = "# END GENERATED JOBS";
+
+const CRON_ROUTES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "apps", "custom", "src", "app", "api", "cron");
+
+// api/cron/* routes that are legitimately NOT in CRON_JOB_DEFINITIONS, because
+// something other than a direct Cloud Scheduler HTTP job invokes them. Every
+// route folder under apps/custom/src/app/api/cron/ must appear either in
+// CRON_JOB_DEFINITIONS or here — that's what closes the blind spot where a
+// route was in neither and nothing ever called it (the four routes below
+// scheduler:check found unscheduled and got moved into CRON_JOB_DEFINITIONS
+// instead: license-alerts, inbound-email-processing, report-cleanup,
+// report-schedules).
+const EXEMPT_FROM_CRON_JOB_DEFINITIONS = {
+  // Dispatched by the "data-dispatcher" master fan-out job (itself in
+  // CRON_JOB_DEFINITIONS), which reads DATASET_DEFINITIONS in
+  // apps/custom/src/lib/data/datasetRegistry.ts and calls each LIVE
+  // dataset's `endpoint` when it's due for refresh.
+  "canada-consolidated-sanctions-ingest": "dataset-registry fan-out",
+  "dfat-consolidated-list-ingest": "dataset-registry fan-out",
+  "eu-air-safety-list-ingest": "dataset-registry fan-out",
+  "eu-consolidated-sanctions-ingest": "dataset-registry fan-out",
+  "fbi-wanted-ingest": "dataset-registry fan-out",
+  "fda-debarment-ingest": "dataset-registry fan-out",
+  "mas-domestic-designations-ingest": "dataset-registry fan-out",
+  "meti-end-user-list-ingest": "dataset-registry fan-out",
+  "public-safety-canada-terrorist-entities-ingest": "dataset-registry fan-out",
+  "sam-gov-exclusions-ingest": "dataset-registry fan-out",
+  "seco-sanctions-ingest": "dataset-registry fan-out",
+  "uk-sanctions-list-ingest": "dataset-registry fan-out",
+  "un-security-council-sanctions-ingest": "dataset-registry fan-out",
+  "world-bank-debarred-firms-ingest": "dataset-registry fan-out",
+  // DATASET_DEFINITIONS entries with selfScheduled: true — the route only
+  // enqueues an Inngest event; the recurring schedule lives on the Inngest
+  // function's own `{ cron: ... }` trigger.
+  "hts-refresh": "selfScheduled dataset, Inngest-native cron trigger",
+  "ofac-sdn-ingest": "selfScheduled dataset, Inngest-native cron trigger",
+  // Not in DATASET_DEFINITIONS at all — the recurring schedule is an
+  // Inngest-native `{ cron: ... }` trigger on the function the route calls.
+  "work-metric-snapshot": "Inngest-native cron trigger (dailyWorkMetricSnapshotJob)",
+  // Deliberately one-shot / operator-triggered, not recurring — see the
+  // route's own comment.
+  "rps-search-token-backfill": "one-shot manual backfill by design, not a recurring job",
+};
 
 function renderJobLines() {
   const lines = [
@@ -45,6 +87,28 @@ function renderJobLines() {
   return lines.join("\n");
 }
 
+// Finds every apps/custom/src/app/api/cron/<name>/route.ts folder that is
+// absent from BOTH CRON_JOB_DEFINITIONS and EXEMPT_FROM_CRON_JOB_DEFINITIONS
+// — the class of gap a plain sync-check between cronJobs.data.ts and
+// configure-scheduler.sh can never catch, because a route missing from both
+// lists is, by definition, not a disagreement between them.
+function findUnaccountedCronRoutes() {
+  const routeNames = readdirSync(CRON_ROUTES_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  // job.id is an internal identifier and doesn't always match the route
+  // folder name (e.g. id "cbp-cross-ingest" vs. folder
+  // "cbp-cross-rulings-ingest") — match on the actual route path instead.
+  // cloud-run-job triggers have no HTTP path; those match by id, which is
+  // how the one such trigger with its own route folder ("document-processing",
+  // kept as a manual-trigger backstop endpoint) is named.
+  const definedRouteNames = new Set(
+    CRON_JOB_DEFINITIONS.map((job) => (job.trigger.kind === "http" ? job.trigger.path.replace(/^\/api\/cron\//, "") : job.id)),
+  );
+  return routeNames.filter((name) => !definedRouteNames.has(name) && !(name in EXEMPT_FROM_CRON_JOB_DEFINITIONS));
+}
+
 const current = readFileSync(SCRIPT_PATH, "utf8");
 const beginIdx = current.indexOf(BEGIN_MARKER);
 const endIdx = current.indexOf(END_MARKER);
@@ -59,14 +123,30 @@ const generated = before + renderJobLines() + after;
 
 const checkOnly = process.argv.includes("--check");
 if (checkOnly) {
+  let ok = true;
+
   if (generated !== current) {
     console.error(
       "infrastructure/gcp/configure-scheduler.sh is out of sync with apps/custom/src/lib/admin/cronJobs.data.ts.\n" +
         "Run: npx tsx infrastructure/gcp/generate-configure-scheduler.mjs",
     );
-    process.exit(1);
+    ok = false;
   }
-  console.log("OK: configure-scheduler.sh matches cronJobs.data.ts.");
+
+  const unaccounted = findUnaccountedCronRoutes();
+  if (unaccounted.length > 0) {
+    console.error(
+      `Found api/cron/* route(s) with no schedule anywhere: ${unaccounted.join(", ")}.\n` +
+        "Add each to CRON_JOB_DEFINITIONS in apps/custom/src/lib/admin/cronJobs.data.ts (then re-run this " +
+        "script without --check to regenerate configure-scheduler.sh), or, if something else already " +
+        "invokes it on a schedule, add it to EXEMPT_FROM_CRON_JOB_DEFINITIONS in this file with a comment " +
+        "explaining what schedules it.",
+    );
+    ok = false;
+  }
+
+  if (!ok) process.exit(1);
+  console.log("OK: configure-scheduler.sh matches cronJobs.data.ts, and every api/cron/* route is accounted for.");
 } else {
   writeFileSync(SCRIPT_PATH, generated);
   console.log(`Wrote ${SCRIPT_PATH}`);
