@@ -24,5 +24,7 @@ export * from "./parsePeriodicStatement";
 export * from "./interpretDailyStatement";
 export * from "./interpretPeriodicStatement";
 export * from "./validate";
+export * from "./fromStatementRecord";
+
 
 

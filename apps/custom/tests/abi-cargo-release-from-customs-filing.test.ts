@@ -178,4 +178,28 @@ describe("Cargo Release DB Integration (fromCustomsFiling)", () => {
     expect(validation.valid).toBe(false);
     expect(validation.missingFields).toContain("shipment.lineItems (requires at least 1 line item)");
   });
+
+  it("prioritizes persisted CargoReleaseBillOfLading records over tracking identifier fallback", () => {
+    const filing = makeMockFiling();
+    filing.cargoReleaseBillsOfLading = [
+      {
+        id: "bol-001",
+        billTypeIndicator: "M",
+        issuerCode: "HDMU",
+        billOfLadingNumber: "HYUNDAI998877",
+        quantity: 1200,
+        nonAmsIndicator: true,
+      },
+    ];
+
+    const input = fromCustomsFiling(filing, defaultEnvelope);
+
+    expect(input.bills).toHaveLength(1);
+    expect(input.bills![0].billsOfLading[0].billOfLadingNumber).toBe("HYUNDAI998877");
+    expect(input.bills![0].billsOfLading[0].issuerCodeOfBillOfLadingNumber).toBe("HDMU");
+    expect(input.bills![0].billsOfLading[0].billTypeIndicator).toBe("M");
+    expect(input.bills![0].billsOfLading[0].quantity).toBe(1200);
+    expect(input.bills![0].billsOfLading[0].nonAmsIndicator).toBe("Y");
+  });
 });
+
