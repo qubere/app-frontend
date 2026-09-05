@@ -355,7 +355,7 @@ export function ActionsClient({
               ...g,
               items: g.items.map((item) =>
                 item.kind === "decision" && ids.includes(item.id)
-                  ? { ...item, status: "REJECTED" }
+                  ? { ...item, status: "Rejected", triageState: "REJECTED" }
                   : item
               ),
             }))
@@ -401,13 +401,14 @@ export function ActionsClient({
       });
       const data = await res.json() as { succeeded?: number; failed?: number };
       if (res.ok) {
-        const newStatus = action === "APPROVE" ? "APPROVED" : "REJECTED";
+        const newStatus = action === "APPROVE" ? "Approved" : "Rejected";
+        const newTriageState = action === "APPROVE" ? "APPROVED" : "REJECTED";
         setLocalGroups((prev) =>
           prev.map((g) => ({
             ...g,
             items: g.items.map((item) =>
               item.kind === "decision" && ids.includes(item.id)
-                ? { ...item, status: newStatus }
+                ? { ...item, status: newStatus, triageState: newTriageState }
                 : item
             ),
           }))
@@ -1942,7 +1943,10 @@ function ExceptionCard({
   const expiryHoursMax = item.severity === "Critical" ? 24 : item.severity === "High" ? 72 : 120;
   const expiryDate = new Date(created.getTime() + expiryHoursMax * 3600 * 1000);
   const expiryMsRemaining = expiryDate.getTime() - now.getTime();
-  const expiryHoursRemaining = Math.max(0, Math.round(expiryMsRemaining / (1000 * 3600)));
+  const isExpired = expiryMsRemaining <= 0;
+  // Clamping a negative remainder to 0h reads as "about to expire" when the
+  // item is actually overdue -- show how overdue instead.
+  const expiryHoursRemaining = Math.round(Math.abs(expiryMsRemaining) / (1000 * 3600));
 
   return (
     <div className={`border rounded-2xl p-4 space-y-3 ${
@@ -2009,9 +2013,9 @@ function ExceptionCard({
           <span>Created {ageText}</span>
           <span className="text-border">•</span>
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-            expiryHoursRemaining <= 12 ? "bg-red-50 border-red-200 text-red-700" : "bg-amber-50 border-amber-200 text-amber-700"
+            isExpired || expiryHoursRemaining <= 12 ? "bg-red-50 border-red-200 text-red-700" : "bg-amber-50 border-amber-200 text-amber-700"
           }`}>
-            Expires in {expiryHoursRemaining}h
+            {isExpired ? `Expired ${expiryHoursRemaining}h ago` : `Expires in ${expiryHoursRemaining}h`}
           </span>
         </div>
         <div className="flex items-center gap-2">

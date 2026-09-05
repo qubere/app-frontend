@@ -978,7 +978,11 @@ export default async function ShipmentWorkspacePage(props: {
 
   // 11. Final Review & Filing Authorization
   const isBlocked = importerStatus === "Blocked" || qtyStatus === "Blocked";
-  const hasReviews = merchandiseStatus === "Needs Review" || pgaStatus === "Needs Review";
+  const hasReviews =
+    merchandiseStatus === "Needs Review" ||
+    pgaStatus === "Needs Review" ||
+    qtyStatus === "Needs Review" ||
+    valueStatus === "Needs Review";
   const hasMissingInfo =
     importerStatus === "Needs Information" ||
     shipmentStatus === "Needs Information" ||
