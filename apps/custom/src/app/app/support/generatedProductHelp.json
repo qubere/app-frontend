@@ -1,6 +1,34 @@
 {
   "version": 1,
-  "sourceCommit": null,
-  "articles": [],
+  "sourceCommit": "929aae0d67144d3849253b17722202ec130b89cb",
+  "articles": [
+    {
+      "id": "work-today",
+      "moduleId": "start",
+      "question": "What should I work on first today?",
+      "answer": "Access your primary action queue to resolve shipment exceptions and document decisions in order of urgency. The queue automatically consolidates issues by prioritizing root blockers, such as pending document extractions, over secondary downstream errors like missing classifications or container seal mismatches.",
+      "steps": [
+        "Go to Actions (/app/actions) from the main navigation.",
+        "Review your assigned action cards, where root extraction issues take priority over dependent downstream blockers.",
+        "Open a card to inspect filing blocker badges, severity levels, and linked source documents.",
+        "Resolve the highlighted issue by verifying document data, approving extracted fields, or confirming cross-document seal discrepancies.",
+        "Confirm that the exception clears and downstream readiness checks automatically re-evaluate."
+      ],
+      "href": "/app/actions",
+      "actionLabel": "View Actions Queue",
+      "tags": [
+        "today",
+        "actions",
+        "queue",
+        "priority",
+        "blocked",
+        "review",
+        "assignment",
+        "work",
+        "reconciliation"
+      ],
+      "popular": true
+    }
+  ],
   "archivedArticleIds": []
 }
