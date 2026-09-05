@@ -107,6 +107,26 @@ describe("MaterializerRegistry.materializeDecision", () => {
     });
   });
 
+  describe("shipment.invoiceNumber / shipment.invoiceDate", () => {
+    it("does not attempt a Shipment scalar write for invoiceNumber (no such column exists)", async () => {
+      const decision = decisionFor("shipment.invoiceNumber", "INV-9001");
+      const result = await MaterializerRegistry.materializeDecision("acct_1", "shp_1", decision);
+
+      expect(result.materializer).toBe("FactOnlyMaterializer");
+      expect(result.materialized).toBe(true);
+      expect(shipmentUpdateCalls).toHaveLength(0);
+    });
+
+    it("does not attempt a Shipment scalar write for invoiceDate (no such column exists)", async () => {
+      const decision = decisionFor("shipment.invoiceDate", "2026-01-15");
+      const result = await MaterializerRegistry.materializeDecision("acct_1", "shp_1", decision);
+
+      expect(result.materializer).toBe("FactOnlyMaterializer");
+      expect(result.materialized).toBe(true);
+      expect(shipmentUpdateCalls).toHaveLength(0);
+    });
+  });
+
   describe("filing.portOfEntry", () => {
     it("materializes onto the real Shipment.portOfEntry column via ShipmentScalarMaterializer", async () => {
       const decision = decisionFor("filing.portOfEntry", "3901");

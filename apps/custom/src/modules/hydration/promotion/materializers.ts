@@ -156,8 +156,6 @@ export class MaterializerRegistry {
               "destinationCountry",
               "incoterm",
               "invoiceCurrency",
-              "invoiceNumber",
-              "invoiceDate",
               "portOfEntry",
             ]);
 

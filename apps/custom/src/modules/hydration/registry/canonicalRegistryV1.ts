@@ -124,8 +124,8 @@ export const CANONICAL_FIELD_REGISTRY_V1: Record<string, CanonicalFieldDefinitio
     validators: ["nonEmptyString"],
     riskClass: "MEDIUM",
     promotionPolicy: "AUTO_IF_UNCONTRADICTED",
-    materializer: "ShipmentScalarMaterializer",
-    materializerConfig: { targetColumn: "invoiceNumber" },
+    materializer: "FactOnlyMaterializer",
+    materializerConfig: { factField: "invoiceNumber" },
   },
 
   "shipment.invoiceDate": {
@@ -146,8 +146,8 @@ export const CANONICAL_FIELD_REGISTRY_V1: Record<string, CanonicalFieldDefinitio
     validators: ["isoDateValidator"],
     riskClass: "MEDIUM",
     promotionPolicy: "AUTO_IF_VALIDATED",
-    materializer: "ShipmentScalarMaterializer",
-    materializerConfig: { targetColumn: "invoiceDate" },
+    materializer: "FactOnlyMaterializer",
+    materializerConfig: { factField: "invoiceDate" },
   },
 
   "shipment.financial.invoiceCurrency": {
