@@ -102,6 +102,8 @@ upsert_job qubere-compliance-batch-retention-sweep "0 4 * * *" /api/cron/complia
 upsert_job qubere-license-alerts "0 8 * * *" /api/cron/license-alerts
 upsert_job qubere-inbound-email-processing "*/5 * * * *" /api/cron/inbound-email-processing
 upsert_job qubere-report-cleanup "30 4 * * *" /api/cron/report-cleanup
+upsert_job qubere-adcvd-monitor "0 7 * * *" /api/cron/adcvd-monitor
+upsert_job qubere-bond-monitor "0 9 * * *" /api/cron/bond-monitor
 upsert_job qubere-report-schedules "0 * * * *" /api/cron/report-schedules
 upsert_job qubere-adcvd-monitor "0 7 * * *" /api/cron/adcvd-monitor
 upsert_job qubere-bond-monitor "30 7 * * *" /api/cron/bond-monitor
