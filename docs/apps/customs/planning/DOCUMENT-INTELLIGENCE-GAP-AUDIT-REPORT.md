@@ -5,10 +5,10 @@
 This audit worked through the external spec `Qubere_Document_Intelligence_Enhanced_Full_Customs_Document_Catalog_Claude_Code_Prompt.md`
 section by section, checking each requirement against the current codebase and closing genuine gaps with tests
 (never invented business rules or field names — only ones already present in the codebase or named verbatim in the
-spec). This report covers the range the user explicitly approved for this pass: **§70-84**, plus this report itself
-(§88). §69M (base-schema composition refactor) and §69P (10 new first-class document-type schemas) were reviewed
-and explicitly declined by the user as out of scope. §85/§86 (UI Acceptance / "DO NOT DO") were not part of the
-approved range and were not touched.
+spec). This report covers **§70-85 + §88**. §69M-Q (base-schema composition refactor, plus the reconciliation/
+exception-type/test-coverage/acceptance work that all depends on 10 new first-class document-type schemas) were
+reviewed and explicitly declined by the user as out of scope. §86 ("DO NOT DO") is a constraint list, not a task,
+and was used implicitly to check this session's own work rather than acted on directly.
 
 ## Summary of findings
 
@@ -91,6 +91,27 @@ origin/export country are present; `portOfDischarge` stays null when only `portO
 item's `dangerousGoodsIndicator` stays unset when the model reports a "Dangerous Goods" section heading but no
 explicit per-item indicator).
 
+## §85 — UI Acceptance (review screen)
+
+**Gap found:** every behavior §85 requires (document type display, action-required counts, conflicts with source
+evidence, accept/correct/reject/resolve actions, collapsing auto-verified fields) is already implemented in
+`DocumentReviewPanel.tsx` / `DocumentFieldReviewModal.tsx` — but this repo had zero component-rendering test
+infrastructure (`vitest.config.mts` ran everything under `environment: "node"`; no `@testing-library/react`
+was installed).
+
+**Closed** (commit `82c9d6be`): added `@testing-library/react` + `@testing-library/jest-dom` as devDependencies,
+opted a single new file into a `happy-dom` environment via a per-file `@vitest-environment` docblock (leaving the
+~475 existing unit tests on `node` untouched), and wrote `tests/document-review-panel-ui.test.tsx` — real
+component-rendering tests asserting the document-type label, the Field Review tab badge / Verified-Review-Blocked
+rollup counts, a rendered cross-document conflict with expected-vs-actual values whose Resolve/Ignore buttons post
+the correct `action` string, the Approve/Reject/Re-evaluate decision buttons firing the correct literal action
+strings, and the auto-verified-fields collapse-by-default/toggle behavior.
+
+**Real gap, not touched:** containers have no structured list/table anywhere in the review UI today — only a
+single scalar `Container Number` field. This is a genuine missing-feature gap (not a missing-test gap), and
+implementing it would mean designing new UI surface the spec doesn't specify in enough detail to build without
+guessing — left as a documented, explicit gap rather than fabricated.
+
 ## Incidental fixes (pre-existing failures on `main`, unrelated to this audit, fixed at explicit user request)
 
 1. `extractionReview.test.ts` — `summarizeVerification` assertions were stale against the real (8-state, not
@@ -111,6 +132,10 @@ none introduced by this audit).
 ## Out of scope (by explicit user decision)
 
 - **§69M** — refactoring the base extraction schema into a composed/shared shape across document types.
-- **§69P** — 10 new first-class document-type schemas (would require inventing field names/structures not
-  present in the codebase or spec-verbatim).
-- **§85/§86** — UI Acceptance criteria and "DO NOT DO" constraints; not requested for this pass.
+- **§69N/O/Q** — cross-document reconciliation, exception types, and the acceptance addendum for the 10 new
+  document types below — all gated on §69P.
+- **§69P** — 10 new first-class document-type schemas (Delivery Note, Shipping Instruction, Certificate of
+  Origin, Arrival Notice, CMR, Air Waybill, Sea Waybill, Customs Entry, EUR.1, A.TR) plus their fixtures/tests
+  and classifier-discrimination tests — would require inventing field names/structures not present in the
+  codebase or spec-verbatim.
+- **§86** — "DO NOT DO" is a constraint list, not a task; checked against implicitly, not acted on directly.
