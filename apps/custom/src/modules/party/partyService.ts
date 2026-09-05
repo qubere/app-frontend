@@ -135,11 +135,96 @@ export interface PartyListRow {
   /** Active role types this party currently holds. */
   activeRoles: string[];
   openRevalidationCount: number;
+  /** The party's primary address, or its next-best active one, for the list. */
+  primaryAddress: PartyListAddress | null;
+  /** Distinct documents this party has evidence from. */
+  documentCount: number;
+  /** Distinct shipments those documents belong to. */
+  shipmentCount: number;
+  /** The one shipment, when `shipmentCount` is exactly 1 -- otherwise null,
+   *  since there is no single shipment to link to. */
+  singleShipment: { id: string; shipmentNumber: string } | null;
+  /** Most recent upload among this party's evidence documents, if any. */
+  lastDocumentAt: Date | null;
+}
+
+export interface PartyListAddress {
+  addressLine1: string;
+  addressLine2: string | null;
+  city: string | null;
+  stateProvince: string | null;
+  postalCode: string | null;
+  country: string;
 }
 
 export interface PartyListResult {
   rows: PartyListRow[];
   total: number;
+}
+
+/**
+ * Document/shipment provenance for a page of parties, derived from
+ * `PartyEvidence.sourceDocument` -- the same link the detail page's evidence
+ * tab already reads. Batched by party id rather than joined into the main
+ * query so the list query's shape and pagination are unaffected.
+ */
+async function loadDocumentProvenance(
+  accountId: string,
+  partyIds: string[]
+): Promise<
+  Map<string, { documentCount: number; shipmentCount: number; singleShipment: { id: string; shipmentNumber: string } | null; lastDocumentAt: Date | null }>
+> {
+  if (partyIds.length === 0) return new Map();
+
+  const evidence = await db.partyEvidence.findMany({
+    where: { accountId, partyId: { in: partyIds }, sourceDocumentId: { not: null } },
+    select: {
+      partyId: true,
+      sourceDocument: {
+        select: {
+          id: true,
+          uploadedAt: true,
+          createdAt: true,
+          shipmentId: true,
+          shipment: { select: { id: true, shipmentNumber: true } },
+        },
+      },
+    },
+  });
+
+  const byParty = new Map<
+    string,
+    { documentIds: Set<string>; shipments: Map<string, string>; lastDocumentAt: Date | null }
+  >();
+
+  for (const row of evidence) {
+    const doc = row.sourceDocument;
+    if (!doc) continue;
+    let entry = byParty.get(row.partyId);
+    if (!entry) {
+      entry = { documentIds: new Set(), shipments: new Map(), lastDocumentAt: null };
+      byParty.set(row.partyId, entry);
+    }
+    entry.documentIds.add(doc.id);
+    if (doc.shipment) entry.shipments.set(doc.shipment.id, doc.shipment.shipmentNumber);
+    const docDate = doc.uploadedAt ?? doc.createdAt;
+    if (!entry.lastDocumentAt || docDate > entry.lastDocumentAt) entry.lastDocumentAt = docDate;
+  }
+
+  const result = new Map<
+    string,
+    { documentCount: number; shipmentCount: number; singleShipment: { id: string; shipmentNumber: string } | null; lastDocumentAt: Date | null }
+  >();
+  for (const [partyId, entry] of byParty) {
+    const shipmentEntries = [...entry.shipments.entries()];
+    result.set(partyId, {
+      documentCount: entry.documentIds.size,
+      shipmentCount: shipmentEntries.length,
+      singleShipment: shipmentEntries.length === 1 ? { id: shipmentEntries[0]![0], shipmentNumber: shipmentEntries[0]![1] } : null,
+      lastDocumentAt: entry.lastDocumentAt,
+    });
+  }
+  return result;
 }
 
 export async function listParties(actor: PartyActor, query: PartyQuery): Promise<PartyListResult> {
@@ -160,6 +245,12 @@ export async function listParties(actor: PartyActor, query: PartyQuery): Promise
           where: { status: "ACTIVE" },
           select: { roleType: true },
         },
+        addresses: {
+          where: { status: "ACTIVE" },
+          orderBy: [{ isPrimary: "desc" }, { addressType: "asc" }],
+          select: { addressLine1: true, addressLine2: true, city: true, stateProvince: true, postalCode: true, country: true },
+          take: 1,
+        },
         revalidationFlags: {
           where: { status: "OPEN" },
           select: { id: true },
@@ -172,23 +263,33 @@ export async function listParties(actor: PartyActor, query: PartyQuery): Promise
     db.party.count({ where }),
   ]);
 
+  const provenance = await loadDocumentProvenance(actor.accountId, rows.map((row) => row.id));
+
   return {
     total,
-    rows: rows.map((row) => ({
-      id: row.id,
-      clientId: row.clientId,
-      clientName: row.client?.name ?? null,
-      internalPartyCode: row.internalPartyCode,
-      partyKind: row.partyKind,
-      status: row.status,
-      reviewStatus: row.reviewStatus,
-      currentVersion: row.currentVersion,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      displayName: row.names[0]?.rawName ?? null,
-      activeRoles: [...new Set(row.roles.map((role) => role.roleType))].sort(),
-      openRevalidationCount: row.revalidationFlags.length,
-    })),
+    rows: rows.map((row) => {
+      const prov = provenance.get(row.id);
+      return {
+        id: row.id,
+        clientId: row.clientId,
+        clientName: row.client?.name ?? null,
+        internalPartyCode: row.internalPartyCode,
+        partyKind: row.partyKind,
+        status: row.status,
+        reviewStatus: row.reviewStatus,
+        currentVersion: row.currentVersion,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        displayName: row.names[0]?.rawName ?? null,
+        activeRoles: [...new Set(row.roles.map((role) => role.roleType))].sort(),
+        openRevalidationCount: row.revalidationFlags.length,
+        primaryAddress: row.addresses[0] ?? null,
+        documentCount: prov?.documentCount ?? 0,
+        shipmentCount: prov?.shipmentCount ?? 0,
+        singleShipment: prov?.singleShipment ?? null,
+        lastDocumentAt: prov?.lastDocumentAt ?? null,
+      };
+    }),
   };
 }
 

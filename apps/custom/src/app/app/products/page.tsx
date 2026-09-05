@@ -258,6 +258,12 @@ export default async function ProductsPage(props: {
                   <th scope="col" className="px-3 xl:px-4 py-3.5">
                     Customs position
                   </th>
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Documents
+                  </th>
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Shipment
+                  </th>
                   <SortableHeader
                     column="reviewStatus"
                     label="Review"
@@ -272,6 +278,9 @@ export default async function ProductsPage(props: {
                     params={params}
                     basePath={BASE_PATH}
                   />
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Last uploaded
+                  </th>
                   <SortableHeader
                     column="updatedAt"
                     label="Updated"
@@ -329,11 +338,28 @@ export default async function ProductsPage(props: {
                           )}
                         </span>
                       </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
+                        {row.documentCount > 0 ? `${row.documentCount} doc${row.documentCount === 1 ? "" : "s"}` : "—"}
+                      </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
+                        {row.singleShipment ? (
+                          <Link href={`/app/shipments/${row.singleShipment.id}`} className="text-brand hover:underline">
+                            {row.singleShipment.shipmentNumber}
+                          </Link>
+                        ) : row.shipmentCount > 0 ? (
+                          `${row.shipmentCount} shipments`
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="px-3 xl:px-4 py-3">
                         <Badge variant={review.tone}>{review.label}</Badge>
                       </td>
                       <td className="px-3 xl:px-4 py-3">
                         <Badge variant={status.tone}>{status.label}</Badge>
+                      </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
+                        {displayDate(row.lastDocumentAt)}
                       </td>
                       <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
                         {displayDate(row.updatedAt)}

@@ -110,11 +110,85 @@ export interface ProductListRow {
   /** Count of candidate/proposed classifications awaiting someone. */
   pendingClassificationCount: number;
   openRevalidationCount: number;
+  /** Distinct documents this product has evidence from. */
+  documentCount: number;
+  /** Distinct shipments those documents belong to. */
+  shipmentCount: number;
+  /** The one shipment, when `shipmentCount` is exactly 1 -- otherwise null,
+   *  since there is no single shipment to link to. */
+  singleShipment: { id: string; shipmentNumber: string } | null;
+  /** Most recent upload among this product's evidence documents, if any. */
+  lastDocumentAt: Date | null;
 }
 
 export interface ProductListResult {
   rows: ProductListRow[];
   total: number;
+}
+
+/**
+ * Document/shipment provenance for a page of products, derived from
+ * `ProductEvidence.sourceDocument` -- the same link the detail page's evidence
+ * tab already reads. Batched by product id rather than joined into the main
+ * query so the list query's shape and pagination are unaffected.
+ */
+async function loadDocumentProvenance(
+  accountId: string,
+  productIds: string[]
+): Promise<
+  Map<string, { documentCount: number; shipmentCount: number; singleShipment: { id: string; shipmentNumber: string } | null; lastDocumentAt: Date | null }>
+> {
+  if (productIds.length === 0) return new Map();
+
+  const evidence = await db.productEvidence.findMany({
+    where: { accountId, productId: { in: productIds }, sourceDocumentId: { not: null } },
+    select: {
+      productId: true,
+      sourceDocument: {
+        select: {
+          id: true,
+          uploadedAt: true,
+          createdAt: true,
+          shipmentId: true,
+          shipment: { select: { id: true, shipmentNumber: true } },
+        },
+      },
+    },
+  });
+
+  const byProduct = new Map<
+    string,
+    { documentIds: Set<string>; shipments: Map<string, string>; lastDocumentAt: Date | null }
+  >();
+
+  for (const row of evidence) {
+    const doc = row.sourceDocument;
+    if (!doc) continue;
+    let entry = byProduct.get(row.productId);
+    if (!entry) {
+      entry = { documentIds: new Set(), shipments: new Map(), lastDocumentAt: null };
+      byProduct.set(row.productId, entry);
+    }
+    entry.documentIds.add(doc.id);
+    if (doc.shipment) entry.shipments.set(doc.shipment.id, doc.shipment.shipmentNumber);
+    const docDate = doc.uploadedAt ?? doc.createdAt;
+    if (!entry.lastDocumentAt || docDate > entry.lastDocumentAt) entry.lastDocumentAt = docDate;
+  }
+
+  const result = new Map<
+    string,
+    { documentCount: number; shipmentCount: number; singleShipment: { id: string; shipmentNumber: string } | null; lastDocumentAt: Date | null }
+  >();
+  for (const [productId, entry] of byProduct) {
+    const shipmentEntries = [...entry.shipments.entries()];
+    result.set(productId, {
+      documentCount: entry.documentIds.size,
+      shipmentCount: shipmentEntries.length,
+      singleShipment: shipmentEntries.length === 1 ? { id: shipmentEntries[0]![0], shipmentNumber: shipmentEntries[0]![1] } : null,
+      lastDocumentAt: entry.lastDocumentAt,
+    });
+  }
+  return result;
 }
 
 export async function listProducts(
@@ -144,10 +218,13 @@ export async function listProducts(
     db.product.count({ where }),
   ]);
 
+  const provenance = await loadDocumentProvenance(actor.accountId, rows.map((row) => row.id));
+
   return {
     total,
     rows: rows.map((row) => {
       const approved = row.classifications.filter((c) => c.status === "APPROVED");
+      const prov = provenance.get(row.id);
       return {
         id: row.id,
         clientId: row.clientId,
@@ -164,6 +241,10 @@ export async function listProducts(
         approvedJurisdictions: [...new Set(approved.map((c) => c.jurisdiction))].sort(),
         pendingClassificationCount: row.classifications.length - approved.length,
         openRevalidationCount: row.revalidationFlags.length,
+        documentCount: prov?.documentCount ?? 0,
+        shipmentCount: prov?.shipmentCount ?? 0,
+        singleShipment: prov?.singleShipment ?? null,
+        lastDocumentAt: prov?.lastDocumentAt ?? null,
       };
     }),
   };

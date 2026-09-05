@@ -226,6 +226,23 @@ export class LineItemReconciler {
         productMatchedAt = new Date();
         if (matchResult.status === "EXACT_MATCH" && matchResult.candidates[0]) {
           productId = matchResult.candidates[0].productId;
+          if (ctx.documentId && productId) {
+            const existingEvidence = await client.productEvidence.findFirst({
+              where: { accountId: ctx.accountId, productId, sourceDocumentId: ctx.documentId },
+              select: { id: true },
+            });
+            if (!existingEvidence) {
+              await client.productEvidence.create({
+                data: {
+                  accountId: ctx.accountId,
+                  productId,
+                  sourceType: "DOCUMENT",
+                  sourceDocumentId: ctx.documentId,
+                  description: "Exact match promoted during document line item reconciliation",
+                },
+              });
+            }
+          }
         } else if (matchResult.status === "POSSIBLE_MATCH" || matchResult.status === "AMBIGUOUS") {
           pendingProductProposal = {
             matchStatus: matchResult.status,

@@ -191,6 +191,20 @@ export function addressTypeLabel(addressType: string): string {
   return ADDRESS_TYPE[addressType] ?? addressType;
 }
 
+/** A postal address collapsed to one comma-joined line, for a table cell. */
+export function formatOneLineAddress(address: {
+  addressLine1: string;
+  addressLine2?: string | null;
+  city?: string | null;
+  stateProvince?: string | null;
+  postalCode?: string | null;
+  country: string;
+}): string {
+  return [address.addressLine1, address.addressLine2, address.city, address.stateProvince, address.postalCode, address.country]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(", ");
+}
+
 const ROLE_TYPE: Record<string, string> = {
   IMPORTER: "Importer",
   EXPORTER: "Exporter",

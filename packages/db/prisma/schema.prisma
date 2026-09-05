@@ -249,6 +249,8 @@ model Account {
   assists                Assist[]
   assistDecisions        AssistDecision[]
   assistDeclarations     AssistDeclaration[]
+  searchIndexEntries     SearchIndexEntry[]
+
 
   id          String    @id @default(cuid())
   name        String
@@ -9588,6 +9590,37 @@ model ProductHelpArticle {
   @@index([moduleId, status])
   @@index([status, publishedAt])
   @@index([contentTsv], type: Gin, map: "ProductHelpArticle_contentTsv_gin_idx")
+}
+
+/// Denormalized cross-entity search index powering the omnibox's semantic
+/// "suggested" lane. Exact/lexical omnibox results still query the live
+/// operational tables directly (see unifiedSearchService.ts) so a just-
+/// uploaded document is findable immediately; this table exists only for
+/// vector similarity, which is rebuilt on a nightly cadence by
+/// searchIndexRefreshJob and is allowed to lag by up to one refresh cycle.
+/// accountId is null for shared reference content (rulings, HTS, sanctions
+/// lists, AD/CVD, Section 301) that isn't scoped to a single tenant.
+model SearchIndexEntry {
+  id              String                      @id @default(cuid())
+  accountId       String?
+  account         Account?                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind            String // party | product | document | shipment | client | importer | person | ruling | hts_node | denied_party | adcvd | section301
+  entityId        String
+  title           String
+  subtitle        String?
+  href            String
+  searchText      String                      @db.Text
+  contentHash     String
+  embedding       Float[]                     @default([])
+  embeddingVector Unsupported("vector(768)")?
+  contentTsv      Unsupported("tsvector")?    @default(dbgenerated("to_tsvector('simple'::regconfig, \"searchText\")"))
+  updatedAt       DateTime                    @updatedAt
+  createdAt       DateTime                    @default(now())
+
+  @@unique([kind, entityId])
+  @@index([accountId])
+  @@index([kind])
+  @@index([contentTsv], type: Gin, map: "SearchIndexEntry_contentTsv_gin_idx")
 }
 
 // ---------------------------------------------------------------------------
