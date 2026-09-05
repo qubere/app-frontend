@@ -108,7 +108,7 @@ export function ComplianceChecksPanel({
     {
       key: "embargo",
       icon: ShieldCheck,
-      title: "Embargo screening",
+      title: "Quick embargo check",
       result: embargo,
       enabled: canRunAiChecks,
       disabledReason: canRunAiChecks ? undefined : "Requires the ai.use permission.",

@@ -44,7 +44,7 @@ export function AutomaticEmbargoScreeningPanel({ status, findings, lastRunAt }: 
     <div className="bg-white p-5 rounded-3xl border border-border shadow-2xs">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-bold uppercase tracking-widest text-ink-muted">
-          Automatic embargo &amp; sanctions screening
+          Full compliance audit
         </h2>
         <span className="text-[11px] text-ink-muted">
           Runs on upload &amp; shipment edits — per line item, incl. destination &amp; private rules
