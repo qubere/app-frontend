@@ -98,6 +98,7 @@ export async function recomputeShipmentDeadlines(shipmentId: string, accountId: 
     estimatedArrival: shipment.estimatedArrival,
     releaseDate: shipment.customsFilings[0]?.releasedAt ?? null,
     paymentMethod: null, // Phase 1: wire from IOR once 7501 team adds paymentMethod
+    destinationCountry: shipment.destinationCountry,
   };
 
   const computed = computeDeadlines(ctx);

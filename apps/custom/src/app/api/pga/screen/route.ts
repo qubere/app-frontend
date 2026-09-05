@@ -17,6 +17,28 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
 
   const targetShipmentId = shipmentId;
 
+  const shipment = await db.shipment.findFirst({
+    where: { id: targetShipmentId, accountId: ctx.accountId },
+    select: { destinationCountry: true },
+  });
+
+  // FDA/FCC/EPA rules below are US agencies; screening a non-US shipment
+  // against them would produce meaningless holds. Matches the destinationCountry
+  // ?? "US" fallback used elsewhere (e.g. deadlineRules.ts).
+  if (shipment && (shipment.destinationCountry ?? "US") !== "US") {
+    return NextResponse.json({
+      pgaScreening: {
+        shipmentId: targetShipmentId,
+        requiresPgaFiling: null,
+        notScreenedReason: `Destination country is ${shipment.destinationCountry}, not US — FDA/FCC/EPA rules are US-only.`,
+        agenciesScreened: [],
+        flaggedAgencies: [],
+        pgaFlagsCount: 0,
+        pgaRequirements: [],
+      },
+    });
+  }
+
   const lineItems = await db.shipmentLineItem.findMany({
     where: { shipmentId: targetShipmentId, accountId: ctx.accountId },
 });

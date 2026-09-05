@@ -52,6 +52,12 @@ export interface DeadlineContext {
   paymentMethod: string | null | undefined;
   /** Whether the anchor date came from extraction (ETA/ETD) vs confirmed. */
   anchorIsEstimated?: boolean;
+  /** ISO 3166-1 alpha-2 destination country. Defaults to "US" (see Shipment.destinationCountry callers elsewhere) — every rule below is a US/CBP citation and is scoped to it. */
+  destinationCountry?: string | null;
+}
+
+function isUsDestination(ctx: DeadlineContext): boolean {
+  return (ctx.destinationCountry ?? "US") === "US";
 }
 
 export interface ComputedDeadline {
@@ -217,6 +223,7 @@ export const DEADLINE_RULES: DeadlineRule[] = [
     citation: "19 CFR 149.2(a)",
     offset: { value: 24, unit: "hours", direction: "before" },
     appliesTo: (ctx) => {
+      if (!isUsDestination(ctx)) return false;
       const mode = ctx.transportMode?.toLowerCase();
       return mode === "ocean" || mode == null;
     },
@@ -229,7 +236,7 @@ export const DEADLINE_RULES: DeadlineRule[] = [
     anchor: DeadlineAnchor.ARRIVAL,
     citation: "19 CFR 141.68(a)",
     offset: { value: 15, unit: "calendarDays", direction: "after" },
-    appliesTo: () => true,
+    appliesTo: isUsDestination,
     penalty: { max: 0, basis: "General Order — merchandise placed in bonded warehouse" },
   },
   {
@@ -239,7 +246,7 @@ export const DEADLINE_RULES: DeadlineRule[] = [
     anchor: DeadlineAnchor.RELEASE,
     citation: "19 CFR 142.23(a)",
     offset: { value: 10, unit: "workingDays", direction: "after" },
-    appliesTo: (ctx) => ctx.paymentMethod?.toUpperCase() !== "PMS",
+    appliesTo: (ctx) => isUsDestination(ctx) && ctx.paymentMethod?.toUpperCase() !== "PMS",
     penalty: { max: 0, basis: "Liquidated damages per 19 USC 1593a" },
   },
   {
@@ -249,7 +256,7 @@ export const DEADLINE_RULES: DeadlineRule[] = [
     anchor: DeadlineAnchor.RELEASE,
     citation: "19 CFR 24.1(a)(1)",
     offset: { value: 10, unit: "workingDays", direction: "after" },
-    appliesTo: (ctx) => ctx.paymentMethod?.toUpperCase() !== "PMS",
+    appliesTo: (ctx) => isUsDestination(ctx) && ctx.paymentMethod?.toUpperCase() !== "PMS",
     penalty: { max: 0, basis: "Interest accrues from due date per 19 USC 1677g" },
   },
 ];
