@@ -69,7 +69,7 @@ export function buildTmsAgentInvocations(
         durationMs,
         summary: outputData.summary || matchedDecision?.decisionSummary || undefined,
         confidence: outputData.confidence ?? matchedDecision?.confidence ?? null,
-        modelVersion: matchedDecision?.modelVersion || "gemini-2.5-flash",
+        modelVersion: matchedDecision?.modelVersion || "gemini-3.6-flash",
         error: exec.errorMessage || undefined,
         inputSnapshot: { jobId: job.id, stepNumber: exec.stepNumber, documentId: job.state?.documentId },
         outputSnapshot: outputData.summary ? outputData : matchedDecision?.evidenceItems ?? outputData,

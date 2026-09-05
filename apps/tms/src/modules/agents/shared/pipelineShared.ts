@@ -131,7 +131,7 @@ export async function createAgentDecision(input: {
       shipmentId: input.shipmentId,
       documentId: input.documentId,
       agentName: input.agentName,
-      modelVersion: process.env.TMS_DOCUMENT_MODEL || "gemini-2.5-flash",
+      modelVersion: process.env.TMS_DOCUMENT_MODEL || "gemini-3.6-flash",
       purpose: input.purpose,
       decisionSummary: input.summary,
       status: input.needsReview ? "Review Required" : "Completed",
