@@ -32,13 +32,15 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     include: { assignedToUser: true },
   });
 
+  const auditSource = (req.headers?.get?.("x-qubere-source") === "CHAT" || (body as any)?.source === "CHAT") ? "CHAT" : "UI";
+
   await createAuditLog({
     accountId: ctx.accountId,
     userId: ctx.userId,
     action: "finding.assign",
     entity: "ComplianceFinding",
     entityId: id,
-    source: "UI",
+    source: auditSource,
     metadata: { assignedToUserId: assignedToUserId || ctx.userId },
   });
 

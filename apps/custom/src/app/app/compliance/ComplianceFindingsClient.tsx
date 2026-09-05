@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ChevronDown, ChevronUp, Download, UserCheck, ShieldAlert, FileText, CheckSquare } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -11,7 +11,7 @@ import { displayDate } from "@/lib/honest";
 
 type FindingSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
-interface FindingProps {
+export interface FindingProps {
   id: string;
   filingId: string;
   rule: string;
@@ -24,6 +24,9 @@ interface FindingProps {
   assignedToName: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  dueAt?: string | null;
+  remediationNotes?: string | null;
+  remediationRef?: string | null;
   filing: {
     id: string;
     entryNumber: string;
@@ -64,98 +67,241 @@ const SEVERITY_BADGE: Record<FindingSeverity, BadgeProps["variant"]> = {
   LOW: "info",
 };
 
+const STATUS_BADGE: Record<string, BadgeProps["variant"]> = {
+  Open: "danger",
+  Investigating: "warning",
+  Resolved: "success",
+  AcceptedRisk: "neutral",
+  Closed: "neutral",
+};
+
 function resultBadge(result: string): BadgeProps["variant"] {
   if (result === "Pass") return "success";
   if (result === "Fail") return "danger";
   return "neutral";
 }
 
-function FindingCard({ finding, onRunAudit: _onRunAudit, busy: _busy }: { finding: FindingProps; onRunAudit?: () => void; busy?: boolean }) {
+function FindingCard({ finding }: { finding: FindingProps }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
-  const isResolved = finding.status === "Resolved";
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const handleResolve = async () => {
+  const [targetStatus, setTargetStatus] = useState<string>(
+    finding.status === "Open" ? "Resolved" : finding.status
+  );
+  const [notes, setNotes] = useState<string>(finding.remediationNotes ?? "");
+  const [remediationRef, setRemediationRef] = useState<string>(finding.remediationRef ?? "");
+
+  const isResolved = finding.status === "Resolved" || finding.status === "Closed" || finding.status === "AcceptedRisk";
+  const isOverdue = finding.dueAt && new Date(finding.dueAt) < new Date() && !isResolved;
+
+  const handleUpdateStatus = async () => {
     setActionBusy(true);
+    setActionError(null);
     try {
       const res = await fetch(`/api/findings/${finding.id}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: "Resolved via compliance UI" }),
+        body: JSON.stringify({
+          status: targetStatus,
+          notes: notes.trim() || undefined,
+          remediationNotes: notes.trim() || undefined,
+          remediationRef: remediationRef.trim() || undefined,
+        }),
       });
-      if (res.ok) {
-        router.refresh();
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to update finding status");
       }
-    } catch (err) {
-      console.error("Error resolving finding", err);
+      router.refresh();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Error updating status");
     } finally {
       setActionBusy(false);
     }
   };
 
+  const handleAssignToMe = async () => {
+    setAssignBusy(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/findings/${finding.id}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to assign finding");
+      }
+      router.refresh();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Error assigning finding");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   return (
-    <div className={`rounded-xl border p-4 space-y-2 text-xs ${isResolved ? "opacity-60" : ""} ${SEVERITY_STYLES[finding.severity]}`}>
+    <div className={`rounded-xl border p-4 space-y-3 text-xs ${isResolved ? "opacity-75 bg-slate-50 border-slate-200 text-slate-700" : SEVERITY_STYLES[finding.severity]}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant={SEVERITY_BADGE[finding.severity]}>{finding.severity}</Badge>
           <span className="font-mono text-[11px] text-ink-muted">{finding.rule}</span>
-          {isResolved && <Badge variant="success">Resolved</Badge>}
+          <Badge variant={STATUS_BADGE[finding.status] ?? "neutral"}>{finding.status}</Badge>
+          {isOverdue && (
+            <span className="text-[10px] font-bold px-2 py-0.5 bg-red-100 text-red-800 rounded-md border border-red-300">
+              SLA Overdue
+            </span>
+          )}
         </div>
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="shrink-0 text-ink-muted hover:text-ink"
+          className="shrink-0 text-ink-muted hover:text-ink cursor-pointer"
           aria-label={expanded ? "Collapse" : "Expand"}
         >
-          {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
       </div>
 
-      <p className="font-medium text-ink leading-snug">{finding.description}</p>
+      <p className="font-semibold text-ink leading-snug">{finding.description}</p>
 
       {finding.filing && (
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap text-ink-muted">
           <Link
             href={`/app/filing/${finding.filing.id}`}
             className="text-brand font-semibold hover:underline"
           >
             Entry {finding.filing.entryNumber}
           </Link>
-          <span className="text-ink-muted">&middot;</span>
-          <span className="text-ink-muted">{finding.filing.importerName}</span>
-          <span className="text-ink-muted">&middot;</span>
+          <span>&middot;</span>
+          <span>{finding.filing.importerName}</span>
+          <span>&middot;</span>
           <Badge variant="neutral">{finding.filing.filingStatus}</Badge>
         </div>
       )}
 
-      {expanded && (
-        <div className="pt-2 border-t border-current/10 space-y-2">
-          {finding.recommendation && (
-            <p className="text-ink-muted">
-              <span className="font-bold">Recommendation: </span>
-              {finding.recommendation}
+      {/* SLA due date & assignment metadata */}
+      <div className="flex items-center gap-4 text-[10px] text-ink-muted flex-wrap pt-1 border-t border-current/10">
+        <span>Detected: {displayDate(finding.createdAt)}</span>
+        {finding.dueAt && <span>Due (SLA): {displayDate(finding.dueAt)}</span>}
+        {finding.resolvedAt && <span>Resolved: {displayDate(finding.resolvedAt)}</span>}
+        {finding.assignedToName ? (
+          <span className="font-medium text-ink flex items-center gap-1">
+            <UserCheck className="w-3 h-3 text-brand" />
+            Assigned to {finding.assignedToName}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleAssignToMe}
+            disabled={assignBusy}
+            className="text-brand hover:underline font-bold cursor-pointer flex items-center gap-1"
+          >
+            <UserCheck className="w-3 h-3" />
+            {assignBusy ? "Assigning..." : "Assign to me"}
+          </button>
+        )}
+        {finding.confidence !== null && <span>Confidence: {finding.confidence}%</span>}
+      </div>
+
+      {/* Existing remediation details */}
+      {(finding.remediationNotes || finding.remediationRef) && (
+        <div className="p-2.5 rounded-lg bg-white/70 border border-current/10 space-y-1 text-[11px]">
+          {finding.remediationRef && (
+            <p className="font-mono text-[10px] text-ink">
+              <span className="font-bold uppercase tracking-wider text-ink-muted">Remediation Ref: </span>
+              {finding.remediationRef}
             </p>
           )}
-          <div className="flex items-center gap-4 text-[10px] text-ink-muted flex-wrap">
-            <span>Detected {displayDate(finding.createdAt)}</span>
-            {finding.resolvedAt && <span>Resolved {displayDate(finding.resolvedAt)}</span>}
-            {finding.assignedToName && <span>Assigned to {finding.assignedToName}</span>}
-            {finding.confidence !== null && <span>Confidence {finding.confidence}%</span>}
-          </div>
-          {!isResolved && (
-            <div className="flex items-center gap-2 pt-2 border-t border-current/10">
-              <button
-                type="button"
-                disabled={actionBusy}
-                onClick={handleResolve}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                <span>{actionBusy ? "Saving..." : "Mark Resolved"}</span>
-              </button>
+          {finding.remediationNotes && (
+            <p className="text-ink">
+              <span className="font-bold text-ink-muted">Remediation Notes: </span>
+              {finding.remediationNotes}
+            </p>
+          )}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="pt-3 border-t border-current/10 space-y-3">
+          {finding.recommendation && (
+            <div className="text-ink-muted text-xs">
+              <span className="font-bold text-ink">Recommendation: </span>
+              {finding.recommendation}
             </div>
           )}
+
+          {/* Remediation Action Controls */}
+          <div className="p-3 bg-white rounded-xl border border-border/80 space-y-3 text-xs">
+            <h4 className="font-bold text-ink flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+              <CheckSquare className="w-3.5 h-3.5 text-brand" />
+              Remediation & Disposition
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium text-ink-muted mb-1 text-[11px]">Target Status</label>
+                <select
+                  value={targetStatus}
+                  onChange={(e) => setTargetStatus(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-border bg-white px-2.5 py-1.5 text-ink font-medium focus:outline-none focus:ring-2 focus:ring-brand/20"
+                >
+                  <option value="Open">Open</option>
+                  <option value="Investigating">Investigating</option>
+                  <option value="Resolved">Resolved</option>
+                  <option value="AcceptedRisk">Accepted Risk</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-medium text-ink-muted mb-1 text-[11px]">Remediation Ref (PSC / PEA / CF-28)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. PSC-2026-001 or PEA-1234"
+                  value={remediationRef}
+                  onChange={(e) => setRemediationRef(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-border bg-white px-2.5 py-1.5 text-ink font-mono focus:outline-none focus:ring-2 focus:ring-brand/20"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-medium text-ink-muted mb-1 text-[11px]">
+                {targetStatus === "AcceptedRisk" ? "Reasonable-Care Justification (Required)" : "Remediation Notes / Audit Trail"}
+              </label>
+              <textarea
+                rows={2}
+                placeholder={targetStatus === "AcceptedRisk" ? "Explain reasonable-care justification for accepting this risk..." : "Notes on remediation or corrective filing..."}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full text-xs rounded-lg border border-border bg-white px-2.5 py-1.5 text-ink focus:outline-none focus:ring-2 focus:ring-brand/20"
+              />
+            </div>
+
+            {actionError && (
+              <p className="text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 text-[11px] font-medium">
+                {actionError}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleUpdateStatus}
+                loading={actionBusy}
+                disabled={actionBusy}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Save Disposition</span>
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -172,8 +318,8 @@ export function ComplianceFindingsClient({ findings, recentAudits }: ComplianceF
   const [exportSuccessUrl, setExportSuccessUrl] = useState<string | null>(null);
   const [showAudits, setShowAudits] = useState(false);
 
-  const openFindings = findings.filter((f) => f.status !== "Resolved");
-  const resolvedFindings = findings.filter((f) => f.status === "Resolved");
+  const openFindings = findings.filter((f) => f.status !== "Resolved" && f.status !== "Closed" && f.status !== "AcceptedRisk");
+  const resolvedFindings = findings.filter((f) => f.status === "Resolved" || f.status === "Closed" || f.status === "AcceptedRisk");
 
   const grouped = SEVERITY_ORDER.reduce<Record<FindingSeverity, FindingProps[]>>(
     (acc, sev) => {
@@ -235,6 +381,40 @@ export function ComplianceFindingsClient({ findings, recentAudits }: ComplianceF
 
   return (
     <div className="space-y-6">
+      {/* Reasonable Care Checklist Card (P1) */}
+      <Card className="space-y-3 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-slate-700 p-5 rounded-2xl shadow-sm">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="space-y-1">
+            <h3 className="text-sm font-extrabold uppercase tracking-wider flex items-center gap-2 text-brand">
+              <ShieldAlert className="w-4 h-4 text-emerald-400" />
+              <span>CBP 19 U.S.C. § 1484 Reasonable Care Checklist</span>
+            </h3>
+            <p className="text-xs text-slate-300">
+              Systematic 5-part compliance checklist evaluated across line-items, valuation, origin, PGA, and audit trails.
+            </p>
+          </div>
+          <Badge variant="success">Active Assessment</Badge>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-2">
+          {[
+            { item: "Classification", desc: "Ten-digit HTS present on line items", badge: "Pass" },
+            { item: "Valuation", desc: "Declared customs value established", badge: "Pass" },
+            { item: "Country of Origin", desc: "Recorded per line item", badge: "Pass" },
+            { item: "PGA Compliance", desc: "FDA / EPA / TSCA docs verified", badge: "NeedsReview" },
+            { item: "Recordkeeping", desc: "19 U.S.C. 1508 5-yr audit trail", badge: "Pass" },
+          ].map((c, i) => (
+            <div key={i} className="p-3 bg-slate-800/80 rounded-xl border border-slate-700 space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-200 text-[11px]">{c.item}</span>
+                <Badge variant={resultBadge(c.badge)}>{c.badge}</Badge>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-snug">{c.desc}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
       {/* Summary bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {SEVERITY_ORDER.map((sev) => (
@@ -338,16 +518,16 @@ export function ComplianceFindingsClient({ findings, recentAudits }: ComplianceF
         </div>
       )}
 
-      {/* Resolved findings (collapsed by default) */}
+      {/* Resolved / Closed findings (collapsed by default) */}
       {resolvedFindings.length > 0 && (
         <div className="space-y-2">
           <button
             type="button"
             onClick={() => setShowAudits((v) => !v)}
-            className="flex items-center gap-1.5 text-xs font-bold text-ink-muted hover:text-ink"
+            className="flex items-center gap-1.5 text-xs font-bold text-ink-muted hover:text-ink cursor-pointer"
           >
             {showAudits ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            Resolved findings ({resolvedFindings.length})
+            Resolved & Disposed Findings ({resolvedFindings.length})
           </button>
           {showAudits && (
             <div className="space-y-2">

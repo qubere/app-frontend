@@ -3641,6 +3641,9 @@ model ComplianceFinding {
   confidence       Int           @default(92)
   assignedToUserId String?
   assignedToUser   User?         @relation("FindingAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  dueAt            DateTime?
+  remediationNotes String?
+  remediationRef   String?
   createdAt        DateTime      @default(now())
   resolvedAt       DateTime?
 

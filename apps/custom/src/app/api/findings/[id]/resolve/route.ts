@@ -15,31 +15,39 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
   const { id } = paramsVal.data;
 
   const body = await req.json();
-  const { status, notes } = body;
+  const { status, notes, dueAt, remediationNotes, remediationRef } = body;
 
-  // An absent status used to default to "Resolved", so an empty body closed the
-  // finding, and any string at all was written straight through.
   if (typeof status !== "string" || !FINDING_STATUSES.includes(status)) {
     return NextResponse.json({ error: `status must be one of ${FINDING_STATUSES.join(", ")}` },
       { status: 400 }
     );
   }
 
+  if (status === "AcceptedRisk" && !notes && !remediationNotes) {
+    return NextResponse.json({ error: "Reasonable-care justification notes are required when accepting risk." },
+      { status: 400 }
+    );
+  }
+
   const finding = await db.complianceFinding.findFirst({
     where: { id, accountId: ctx.accountId },
-});
+  });
 
   if (!finding) {
     return NextResponse.json({ error: "Compliance finding not found" }, { status: 404 });
   }
 
   const newStatus = status;
+  const finalNotes = notes ?? remediationNotes ?? finding.remediationNotes ?? null;
 
   const updatedFinding = await db.complianceFinding.update({
     where: { id },
     data: {
       status: newStatus,
-      resolvedAt: newStatus === "Resolved" || newStatus === "AcceptedRisk" ? new Date() : null,
+      resolvedAt: newStatus === "Resolved" || newStatus === "AcceptedRisk" || newStatus === "Closed" ? new Date() : null,
+      dueAt: dueAt !== undefined ? (dueAt ? new Date(dueAt) : null) : finding.dueAt,
+      remediationNotes: finalNotes,
+      remediationRef: remediationRef !== undefined ? remediationRef : finding.remediationRef,
     },
   });
 
@@ -48,11 +56,9 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     data: {
       accountId: ctx.accountId,
       filingId: finding.filingId,
-      // Every transition used to be recorded as "Resolved", so moving a finding to
-      // Investigating logged a resolution that had not happened.
       event: `Compliance Finding ${finding.status} -> ${newStatus}: ${finding.rule}`,
       actor: `Compliance Analyst (${ctx.userId})`,
-      metadata: { findingId: id, status: newStatus, notes },
+      metadata: { findingId: id, status: newStatus, notes: finalNotes, remediationRef: updatedFinding.remediationRef, dueAt: updatedFinding.dueAt },
     },
   });
 
@@ -65,7 +71,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, re
     entity: "ComplianceFinding",
     entityId: id,
     source: auditSource,
-    metadata: { newStatus, notes },
+    metadata: { newStatus, notes: finalNotes, remediationRef: updatedFinding.remediationRef, dueAt: updatedFinding.dueAt },
   });
 
   return NextResponse.json({ finding: updatedFinding });

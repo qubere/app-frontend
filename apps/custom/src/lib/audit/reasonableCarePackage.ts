@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { evaluateReasonableCare, type ReasonableCareEvaluation } from "@/modules/compliance/reasonableCare";
 
 export interface ClassificationSection {
   lineItemNumber: number;
@@ -63,6 +64,7 @@ export interface ReasonableCarePackage {
   };
   generatedAt: string;
   completenessScore: number;
+  reasonableCareChecklist: ReasonableCareEvaluation;
   sections: {
     classification: ClassificationSection[];
     valuation: ValuationSection;
@@ -111,6 +113,11 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
 
   // Assemble Classification section
   const classification: ClassificationSection[] = [];
+  // Real attestations only — one per approved ClassificationCase decision, keyed
+  // by reviewer + attestation timestamp so the same sign-off covering several
+  // lines is recorded once. `signature` stays null: these are in-app
+  // attestations, not e-signed artifacts. Never synthesize a signature id.
+  const attestations = new Map<string, { role: string; name: string; date: string; signature: null }>();
   for (const line of shipment.lineItems) {
     let griSteps: string[] = [];
     let rulingCitations: string[] = [];
@@ -169,6 +176,13 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
             if (reviewer) {
               const fullName = [reviewer.firstName, reviewer.lastName].filter(Boolean).join(" ");
               approver = fullName || reviewer.email;
+              const attestedAt = decision.attestedAt.toISOString();
+              attestations.set(`${decision.reviewerUserId}::${attestedAt}`, {
+                role: "Licensed Customs Broker / Classifier",
+                name: approver,
+                date: attestedAt,
+                signature: null,
+              });
             } else {
               approver = "System Approved";
             }
@@ -256,26 +270,38 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
     status: e.status,
   }));
 
-  // Calculate Completeness Score
-  let filledSections = 0;
-  const totalSections = 6;
-  if (classification.length > 0) filledSections++;
-  if (valuation.declaredCustomsValue > 0) filledSections++;
-  if (origin.determinedCountry !== "Unknown") filledSections++;
-  if (documents.length > 0) filledSections++;
-  if (decisions.length > 0) filledSections++;
-  if (exceptions.length === 0 || exceptions.some((e) => e.status === "Resolved")) filledSections++;
-  const completenessScore = Math.round((filledSections / totalSections) * 100);
+  // Calculate 5-item Reasonable Care Checklist & Unified Canonical Score
+  const auditLogCount = await db.auditLog.count({
+    where: { accountId, entityId: shipmentId },
+  });
+
+  const reasonableCareChecklist = evaluateReasonableCare({
+    lineItems: shipment.lineItems.map((l) => ({ htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin })),
+    documents: shipment.documents.map((d) => ({ status: d.status })),
+    totalValue: totalValue > 0 ? totalValue : null,
+    auditLogCount,
+  });
+
+  // Canonical completeness score unified with reasonable care risk score
+  const completenessScore = Math.max(0, 100 - reasonableCareChecklist.riskScore);
+
+  // Certifications / Attestations (P5). Real classification sign-offs only —
+  // an empty array when no one has attested is the honest answer for a CBP
+  // defense file. Sorted newest-first for stable output.
+  const certifications = Array.from(attestations.values()).sort((a, b) =>
+    b.date.localeCompare(a.date)
+  );
 
   return {
     shipmentId: shipment.id,
     entryNumber,
     importerOfRecord: {
-      name: shipment.importerOfRecord?.name ?? shipment.importerName ?? null,
+      name: shipment.importerOfRecord?.name ?? shipment.importerName ?? "Unknown",
       cbpNumber: shipment.importerOfRecord?.cbpImporterNumber ?? null,
     },
     generatedAt: new Date().toISOString(),
     completenessScore,
+    reasonableCareChecklist,
     sections: {
       classification,
       valuation,
@@ -284,6 +310,6 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
       decisions,
       exceptions,
     },
-    certifications: [],
+    certifications,
   };
 }

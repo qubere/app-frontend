@@ -33,6 +33,18 @@ vi.mock("../../src/lib/db", () => {
       controlEvidence: {
         findMany: vi.fn(),
       },
+      auditLog: {
+        count: vi.fn().mockResolvedValue(0),
+      },
+      canonicalProduct: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      classificationCase: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      user: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
     },
   };
 });
@@ -108,6 +120,45 @@ describe("Capability B — Reasonable Care Package Assembly Tests", () => {
     expect(pkg!.completenessScore).toBeGreaterThan(0);
     expect(pkg!.sections.classification[0].htsCode).toBe("8471.30.0100");
     expect(pkg!.sections.documents[0].fileName).toBe("invoice.pdf");
+  });
+
+  it("carries the 5-item reasonable-care checklist alongside the sections", async () => {
+    vi.mocked(db.shipment.findFirst).mockResolvedValue({
+      id: "ship_1",
+      shipmentNumber: "SHP-001",
+      importerName: "Test Importer",
+      lineItems: [
+        { lineNumber: 1, htsCode: "8471.30.0100", description: "Laptop", totalValue: 5000, countryOfOrigin: "CN", origins: [] },
+      ],
+      documents: [{ id: "doc_1", fileName: "invoice.pdf", docType: "Commercial Invoice", checksum: "hash123" }],
+      customsFilings: [{ id: "filing_1", entryNumber: "ENT-12345" }],
+      exceptionItems: [],
+      agentDecisions: [],
+    } as any);
+
+    const pkg = await assembleReasonableCarePackage("acc_1", "ship_1");
+    expect(pkg!.reasonableCareChecklist.checklistItems).toHaveLength(5);
+    // Canonical score: completeness is derived from the checklist risk score.
+    expect(pkg!.completenessScore).toBe(Math.max(0, 100 - pkg!.reasonableCareChecklist.riskScore));
+  });
+
+  it("never fabricates a certification — no signer, no attestation (empty, not a synthetic eSIG)", async () => {
+    vi.mocked(db.shipment.findFirst).mockResolvedValue({
+      id: "ship_1",
+      shipmentNumber: "SHP-001",
+      importerName: "Test Importer",
+      lineItems: [
+        { lineNumber: 1, htsCode: "8471.30.0100", description: "Laptop", totalValue: 5000, countryOfOrigin: "CN", origins: [], productId: null },
+      ],
+      documents: [{ id: "doc_1", fileName: "invoice.pdf", docType: "Commercial Invoice", checksum: "hash123" }],
+      customsFilings: [{ id: "filing_1", entryNumber: "ENT-12345" }],
+      exceptionItems: [],
+      agentDecisions: [],
+    } as any);
+
+    const pkg = await assembleReasonableCarePackage("acc_1", "ship_1");
+    expect(pkg!.certifications).toEqual([]);
+    expect(JSON.stringify(pkg!.certifications)).not.toContain("eSIG");
   });
 
   it("scopes the shipment lookup to accountId, preventing cross-tenant access", async () => {

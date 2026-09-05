@@ -148,9 +148,11 @@ function classificationCoverageScore(
     };
   }
 
-  // "Approved" = has an HTS code AND is either status Valid or has ≥ 80% confidence
+  // "Approved" = has an HTS code AND a human-approved classification (status
+  // "Valid"). A code alone is not enough — an unreviewed extraction still needs
+  // sign-off before it counts toward readiness.
   const approved = lineItems.filter(
-    (li) => li.htsCode && (li.status === "Valid" || Boolean(li.htsCode))
+    (li) => Boolean(li.htsCode) && li.status === "Valid"
   ).length;
 
   const pts = Math.round((approved / lineItems.length) * 20);

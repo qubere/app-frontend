@@ -174,6 +174,41 @@ describe("computeReadinessScore — factor 5: reconciliation pass", () => {
   });
 });
 
+describe("computeReadinessScore — factor 4: classification coverage", () => {
+  const line = (overrides: Partial<ReadinessShipmentInput["lineItems"][number]> = {}) => ({
+    htsCode: "8471.30",
+    countryOfOrigin: "CN",
+    quantity: 1,
+    unitPrice: 100,
+    status: "Valid",
+    ...overrides,
+  });
+
+  it("awards full 20 pts when every line has an HTS code and a Valid (human-approved) status", () => {
+    const { factors } = computeReadinessBreakdown(baseInput({ lineItems: [line(), line()] }));
+    expect(factors[3].points).toBe(20);
+  });
+
+  it("does NOT count a line that has an HTS code but is not human-approved", () => {
+    // Regression: the old filter OR-ed in Boolean(li.htsCode), so any coded
+    // line counted as approved and the status check was dead.
+    const { factors } = computeReadinessBreakdown(
+      baseInput({
+        lineItems: [line({ status: "Valid" }), line({ status: "Needs Review" })],
+      })
+    );
+    expect(factors[3].points).toBe(10); // 1 of 2 approved
+    expect(factors[3].contributingItems[0]).toBe("1 of 2 line items classified");
+  });
+
+  it("awards 0 pts when lines have HTS codes but none are approved", () => {
+    const { factors } = computeReadinessBreakdown(
+      baseInput({ lineItems: [line({ status: null }), line({ status: "Needs Review" })] })
+    );
+    expect(factors[3].points).toBe(0);
+  });
+});
+
 describe("computeReadinessBreakdown — structure", () => {
   it("returns five named factors that sum to the total score", () => {
     const { totalScore, factors } = computeReadinessBreakdown(baseInput());
