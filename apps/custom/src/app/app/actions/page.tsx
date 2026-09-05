@@ -6,10 +6,15 @@ import { groupDecisions } from "@/modules/decisions/groupDecisions";
 import { getAllReviewableDecisionWhereFilter } from "@/modules/decisions/decisionState";
 import { buildShipmentActionGroups } from "@/modules/actions/shipmentActions";
 import { buildWorkQueue, filterWorkQueue, parseWorkFilter, explainRank } from "@/modules/work/workQueue";
-import { loadWorkQueueForAccountFromPrefetched } from "@/modules/work/workQueueLoader";
+import {
+  loadWorkQueueForAccountFromPrefetched,
+  fetchActionableFilings,
+  fetchOpenDeadlines,
+} from "@/modules/work/workQueueLoader";
 import { RISK_ACCEPTANCE_PERMISSION, openStatusVariants } from "@/modules/exceptions/exceptionState";
 import { loadComplianceLane, loadBillingLane } from "@/modules/today/loadTodayLanes";
 import { ActionsClient } from "./ActionsClient";
+import { PerfTimer } from "@/lib/perf/serverTiming";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +64,8 @@ export default async function ActionsPage(props: {
   // (dataMode-scoped, as does everything loadWorkQueueForAccount below queries)
   // -- without this wrapper these queries silently default to PRODUCTION
   // isolation for any DEMO/SANDBOX account.
+  const perf = new PerfTimer();
+
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
 
   // Scope filter for the routed queue: My / Team / Unassigned tabs. Applied to
@@ -101,7 +108,26 @@ export default async function ActionsPage(props: {
     hasPermission("specialist.write"),
   ]);
 
-  const [decisions, allDocuments, exceptions, writable, mayWaive, memberships, complianceLane, billingLane] = await Promise.all([
+  // One concurrent phase for every query that has no data dependency on
+  // another's result. filings + open deadlines were previously a second
+  // sequential wave inside loadWorkQueueForAccountFromPrefetched; they only
+  // need accountId/shipmentId, so they run here instead. The two PGA
+  // permission checks were previously awaited inline in the returned JSX
+  // (two more sequential round trips after everything else) — folded in here.
+  const [
+    decisions,
+    allDocuments,
+    exceptions,
+    writable,
+    mayWaive,
+    memberships,
+    complianceLane,
+    billingLane,
+    prefetchedFilings,
+    prefetchedDeadlines,
+    canReadPga,
+    canReviewPga,
+  ] = await perf.span("db.bundle", () => Promise.all([
     db.agentDecision.findMany({
       where: {
         accountId: context.accountId,
@@ -182,13 +208,25 @@ export default async function ActionsPage(props: {
     }),
     mayViewComplianceLane ? loadComplianceLane(context.accountId) : Promise.resolve(null),
     mayViewBillingLane ? loadBillingLane(context.accountId) : Promise.resolve(null),
-  ]);
+    fetchActionableFilings(context.accountId, shipmentId),
+    fetchOpenDeadlines(context.accountId, shipmentId),
+    hasPermission("pga.read"),
+    hasPermission("pga.review"),
+  ]));
 
-  const queueLoaderResult = await loadWorkQueueForAccountFromPrefetched(
-    context.accountId,
-    context.userId,
-    { decisions, documents: allDocuments, exceptions },
-    { shipmentId }
+  const queueLoaderResult = await perf.span("workqueue", () =>
+    loadWorkQueueForAccountFromPrefetched(
+      context.accountId,
+      context.userId,
+      {
+        decisions,
+        documents: allDocuments,
+        exceptions,
+        filings: prefetchedFilings,
+        deadlines: prefetchedDeadlines,
+      },
+      { shipmentId }
+    )
   );
 
   const serializedDecisions = decisions.map((d) => ({
@@ -294,6 +332,18 @@ export default async function ActionsPage(props: {
 
   const teamMembers = memberships.map((m) => m.user);
 
+  // PII-free timing line (issue #200 "Instrumentation") — span names + durations
+  // and coarse row counts only, never SQL or tenant data.
+  console.info(
+    "[perf] actions",
+    JSON.stringify({
+      ...perf.toLogFields(),
+      decisions: decisions.length,
+      documents: allDocuments.length,
+      exceptions: exceptions.length,
+    }),
+  );
+
   const operationsCount = groups.reduce((n, g) => n + g.items.length, 0);
   const laneParam = typeof searchParams.lane === "string" ? searchParams.lane : undefined;
   const initialLane =
@@ -306,8 +356,8 @@ export default async function ActionsPage(props: {
   return (
     <ActionsClient
       groups={groups}
-      canReadPga={await hasPermission("pga.read")}
-      canReviewPga={await hasPermission("pga.review")}
+      canReadPga={canReadPga}
+      canReviewPga={canReviewPga}
       canWrite={writable}
       canWaive={mayWaive}
       initialShipmentId={shipmentId}
