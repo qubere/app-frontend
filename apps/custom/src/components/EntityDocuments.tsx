@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileText, Link2, Loader2, Search, Unlink, X } from "lucide-react";
+import { FileText, Link2, Loader2, Search, Unlink } from "lucide-react";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { caughtMessage } from "@/lib/utils";
 

@@ -20,7 +20,6 @@
  */
 
 import { db } from "@qubere/db";
-import { POST } from "../src/app/api/documents/upload/route";
 import { ShipmentEventConsumer } from "../src/modules/events/shipmentEventConsumer";
 import { FieldReviewService } from "../src/modules/hydration/review/fieldReviewService";
 import { HydrationMetricsService } from "../src/modules/hydration/rollout/hydrationMetricsService";

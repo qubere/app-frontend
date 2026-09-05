@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   let statePayload;
   try {
     statePayload = verifyState(state);
-  } catch (err) {
+  } catch {
     return backTo(req.url, { qbo: "error", reason: "bad_state" });
   }
 
@@ -111,7 +111,7 @@ export async function GET(req: Request) {
     );
 
     return backTo(req.url, { qbo: "connected" });
-  } catch (err) {
+  } catch {
     return backTo(req.url, {
       qbo: "error",
       reason: "exchange_failed",

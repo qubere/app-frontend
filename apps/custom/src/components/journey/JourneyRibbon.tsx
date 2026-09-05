@@ -151,7 +151,6 @@ function statusClasses(status: string): { seg: string; pill: string; dot: string
 export function JourneyRibbon({ data, canManage = false, documents = [], readiness }: JourneyRibbonProps) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
-  const [showReadinessAudit, setShowReadinessAudit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showAddLeg, setShowAddLeg] = useState(false);
   const [attachTarget, setAttachTarget] = useState<{ legId: string; row: LegDocRow } | null>(null);

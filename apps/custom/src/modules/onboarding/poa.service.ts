@@ -239,7 +239,7 @@ export class PoaService {
           const stored = await readStoredObject(tpl.bodyStorageUrl);
           documentBuffer = stored.body as Buffer;
           documentName = tpl.name;
-        } catch (err) {
+        } catch {
           logger.warn("esign: failed to load template PDF, using stub", { templateId: poa.templateId });
         }
       }

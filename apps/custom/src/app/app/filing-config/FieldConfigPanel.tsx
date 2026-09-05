@@ -509,7 +509,6 @@ function ValidationFunctionEditor({
   const runTest = () => {
     if (!value.trim()) return;
     try {
-      // eslint-disable-next-line no-new-func
       const fn = new Function("value", `return (${value})(value)`);
       const result = fn(testValue);
       if (result === true) {

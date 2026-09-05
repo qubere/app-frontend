@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
-import { db } from "@/lib/db";
-import { SYSTEM_CRON_JOBS, getSystemCronJobs, type SystemCronJob } from "@/lib/admin/cronData";
+import { getSystemCronJobs } from "@/lib/admin/cronData";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
   if (!ctx.isPlatformAdmin) {

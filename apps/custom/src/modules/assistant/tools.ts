@@ -18,7 +18,6 @@ const getDecisionsRoute = () => import("@/app/api/decisions/route");
 const getExceptionsRoute = () => import("@/app/api/exceptions/[id]/route");
 const getFilingRoute = () => import("@/app/api/filing/[id]/route");
 const getCommunityScreeningListRoute = () => import("@/app/api/compliance/community-screening/route");
-const getCommunityScreeningDetailRoute = () => import("@/app/api/compliance/community-screening/[id]/route");
 const getCommunityScreeningResultsRoute = () => import("@/app/api/compliance/community-screening/[id]/results/route");
 const getCommunityScreeningRescreenRoute = () => import("@/app/api/compliance/community-screening/[id]/rescreen/route");
 const getCommunityScreeningExportRoute = () => import("@/app/api/compliance/community-screening/[id]/export/route");

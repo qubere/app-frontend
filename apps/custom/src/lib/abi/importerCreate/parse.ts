@@ -1,7 +1,7 @@
 // Parse an ACE CATAIR 5106 Importer/Consignee Create/Update response (output records E0, E1).
 // Source: docs/plans/catair-source-docs/19-importer-consignee-create-update-5106-v12.pdf
 
-import { decodeRecord, splitFixedWidthLines } from "@/lib/abi/fixedWidth";
+import { decodeRecord } from "@/lib/abi/fixedWidth";
 import type { E0Output, E1Output } from "./types";
 import { RECORD_E0_SPEC, RECORD_E1_SPEC } from "./recordSpecs";
 

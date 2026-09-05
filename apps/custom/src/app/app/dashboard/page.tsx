@@ -30,7 +30,6 @@ export default async function CommandCenterPage() {
   const accountId = context.accountId;
 
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
-    // eslint-disable-next-line react-hooks/purity
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const isEnterpriseAdmin =
@@ -254,7 +253,6 @@ export default async function CommandCenterPage() {
       };
     }
 
-    // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
 
     const formattedShipments = shipments.map((s) => {

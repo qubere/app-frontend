@@ -9,14 +9,9 @@ import {
   ExternalLink,
   RefreshCw,
   Server,
-  Terminal,
-  ShieldCheck,
   Zap,
-  Globe2,
-  Clock,
   User,
   GitCommit,
-  Layers,
 } from "lucide-react";
 
 interface DeploymentEntry {
@@ -117,7 +112,7 @@ export function DeploymentsPanel() {
           statusCode: res.status,
           dbStatus,
         };
-      } catch (err) {
+      } catch {
         results[service.id] = {
           status: "error",
           statusCode: 500,

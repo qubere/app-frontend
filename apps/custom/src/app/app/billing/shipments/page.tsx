@@ -20,7 +20,7 @@ export default async function ShipmentEconomicsPage() {
   // @qubere/billing/ledger) queries Shipment/UsageEvent internally -- both are
   // dataMode-scoped, so without this wrapper they'd silently default to
   // PRODUCTION isolation.
-  const { shipments, summaries } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
+  const { summaries } = await withDataModeContext(isDataMode(ctx.dataMode) ? ctx.dataMode : null, async () => {
     const shipments = await db.shipment.findMany({
       where: { accountId: ctx.accountId, deletedAt: null },
       take: 50,

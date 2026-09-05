@@ -42,10 +42,6 @@
   var dots = nav.querySelectorAll('.dot');
   var cur = 1;
 
-  function syncHomeColor() {
-    // deck-home contrast handled in CSS via slide class; nothing needed here
-  }
-
   function go(n) {
     cur = Math.max(1, Math.min(N, n));
     sw.style.transform = 'translateY(-' + (cur - 1) * 100 + 'vh)';

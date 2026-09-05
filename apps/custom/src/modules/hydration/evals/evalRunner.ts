@@ -7,12 +7,7 @@
  */
 
 import type { EvalMetrics } from "../types/canonicalRegistry";
-import {
-  GOLDEN_CORPUS_FIXTURES,
-  GOLDEN_CORPUS_PACKETS,
-  type GoldenFixture,
-  type GoldenPacketFixture,
-} from "./corpus";
+import { GOLDEN_CORPUS_FIXTURES } from "./corpus";
 import { CANONICAL_FIELD_REGISTRY_V1 } from "../registry/canonicalRegistryV1";
 import { FIELD_INVENTORY } from "../inventory/fieldInventory";
 

@@ -1,5 +1,4 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { db } from "@/lib/db";
 import { createAgentDecision } from "@/lib/decisions/createAgentDecision";
 import { createAuditLog, AuditAction } from "@/lib/audit";
 import { meterGeminiCall } from "@/lib/ai/aiMeter";

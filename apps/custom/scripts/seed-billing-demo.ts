@@ -296,7 +296,7 @@ async function main() {
     { lineItemName: "Human Classification Review", serviceCode: "HUMAN_HTS_REVIEW", pricingModel: "PER_SUCCESSFUL_OUTCOME", unit: "review", rate: 12.0, eventCodes: ["HTS_MANUAL_REVIEW_COMPLETED"] },
     { lineItemName: "PGA Processing", serviceCode: "PGA_PROCESSING", pricingModel: "PER_TRANSACTION", unit: "entry", rate: 18.0, eventCodes: ["PGA_PROCESSING_COMPLETED"] },
   ];
-  const meridianCard = await ensureRateCard({
+  await ensureRateCard({
     clientId: meridian.id,
     name: "Meridian Apparel Group 2026 Standard",
     description: "Legacy apparel-vertical pricing — underpriced relative to loaded labor cost for manual HTS review; drives negative shipment margin on high-touch entries.",
@@ -309,7 +309,7 @@ async function main() {
     { lineItemName: "Human Classification Review", serviceCode: "HUMAN_HTS_REVIEW", pricingModel: "PER_SUCCESSFUL_OUTCOME", unit: "review", rate: 22.0, eventCodes: ["HTS_MANUAL_REVIEW_COMPLETED"] },
     { lineItemName: "PGA Processing", serviceCode: "PGA_PROCESSING", pricingModel: "PER_TRANSACTION", unit: "entry", rate: 30.0, eventCodes: ["PGA_PROCESSING_COMPLETED"] },
   ];
-  const northstarCard = await ensureRateCard({
+  await ensureRateCard({
     clientId: northstar.id,
     name: "Northstar Electronics 2026 Standard",
     description: "Electronics-vertical rate card, healthy margin.",

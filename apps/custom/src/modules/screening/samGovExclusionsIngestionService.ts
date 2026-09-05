@@ -185,12 +185,8 @@ export class SamGovExclusionsIngestionService {
     const changeInputs: { screeningEntityId: string; changeType: ReferenceDataChangeType }[] = [];
     const activeProviderRecordIds = new Set<string>();
     let fetchedCount = 0;
-    let skippedCount = 0;
 
-    const parsed = rows.map(transformExclusionRow).filter((r): r is NonNullable<typeof r> => {
-      if (!r) skippedCount++;
-      return r !== null;
-    });
+    const parsed = rows.map(transformExclusionRow).filter((r): r is NonNullable<typeof r> => r !== null);
 
     for (let i = 0; i < parsed.length; i += UPSERT_BATCH_SIZE) {
       const batch = parsed.slice(i, i + UPSERT_BATCH_SIZE);

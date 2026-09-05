@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { buildErrorResponse } from "@/lib/api/error";
 
 export const POST = withAuthenticatedRoute<{ id: string }>(
-  async ({ ctx, requestId, params }) => {
+  async ({ requestId, params }) => {
     const { id } = await params;
 
     const request = await db.customerRequest.findFirst({

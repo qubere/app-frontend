@@ -12,9 +12,7 @@ import {
   RefreshCw,
   ChevronRight,
   ShieldCheck,
-  Info,
   UserCheck,
-  AlertCircle,
 } from "lucide-react";
 
 interface StageStep {

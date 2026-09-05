@@ -14,7 +14,6 @@ import {
   Eye,
   Sparkles,
   ShieldAlert,
-  FolderCheck,
   X,
   RotateCcw,
 } from "lucide-react";
@@ -113,7 +112,7 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
     status?: string | null;
     fileUrl?: string | null;
   } | null>(null);
-  const [approving, setApproving] = useState(false);
+  const [approving] = useState(false);
   const [approvedDocs, setApprovedDocs] = useState<{ [docId: string]: boolean }>({});
 
   const refreshRequests = () => {

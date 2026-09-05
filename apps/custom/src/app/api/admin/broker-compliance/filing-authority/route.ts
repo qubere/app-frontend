@@ -3,7 +3,6 @@
 
 import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
-import { buildErrorResponse } from "@/lib/api/error";
 import { db } from "@/lib/db";
 
 export const GET = withAuthenticatedRoute(

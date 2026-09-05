@@ -18,7 +18,7 @@ import type {
 export class InternalProvider implements EsignProvider {
   readonly name = "INTERNAL" as const;
 
-  async createEnvelope(input: EsignEnvelopeInput): Promise<EsignCreateResult> {
+  async createEnvelope(_input: EsignEnvelopeInput): Promise<EsignCreateResult> {
     // Token is stored as providerEnvelopeId in PoaEnvelope; the /sign/[token] route uses it.
     const token = randomBytes(32).toString("hex");
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.qubere.ai";

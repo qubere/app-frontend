@@ -56,7 +56,6 @@ import type {
   AssemblerInput,
   BondLike,
   FieldApprovalLike,
-  FilerProfileLike,
   ImporterOfRecordLike,
   ShipmentDocumentLike,
   ShipmentLike,

@@ -21,7 +21,7 @@ function apiKey(): string {
 export class DropboxSignProvider implements EsignProvider {
   readonly name = "DROPBOX_SIGN" as const;
 
-  async createEnvelope(input: EsignEnvelopeInput): Promise<EsignCreateResult> {
+  async createEnvelope(_input: EsignEnvelopeInput): Promise<EsignCreateResult> {
     const key = apiKey();
     void key; // used in real implementation for Authorization header
 

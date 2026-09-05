@@ -1,5 +1,3 @@
-import type { CanonicalShipment } from "@/modules/shipment/canonicalShipmentService";
-
 export interface InvocationStep {
   id: string;
   stepNumber: number;
