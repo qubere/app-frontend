@@ -70,6 +70,14 @@ export interface FilerExportRow {
 export interface ExportDbClient {
   filerExport: {
     findFirst(args: { where: Record<string, unknown> }): Promise<FilerExportRow | null>;
+    /**
+     * Used only by `listExportsForShipment` (U13 — the review UI's export
+     * history list). Filters via a nested `draft: { shipmentId }` clause,
+     * which the real Prisma client supports natively; a test mock that never
+     * exercises this path does not need to implement nested-relation
+     * filtering.
+     */
+    findMany(args: { where: Record<string, unknown>; orderBy?: Record<string, "asc" | "desc"> }): Promise<FilerExportRow[]>;
     create(args: { data: Record<string, unknown> }): Promise<FilerExportRow>;
     update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<FilerExportRow>;
     updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<{ count: number }>;
@@ -381,4 +389,18 @@ export async function getExport(db: ExportDbClient, accountId: string, exportId:
  */
 export async function supersedeExportsForDraft(db: ExportDbClient, accountId: string, draftId: string): Promise<void> {
   await db.filerExport.updateMany({ where: { accountId, draftId }, data: { status: "Superseded" } });
+}
+
+/**
+ * All FilerExport rows across every draft version of a shipment, newest
+ * first (U13 — the review UI's export history list). No list-by-shipment
+ * endpoint existed before this unit; FilerExport only carries a `draftId`,
+ * so this reaches the shipment via the `draft` relation rather than a
+ * denormalized shipmentId column.
+ */
+export async function listExportsForShipment(db: ExportDbClient, accountId: string, shipmentId: string): Promise<FilerExportRow[]> {
+  return db.filerExport.findMany({
+    where: { accountId, draft: { shipmentId } },
+    orderBy: { createdAt: "desc" },
+  });
 }

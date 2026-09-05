@@ -28,6 +28,7 @@ import { displayCurrency, displayDate, displayText } from "@/lib/honest";
 import { filingStages, type FilingStageState } from "@/modules/filings/filingStateMachine";
 import { getFilingConfig, formatCurrencyAmount } from "@/lib/filing/countryConfig";
 import DynamicFormRenderer from "./DynamicFormRenderer";
+import { EntrySummaryReviewPanel } from "./EntrySummaryReviewPanel";
 
 interface FilingProps {
   id: string;
@@ -135,6 +136,10 @@ interface FilingDetailClientProps {
   canResubmit: boolean;
   /** Dynamic list from FilingChildActionRule -- e.g. ["CANCEL"]. Render generically; adding an action is a registry entry, not a new prop. */
   childActions: string[];
+  /** Gates for the validated 7501 draft + ABI filer export panel (issue #219 Phase C, U13) -- distinct from canApprove/canValidate above, which gate the legacy filing-level actions. */
+  canGenerateEntrySummary?: boolean;
+  canApproveEntrySummary?: boolean;
+  canExportEntrySummary?: boolean;
 }
 
 const CLEARED_STATUSES = new Set(["Accepted", "Released", "Closed", "BrokerApproved"]);
@@ -497,6 +502,9 @@ export function FilingDetailClient({
   canTransmit,
   canResubmit,
   childActions,
+  canGenerateEntrySummary = false,
+  canApproveEntrySummary = false,
+  canExportEntrySummary = false,
 }: FilingDetailClientProps) {
   const router = useRouter();
   
@@ -1624,6 +1632,23 @@ export function FilingDetailClient({
               </div>
             );
           })()}
+
+          {/* Validated 7501 draft + ABI filer export (issue #219 Phase C, U13) --
+              a separate pipeline from the legacy form7501Data view above:
+              this reads modules/entrySummary's block-numbered, provenance-
+              tracked draft via /api/shipments/[id]/entry-summary rather than
+              /api/filing/[id]/entry-summary. Requires a shipment (standalone,
+              non-shipment filings have nothing for the assembler to read). */}
+          {shipment && (
+            <div className="pt-2 border-t border-border">
+              <EntrySummaryReviewPanel
+                shipmentId={shipment.id}
+                canGenerate={canGenerateEntrySummary}
+                canApprove={canApproveEntrySummary}
+                canExport={canExportEntrySummary}
+              />
+            </div>
+          )}
 
           {/* Provenance detail drawer */}
           {provenanceDetail && (

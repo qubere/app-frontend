@@ -9,6 +9,7 @@ import { entrySummaryDraftSchema } from "@/modules/entrySummary/model";
 import { getProfileById } from "@/modules/entrySummary/filerProfile";
 import {
   requestExport,
+  listExportsForShipment,
   DraftNotApproved,
   FILER_EXPORT_FORMATS,
   downloadTransport,
@@ -124,6 +125,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         status: exportRow.status,
         format: exportRow.format,
         transport: exportRow.transport,
+        filerProfileId: exportRow.filerProfileId,
         payloadHash: exportRow.payloadHash,
         payloadSize: exportRow.payloadSize,
         deliveredAt: exportRow.deliveredAt,
@@ -133,4 +135,38 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     });
   },
   { permission: "filing.entry_summary.export", write: true }
+);
+
+/**
+ * Lists every FilerExport row across all draft versions of this shipment,
+ * newest first (U13 — no list-by-shipment endpoint existed before this
+ * unit). Same permission as the POST above: reading export history is part
+ * of the export workflow, not a separate read grant.
+ */
+export const GET = withAuthenticatedRoute<{ id: string }>(
+  async ({ ctx, requestId, params }) => {
+    const parsedParams = validatePathParams(params, paramsSchema, requestId);
+    if ("response" in parsedParams) return parsedParams.response;
+    const shipmentId = parsedParams.data.id;
+
+    const rows = await listExportsForShipment(db as unknown as ExportDbClient, ctx.accountId, shipmentId);
+
+    return NextResponse.json({
+      exports: rows.map((row) => ({
+        id: row.id,
+        draftId: row.draftId,
+        filerProfileId: row.filerProfileId,
+        format: row.format,
+        transport: row.transport,
+        status: row.status,
+        payloadHash: row.payloadHash,
+        payloadSize: row.payloadSize,
+        lastError: row.lastError,
+        deliveredAt: row.deliveredAt,
+        createdAt: row.createdAt,
+      })),
+      requestId,
+    });
+  },
+  { permission: "filing.entry_summary.export" }
 );
