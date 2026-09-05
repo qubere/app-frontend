@@ -77,6 +77,20 @@ export type FilingSnapshotData = {
     version: number;
     timestamp: string;
   };
+  /**
+   * Additive, optional (issue #219 Phase C, U14): the approved 7501 entry
+   * summary draft + its validation result, frozen at the moment a broker
+   * approves it. Absent on snapshots written before this field existed, and
+   * absent on any snapshot for a shipment that never went through the U1-U11
+   * entry-summary pipeline — never backfilled or fabricated.
+   */
+  entrySummaryDraft?: {
+    version: number;
+    draftData: unknown;
+    validationData: unknown;
+    approvedAt: string;
+    approvedBy: string;
+  };
 };
 
 function withActionExtensions(declaration: DeclarationData, extensions: Record<string, unknown>): DeclarationData {

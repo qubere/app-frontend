@@ -266,6 +266,7 @@ model Account {
   bonds                       Bond[]
   filerProfiles               FilerProfile[]
   entrySummaryDrafts          EntrySummaryDraft[]
+  filerExports                FilerExport[]
   powersOfAttorney            PowerOfAttorney[]
   exceptionItems              ExceptionItem[]
   fieldApprovals              FieldApproval[]

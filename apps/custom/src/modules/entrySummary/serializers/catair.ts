@@ -117,7 +117,7 @@ function buildHeaderValues(draft: EntrySummaryDraft, profile: FilerProfileRecord
     entryNumber: h.B01_FILER_ENTRY_NUMBER.value != null ? toCatairAlpha(h.B01_FILER_ENTRY_NUMBER.value) : undefined,
     entryType: h.B02_ENTRY_TYPE.value != null ? toCatairAlpha(h.B02_ENTRY_TYPE.value) : undefined,
     portCode: h.B06_PORT_CODE.value ?? undefined,
-    importerNumber: h.B23_IMPORTER_NUMBER.value != null ? toCatairAlpha(h.B23_IMPORTER_NUMBER.value) : undefined,
+    importerNumber: h.B23_IMPORTER_NUMBER.value != null ? toCatairAlpha(stripToAlnum(h.B23_IMPORTER_NUMBER.value)) : undefined,
     summaryDate: parseDraftDate(h.B03_SUMMARY_DATE.value),
     entryDate: parseDraftDate(h.B07_ENTRY_DATE.value),
   } as Partial<CatairHeaderRecord>;
