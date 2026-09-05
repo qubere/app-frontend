@@ -201,11 +201,13 @@ export function buildAgentInvocations(
     const hasRunningStep = g.steps.some((s) => s.status === "RUNNING");
     const hasReview = g.steps.some((s) => s.status === "REVIEW");
 
-    // Match pipelineJob if available
-    const activeJob = (pipelineJobs || []).find(
-      (pj) => pj.status === "PROCESSING" || pj.status === "PENDING"
+    // PipelineJob has no stored link to a run's runId, so correlate by start
+    // time instead of matching any job for the shipment (which previously
+    // made every run "PROCESSING" whenever any other run's job was active).
+    const JOB_MATCH_WINDOW_MS = 15000;
+    const jobForRun = (pipelineJobs || []).find(
+      (pj) => pj.startedAt && Math.abs(new Date(pj.startedAt).getTime() - new Date(startedAt).getTime()) < JOB_MATCH_WINDOW_MS
     );
-    const jobForRun = activeJob || (pipelineJobs || [])[0];
 
     // Determine expected total steps for this pipeline trigger type
     const expectedTotalSteps =
@@ -213,7 +215,9 @@ export function buildAgentInvocations(
       (g.triggerEvent === "DOCUMENT_UPLOADED" || g.triggerEvent === "DOCUMENT_PARSE_PROMOTED" ? 10 : Math.max(g.steps.length, 1));
 
     const isRecentRun = Date.now() - new Date(startedAt).getTime() < 10 * 60 * 1000;
-    const isJobProcessing = activeJob !== undefined || (isRecentRun && g.steps.length < expectedTotalSteps && !hasFailed);
+    const isJobProcessing = jobForRun
+      ? jobForRun.status === "PROCESSING" || jobForRun.status === "PENDING"
+      : isRecentRun && g.steps.length < expectedTotalSteps && !hasFailed;
 
     let status: AgentInvocation["status"] = "COMPLETED";
     if (hasFailed) {
