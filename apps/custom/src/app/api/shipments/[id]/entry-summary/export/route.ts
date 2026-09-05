@@ -79,6 +79,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
 
     let exportRow;
     try {
+      let seqNum = 1;
       exportRow = await requestExport(db as unknown as ExportDbClient, {
         accountId: ctx.accountId,
         draftRow,
@@ -90,6 +91,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         requestedBy: ctx.userId,
         clock: () => new Date(),
         shipmentNumber: shipmentId,
+        sequence: () => seqNum++,
       });
     } catch (err) {
       if (err instanceof DraftNotExportable) {

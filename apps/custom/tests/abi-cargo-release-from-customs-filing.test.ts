@@ -181,7 +181,7 @@ describe("Cargo Release DB Integration (fromCustomsFiling)", () => {
 
   it("prioritizes persisted CargoReleaseBillOfLading records over tracking identifier fallback", () => {
     const filing = makeMockFiling();
-    filing.cargoReleaseBillsOfLading = [
+    filing.cargoReleaseBills = [
       {
         id: "bol-001",
         billTypeIndicator: "M",

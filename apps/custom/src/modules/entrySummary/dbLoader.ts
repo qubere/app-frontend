@@ -79,40 +79,43 @@ export async function loadShipmentForEntrySummary(
   accountId: string,
   shipmentId: string
 ): Promise<LoadedShipmentForEntrySummary> {
-  const shipment = await db.shipment.findFirst({
-    where: { id: shipmentId, accountId, deletedAt: null },
-    include: {
-      lineItems: { orderBy: { lineNumber: "asc" } },
-      importerOfRecord: {
-        include: {
-          bond: true,
-          powersOfAttorney: { orderBy: { createdAt: "desc" }, take: 1 },
+  const [shipment, facts, pgaRequirementRows] = await Promise.all([
+    db.shipment.findFirst({
+      where: { id: shipmentId, accountId, deletedAt: null },
+      include: {
+        lineItems: { orderBy: { lineNumber: "asc" } },
+        importerOfRecord: {
+          include: {
+            bond: true,
+            powersOfAttorney: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
         },
+        documents: { select: { id: true, docType: true, status: true } },
+        shipmentParties: true,
+        customsFilings: { select: { id: true, bondId: true, bond: true }, orderBy: { id: "desc" }, take: 1 },
+        exceptionItems: { where: { status: { in: openStatusVariants() } }, select: { severity: true } },
+        reconciliationIssues: { where: { status: "Open" }, select: { severity: true } },
       },
-      documents: { select: { id: true, docType: true, status: true } },
-      shipmentParties: true,
-      customsFilings: { select: { id: true, bondId: true, bond: true }, orderBy: { id: "desc" }, take: 1 },
-      exceptionItems: { where: { status: { in: openStatusVariants() } }, select: { severity: true } },
-      reconciliationIssues: { where: { status: "Open" }, select: { severity: true } },
-    },
-  });
+    }),
+    db.fact.findMany({
+      where: { shipmentId, supersededAt: null },
+      orderBy: { createdAt: "desc" },
+    }),
+    // GAP (documented): PgaRequirement carries no resolution/status column in
+    // this schema — there is no genuine "resolved" signal to read, so every
+    // requirement here is treated as unresolved. W7501.PGA.FLAG_UNRESOLVED is
+    // WARNING-severity, so this never blocks export; it may over-fire relative
+    // to a future schema that adds real resolution tracking.
+    db.pgaRequirement
+      .findMany({
+        where: { shipmentLineItem: { shipmentId } },
+        select: { shipmentLineItem: { select: { lineNumber: true } } },
+      })
+      .catch(() => [] as Array<{ shipmentLineItem: { lineNumber: number } }>),
+  ]);
 
   if (!shipment) throw new ShipmentNotFoundError(accountId, shipmentId);
 
-  const facts = await db.fact.findMany({
-    where: { shipmentId, supersededAt: null },
-    orderBy: { createdAt: "desc" },
-  });
-
-  // GAP (documented): PgaRequirement carries no resolution/status column in
-  // this schema — there is no genuine "resolved" signal to read, so every
-  // requirement here is treated as unresolved. W7501.PGA.FLAG_UNRESOLVED is
-  // WARNING-severity, so this never blocks export; it may over-fire relative
-  // to a future schema that adds real resolution tracking.
-  const pgaRequirementRows = await db.pgaRequirement.findMany({
-    where: { shipmentLineItem: { shipmentId } },
-    select: { shipmentLineItem: { select: { lineNumber: true } } },
-  }).catch(() => [] as Array<{ shipmentLineItem: { lineNumber: number } }>);
   const pgaRequirements = pgaRequirementRows.map((p) => ({ lineNumber: p.shipmentLineItem.lineNumber, resolved: false }));
 
   const shipmentLike: ShipmentLike = {
@@ -155,17 +158,22 @@ export async function loadShipmentForEntrySummary(
       }
     : null;
 
-  const parties: ShipmentPartyLike[] = await Promise.all(
-    shipment.shipmentParties.map(async (p) => {
-      const legalEntity = await db.legalEntity.findUnique({ where: { id: p.legalEntityId } }).catch(() => null);
-      return {
-        id: p.id,
-        role: p.role,
-        name: (legalEntity as { name?: string } | null)?.name ?? null,
-        address: legalEntity ? addressToString((legalEntity as { address?: unknown }).address) : null,
-      };
-    })
+  const legalEntityIds = Array.from(
+    new Set(shipment.shipmentParties.map((p) => p.legalEntityId).filter((id): id is string => Boolean(id)))
   );
+  const legalEntities =
+    legalEntityIds.length > 0 ? await db.legalEntity.findMany({ where: { id: { in: legalEntityIds } } }).catch(() => []) : [];
+  const legalEntitiesById = new Map(legalEntities.map((le) => [le.id, le]));
+
+  const parties: ShipmentPartyLike[] = shipment.shipmentParties.map((p) => {
+    const legalEntity = p.legalEntityId ? legalEntitiesById.get(p.legalEntityId) ?? null : null;
+    return {
+      id: p.id,
+      role: p.role,
+      name: (legalEntity as { name?: string } | null)?.name ?? null,
+      address: legalEntity ? addressToString((legalEntity as { address?: unknown }).address) : null,
+    };
+  });
 
   const documents: ShipmentDocumentLike[] = shipment.documents.map((d) => ({
     id: d.id,

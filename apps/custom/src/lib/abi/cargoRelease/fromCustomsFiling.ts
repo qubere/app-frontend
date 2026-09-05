@@ -104,7 +104,7 @@ export type CustomsFilingWithCargoReleaseRelations = {
       } | null;
     }[];
   } | null;
-  cargoReleaseBillsOfLading?: {
+  cargoReleaseBills?: {
     id: string;
     billTypeIndicator?: string | null;
     issuerCode?: string | null;
@@ -332,12 +332,12 @@ export function fromCustomsFiling(
   let bills: BillOfLadingGroupInput[] | undefined;
   const totalQty = rawLineItems.reduce((acc, item) => acc + item.quantity, 0);
 
-  if (filing.cargoReleaseBillsOfLading && filing.cargoReleaseBillsOfLading.length > 0) {
-    const billInputs: BillOfLadingInput[] = filing.cargoReleaseBillsOfLading.map((bol) => ({
+  if (filing.cargoReleaseBills && filing.cargoReleaseBills.length > 0) {
+    const billInputs: BillOfLadingInput[] = filing.cargoReleaseBills.map((bol) => ({
       billTypeIndicator: (bol.billTypeIndicator || "R").toUpperCase(),
       issuerCodeOfBillOfLadingNumber: bol.issuerCode || primaryLeg?.carrierCode || filing.shipment?.carrierName?.slice(0, 4) || undefined,
       billOfLadingNumber: bol.billOfLadingNumber.toUpperCase(),
-      quantity: bol.quantity ? Number(bol.quantity) : totalQty > 0 ? totalQty : 1,
+      quantity: bol.quantity != null ? Number(bol.quantity) : totalQty > 0 ? totalQty : 1,
       nonAmsIndicator: bol.nonAmsIndicator === true ? "Y" : "N",
     }));
 
