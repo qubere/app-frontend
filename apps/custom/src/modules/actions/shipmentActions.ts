@@ -89,12 +89,25 @@ export interface ShipmentActionGroup {
 
 const PRIORITY_RANK: Record<WorkPriority, number> = { critical: 0, high: 1, normal: 2 };
 
-// HTS/Origin block themselves purely because Product Intelligence hasn't
-// produced a description yet — a downstream consequence, not a separate
-// thing to review. While the root blocker is still open, hide the cascade
-// cards so the queue shows one actionable item per shipment instead of three.
+// HTS/Origin/Compliance block themselves purely because Product Intelligence
+// hasn't produced a description yet — a downstream consequence, not a
+// separate thing to review. While the root blocker is still open, hide the
+// cascade cards so the queue shows one actionable item per shipment instead
+// of four.
 const ROOT_BLOCKED_REASON = "WAITING_FOR_EXTRACTION";
-const CASCADE_BLOCKED_REASONS = new Set(["BLOCKED_MISSING_DESCRIPTION", "BLOCKED_MISSING_ORIGIN"]);
+const CASCADE_BLOCKED_REASONS = new Set([
+  "BLOCKED_MISSING_DESCRIPTION",
+  "BLOCKED_MISSING_ORIGIN",
+  "BLOCKED_MISSING_CLASSIFICATION",
+]);
+
+// Same idea for agents that skip themselves because a required document
+// (not a description) never arrived: the "<Doc> Missing" exception below is
+// the actionable card, so hide the agent's own "skipped" decision for that
+// document while it's still missing.
+const DOC_MISSING_CASCADE_REASONS: Record<string, string> = {
+  "commercial invoice": "BLOCKED_MISSING_INVOICE",
+};
 
 function blockedReasonOf(item: ActionItem): string | null {
   if (item.kind !== "decision") return null;
@@ -247,6 +260,13 @@ export function buildShipmentActionGroups(
       }));
 
     const { missingTypes } = checkRequiredDocumentTypes(docRows, false);
+
+    for (const reqDoc of missingTypes) {
+      const cascadeReason = DOC_MISSING_CASCADE_REASONS[reqDoc.toLowerCase()];
+      if (cascadeReason) {
+        bucket.items = bucket.items.filter((i) => blockedReasonOf(i) !== cascadeReason);
+      }
+    }
 
     for (const reqDoc of missingTypes) {
       if (bucket.items.some((i) => i.kind === "exception" && i.type.toLowerCase().includes(reqDoc.toLowerCase()))) continue;

@@ -62,4 +62,21 @@ describe("buildShipmentActionGroups", () => {
 
     expect(ids).toEqual(["hts"]);
   });
+
+  it("hides the Valuation Agent's skipped card while Commercial Invoice is missing, in favor of the missing-doc exception", () => {
+    const groups: DecisionGroup[] = [
+      group(
+        "Valuation Agent",
+        decision({ id: "val", agentName: "Valuation Agent", blockedReason: "BLOCKED_MISSING_INVOICE" } as any)
+      ),
+    ];
+
+    const result = buildShipmentActionGroups(groups, []);
+    const items = result.flatMap((g) => g.items);
+
+    expect(items.some((i) => i.kind === "decision" && i.id === "val")).toBe(false);
+    expect(
+      items.some((i) => i.kind === "exception" && i.description.toLowerCase().includes("commercial invoice"))
+    ).toBe(true);
+  });
 });
