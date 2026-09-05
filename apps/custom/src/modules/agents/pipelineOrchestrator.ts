@@ -135,6 +135,7 @@ export class PipelineOrchestrator {
 
     await ShipmentEventBus.logEvent({
       shipmentId,
+      accountId,
       eventType: triggerEvent,
       payload,
       triggeredBy: params.userId || "SYSTEM",

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
 import { resolvePartyForCompany } from "@/modules/party/partyResolutionService";
 import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
+import { normalizeLegalName, normalizeIdentifier } from "@/modules/party/partyNormalization";
 
 export interface EntityMatchCandidate {
   legalEntityId: string;
@@ -10,6 +11,7 @@ export interface EntityMatchCandidate {
   matchReason: string;
   customsProfileId?: string;
   cbpImporterNumber?: string;
+  partyId?: string | null;
 }
 
 export interface EntityResolutionInput {
@@ -24,23 +26,16 @@ export interface EntityResolutionInput {
 
 export class EntityResolutionService {
   /**
-   * Normalize company names for fuzzy comparison.
+   * Normalize company names for fuzzy comparison using shared party normalization rules.
    * e.g. "Target USA, Inc." -> "target usa"
    */
   static normalizeName(name: string): string {
-    return name
-      .toLowerCase()
-      .replace(/\b(inc|corp|corporation|llc|ltd|limited|co|company|pvt|gmbh|sa|plc)\b\.?/gi, "")
-      // Unicode-property classes, not [a-z0-9] -- the ASCII-only version
-      // stripped every accented/CJK/Arabic/Cyrillic character (e.g.
-      // "Société Générale" -> "socit gnrale"), breaking entity resolution
-      // for any non-English company name.
-      .replace(/[^\p{L}\p{N}\s]/gu, "")
-      .trim();
+    return normalizeLegalName(name);
   }
 
   /**
-   * Resolve raw parsed document text or input to existing LegalEntity records.
+   * Resolve raw parsed document text or input to existing LegalEntity records
+   * utilizing Party's PartyName.normalizedName and PartyIdentifier infrastructure.
    */
   static async resolveEntity(
     input: EntityResolutionInput,
@@ -54,9 +49,11 @@ export class EntityResolutionService {
       return { bestMatch: null, candidates: [] };
     }
 
-    const normInputName = this.normalizeName(input.rawName);
+    const normInputName = normalizeLegalName(input.rawName);
+    const normInputTax = input.taxIdentifier ? normalizeIdentifier(input.taxIdentifier) : null;
+    const normInputCbp = input.cbpImporterNumber ? normalizeIdentifier(input.cbpImporterNumber) : null;
 
-    // 1. Fetch all candidate LegalEntities for the account
+    // 1. Fetch candidate LegalEntities with party names and identifiers
     const entities = await client.legalEntity.findMany({
       where: {
         accountId: input.accountId,
@@ -67,38 +64,57 @@ export class EntityResolutionService {
         customsProfiles: {
           where: { active: true },
         },
+        party: {
+          include: {
+            names: { where: { status: "ACTIVE" } },
+            identifiers: { where: { status: "ACTIVE" } },
+          },
+        },
       },
     });
 
     const candidates: EntityMatchCandidate[] = [];
 
     for (const entity of entities) {
-      const normLegalName = this.normalizeName(entity.legalName);
+      const normLegalName = normalizeLegalName(entity.legalName);
       let matchScore = 0;
       const matchReasons: string[] = [];
 
+      // Check Party names if linked
+      const partyNormNames = entity.party?.names?.map((n: any) => n.normalizedName) ?? [];
+      const allNormNames = [normLegalName, ...partyNormNames];
+
       // Exact normalized name match
-      if (normInputName === normLegalName) {
+      if (allNormNames.some((name) => name === normInputName)) {
         matchScore = 100;
-        matchReasons.push("Exact normalized name match");
+        matchReasons.push("Exact Party normalized name match");
       }
       // Substring match
-      else if (normInputName.includes(normLegalName) || normLegalName.includes(normInputName)) {
+      else if (allNormNames.some((name) => name.includes(normInputName) || normInputName.includes(name))) {
         matchScore = 80;
-        matchReasons.push("Partial name match");
+        matchReasons.push("Partial Party name match");
       }
 
+      // Check Party identifiers if linked
+      const partyNormIdentifiers = entity.party?.identifiers?.map((i: any) => normalizeIdentifier(i.normalizedValue || i.value)) ?? [];
+
       // Tax identifier match bonus
-      if (input.taxIdentifier && entity.taxIdentifier === input.taxIdentifier) {
-        matchScore = Math.min(100, matchScore + 30);
-        matchReasons.push("Tax identifier match");
+      if (normInputTax) {
+        const entityTaxNorm = entity.taxIdentifier ? normalizeIdentifier(entity.taxIdentifier) : null;
+        if (entityTaxNorm === normInputTax || partyNormIdentifiers.includes(normInputTax)) {
+          matchScore = Math.min(100, matchScore + 30);
+          matchReasons.push("Tax identifier / Party identifier match");
+        }
       }
 
       // CBP importer number match bonus
       const cbpProfile = entity.customsProfiles.find((cp: any) => cp.cbpImporterNumber === input.cbpImporterNumber);
-      if (input.cbpImporterNumber && cbpProfile) {
-        matchScore = Math.min(100, matchScore + 40);
-        matchReasons.push("CBP Importer number match");
+      if (normInputCbp) {
+        const cbpNorm = cbpProfile ? normalizeIdentifier(cbpProfile.cbpImporterNumber) : null;
+        if (cbpNorm === normInputCbp || partyNormIdentifiers.includes(normInputCbp)) {
+          matchScore = Math.min(100, matchScore + 40);
+          matchReasons.push("CBP Importer number match");
+        }
       }
 
       if (matchScore >= 50) {
@@ -109,6 +125,7 @@ export class EntityResolutionService {
           matchReason: matchReasons.join("; "),
           customsProfileId: cbpProfile?.id,
           cbpImporterNumber: cbpProfile?.cbpImporterNumber,
+          partyId: entity.partyId,
         });
       }
     }

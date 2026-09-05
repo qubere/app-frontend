@@ -107,6 +107,7 @@ upsert_job qubere-bond-monitor "0 9 * * *" /api/cron/bond-monitor
 upsert_job qubere-report-schedules "0 * * * *" /api/cron/report-schedules
 upsert_job qubere-adcvd-monitor "0 7 * * *" /api/cron/adcvd-monitor
 upsert_job qubere-bond-monitor "30 7 * * *" /api/cron/bond-monitor
+upsert_job qubere-stage-advance "*/20 * * * *" /api/cron/stage-advance
 # END GENERATED JOBS
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"

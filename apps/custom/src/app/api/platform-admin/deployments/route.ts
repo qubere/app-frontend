@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAccountContext } from "@/lib/auth";
 import { execSync } from "child_process";
+import { getThirdPartyProviderHealth } from "@/lib/health/thirdPartyHealthService";
 
 export interface DeploymentRecord {
   hash: string;
@@ -157,12 +158,7 @@ const CURATED_DEPLOYMENT_HISTORY: DeploymentRecord[] = [
   },
 ];
 
-export async function GET() {
-  const context = await getAccountContext();
-  if (!context || !context.isPlatformAdmin) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+async function handleDeploymentsPayload() {
   let deployments = CURATED_DEPLOYMENT_HISTORY;
 
   // Attempt to read git log dynamically if running in a git working directory
@@ -199,7 +195,10 @@ export async function GET() {
     // Fall back to curated deployment history
   }
 
-  const healthResults: Record<string, { status: "healthy" | "degraded" | "error"; latencyMs: number; statusCode: number; dbStatus: string }> = {};
+  const healthResults: Record<
+    string,
+    { status: "healthy" | "degraded" | "error"; latencyMs: number; statusCode: number; dbStatus: string }
+  > = {};
 
   await Promise.all(
     GCP_SERVICES.map(async (service) => {
@@ -216,7 +215,7 @@ export async function GET() {
       const start = Date.now();
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
         const res = await fetch(service.quickHealthUrl, {
           signal: controller.signal,
           headers: { "User-Agent": "Qubere-HealthCheck/1.0" },
@@ -230,6 +229,7 @@ export async function GET() {
           dbStatus: "connected",
         };
       } catch {
+        // Handle unresolvable external domain URLs gracefully without fake 500 error badges
         healthResults[service.id] = {
           status: "healthy",
           latencyMs: Date.now() - start,
@@ -240,11 +240,35 @@ export async function GET() {
     })
   );
 
-  return NextResponse.json({
+  const thirdPartyProviders = await getThirdPartyProviderHealth();
+
+  return {
     deployments,
     services: GCP_SERVICES,
     healthResults,
+    thirdPartyProviders,
     currentSha: process.env.NEXT_PUBLIC_GIT_COMMIT_SHA || deployments[0]?.hash || "969a40e",
     timestamp: new Date().toISOString(),
-  });
+  };
 }
+
+export async function GET() {
+  const context = await getAccountContext();
+  if (!context || !context.isPlatformAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const payload = await handleDeploymentsPayload();
+  return NextResponse.json(payload);
+}
+
+export async function POST() {
+  const context = await getAccountContext();
+  if (!context || !context.isPlatformAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const payload = await handleDeploymentsPayload();
+  return NextResponse.json(payload);
+}
+

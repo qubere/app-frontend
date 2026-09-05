@@ -240,6 +240,11 @@ enum DeadlineClass {
 model Account {
   inboundAddresses       InboundAddress[]
   inboundDocumentReviews InboundDocumentReview[]
+  importerSecurityFilings ImporterSecurityFiling[]
+  priorDisclosures        PriorDisclosure[]
+  cbpReconciliationFlags  CbpReconciliationFlag[]
+  cbpReconciliationEntries CbpReconciliationEntry[]
+  dutyPaymentInstructions DutyPaymentInstruction[]
   entryProofs            EntryProof[]
   entryProofEvents       EntryProofEvent[]
   clientStakeholders     ClientStakeholder[]
@@ -11310,4 +11315,143 @@ model InboundDocumentReview {
   @@index([accountId, status, createdAt])
   @@index([clientId, status])
   @@index([inboundEmailId])
+}
+
+// -----------------------------------------------------------------------------
+// MEDIUM-EFFORT ROLLUP: ISF 10+2, prior disclosure, CBP reconciliation,
+// ACH duty payment. Each service persists here rather than returning
+// in-memory-only records.
+// -----------------------------------------------------------------------------
+
+/// One Importer Security Filing (ISF 10+2) for an ocean shipment. The 10+2
+/// data elements live in `elements` (see isfTransactionService.Isf10Plus2Elements);
+/// `filingDeadline` is 24h before lading and `penaltyExposureUsd` is the
+/// liquidated-damages exposure if the filing is late or inaccurate.
+model ImporterSecurityFiling {
+  id                 String    @id @default(cuid())
+  accountId          String
+  account            Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId         String?
+  billOfLadingNumber String?
+  status             String    @default("DRAFT") // DRAFT | SUBMITTED | ACCEPTED | REPLACED | LATE
+  ladingDate         DateTime?
+  filingDeadline     DateTime?
+  submittedAt        DateTime?
+  elements           Json      @default("{}")
+  missingElements    String[]  @default([])
+  bondOnFile         Boolean   @default(false)
+  isLate             Boolean   @default(false)
+  penaltyExposureUsd Decimal?  @db.Decimal(12, 2)
+  createdByUserId    String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId, status])
+  @@index([shipmentId])
+}
+
+/// A 19 U.S.C. 1592 prior disclosure: a self-reported duty-loss error tendered
+/// to CBP to cap penalty exposure at interest (negligence / gross negligence)
+/// or the actual loss of duties (fraud). Monetary fields are the computed
+/// exposure at the time of disclosure.
+model PriorDisclosure {
+  id                            String    @id @default(cuid())
+  accountId                     String
+  account                       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId                      String?
+  entryNumber                   String?
+  description                   String
+  culpability                   String // NEGLIGENCE | GROSS_NEGLIGENCE | FRAUD
+  status                        String    @default("DRAFT") // DRAFT | TENDERED | ACKNOWLEDGED | CLOSED
+  actualDutyLoss                Decimal   @db.Decimal(14, 2)
+  enteredValue                  Decimal   @db.Decimal(14, 2)
+  interestAmount                Decimal   @db.Decimal(14, 2)
+  tenderAmount                  Decimal   @db.Decimal(14, 2)
+  statutoryMaxPenalty           Decimal   @db.Decimal(14, 2)
+  estimatedPenaltyWithDisclosure Decimal  @db.Decimal(14, 2)
+  savingsFromDisclosure         Decimal   @db.Decimal(14, 2)
+  disclosedAt                   DateTime?
+  createdByUserId               String?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  @@index([accountId, status])
+  @@index([filingId])
+}
+
+/// An entry summary flagged for the CBP Reconciliation Program (21-month
+/// window to true-up VALUE / CLASSIFICATION / FTA / 9802 issues). Flags are
+/// bundled into a CbpReconciliationEntry when the recon entry is prepared.
+model CbpReconciliationFlag {
+  id                      String                  @id @default(cuid())
+  accountId               String
+  account                 Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filingId                String?
+  entryNumber             String
+  entryDate               DateTime
+  issues                  String[]                @default([]) // VALUE | CLASSIFICATION | FTA_ELIGIBILITY | SECTION_9802
+  estimatedDutyDifference Decimal                 @default(0) @db.Decimal(14, 2)
+  deadlineDate            DateTime
+  status                  String                  @default("FLAGGED") // FLAGGED | INCLUDED | WITHDRAWN
+  reconciliationEntryId   String?
+  reconciliationEntry     CbpReconciliationEntry? @relation(fields: [reconciliationEntryId], references: [id], onDelete: SetNull)
+  createdByUserId         String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  @@unique([accountId, entryNumber])
+  @@index([accountId, status])
+  @@index([reconciliationEntryId])
+}
+
+model CbpReconciliationEntry {
+  id                        String                  @id @default(cuid())
+  accountId                 String
+  account                   Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reconciliationEntryNumber String
+  issuesCovered             String[]                @default([])
+  deadlineDate              DateTime
+  status                    String                  @default("PREPARED") // PREPARED | TRANSMITTED | ACCEPTED | EXPIRED
+  dutyDeltaTotal            Decimal                 @default(0) @db.Decimal(16, 2)
+  transmittedAt             DateTime?
+  createdByUserId           String?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  flags                     CbpReconciliationFlag[]
+
+  @@unique([accountId, reconciliationEntryNumber])
+  @@index([accountId, status])
+}
+
+/// A duty-payment instruction for a CBP daily or Periodic Monthly Statement.
+/// This tracks the payment lifecycle (deadline, scheduling, submission,
+/// settlement) — it does not itself move funds. Payer bank details are never
+/// stored in full; only the last four digits, for display.
+model DutyPaymentInstruction {
+  id                String    @id @default(cuid())
+  accountId         String
+  account           Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  statementRecordId String?
+  statementNumber   String
+  statementType     String // DAILY | PERIODIC_MONTHLY
+  statementDate     DateTime
+  filerCode         String?
+  totalDutyAmount   Decimal   @default(0) @db.Decimal(16, 2)
+  totalFeeAmount    Decimal   @default(0) @db.Decimal(16, 2)
+  totalAmountDue    Decimal   @db.Decimal(16, 2)
+  paymentMethod     String    @default("ACH_DEBIT") // ACH_DEBIT | ACH_CREDIT
+  payerAccountLast4 String?
+  paymentDeadline   DateTime
+  status            String    @default("PENDING") // PENDING | SCHEDULED | SUBMITTED | SETTLED | FAILED | CANCELLED
+  achTrackingId     String    @unique
+  scheduledAt       DateTime?
+  submittedAt       DateTime?
+  settledAt         DateTime?
+  failureReason     String?
+  createdByUserId   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([accountId, status])
+  @@index([statementRecordId])
 }

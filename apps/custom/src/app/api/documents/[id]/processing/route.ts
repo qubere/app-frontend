@@ -104,6 +104,27 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
 
   const configuration = parserConfigurationReport();
 
+  // Fetch pre-shipment agent execution timeline for this document
+  const agentRecords = await db.agentExecutionRecord.findMany({
+    where: {
+      accountId: ctx.accountId,
+      OR: [
+        { inputSnapshot: { path: ["documentId"], equals: document.id } },
+        { outputSnapshot: { path: ["documentId"], equals: document.id } },
+      ],
+    },
+    take: 10,
+    orderBy: { startedAt: "desc" },
+    select: {
+      id: true,
+      agentName: true,
+      summary: true,
+      status: true,
+      durationMs: true,
+      startedAt: true,
+    },
+  });
+
   // Only when this document actually has something in flight. A poll against a
   // finished document should cost a read and nothing more.
   const inFlight = runs.some(
@@ -118,6 +139,7 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ ctx, requestI
 
   return NextResponse.json({
     requestId,
+    agentTimeline: agentRecords,
     document: {
       id: document.id,
       fileName: document.fileName,

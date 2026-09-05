@@ -33,10 +33,20 @@ export interface ProcessingRun {
   error?: { code?: string | null; message?: string | null } | null;
 }
 
+export interface AgentTimelineStep {
+  id: string;
+  agentName: string;
+  summary?: string | null;
+  status: string;
+  durationMs?: number | null;
+  startedAt: string;
+}
+
 export interface ProcessingResponse {
   parser?: { isMock?: boolean; blocker?: string | null } | null;
   runs?: ProcessingRun[] | null;
   document?: { activeProcessingRunId?: string | null } | null;
+  agentTimeline?: AgentTimelineStep[] | null;
 }
 
 const TERMINAL: ProcessingRollupState[] = [

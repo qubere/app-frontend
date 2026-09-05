@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withPublicRoute } from "@/lib/api/auth-guards";
 import { db } from "@/lib/db";
+import { getThirdPartyProviderHealth } from "@/lib/health/thirdPartyHealthService";
 
 /**
  * GET /api/health
@@ -8,10 +9,8 @@ import { db } from "@/lib/db";
  * Readiness/liveness endpoint.
  * - Validates database connectivity.
  * - Reports which customs transmission provider is active.
- * - Includes Git commit metadata.
- * - In a production deployment, rejects if the mock provider is still active
- *   (QPR-001 req 3). NODE_ENV is always "production" for an optimized Next.js
- *   build, including demo/staging, so APP_ENV controls this product policy.
+ * - Includes Git commit metadata & 15 third-party provider health checks.
+ * - In explicit production deployments (APP_ENV === "production"), rejects if mock provider is active.
  * Returns 200 when healthy, 503 when not ready to serve production traffic.
  */
 export const GET = withPublicRoute(async () => {
@@ -42,9 +41,10 @@ export const GET = withPublicRoute(async () => {
     ? "RealAceProvider"
     : "MockCustomsTransmissionProvider";
 
-  const deploymentEnvironment =
-    process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV ?? "unknown";
-  const requiresRealCustomsProvider = deploymentEnvironment === "production";
+  const appEnv = process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV;
+  const deploymentEnvironment = appEnv ?? (process.env.NODE_ENV === "production" ? "demo" : process.env.NODE_ENV ?? "unknown");
+  const requiresRealCustomsProvider = appEnv === "production" || process.env.STRICT_PRODUCTION_PROVIDERS === "true";
+
   if (requiresRealCustomsProvider && !hasCbpCredentials) {
     checks.customsProvider = {
       ok: false,
@@ -58,9 +58,12 @@ export const GET = withPublicRoute(async () => {
       ok: true,
       detail: hasCbpCredentials
         ? `RealAceProvider is configured (CBP_ABI_FILER_CODE is set).`
-        : `MockCustomsTransmissionProvider is active — acceptable in non-production environments.`,
+        : `MockCustomsTransmissionProvider is active — acceptable in non-production/demo environments.`,
     };
   }
+
+  // ── 15 Third-Party Provider Health Checks ─────────────────────────────────
+  const thirdPartyProviders = await getThirdPartyProviderHealth();
 
   const allOk = Object.values(checks).every((c) => c.ok);
   const status = allOk ? 200 : 503;
@@ -74,7 +77,9 @@ export const GET = withPublicRoute(async () => {
       timestamp: new Date().toISOString(),
       activeCustomsProvider: activeProviderName,
       checks,
+      thirdPartyProviders,
     },
     { status }
   );
 });
+

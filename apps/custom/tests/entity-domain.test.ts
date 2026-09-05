@@ -3,9 +3,12 @@ import { EntityResolutionService } from "../src/modules/entity/entityResolutionS
 
 describe("Qubere Entity & Party Domain Refactor Unit Tests", () => {
   it("Normalize company names correctly for fuzzy matching", () => {
-    expect(EntityResolutionService.normalizeName("Target USA, Inc.")).toBe("target usa");
-    expect(EntityResolutionService.normalizeName("ACME CORPORATION LTD")).toBe("acme");
-    expect(EntityResolutionService.normalizeName("Merck Sharp & Dohme Corp.")).toBe("merck sharp  dohme");
+    // normalizeName now delegates to the shared Party normalizeLegalName:
+    // upper-cased, punctuation flattened to single spaces, trailing legal-form
+    // suffixes folded away one at a time.
+    expect(EntityResolutionService.normalizeName("Target USA, Inc.")).toBe("TARGET USA");
+    expect(EntityResolutionService.normalizeName("ACME CORPORATION LTD")).toBe("ACME");
+    expect(EntityResolutionService.normalizeName("Merck Sharp & Dohme Corp.")).toBe("MERCK SHARP DOHME");
   });
 
   it("Validates entity resolution scoring rules", async () => {

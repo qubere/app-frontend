@@ -4,14 +4,29 @@ import { db } from "@/lib/db";
 import { evaluateReasonableCare } from "@/modules/compliance/reasonableCare";
 
 export const GET = withAuthenticatedRoute(async ({ ctx }) => {
-  const [filings, findings, suppliers, brokers, shipments] = await Promise.all([
-    db.customsFiling.findMany({ where: { accountId: ctx.accountId } }),
-    db.complianceFinding.findMany({ where: { accountId: ctx.accountId } }),
-    db.supplierRiskScore.findMany({ where: { accountId: ctx.accountId } }),
-    db.brokerMetrics.findMany({ where: { accountId: ctx.accountId } }),
+  const [filingsCount, findings, suppliers, brokers, shipments] = await Promise.all([
+    db.customsFiling.count({ where: { accountId: ctx.accountId } }),
+    db.complianceFinding.findMany({
+      where: { accountId: ctx.accountId },
+      select: { id: true, status: true, severity: true, rule: true, createdAt: true },
+      take: 100,
+    }),
+    db.supplierRiskScore.findMany({
+      where: { accountId: ctx.accountId },
+      select: { score: true },
+    }),
+    db.brokerMetrics.findMany({
+      where: { accountId: ctx.accountId },
+      select: { accuracyPct: true },
+    }),
     db.shipment.findMany({
       where: { accountId: ctx.accountId },
-      include: { lineItems: true, documents: true },
+      take: 50,
+      select: {
+        id: true,
+        lineItems: { select: { htsCode: true, countryOfOrigin: true, totalValue: true } },
+        documents: { select: { status: true } },
+      },
     }),
   ]);
 
@@ -54,9 +69,9 @@ export const GET = withAuthenticatedRoute(async ({ ctx }) => {
 
   const careGrade = overallReasonableCareScore >= 90 ? "Excellent" : overallReasonableCareScore >= 75 ? "Acceptable" : overallReasonableCareScore >= 60 ? "Needs Improvement" : "High Risk";
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     dashboard: {
-      entriesMonitored: filings.length,
+      entriesMonitored: filingsCount,
       openFindingsCount: openFindings.length,
       criticalFindingsCount: criticalFindings.length,
       avgSupplierRiskScore: avgSupplierRisk,
@@ -66,4 +81,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx }) => {
       recentAlerts: openFindings.slice(0, 5),
     },
   });
+
+  response.headers.set("Cache-Control", "private, s-maxage=5, stale-while-revalidate=15");
+  return response;
 });
