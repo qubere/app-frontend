@@ -36,6 +36,9 @@ const CUST_ENTRY = "Customs Entry";
 const DELIVERY_NOTE = "Delivery Note";
 const SHIP_INSTR = "Shipping Instruction";
 const CMR = "CMR Consignment Note";
+const FWD_INSTR = "Forwarding Instruction";
+const BOOKING_REQ = "Booking Request";
+const PO = "Purchase Order";
 
 export const FIELD_INVENTORY: FieldInventoryItem[] = [
   // ---------------------------------------------------------------------------
@@ -178,7 +181,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     scope: "shipment",
     extractionSchemaKeys: ["seller_name", "exporter_name", "shipper_name"],
     reconciliationKey: "shipperName",
-    docTypes: [CI, COO, BOL, AWB, ISF, SHIP_INSTR, SEA_WB],
+    docTypes: [CI, COO, BOL, AWB, ISF, SHIP_INSTR, SEA_WB, FWD_INSTR, BOOKING_REQ, PO],
     notes: "Resolves EXPORTER party role via EntityResolutionService.",
   },
   {
@@ -192,7 +195,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     scope: "shipment",
     extractionSchemaKeys: ["buyer_name", "consignee_name", "importer_name", "importer_of_record"],
     reconciliationKey: "consigneeName",
-    docTypes: [CI, BOL, AWB, ISF, ENTRY, DELIVERY_NOTE, SHIP_INSTR, CMR, SEA_WB, ARR_NOTICE],
+    docTypes: [CI, BOL, AWB, ISF, ENTRY, DELIVERY_NOTE, SHIP_INSTR, CMR, SEA_WB, ARR_NOTICE, FWD_INSTR, BOOKING_REQ, PO],
     notes: "Resolves IMPORTER_OF_RECORD party role via EntityResolutionService.",
   },
   {
@@ -267,7 +270,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["port_of_loading", "airport_of_origin"],
-    docTypes: [BOL, AWB, SHIP_INSTR, SEA_WB],
+    docTypes: [BOL, AWB, SHIP_INSTR, SEA_WB, FWD_INSTR, BOOKING_REQ],
   },
   {
     legacyKey: "portOfDischarge",
@@ -278,7 +281,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["port_of_discharge", "airport_of_dest"],
-    docTypes: [BOL, AWB, SHIP_INSTR, SEA_WB],
+    docTypes: [BOL, AWB, SHIP_INSTR, SEA_WB, FWD_INSTR, BOOKING_REQ],
   },
   {
     legacyKey: "containerNumber",
@@ -470,7 +473,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["instruction_date"],
-    docTypes: [SHIP_INSTR],
+    docTypes: [SHIP_INSTR, FWD_INSTR],
   },
   {
     legacyKey: "bookingNumber",
@@ -481,7 +484,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["booking_number"],
-    docTypes: [SHIP_INSTR],
+    docTypes: [SHIP_INSTR, FWD_INSTR, BOOKING_REQ],
   },
   {
     legacyKey: "requestedSailingDate",
@@ -503,7 +506,40 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["goods_description"],
-    docTypes: [SHIP_INSTR, EUR1, ATR, COO],
+    docTypes: [SHIP_INSTR, EUR1, ATR, COO, FWD_INSTR],
+  },
+  {
+    legacyKey: "instructionReference",
+    tradeMetadataKey: "instructionReference",
+    fieldReviewLabel: "Instruction Reference",
+    canonicalKey: "annotation.instructionReference",
+    entityKind: "TRACKING_IDENTIFIER",
+    isDriftKey: false,
+    scope: "document",
+    extractionSchemaKeys: ["instruction_reference"],
+    docTypes: [FWD_INSTR],
+  },
+  {
+    legacyKey: "poNumber",
+    tradeMetadataKey: "poNumber",
+    fieldReviewLabel: "Purchase Order Number",
+    canonicalKey: "annotation.poNumber",
+    entityKind: "TRACKING_IDENTIFIER",
+    isDriftKey: false,
+    scope: "document",
+    extractionSchemaKeys: ["po_number"],
+    docTypes: [PO],
+  },
+  {
+    legacyKey: "poDate",
+    tradeMetadataKey: "poDate",
+    fieldReviewLabel: "Purchase Order Date",
+    canonicalKey: "annotation.poDate",
+    entityKind: "SHIPMENT",
+    isDriftKey: false,
+    scope: "document",
+    extractionSchemaKeys: ["po_date"],
+    docTypes: [PO],
   },
   {
     legacyKey: "cmrNumber",
