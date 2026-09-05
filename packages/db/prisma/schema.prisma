@@ -264,6 +264,9 @@ model Account {
   customsResponses            CustomsResponse[]
   importersOfRecord           ImporterOfRecord[]
   bonds                       Bond[]
+  filerProfiles               FilerProfile[]
+  entrySummaryDrafts          EntrySummaryDraft[]
+  filerExports                FilerExport[]
   powersOfAttorney            PowerOfAttorney[]
   exceptionItems              ExceptionItem[]
   fieldApprovals              FieldApproval[]
@@ -2885,6 +2888,89 @@ model Bond {
   onboardingEntities OnboardingEntity[]
 
   @@index([accountId])
+}
+
+// -----------------------------------------------------------------------------
+// ENTRY SUMMARY (CBP FORM 7501) — issue #219 Phase A (U2, U7)
+// -----------------------------------------------------------------------------
+
+/// A customer's existing ABI filer, described declaratively (C7 — filer-agnostic
+/// via profiles: format details live here, not in code).
+model FilerProfile {
+  id              String        @id @default(cuid())
+  accountId       String
+  account         Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name            String
+  filerCode       String
+  defaultPortCode String?
+  format          String // CSV | CATAIR_AE | JSON_API (validated at the service boundary)
+  formatVersion   String
+  fieldMap        Json
+  transport       String
+  transportConfig Json?
+  active          Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  exports         FilerExport[]
+
+  @@unique([accountId, name])
+  @@index([accountId, active])
+}
+
+/// One generated (and possibly regenerated, possibly approved) version of the
+/// 7501 draft for a shipment. Immutable once approved (see draft.service.ts).
+model EntrySummaryDraft {
+  id             String        @id @default(cuid())
+  accountId      String
+  account        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId     String
+  filingId       String?
+  version        Int
+  draftData      Json
+  validationData Json
+  isExportable   Boolean
+  blockingCount  Int
+  warningCount   Int
+  generatedBy    String
+  supersededAt   DateTime?
+  approvedAt     DateTime?
+  approvedBy     String?
+  inputHash      String
+  createdAt      DateTime      @default(now())
+  exports        FilerExport[]
+
+  @@unique([shipmentId, version])
+  @@index([accountId, shipmentId])
+  @@index([filingId])
+}
+
+/// One delivery attempt (or successful delivery) of a generated
+/// EntrySummaryDraft to a filer, via a FilerProfile's configured transport
+/// (U11). Idempotent per (accountId, idempotencyKey) — see export.service.ts.
+model FilerExport {
+  id             String            @id @default(cuid())
+  accountId      String
+  account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  draftId        String
+  draft          EntrySummaryDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  filerProfileId String
+  filerProfile   FilerProfile      @relation(fields: [filerProfileId], references: [id], onDelete: Restrict)
+  format         String
+  transport      String
+  status         String // Pending | Delivered | Failed | Superseded
+  idempotencyKey String
+  payloadHash    String
+  payloadSize    Int
+  storageUrl     String?
+  attemptCount   Int               @default(0)
+  lastError      String?
+  requestedBy    String
+  deliveredAt    DateTime?
+  createdAt      DateTime          @default(now())
+
+  @@unique([accountId, idempotencyKey])
+  @@index([draftId])
+  @@index([accountId, status])
 }
 
 model PowerOfAttorney {

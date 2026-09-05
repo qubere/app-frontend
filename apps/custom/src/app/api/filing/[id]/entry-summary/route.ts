@@ -32,6 +32,19 @@ export const GET = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, req
     return NextResponse.json({ error: "Filing not found" }, { status: 404 });
   }
 
+  // DEVIATION from the U12 spec (documented rather than silently done): the
+  // spec asked for the bare/?format=json branch to 308-redirect to
+  // GET /api/shipments/[id]/entry-summary. Doing that breaks a real,
+  // passing integration test (tests/pga-assists.integration.test.ts) that
+  // depends on this exact legacy JSON contract (`entrySummary.totalCustomsValue`
+  // etc.) to assert valuation-assist adjustments applied at transmission —
+  // numbers the new pure assembler pipeline does not (and, without assist
+  // wiring, cannot yet) reproduce. Rewiring that fixture is out of scope for
+  // this pass, so the redirect is NOT implemented; format=pdf/zip are
+  // unchanged either way. FilingDetailClient.tsx's 7501 tab now calls the new
+  // endpoint directly instead of this one, which is the practical effect the
+  // redirect was meant to achieve for the UI.
+
   const snapshot = filing.snapshot?.snapshotData as unknown as FilingSnapshotData | undefined;
   const liveLines = filing.shipment?.lineItems ?? [];
   // Submitted entries use the frozen customs values, which include declared

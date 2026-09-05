@@ -181,6 +181,9 @@ export default async function CustomsFilingDetailPage(props: { params: Promise<{
         canTransmit={canTransmit}
         canResubmit={canResubmit}
         childActions={childActions}
+        canGenerateEntrySummary={await hasPermission("filing.entry_summary.generate")}
+        canApproveEntrySummary={await hasPermission("filing.entry_summary.approve")}
+        canExportEntrySummary={await hasPermission("filing.entry_summary.export")}
       />
     </div>
   );
