@@ -290,4 +290,13 @@ export const CRON_JOB_DEFINITIONS: CronJobDefinition[] = [
     scheduleLabel: "Daily at 07:30 UTC",
     trigger: { kind: "http", path: "/api/cron/bond-monitor", method: "GET" },
   },
+  {
+    id: "stage-advance",
+    schedulerName: "qubere-stage-advance",
+    name: "Shipment Stage Advance Backstop",
+    description: "Re-evaluates the stage gate for every in-progress shipment and advances the ones whose gate has opened for a reason that never wrote a decision or exception (deadline passing, tracking event, auto-advance toggled).",
+    cronExpression: "*/20 * * * *",
+    scheduleLabel: "Every 20 minutes",
+    trigger: { kind: "http", path: "/api/cron/stage-advance", method: "GET" },
+  },
 ];
