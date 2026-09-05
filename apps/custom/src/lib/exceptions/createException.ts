@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { deliverWebhookEvent } from "@/lib/webhooks/deliver";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { ExceptionCategory, ExceptionType } from "./exceptionTaxonomy";
 
 type ExceptionItemInput = Omit<Prisma.ExceptionItemUncheckedCreateInput, "category" | "type"> & {
@@ -17,23 +17,43 @@ type ExceptionItemInput = Omit<Prisma.ExceptionItemUncheckedCreateInput, "catego
  * for the same finding. If a matching open/in-progress exception already
  * exists, it's returned as-is instead of creating a new one -- no webhook
  * fires for a reused row, since nothing new actually happened.
+ *
+ * The findFirst below is only a fast path -- concurrent callers can both pass
+ * it before either insert lands, so this alone doesn't make the function
+ * idempotent under a race. Where a DB constraint actually backs the natural
+ * key (e.g. the partial unique index on open DEADLINE_* exceptions from
+ * migration 20260905130000), a race just means create() throws P2002, which
+ * we catch here and resolve to the row the other caller just made instead of
+ * failing the request.
  */
 export async function createExceptionItem(data: ExceptionItemInput) {
   const uncheckedData = data as Prisma.ExceptionItemUncheckedCreateInput;
-  const existing = await db.exceptionItem.findFirst({
-    where: {
-      accountId: uncheckedData.accountId,
-      shipmentId: uncheckedData.shipmentId ?? null,
-      filingId: uncheckedData.filingId ?? null,
-      documentId: uncheckedData.documentId ?? null,
-      type: uncheckedData.type,
-      description: uncheckedData.description,
-      status: { in: ["Open", "InProgress"] },
-    },
-  });
+  const findExisting = () =>
+    db.exceptionItem.findFirst({
+      where: {
+        accountId: uncheckedData.accountId,
+        shipmentId: uncheckedData.shipmentId ?? null,
+        filingId: uncheckedData.filingId ?? null,
+        documentId: uncheckedData.documentId ?? null,
+        type: uncheckedData.type,
+        description: uncheckedData.description,
+        status: { in: ["Open", "InProgress"] },
+      },
+    });
+
+  const existing = await findExisting();
   if (existing) return existing;
 
-  const item = await db.exceptionItem.create({ data: data as Prisma.ExceptionItemUncheckedCreateInput });
+  let item;
+  try {
+    item = await db.exceptionItem.create({ data: data as Prisma.ExceptionItemUncheckedCreateInput });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const winner = await findExisting();
+      if (winner) return winner;
+    }
+    throw err;
+  }
 
   // Work Management: stamp the resolve SLA clock and auto-route to the client's
   // owner. Best-effort — never block exception creation on it.

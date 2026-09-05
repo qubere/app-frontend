@@ -129,6 +129,17 @@ export default async function ShipmentWorkspacePage(props: {
   const canReadPartyScreening = isAccountAdmin || context.permissions.includes("compliance.restrictedParty.read");
 
 
+  // Document audit logs are keyed by ShipmentDocument.id (not shipment.id),
+  // so the auditLog query below needs this shipment's document ids up front
+  // to scope the "ShipmentDocument" entity clause -- without it, that clause
+  // pulled in every document event for the whole account.
+  const shipmentDocumentIds = (
+    await db.shipmentDocument.findMany({
+      where: { shipmentId: shipment.id },
+      select: { id: true },
+    })
+  ).map((d) => d.id);
+
   // None of these eleven depend on each other; run them in parallel.
   const [
     canonical,
@@ -173,7 +184,7 @@ export default async function ShipmentWorkspacePage(props: {
         OR: [
           { entityId: shipment.id },
           { entityId: params.id },
-          { entity: "ShipmentDocument" },
+          { entity: "ShipmentDocument", entityId: { in: shipmentDocumentIds } },
         ],
       },
       include: {
