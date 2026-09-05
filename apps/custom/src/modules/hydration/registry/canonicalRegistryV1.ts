@@ -478,7 +478,7 @@ export const CANONICAL_FIELD_REGISTRY_V1: Record<string, CanonicalFieldDefinitio
     validators: ["scheduleDPortValidator"],
     riskClass: "MEDIUM",
     promotionPolicy: "AUTO_IF_VALIDATED",
-    materializer: "FilingDraftMaterializer",
-    materializerConfig: { draftField: "portOfEntry" },
+    materializer: "ShipmentScalarMaterializer",
+    materializerConfig: { targetColumn: "portOfEntry" },
   },
 };

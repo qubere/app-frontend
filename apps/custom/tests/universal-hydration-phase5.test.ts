@@ -119,14 +119,14 @@ describe("Universal Field Hydration — Phase 5 Field Review & Exceptions", () =
     const mockDecision = {
       candidate: {
         proposal: {
-          targetFieldKey: "filing.portOfEntry",
+          targetFieldKey: "filing.entryNumber",
           targetEntityRef: null,
           sourceExtractionFieldIds: ["ev_track"],
-          evidenceReferences: [{ documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Port", rawValue: "2704" }],
-          proposedValue: "2704",
+          evidenceReferences: [{ documentId: testDocument, parseVersionId: "pv_1", rawLabel: "Entry Number", rawValue: "E123456" }],
+          proposedValue: "E123456",
           mappingConfidence: 95,
           relationConfidence: null,
-          reasoning: "Port code",
+          reasoning: "Entry number",
           status: "PROPOSED" as const,
           abstainReason: null,
         },

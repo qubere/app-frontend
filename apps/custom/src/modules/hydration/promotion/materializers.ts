@@ -10,7 +10,7 @@ import type { PromotionDecision } from "./promotionPolicyEngine";
 import { CANONICAL_FIELD_REGISTRY_V1 } from "../registry/canonicalRegistryV1";
 import { ShipmentPartyService, type ShipmentPartyRole } from "../../../modules/shipment/shipmentPartyService";
 import { EntityResolutionService } from "../../../modules/entity/entityResolutionService";
-import { LineItemReconciler } from "../../../modules/shipment/lineItemReconciler";
+import { LineItemReconciler, type LineItemDiscovery } from "../../../modules/shipment/lineItemReconciler";
 import type { Prisma } from "@prisma/client";
 
 import { HydrationLogger } from "../logging/hydrationLogger";
@@ -36,6 +36,27 @@ export class MaterializationError extends Error {
     super(message);
     this.name = "MaterializationError";
   }
+}
+
+/**
+ * Extracts the line number from a targetEntityRef. Producers disagree on the
+ * prefix -- live extraction (universalEvidenceExtractor.ts) emits "line_item:N",
+ * while LineItemReconciler's own Fact entityRef convention and the eval corpus
+ * fixtures use "line:N" -- so match on the trailing digits, not a fixed prefix.
+ * Returns null (never guesses line 1) when absent/unparseable.
+ */
+function parseLineNumber(ref: string | null | undefined): number | null {
+  const match = /:(\d+)$/.exec(ref ?? "");
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+const LINE_ITEM_NUMERIC_COLUMNS = new Set(["quantity", "unitPrice"]);
+
+/** Converts a materialized scalar value to the type LineItemDiscovery expects for the given column. */
+function parseLineItemValue(column: string, valStr: string): string | number {
+  return LINE_ITEM_NUMERIC_COLUMNS.has(column) ? Number(valStr) : valStr;
 }
 
 export class MaterializerRegistry {
@@ -137,6 +158,7 @@ export class MaterializerRegistry {
               "invoiceCurrency",
               "invoiceNumber",
               "invoiceDate",
+              "portOfEntry",
             ]);
 
             if (ALLOWLISTED_COLUMNS.has(column)) {
@@ -205,21 +227,30 @@ export class MaterializerRegistry {
         }
 
         case "LineItemMaterializer": {
-          if (shipmentId) {
+          const column = definition.materializerConfig.column as string | undefined;
+          const lineNumber = parseLineNumber(candidate.proposal.targetEntityRef);
+          if (shipmentId && column && lineNumber) {
             try {
               await LineItemReconciler.applyDiscoveries({
                 shipmentId,
                 accountId,
                 documentId: docId || "hydration",
                 sourceType: "EXTRACTED",
-                items: [{ lineNumber: 1, description: valStr }],
+                items: [{ lineNumber, [column]: parseLineItemValue(column, valStr) } as LineItemDiscovery],
               }, tx);
             } catch (err) {
               HydrationLogger.error("LineItemMaterializer failed during applyDiscoveries", err, { shipmentId, accountId, fieldKey });
               throw err;
             }
           }
-          return { fieldKey, materializer: materializerName, success: true, factId, materialized: true };
+          return {
+            fieldKey,
+            materializer: materializerName,
+            success: true,
+            factId,
+            materialized: !!(shipmentId && column && lineNumber),
+            reason: column && lineNumber ? undefined : "NO_TYPED_PROJECTION",
+          };
         }
 
         case "TrackingMaterializer":
