@@ -163,6 +163,36 @@ function recordkeepingCheck(auditLogCount: number): ChecklistItem {
   };
 }
 
+import { db } from "@/lib/db";
+
+export async function evaluateShipmentReasonableCare(
+  accountId: string,
+  shipmentId: string
+): Promise<ReasonableCareEvaluation | null> {
+  const shipment = await db.shipment.findFirst({
+    where: { id: shipmentId, accountId },
+    include: {
+      lineItems: true,
+      documents: true,
+    },
+  });
+
+  if (!shipment) return null;
+
+  const auditLogCount = await db.auditLog.count({
+    where: { accountId, entityId: shipmentId },
+  });
+
+  const totalValue = shipment.lineItems.reduce((sum, item) => sum + Number(item.totalValue), 0);
+
+  return evaluateReasonableCare({
+    lineItems: shipment.lineItems.map((l) => ({ htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin })),
+    documents: shipment.documents.map((d) => ({ status: d.status })),
+    totalValue: totalValue > 0 ? totalValue : null,
+    auditLogCount,
+  });
+}
+
 export function evaluateReasonableCare(input: ReasonableCareInput): ReasonableCareEvaluation {
   const checklistItems: ChecklistItem[] = [
     classificationCheck(input.lineItems),

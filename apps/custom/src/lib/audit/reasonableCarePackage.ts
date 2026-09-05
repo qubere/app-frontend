@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { evaluateReasonableCare, type ReasonableCareEvaluation } from "@/modules/compliance/reasonableCare";
 
 export interface ClassificationSection {
   lineItemNumber: number;
@@ -63,6 +64,7 @@ export interface ReasonableCarePackage {
   };
   generatedAt: string;
   completenessScore: number;
+  reasonableCareChecklist: ReasonableCareEvaluation;
   sections: {
     classification: ClassificationSection[];
     valuation: ValuationSection;
@@ -256,26 +258,60 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
     status: e.status,
   }));
 
-  // Calculate Completeness Score
-  let filledSections = 0;
-  const totalSections = 6;
-  if (classification.length > 0) filledSections++;
-  if (valuation.declaredCustomsValue > 0) filledSections++;
-  if (origin.determinedCountry !== "Unknown") filledSections++;
-  if (documents.length > 0) filledSections++;
-  if (decisions.length > 0) filledSections++;
-  if (exceptions.length === 0 || exceptions.some((e) => e.status === "Resolved")) filledSections++;
-  const completenessScore = Math.round((filledSections / totalSections) * 100);
+  // Calculate 5-item Reasonable Care Checklist & Unified Canonical Score
+  const auditLogCount = await db.auditLog.count({
+    where: { accountId, entityId: shipmentId },
+  });
+
+  const reasonableCareChecklist = evaluateReasonableCare({
+    lineItems: shipment.lineItems.map((l) => ({ htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin })),
+    documents: shipment.documents.map((d) => ({ status: d.status })),
+    totalValue: totalValue > 0 ? totalValue : null,
+    auditLogCount,
+  });
+
+  // Canonical completeness score unified with reasonable care risk score
+  const completenessScore = Math.max(0, 100 - reasonableCareChecklist.riskScore);
+
+  // Certifications / Attestations (P5)
+  const certifications: Array<{ role: string; name: string; date: string; signature?: string | null }> = [];
+  for (const line of classification) {
+    if (line.approver && line.approver !== "System") {
+      certifications.push({
+        role: "Licensed Customs Broker / Classifier",
+        name: line.approver,
+        date: new Date().toISOString(),
+        signature: `eSIG-CLASS-${line.lineItemNumber}`,
+      });
+    }
+  }
+
+  if (filing?.id) {
+    const timelineEvents = await db.auditTimeline.findMany({
+      where: { accountId, filingId: filing.id },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+    });
+    for (const te of timelineEvents) {
+      certifications.push({
+        role: "Compliance Reviewer",
+        name: te.actor,
+        date: te.createdAt.toISOString(),
+        signature: `eSIG-TL-${te.id.substring(0, 8)}`,
+      });
+    }
+  }
 
   return {
     shipmentId: shipment.id,
     entryNumber,
     importerOfRecord: {
-      name: shipment.importerOfRecord?.name ?? shipment.importerName ?? null,
+      name: shipment.importerOfRecord?.name ?? shipment.importerName ?? "Unknown",
       cbpNumber: shipment.importerOfRecord?.cbpImporterNumber ?? null,
     },
     generatedAt: new Date().toISOString(),
     completenessScore,
+    reasonableCareChecklist,
     sections: {
       classification,
       valuation,
@@ -284,6 +320,6 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
       decisions,
       exceptions,
     },
-    certifications: [],
+    certifications,
   };
 }

@@ -6,6 +6,7 @@ import { generateSimplePdfBuffer } from "@/lib/pdf/pdfGenerator";
 import { generateForm7501PdfBuffer } from "@/lib/filing/form7501Pdf";
 import { buildForm7501, type FilingHeaderInput, type LineItemInput } from "@/lib/filing/form7501";
 import { generateZipBuffer } from "@/lib/zip/zipGenerator";
+import { createAuditLog } from "@/lib/audit";
 
 export const GET = withAuthenticatedRoute<{ shipmentId: string }>(async ({ ctx, params }) => {
   const { shipmentId } = params;
@@ -14,6 +15,16 @@ export const GET = withAuthenticatedRoute<{ shipmentId: string }>(async ({ ctx, 
   if (!pkg) {
     return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
   }
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "audit.package.export",
+    entity: "ReasonableCarePackage",
+    entityId: shipmentId,
+    source: "UI",
+    metadata: { shipmentId, format: "zip" },
+  });
 
   const p = pkg as any;
   const rcPdfBuffer = generateSimplePdfBuffer({
