@@ -1,6 +1,55 @@
 {
   "version": 1,
-  "sourceCommit": null,
-  "articles": [],
+  "sourceCommit": "a429a38fa2fafef445798875c865a931f79af970",
+  "articles": [
+    {
+      "id": "resolve-compliance-finding",
+      "moduleId": "compliance",
+      "question": "How do I review and resolve a compliance finding?",
+      "answer": "Inspect compliance findings, assign them to team members, and record remediation notes or risk acceptance in the Compliance workspace.",
+      "steps": [
+        "Go to Compliance in the main navigation.",
+        "Locate the finding in the findings list and click Assign to me or update the assignee.",
+        "Expand the finding card to view the rule, description, entry details, and SLA due date.",
+        "Select a target status such as Resolved, Investigating, or AcceptedRisk.",
+        "Enter remediation notes and reference information, providing mandatory justification notes if accepting risk.",
+        "Click Update Status to save the disposition and record the resolution in the audit timeline."
+      ],
+      "href": "/app/compliance",
+      "actionLabel": "Resolve Compliance Findings",
+      "tags": [
+        "compliance",
+        "findings",
+        "remediation",
+        "assign",
+        "sla",
+        "accepted risk"
+      ]
+    },
+    {
+      "id": "shipment-progress",
+      "moduleId": "shipments",
+      "question": "How do I know what is blocking a shipment?",
+      "answer": "Check the readiness breakdown, active exceptions drawer, and reasonable-care review checklist directly within the shipment workspace.",
+      "steps": [
+        "Navigate to Shipments and select the shipment you want to review.",
+        "Check the top readiness ribbon and health indicator for an overall score and missing items.",
+        "Review the Reasonable Care Review panel to view classification, valuation, origin, PGA, and recordkeeping checks.",
+        "Open the Exceptions panel to inspect active warnings, missing documents, or reconciliation issues.",
+        "Resolve indicated exceptions or attach required documents to clear compliance blockers."
+      ],
+      "href": "/app/shipments",
+      "actionLabel": "View Shipment Readiness",
+      "tags": [
+        "shipment",
+        "blocked",
+        "readiness",
+        "reasonable care",
+        "exceptions",
+        "compliance"
+      ],
+      "popular": true
+    }
+  ],
   "archivedArticleIds": []
 }
