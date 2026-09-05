@@ -60,6 +60,7 @@ export interface ResolvePartyForCompanyInput {
   clientId?: string | null;
   partyKind?: PartyKind;
   sourceType?: PartySourceType;
+  sourceDocumentId?: string | null;
 }
 
 export type ResolvePartyForCompanyResult =
@@ -88,6 +89,25 @@ export async function resolvePartyForCompany(
     const partyId = match.candidates[0]!.partyId;
     const party = await getParty(actor, partyId);
     if (party === null) throw new PartyNotFoundError(partyId);
+
+    if (input.sourceDocumentId) {
+      const existingEvidence = await db.partyEvidence.findFirst({
+        where: { accountId: actor.accountId, partyId, sourceDocumentId: input.sourceDocumentId },
+        select: { id: true },
+      });
+      if (!existingEvidence) {
+        await db.partyEvidence.create({
+          data: {
+            accountId: actor.accountId,
+            partyId,
+            sourceType: input.sourceType ?? "DOCUMENT",
+            sourceDocumentId: input.sourceDocumentId,
+            description: "Exact match promoted during company identity resolution",
+          },
+        });
+      }
+    }
+
     return { outcome: "EXACT", partyId, party };
   }
 
