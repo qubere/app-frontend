@@ -9,6 +9,7 @@ import { syncClientSetup } from '../src/lib/portal/clientSetup';
 import { promoteClientDocument } from '@qubere/db/services/client-setup-service';
 import { storeDocumentBytes } from '@qubere/storage';
 import { PERMISSION_CATALOGUE, defaultPermissionsForRole } from '../../../packages/auth/src/permissions';
+import { isDemoSeedingAllowed, assertDemoSeedingAllowed } from '../src/lib/environment';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -17,12 +18,6 @@ req('@next/env').loadEnvConfig(resolve('apps/custom'), true);
 const db = new PrismaClient();
 const now = new Date();
 const day = (n: number) => new Date(now.getTime() + n * 86400000);
-export function assertNotProduction() {
-    if (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production' || process.env.NEXT_PUBLIC_APP_ENV === 'production' || [process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_PORTAL_URL].some(s => s && new URL(s).hostname === 'app.qubere.ai'))
-        throw new Error('Demo seed refuses production and app.qubere.ai');
-    if (!process.env.DATABASE_URL)
-        throw new Error('DATABASE_URL is required');
-}
 function demoPdf(title: string) { const stream = `BT /F1 16 Tf 50 750 Td (SYNTHETIC DEMO - NOT A LEGAL DOCUMENT) Tj 0 -40 Td (${title}) Tj ET`; const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`]; let pdf = '%PDF-1.4\n'; const offsets = [0]; objects.forEach((o, i) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; }); const xref = Buffer.byteLength(pdf); pdf += `xref\n0 6\n0000000000 65535 f \n` + offsets.slice(1).map(n => `${String(n).padStart(10, '0')} 00000 n \n`).join('') + `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`; return Buffer.from(pdf); }
 async function main() {
     const { values } = parseArgs({ options: { 'account-id': { type: 'string' }, help: { type: 'boolean' } } });
@@ -30,16 +25,17 @@ async function main() {
         console.log('seed-partner-portal-demo [--account-id DEMO_OR_SANDBOX_ACCOUNT_ID]. Uses demo-account by default; refuses production. Creates synthetic data only; sends no notifications.');
         return;
     }
-    assertNotProduction();
+    assertDemoSeedingAllowed();
+    if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
     let account = values['account-id'] ? await db.account.findUnique({ where: { id: values['account-id'] } }) : await db.account.findUnique({ where: { slug: 'demo-account' } });
     if (!account && !values['account-id'])
         account = await db.account.create({ data: { name: 'Qubere Portal Demo', slug: 'demo-account', type: 'ENTERPRISE', status: 'ACTIVE', dataMode: 'DEMO' } });
-    if (!account || (!['DEMO', 'SANDBOX'].includes(account.dataMode) && process.env.ALLOW_DEMO_SEEDING !== 'true'))
+    if (!account || (!['DEMO', 'SANDBOX'].includes(account.dataMode) && !isDemoSeedingAllowed()))
         throw new Error('Choose an existing DEMO or SANDBOX account; no production account is modified.');
     const accountId = account.id;
     // Existing legacy demo IDs must belong to this account before any seed write.
     const collision = await db.customsFiling.findFirst({ where: { id: 'filing_tgt_7501_demo', accountId: { not: accountId } } });
-    if (collision && process.env.ALLOW_DEMO_SEEDING !== 'true')
+    if (collision && !isDemoSeedingAllowed())
         throw new Error('Legacy portal demo belongs to another account. Select that DEMO account.');
     await seedCustomerPortalDemoData(db, accountId);
     const releaseId = 'portal-demo-hts-2026';
