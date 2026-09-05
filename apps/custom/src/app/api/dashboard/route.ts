@@ -29,15 +29,23 @@ export const GET = withAuthenticatedRoute(async ({ ctx }) => {
 
   let overallReasonableCareScore = 100;
   if (shipments.length > 0) {
+    // One grouped query for every shipment's recordkeeping-trail count instead
+    // of a COUNT per shipment in a loop.
+    const auditCounts = await db.auditLog.groupBy({
+      by: ["entityId"],
+      where: { accountId: ctx.accountId, entityId: { in: shipments.map((s) => s.id) } },
+      _count: { _all: true },
+    });
+    const auditCountByEntity = new Map(auditCounts.map((r) => [r.entityId, r._count._all]));
+
     let totalScore = 0;
     for (const s of shipments) {
-      const auditLogCount = await db.auditLog.count({ where: { accountId: ctx.accountId, entityId: s.id } });
       const totalVal = s.lineItems.reduce((sum, item) => sum + Number(item.totalValue), 0);
       const evalResult = evaluateReasonableCare({
         lineItems: s.lineItems.map((l) => ({ htsCode: l.htsCode, countryOfOrigin: l.countryOfOrigin })),
         documents: s.documents.map((d) => ({ status: d.status })),
         totalValue: totalVal > 0 ? totalVal : null,
-        auditLogCount,
+        auditLogCount: auditCountByEntity.get(s.id) ?? 0,
       });
       totalScore += Math.max(0, 100 - evalResult.riskScore);
     }

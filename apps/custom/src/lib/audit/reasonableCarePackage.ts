@@ -113,6 +113,11 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
 
   // Assemble Classification section
   const classification: ClassificationSection[] = [];
+  // Real attestations only — one per approved ClassificationCase decision, keyed
+  // by reviewer + attestation timestamp so the same sign-off covering several
+  // lines is recorded once. `signature` stays null: these are in-app
+  // attestations, not e-signed artifacts. Never synthesize a signature id.
+  const attestations = new Map<string, { role: string; name: string; date: string; signature: null }>();
   for (const line of shipment.lineItems) {
     let griSteps: string[] = [];
     let rulingCitations: string[] = [];
@@ -171,6 +176,13 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
             if (reviewer) {
               const fullName = [reviewer.firstName, reviewer.lastName].filter(Boolean).join(" ");
               approver = fullName || reviewer.email;
+              const attestedAt = decision.attestedAt.toISOString();
+              attestations.set(`${decision.reviewerUserId}::${attestedAt}`, {
+                role: "Licensed Customs Broker / Classifier",
+                name: approver,
+                date: attestedAt,
+                signature: null,
+              });
             } else {
               approver = "System Approved";
             }
@@ -273,34 +285,12 @@ export async function assembleReasonableCarePackage(accountId: string, shipmentI
   // Canonical completeness score unified with reasonable care risk score
   const completenessScore = Math.max(0, 100 - reasonableCareChecklist.riskScore);
 
-  // Certifications / Attestations (P5)
-  const certifications: Array<{ role: string; name: string; date: string; signature?: string | null }> = [];
-  for (const line of classification) {
-    if (line.approver && line.approver !== "System") {
-      certifications.push({
-        role: "Licensed Customs Broker / Classifier",
-        name: line.approver,
-        date: new Date().toISOString(),
-        signature: `eSIG-CLASS-${line.lineItemNumber}`,
-      });
-    }
-  }
-
-  if (filing?.id) {
-    const timelineEvents = await db.auditTimeline.findMany({
-      where: { accountId, filingId: filing.id },
-      take: 5,
-      orderBy: { createdAt: "desc" },
-    });
-    for (const te of timelineEvents) {
-      certifications.push({
-        role: "Compliance Reviewer",
-        name: te.actor,
-        date: te.createdAt.toISOString(),
-        signature: `eSIG-TL-${te.id.substring(0, 8)}`,
-      });
-    }
-  }
+  // Certifications / Attestations (P5). Real classification sign-offs only —
+  // an empty array when no one has attested is the honest answer for a CBP
+  // defense file. Sorted newest-first for stable output.
+  const certifications = Array.from(attestations.values()).sort((a, b) =>
+    b.date.localeCompare(a.date)
+  );
 
   return {
     shipmentId: shipment.id,
