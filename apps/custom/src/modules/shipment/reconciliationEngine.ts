@@ -95,6 +95,63 @@ export function findContainerSealMismatches(
   return mismatches;
 }
 
+export interface LineItemQuantityFact {
+  documentId: string | null;
+  /** Fact.id, used only to key claims that carry no documentId. */
+  id: string;
+  /** Raw quantity as recorded by LineItemReconciler.recordFacts. */
+  value: string;
+}
+
+export interface LineItemQuantityMismatch {
+  lineNumber: number;
+  /** One entry per distinct document, latest claim only. */
+  claims: LineItemQuantityFact[];
+}
+
+/**
+ * Finds line items whose quantity disagrees across documents. Fact rows are
+ * the source: LineItemReconciler only ever fills a currently-empty/placeholder
+ * ShipmentLineItem field (see lineItemReconciler.ts), so a second document's
+ * conflicting quantity for the same line never reaches the curated record and
+ * would otherwise go unnoticed. recordFacts only ever writes a Fact for a
+ * value a source actually supplied, so every claim compared here is a genuine
+ * extraction, never a placeholder.
+ *
+ * `facts` should already be every `lineItem.<n>.quantity` Fact for the
+ * shipment, newest first (so the first claim seen per document is its latest).
+ */
+export function findLineItemQuantityMismatches(
+  facts: readonly { field: string; value: string; documentId: string | null; id: string }[]
+): LineItemQuantityMismatch[] {
+  const byLine = new Map<number, typeof facts[number][]>();
+  for (const fact of facts) {
+    const match = fact.field.match(/^lineItem\.(\d+)\.quantity$/);
+    if (!match) continue;
+    const lineNumber = Number(match[1]);
+    const list = byLine.get(lineNumber) ?? [];
+    list.push(fact);
+    byLine.set(lineNumber, list);
+  }
+
+  const mismatches: LineItemQuantityMismatch[] = [];
+  for (const [lineNumber, lineFacts] of byLine) {
+    const latestByDoc = new Map<string, typeof facts[number]>();
+    for (const fact of lineFacts) {
+      const key = fact.documentId ?? `no-document:${fact.id}`;
+      if (!latestByDoc.has(key)) latestByDoc.set(key, fact);
+    }
+    const claims = [...latestByDoc.values()];
+    if (claims.length < 2) continue;
+
+    const quantities = new Set(claims.map((fact) => Number(fact.value)));
+    if (quantities.size <= 1) continue;
+
+    mismatches.push({ lineNumber, claims });
+  }
+  return mismatches;
+}
+
 interface ComplianceAuditFinding {
   ruleId: string;
   category:
@@ -476,6 +533,70 @@ export class ReconciliationEngine {
 
     for (const existing of activeContainerSealExceptions) {
       if (existing.code && !currentContainerSealCodes.has(existing.code)) {
+        await db.exceptionItem.update({
+          where: { id: existing.id },
+          data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },
+        });
+        exceptionsResolved++;
+      }
+    }
+
+    // 0c. Cross-document line-item quantity mismatch. LineItemReconciler
+    // (lineItemReconciler.ts) only ever fills a currently-empty/placeholder
+    // ShipmentLineItem field, so a second document's conflicting quantity for
+    // the same line is silently discarded from the curated record. Fact rows
+    // retain every document's claim regardless, so compare those directly
+    // instead of trusting the merged record.
+    const LINE_ITEM_QUANTITY_CODE_PREFIX = "LINE_ITEM_QUANTITY_MISMATCH:";
+    const activeLineItemQuantityExceptions = activeExceptions.filter((e) =>
+      e.code?.startsWith(LINE_ITEM_QUANTITY_CODE_PREFIX)
+    );
+    const currentLineItemQuantityCodes = new Set<string>();
+
+    const lineItemQuantityFacts = await db.fact.findMany({
+      where: {
+        shipmentId: shipment.id,
+        AND: [{ field: { startsWith: "lineItem." } }, { field: { endsWith: ".quantity" } }],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const quantityMismatches = findLineItemQuantityMismatches(lineItemQuantityFacts);
+
+    for (const { lineNumber, claims } of quantityMismatches) {
+      const code = `${LINE_ITEM_QUANTITY_CODE_PREFIX}${lineNumber}`;
+      currentLineItemQuantityCodes.add(code);
+      const existingEx = await db.exceptionItem.findFirst({
+        where: { shipmentId: shipment.id, accountId: shipment.accountId, code, status: { not: "Resolved" } },
+        select: { id: true },
+      });
+      if (!existingEx) {
+        const claimSummary = claims
+          .map((fact) => {
+            const doc = fact.documentId ? shipment.documents.find((d) => d.id === fact.documentId) : null;
+            return `${doc?.docType ?? "Unknown document"}: "${fact.value}"`;
+          })
+          .join("; ");
+        await createExceptionItem({
+          shipmentId: shipment.id,
+          accountId: shipment.accountId,
+          code,
+          fieldKey: "quantity",
+          category: "CONFLICT",
+          type: "data_mismatch",
+          severity: "Medium",
+          blocking: false,
+          description: `Line ${lineNumber}: quantity disagrees across documents (${claimSummary}).`,
+          requiredAction: "Review the source documents and confirm the correct quantity for this line item.",
+          sourceAgent: "Reconciliation Engine",
+        });
+        exceptionsGenerated++;
+        affectedAgentsSet.add("RECONCILIATION_ENGINE");
+      }
+    }
+
+    for (const existing of activeLineItemQuantityExceptions) {
+      if (existing.code && !currentLineItemQuantityCodes.has(existing.code)) {
         await db.exceptionItem.update({
           where: { id: existing.id },
           data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },
