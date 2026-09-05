@@ -23,6 +23,7 @@ import {
   User,
 } from "lucide-react";
 import { PAGE_SIZE_DEFAULT, pageWindow } from "@/modules/tables/tableQuery";
+import { SYSTEM_DOCUMENT_TYPES } from "@/modules/intake/documentTypeCatalog";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { documentViewUrl } from "@/lib/documentUrl";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -1099,11 +1100,9 @@ export function DocumentsClient({
             className="px-3 py-2 rounded-xl border border-border bg-white text-xs text-ink focus:outline-none focus:border-brand cursor-pointer font-medium"
           >
             <option value="ALL">{t.documents.allTypes}</option>
-            <option value="COMMERCIAL_INVOICE">Commercial Invoice</option>
-            <option value="OCEAN_BILL_OF_LADING">Ocean Bill of Lading (B/L)</option>
-            <option value="GENERAL_CERTIFICATE_OF_ORIGIN">Certificate of Origin</option>
-            <option value="CBP_FORM_7501_ENTRY_SUMMARY">CBP Form 7501</option>
-            <option value="PACKING_LIST">Packing List</option>
+            {SYSTEM_DOCUMENT_TYPES.map((docType) => (
+              <option key={docType.code} value={docType.code}>{docType.name}</option>
+            ))}
           </select>
 
           <select
