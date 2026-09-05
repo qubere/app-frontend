@@ -236,6 +236,8 @@ model Account {
   assists                Assist[]
   assistDecisions        AssistDecision[]
   assistDeclarations     AssistDeclaration[]
+  searchIndexEntries     SearchIndexEntry[]
+
 
   id          String    @id @default(cuid())
   name        String
@@ -9427,6 +9429,7 @@ model ProductHelpArticle {
 model SearchIndexEntry {
   id              String                      @id @default(cuid())
   accountId       String?
+  account         Account?                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   kind            String // party | product | document | shipment | client | importer | person | ruling | hts_node | denied_party | adcvd | section301
   entityId        String
   title           String
