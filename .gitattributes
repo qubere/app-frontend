@@ -3,3 +3,7 @@
 
 # PDF xref records contain format-significant trailing spaces.
 apps/custom/scripts/fixtures/inbound/*.pdf binary
+
+# CATAIR fixed-width records are compared byte-for-byte against the
+# serializer's LF-only output; autocrlf must not rewrite this to CRLF.
+apps/custom/tests/fixtures/7501/catair-ae-golden.txt text eol=lf
