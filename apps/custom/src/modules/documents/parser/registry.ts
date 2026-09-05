@@ -69,7 +69,13 @@ export function getDocumentParserProvider(): DocumentParserProvider {
     return new FallbackDoclingProvider(primary, new MockDoclingProvider());
   }
 
-  return primary;
+  // fallbackId === "gemini-vision": the class supports a real backup provider,
+  // but no Gemini Vision parser adapter is wired yet. Refuse loudly rather than
+  // silently running with no fallback the operator asked for.
+  throw new DocumentParserError(
+    "PARSER_NOT_CONFIGURED",
+    "DOCUMENT_PARSER_FALLBACK=gemini-vision is not yet supported (no Gemini Vision parser adapter). Use DOCUMENT_PARSER_FALLBACK=mock (local only) or unset it."
+  );
 }
 
 /** True when a provider can be resolved. Used by health reporting, not control flow. */

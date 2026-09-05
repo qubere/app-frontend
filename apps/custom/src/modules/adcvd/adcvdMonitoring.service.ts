@@ -191,7 +191,7 @@ export class AdcvdMonitoringService {
       where: { status: { in: ["ACTIVE", "UNDER_REVIEW", "SUNSET_REVIEW"] } },
     });
 
-    let statusUpdates = 0;
+    const statusUpdates = 0;
     let ratesStaged = 0;
 
     // Iterate through active orders and perform health/monitoring checks
