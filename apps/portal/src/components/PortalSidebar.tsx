@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Building2, ChevronRight, FileCheck2, Files, ListChecks, Menu,
   Package, PanelLeftClose, PanelLeftOpen, ReceiptText, Truck,
-  UserRound, X, type LucideIcon,
+  UserRound, Wallet, X, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QubereLogo } from "@/components/QubereLogo";
@@ -48,7 +48,7 @@ export function PortalSidebar({ hasCustomsAccess, hasTmsAccess, canReadSetup, wo
         { label: "Entry Proofs", href: "/compliance", icon: FileCheck2, activePaths: ["/entries"] },
       ],
     }] : []),
-    { id: "billing", label: "Billing", items: [{ label: "Invoices", href: "/invoices", icon: ReceiptText }] },
+    { id: "billing", label: "Billing", items: [{ label: "Invoices", href: "/invoices", icon: ReceiptText }, { label: "Duty Funds", href: "/funds", icon: Wallet }] },
     ...(canReadSetup ? [{
       id: "company", label: "Your company", items: [
         { label: "Your setup", href: "/setup", icon: Building2, activePaths: ["/onboarding"] },

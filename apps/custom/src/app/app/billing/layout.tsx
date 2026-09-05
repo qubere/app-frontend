@@ -40,6 +40,7 @@ export default async function BillingLayout({
 
   const tabs = [
     { name: "Overview", href: "/app/billing", visible: true },
+    { name: "Client Funds", href: "/app/billing/funds", visible: has("billing.funds.view") || has("billing.view") },
     { name: "Clients", href: "/app/billing/clients", visible: has("billing.read") || has("billing.view") },
     { name: "Rate Cards", href: "/app/billing/rate-cards", visible: has("billing.ratecard.view") },
     { name: "Usage Ledger", href: "/app/billing/usage", visible: has("billing.usage.view") },
