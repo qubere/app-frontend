@@ -380,48 +380,74 @@ function toDeadlineRow(d: RawDeadlineRow): DeadlineRow {
  * re-querying, and only hits the DB for filings/deadlines, which aren't
  * fetched anywhere else on that page.
  */
+/**
+ * The account-scoped filings + open deadlines the work queue needs. Split out
+ * so callers that already run a `Promise.all` (e.g. the Actions page loader)
+ * can fetch these in that same concurrent phase instead of forcing a second
+ * sequential wave — neither query depends on the decisions/documents/exceptions
+ * result set, so there is no data dependency to preserve.
+ */
+export function fetchActionableFilings(accountId: string, shipmentId?: string) {
+  return db.customsFiling.findMany({
+    where: {
+      accountId,
+      filingStatus: { in: FILING_ACTIONABLE_STATUSES },
+      ...(shipmentId ? { shipmentId } : {}),
+    },
+    select: {
+      id: true,
+      entryNumber: true,
+      filingStatus: true,
+      createdAt: true,
+      shipmentId: true,
+      shipment: { select: { shipmentNumber: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: ROW_CAP,
+  });
+}
+
+export function fetchOpenDeadlines(accountId: string, shipmentId?: string) {
+  return db.complianceDeadline.findMany({
+    where: {
+      accountId,
+      status: DeadlineStatus.OPEN,
+      dueAt: { not: null },
+      ...(shipmentId ? { shipmentId } : {}),
+    },
+    select: {
+      shipmentId: true,
+      type: true,
+      dueAt: true,
+      estimated: true,
+      penaltyEstimate: true,
+    },
+  });
+}
+
 export async function loadWorkQueueForAccountFromPrefetched(
   accountId: string,
   userId: string,
-  rows: { decisions: RawDecisionRow[]; documents: RawDocumentRow[]; exceptions: RawExceptionRow[] },
+  rows: {
+    decisions: RawDecisionRow[];
+    documents: RawDocumentRow[];
+    exceptions: RawExceptionRow[];
+    /** Pre-fetched by the caller's own Promise.all (see fetchActionableFilings). */
+    filings?: RawFilingRow[];
+    /** Pre-fetched by the caller's own Promise.all (see fetchOpenDeadlines). */
+    deadlines?: RawDeadlineRow[];
+  },
   options: { shipmentId?: string } = {}
 ): Promise<WorkQueueLoaderResult> {
   const { shipmentId } = options;
 
-  const [filings, deadlines] = await Promise.all([
-    db.customsFiling.findMany({
-      where: {
-        accountId,
-        filingStatus: { in: FILING_ACTIONABLE_STATUSES },
-        ...(shipmentId ? { shipmentId } : {}),
-      },
-      select: {
-        id: true,
-        entryNumber: true,
-        filingStatus: true,
-        createdAt: true,
-        shipmentId: true,
-        shipment: { select: { shipmentNumber: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: ROW_CAP,
-    }),
-    db.complianceDeadline.findMany({
-      where: {
-        accountId,
-        status: DeadlineStatus.OPEN,
-        dueAt: { not: null },
-        ...(shipmentId ? { shipmentId } : {}),
-      },
-      select: {
-        shipmentId: true,
-        type: true,
-        dueAt: true,
-        estimated: true,
-        penaltyEstimate: true,
-      },
-    }),
-  ]);
+  const [filings, deadlines] =
+    rows.filings && rows.deadlines
+      ? [rows.filings, rows.deadlines]
+      : await Promise.all([
+          rows.filings ?? fetchActionableFilings(accountId, shipmentId),
+          rows.deadlines ?? fetchOpenDeadlines(accountId, shipmentId),
+        ]);
 
   const actionableDecisions = rows.decisions.filter(isDecisionActionable);
   const actionableDocuments = rows.documents.filter((d) => DOCUMENT_ACTIONABLE_STATUSES.includes(d.status));

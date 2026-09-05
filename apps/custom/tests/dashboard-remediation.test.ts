@@ -21,8 +21,18 @@ describe("Dashboard Performance Remediation", () => {
     expect(htsAgent?.blocked).toBe(150);
   });
 
-  it("ensures initial shipment page size is capped to 25 rows", () => {
-    const defaultPageSize = 25;
-    expect(defaultPageSize).toBeLessThanOrEqual(25);
+  it("keeps the shipment list cap above any realistic account until KPIs move to DB aggregates", async () => {
+    // The Command Center's KPI tiles, "Requires Attention" ranking and broker
+    // workload panel are all derived client-side from the same shipment list
+    // the page loads (CommandCenterClient). Capping that list low silently
+    // breaks those numbers for any account past the cap -- issue #200 req 2/14
+    // forbid deriving KPIs from a capped list. Until the KPIs are recomputed
+    // from DB aggregates, the cap must stay high enough to cover real accounts.
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("../src/app/app/dashboard/page.tsx", import.meta.url), "utf8"),
+    );
+    const match = src.match(/SHIPMENT_ROW_CAP\s*=\s*(\d+)/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThanOrEqual(2000);
   });
 });

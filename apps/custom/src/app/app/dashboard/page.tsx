@@ -7,7 +7,15 @@ import { computeAttentionPriority } from "@/lib/dashboard/attentionPriority";
 import { computeAgentOperationsFromGroups, type AgentOverrideGroup } from "@/lib/dashboard/agentOperationsSummary";
 import { CommandCenterClient } from "./CommandCenterClient";
 import type { TeamMember } from "@/lib/team";
+import { PerfTimer } from "@/lib/perf/serverTiming";
 
+// The dashboard table renders only the first 10 rows (CommandCenterClient), but
+// the account-wide KPI tiles, "Requires Attention" ranking, and broker-workload
+// panel are all derived from this same list client-side -- so capping it low
+// silently breaks those numbers for any account past the cap (issue #200 req 2
+// and 14 explicitly forbid deriving KPIs from a capped list). Until those KPIs
+// move to DB aggregates, this stays high enough that virtually every real
+// account is fully covered; `shipmentsTruncated` still warns the UI otherwise.
 const SHIPMENT_ROW_CAP = 2000;
 
 const AUTO_CERTIFIED_STATUSES = new Set(["AUTO_VERIFIED", "Auto-Approved", "Verified"]);
@@ -28,6 +36,8 @@ export default async function CommandCenterPage() {
   if (!context) return null;
 
   const accountId = context.accountId;
+
+  const perf = new PerfTimer();
 
   return withDataModeContext(isDataMode(context.dataMode) ? context.dataMode : null, async () => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -50,7 +60,7 @@ export default async function CommandCenterPage() {
       regUpdates,
       openDeadlines,
       teamMemberships,
-    ] = await Promise.all([
+    ] = await perf.span("db.bundle", () => Promise.all([
       db.shipment.findMany({
         where: { accountId, deletedAt: null },
         select: {
@@ -164,7 +174,7 @@ export default async function CommandCenterPage() {
             include: { user: true },
           })
         : Promise.resolve([]),
-    ]);
+    ]));
 
     const agentGroups = dedupedAgentGroups.map((g) => ({
       agentName: g.agentName,
@@ -255,6 +265,7 @@ export default async function CommandCenterPage() {
 
     const now = Date.now();
 
+    const transformStart = Date.now();
     const formattedShipments = shipments.map((s) => {
       const readinessBreakdown = computeReadinessBreakdown(s);
       const readinessScore = readinessBreakdown.totalScore;
@@ -362,12 +373,22 @@ export default async function CommandCenterPage() {
       };
     });
 
+    perf.record("transform", Date.now() - transformStart);
+
     const formattedRegUpdates = regUpdates.map((ru) => ({
       id: ru.id,
       title: ru.title,
       summary: ru.description,
       effectiveDate: ru.effectiveDate.toISOString(),
     }));
+
+    // PII-free timing line so a real production baseline for this route can be
+    // captured from logs (issue #200 "Instrumentation"). Names/durations only —
+    // never SQL, params, or tenant data. rows = shipments fed to the client.
+    console.info(
+      "[perf] dashboard",
+      JSON.stringify({ ...perf.toLogFields(), rows: shipments.length, total_count: shipmentTotalCount }),
+    );
 
     return (
       <CommandCenterClient
