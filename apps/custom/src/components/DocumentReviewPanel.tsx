@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { X, Copy, Check, Code, FileText, ExternalLink, Edit2, RotateCcw, MessageSquare, Sparkles, MapPin, MapPinOff, Clock, User, Mail, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { decisionGroupLabel, reviewerLabel, editableFieldsFor, reviewCategory } from "@/modules/decisions/editableFields";
 import { triageDecision } from "@/modules/decisions/decisionState";
-import { type ReviewField, nextReviewIndex, sortByReviewPriority, summarizeVerification } from "@/modules/documents/extractionReview";
+import { type ReviewField, nextReviewIndex, otherPageReadings, sortByReviewPriority, summarizeVerification } from "@/modules/documents/extractionReview";
 import { RECONCILIATION_RULES } from "@/lib/reconciliation/reconciliationRules";
 import { PdfCanvas, type PdfCanvasBbox } from "@/components/PdfCanvas";
 import { parseSenderNameAndEmail } from "@/modules/inbound/emailNormalization";
@@ -1390,6 +1390,7 @@ export function DocumentReviewPanel({
                     const hasLocation = field.pageNumber !== null || field.bbox !== null;
                     const matchedConflict =
                       field.verification === "CONFLICT" ? conflictByFieldKey.get(field.fieldName) : undefined;
+                    const otherReadings = otherPageReadings(field);
                     return (
                       <div
                         key={field.fieldName}
@@ -1459,6 +1460,14 @@ export function DocumentReviewPanel({
                           <p className="text-[10px] text-slate-600 mt-0.5">
                             {field.confidence}% confidence
                             {field.corrected && " · corrected"}
+                          </p>
+                        )}
+                        {otherReadings.length > 0 && (
+                          <p
+                            title="This document has multiple pages; extraction found a different value for this field elsewhere in it"
+                            className="text-[10px] text-amber-500/80 mt-0.5"
+                          >
+                            Also read as {otherReadings.map((r) => `"${r.value}" (p.${r.pageNumber})`).join(", ")}
                           </p>
                         )}
                       </div>

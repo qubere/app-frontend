@@ -43,6 +43,8 @@ export interface FieldRevision {
   id: string;
   value: string;
   confidence: number | null;
+  /** Which page of the source document this reading came from, or null for a human correction (no source page of its own) or when extraction couldn't locate one. */
+  pageNumber: number | null;
   source: string;
   createdAt: string;
   isCorrection: boolean;
@@ -185,6 +187,7 @@ export function buildReviewFields(
         id: row.id,
         value: row.value,
         confidence: row.confidence,
+        pageNumber: row.pageNumber,
         source: row.source,
         createdAt: toIso(row.createdAt),
         isCorrection: row.source === HUMAN_CORRECTION_SOURCE,
@@ -314,6 +317,28 @@ export function isDocumentFullyReviewed(fields: ReviewField[], hasOpenReconcilia
   if (hasOpenReconciliationIssues) return false;
   const counts = summarizeVerification(fields);
   return counts.MISSING_REQUIRED === 0 && counts.CONFLICT === 0 && counts.NEEDS_REVIEW === 0;
+}
+
+/**
+ * Other pages of this same document where a machine reading of this field
+ * disagreed with the value currently shown. Purely informational: it does not
+ * flag CONFLICT or decide which page is authoritative -- that same-document,
+ * cross-page reconciliation policy doesn't exist yet (unlike the cross-document
+ * case `hasConflict` already handles). This only makes a divergence visible
+ * that `buildReviewFields`'s "highest confidence wins" already resolved
+ * silently, so a reviewer isn't the last to find out a multi-page document
+ * said two different things.
+ */
+export function otherPageReadings(field: ReviewField): { pageNumber: number; value: string }[] {
+  const byPage = new Map<number, string>();
+  for (const rev of field.history) {
+    if (rev.isCorrection || rev.pageNumber === null) continue;
+    if (rev.pageNumber === field.pageNumber || rev.value === field.currentValue) continue;
+    if (!byPage.has(rev.pageNumber)) byPage.set(rev.pageNumber, rev.value);
+  }
+  return [...byPage.entries()]
+    .map(([pageNumber, value]) => ({ pageNumber, value }))
+    .sort((a, b) => a.pageNumber - b.pageNumber);
 }
 
 /** Pages that actually carry a located field, so navigation cannot offer empty pages. */

@@ -3,8 +3,10 @@ import {
   buildReviewFields,
   evaluateFieldVerification,
   isDocumentFullyReviewed,
+  otherPageReadings,
   sortByReviewPriority,
   summarizeVerification,
+  type FieldRevision,
   type RawExtractionField,
   type ReviewField,
 } from "./extractionReview";
@@ -241,6 +243,90 @@ function reviewField(overrides: Partial<ReviewField> = {}): ReviewField {
     ...overrides,
   };
 }
+
+function revision(overrides: Partial<FieldRevision> = {}): FieldRevision {
+  return {
+    id: "rev-1",
+    value: "value",
+    confidence: 90,
+    pageNumber: 1,
+    source: "MACHINE",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    isCorrection: false,
+    ...overrides,
+  };
+}
+
+describe("otherPageReadings", () => {
+  it("returns an empty array when there's no other-page history", () => {
+    const field = reviewField({ pageNumber: 1, currentValue: "value", history: [revision({ pageNumber: 1 })] });
+    expect(otherPageReadings(field)).toEqual([]);
+  });
+
+  it("surfaces a genuine cross-page divergence", () => {
+    const field = reviewField({
+      pageNumber: 1,
+      currentValue: "INV-1",
+      history: [
+        revision({ id: "r1", value: "INV-1", pageNumber: 1 }),
+        revision({ id: "r2", value: "INV-2", pageNumber: 3 }),
+      ],
+    });
+    expect(otherPageReadings(field)).toEqual([{ pageNumber: 3, value: "INV-2" }]);
+  });
+
+  it("excludes a reading from the field's own current page", () => {
+    const field = reviewField({
+      pageNumber: 1,
+      currentValue: "INV-1",
+      history: [revision({ id: "r1", value: "INV-9", pageNumber: 1 })],
+    });
+    expect(otherPageReadings(field)).toEqual([]);
+  });
+
+  it("excludes a reading that agrees with the current value even on a different page", () => {
+    const field = reviewField({
+      pageNumber: 1,
+      currentValue: "INV-1",
+      history: [revision({ id: "r1", value: "INV-1", pageNumber: 2 })],
+    });
+    expect(otherPageReadings(field)).toEqual([]);
+  });
+
+  it("excludes human corrections from the comparison", () => {
+    const field = reviewField({
+      pageNumber: 1,
+      currentValue: "INV-1",
+      history: [revision({ id: "r1", value: "INV-2", pageNumber: 2, isCorrection: true })],
+    });
+    expect(otherPageReadings(field)).toEqual([]);
+  });
+
+  it("excludes readings with no known page", () => {
+    const field = reviewField({
+      pageNumber: 1,
+      currentValue: "INV-1",
+      history: [revision({ id: "r1", value: "INV-2", pageNumber: null })],
+    });
+    expect(otherPageReadings(field)).toEqual([]);
+  });
+
+  it("de-dupes multiple rows on the same other page and sorts by page number", () => {
+    const field = reviewField({
+      pageNumber: 1,
+      currentValue: "INV-1",
+      history: [
+        revision({ id: "r1", value: "INV-3", pageNumber: 4 }),
+        revision({ id: "r2", value: "INV-2", pageNumber: 2 }),
+        revision({ id: "r3", value: "INV-2-again", pageNumber: 2 }),
+      ],
+    });
+    expect(otherPageReadings(field)).toEqual([
+      { pageNumber: 2, value: "INV-2" },
+      { pageNumber: 4, value: "INV-3" },
+    ]);
+  });
+});
 
 describe("sortByReviewPriority", () => {
   it("orders MISSING_REQUIRED, CONFLICT, NEEDS_REVIEW, AUTO_VERIFIED, NOT_APPLICABLE", () => {
