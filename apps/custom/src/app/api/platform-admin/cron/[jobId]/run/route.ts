@@ -22,6 +22,8 @@ const CRON_JOBS: Record<string, { name: string; endpoint: string; method: "GET" 
   // Backward compatibility for data datasets
   "regulatory-ingest": { name: "Regulatory Notice Ingestion", endpoint: "/api/cron/regulatory-ingest", method: "POST" },
   "hts-refresh": { name: "HTS Schedule Refresh", endpoint: "/api/cron/hts-refresh", method: "POST" },
+  "adcvd-monitor": { name: "Continuous AD/CVD Case Status & Rate Monitor", endpoint: "/api/cron/adcvd-monitor", method: "GET" },
+  "bond-monitor": { name: "Continuous Bond Sufficiency & Expiration Monitor", endpoint: "/api/cron/bond-monitor", method: "GET" },
 };
 
 export const POST = withAuthenticatedRoute<{ jobId: string }>(async ({ ctx, params, requestId }) => {
