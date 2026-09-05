@@ -10,6 +10,7 @@ export interface ExceptionRecord {
   description: string;
   status: string;
   version: number;
+  blocking?: boolean;
   createdAt: string | Date;
   resolvedAt: string | Date | null;
   shipmentId: string | null;
@@ -87,6 +88,18 @@ export interface ShipmentActionGroup {
 }
 
 const PRIORITY_RANK: Record<WorkPriority, number> = { critical: 0, high: 1, normal: 2 };
+
+// HTS/Origin block themselves purely because Product Intelligence hasn't
+// produced a description yet — a downstream consequence, not a separate
+// thing to review. While the root blocker is still open, hide the cascade
+// cards so the queue shows one actionable item per shipment instead of three.
+const ROOT_BLOCKED_REASON = "WAITING_FOR_EXTRACTION";
+const CASCADE_BLOCKED_REASONS = new Set(["BLOCKED_MISSING_DESCRIPTION", "BLOCKED_MISSING_ORIGIN"]);
+
+function blockedReasonOf(item: ActionItem): string | null {
+  if (item.kind !== "decision") return null;
+  return (item.raw as unknown as { blockedReason?: string | null }).blockedReason ?? null;
+}
 
 function worstPriority(priorities: WorkPriority[]): WorkPriority {
   return priorities.reduce<WorkPriority>((best, p) => (PRIORITY_RANK[p] < PRIORITY_RANK[best] ? p : best), "normal");
@@ -215,6 +228,13 @@ export function buildShipmentActionGroups(
       assignedToUser: exc.assignedToUser,
       raw: exc,
     });
+  }
+
+  for (const bucket of byShipment.values()) {
+    const hasRootBlocker = bucket.items.some((i) => blockedReasonOf(i) === ROOT_BLOCKED_REASON);
+    if (hasRootBlocker) {
+      bucket.items = bucket.items.filter((i) => !CASCADE_BLOCKED_REASONS.has(blockedReasonOf(i) ?? ""));
+    }
   }
 
   for (const [shipmentId, bucket] of byShipment) {

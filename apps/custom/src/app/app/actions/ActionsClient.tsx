@@ -1925,7 +1925,11 @@ function ExceptionCard({
         ? "bg-amber-50 border-amber-200 text-amber-700"
         : "bg-gray-50 border-gray-200 text-gray-600";
 
-  const isBlocking = item.severity === "Critical" || item.severity === "High";
+  // The DB's `blocking` column is the source of truth (filing readiness gates
+  // read it directly) -- fall back to severity only for synthetic items that
+  // never went through createExceptionItem (e.g. the missing-document cards
+  // built in shipmentActions.ts, which carry no `blocking` field).
+  const isBlocking = item.raw.blocking ?? (item.severity === "Critical" || item.severity === "High");
 
   const now = new Date();
   const created = new Date(item.createdAt);

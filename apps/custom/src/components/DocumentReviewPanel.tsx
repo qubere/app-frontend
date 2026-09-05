@@ -367,6 +367,7 @@ export interface ReviewDecision {
   status: string;
   triageState?: string | null;
   proposedDescription?: string | null;
+  blockedReason?: string | null;
   /** Required: `latestPerAgent` keeps the most recent row per agent by this. */
   createdAt: string | Date;
   decisionSummary?: string | null;
