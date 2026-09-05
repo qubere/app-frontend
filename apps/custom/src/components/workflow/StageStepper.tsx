@@ -77,6 +77,7 @@ export function StageStepper({ shipmentId }: { shipmentId: string }) {
     fetchStageData();
     const interval = setInterval(fetchStageData, 10000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchStageData is recreated every render; adding it would reset the interval each render
   }, [shipmentId]);
 
   const handleToggleAutoAdvance = async () => {

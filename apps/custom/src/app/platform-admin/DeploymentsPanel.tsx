@@ -134,6 +134,7 @@ export function DeploymentsPanel() {
     if (services.length > 0) {
       runHealthSweep();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runHealthSweep is recreated every render; it should only re-run when the services list changes
   }, [services]);
 
   return (

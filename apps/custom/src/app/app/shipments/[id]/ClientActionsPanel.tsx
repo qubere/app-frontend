@@ -129,6 +129,7 @@ export function ClientActionsPanel({ shipmentId, initialRequests }: ClientAction
   useEffect(() => {
     const interval = setInterval(refreshRequests, 4000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshRequests is recreated every render; adding it would reset the interval each render
   }, [shipmentId]);
 
   const toggleExpand = (id: string) => {

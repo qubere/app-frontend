@@ -149,7 +149,7 @@ export function VaultClient({
       loadDrawbackData();
       loadSection301Data();
     }
-  }, []);
+  }, [hasInitialData]);
 
   const triggerScan = async () => {
     setIsScanning(true);

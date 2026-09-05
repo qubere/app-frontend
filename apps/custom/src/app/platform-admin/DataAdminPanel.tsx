@@ -77,7 +77,7 @@ export function DataAdminPanel({ initialDatasets }: DataAdminPanelProps = {}) {
     if (!hasInitial) {
       fetchDatasets();
     }
-  }, []);
+  }, [hasInitial]);
 
   const handleRunNow = async (dataset: DatasetWithStatus) => {
     // Guard: not-yet-implemented datasets cannot be run
