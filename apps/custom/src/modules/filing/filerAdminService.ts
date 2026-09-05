@@ -61,7 +61,7 @@ export async function getAccountFilerCredentials(accountId: string): Promise<Fil
       where: { id: accountId },
       select: { name: true },
     }),
-    db.customsBrokerProfile.findUnique({
+    db.customsProfile.findUnique({
       where: { accountId },
       select: { filerCode: true },
     }),
