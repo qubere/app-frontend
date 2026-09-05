@@ -1,5 +1,6 @@
 import { Decimal } from "@/lib/tariff/decimal";
-import { AbiFilingValidationError, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+import { AbiFilingValidationError, assertValid, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+import { chunkBySequence } from "@/lib/abi/shared";
 export { AbiFilingValidationError };
 import type {
   Q1DailyInput,
@@ -93,28 +94,19 @@ export function validateStatementRecord(
 export function mapStatementFeeLines(
   feeLines: { accountingClassCode: string; amount: Decimal | number; sequence: number }[]
 ): StatementFeeInput[] {
-  const sorted = [...feeLines].sort((a, b) => a.sequence - b.sequence);
-  const result: StatementFeeInput[] = [];
-
-  for (let i = 0; i < sorted.length; i += 5) {
-    const chunk = sorted.slice(i, i + 5);
-    const seqNum = String(Math.floor(i / 5) + 1).padStart(2, "0");
-    result.push({
-      sequenceNumber: seqNum,
-      firstFeeClassCode: chunk[0]?.accountingClassCode,
-      firstFeeAmount: chunk[0] ? new Decimal(chunk[0].amount) : undefined,
-      secondFeeClassCode: chunk[1]?.accountingClassCode,
-      secondFeeAmount: chunk[1] ? new Decimal(chunk[1].amount) : undefined,
-      thirdFeeClassCode: chunk[2]?.accountingClassCode,
-      thirdFeeAmount: chunk[2] ? new Decimal(chunk[2].amount) : undefined,
-      fourthFeeClassCode: chunk[3]?.accountingClassCode,
-      fourthFeeAmount: chunk[3] ? new Decimal(chunk[3].amount) : undefined,
-      fifthFeeClassCode: chunk[4]?.accountingClassCode,
-      fifthFeeAmount: chunk[4] ? new Decimal(chunk[4].amount) : undefined,
-    });
-  }
-
-  return result;
+  return chunkBySequence(feeLines, 5).map((chunk, i) => ({
+    sequenceNumber: String(i + 1).padStart(2, "0"),
+    firstFeeClassCode: chunk[0]?.accountingClassCode,
+    firstFeeAmount: chunk[0] ? new Decimal(chunk[0].amount) : undefined,
+    secondFeeClassCode: chunk[1]?.accountingClassCode,
+    secondFeeAmount: chunk[1] ? new Decimal(chunk[1].amount) : undefined,
+    thirdFeeClassCode: chunk[2]?.accountingClassCode,
+    thirdFeeAmount: chunk[2] ? new Decimal(chunk[2].amount) : undefined,
+    fourthFeeClassCode: chunk[3]?.accountingClassCode,
+    fourthFeeAmount: chunk[3] ? new Decimal(chunk[3].amount) : undefined,
+    fifthFeeClassCode: chunk[4]?.accountingClassCode,
+    fifthFeeAmount: chunk[4] ? new Decimal(chunk[4].amount) : undefined,
+  }));
 }
 
 /**
@@ -132,9 +124,7 @@ export function fromStatementRecord(
   fees: StatementFeeInput[];
 } {
   const validation = validateStatementRecord(record, options);
-  if (!validation.valid) {
-    throw new AbiFilingValidationError(record.id, validation.missingFields);
-  }
+  assertValid(record.id, validation);
 
   const filerCode = (record.filerCode || options!.processingFilerCode)!.slice(0, 3).toUpperCase();
   const districtPort = (record.districtPort || options!.processingDistrictPortCode)!.slice(0, 4);
@@ -152,8 +142,8 @@ export function fromStatementRecord(
       periodicDailyStatementImporterNumber: record.importerNumber ?? undefined,
       preliminaryPeriodicDailyStatementPrintDate: printDate,
       entrySummaryPresentationDate: options?.entrySummaryPresentationDate || printDate,
-      totalDuty: record.totalDuty ? new Decimal(record.totalDuty) : undefined,
-      totalTax: record.totalTax ? new Decimal(record.totalTax) : undefined,
+      totalDuty: record.totalDuty != null ? new Decimal(record.totalDuty) : undefined,
+      totalTax: record.totalTax != null ? new Decimal(record.totalTax) : undefined,
     };
 
     const q3Periodic: Q3PeriodicInput = {
@@ -162,8 +152,8 @@ export function fromStatementRecord(
       periodicMonthlyStatementDueDate: dueDate,
       periodicMonthlyStatementFilerCode: filerCode,
       periodicMonthlyStatementImporterNumber: record.importerNumber ?? undefined,
-      totalDuty: record.totalDuty ? new Decimal(record.totalDuty) : undefined,
-      totalTax: record.totalTax ? new Decimal(record.totalTax) : undefined,
+      totalDuty: record.totalDuty != null ? new Decimal(record.totalDuty) : undefined,
+      totalTax: record.totalTax != null ? new Decimal(record.totalTax) : undefined,
     };
 
     return {
@@ -180,8 +170,8 @@ export function fromStatementRecord(
     entryNumber: options!.entryNumber!.slice(0, 8),
     importerOfRecordNumber: record.importerNumber ?? undefined,
     preliminaryDailyStatementPrintDate: printDate,
-    estimatedDutyAmount: record.totalDuty ? new Decimal(record.totalDuty) : undefined,
-    estimatedTaxAmount: record.totalTax ? new Decimal(record.totalTax) : undefined,
+    estimatedDutyAmount: record.totalDuty != null ? new Decimal(record.totalDuty) : undefined,
+    estimatedTaxAmount: record.totalTax != null ? new Decimal(record.totalTax) : undefined,
     entryType: record.entryType!,
   };
 
@@ -190,8 +180,8 @@ export function fromStatementRecord(
     dailyStatementPrintDate: printDate,
     entryFilerCode: filerCode,
     importerOfRecordNumber: record.importerNumber ?? undefined,
-    totalEstimatedDuty: record.totalDuty ? new Decimal(record.totalDuty) : undefined,
-    totalEstimatedTax: record.totalTax ? new Decimal(record.totalTax) : undefined,
+    totalEstimatedDuty: record.totalDuty != null ? new Decimal(record.totalDuty) : undefined,
+    totalEstimatedTax: record.totalTax != null ? new Decimal(record.totalTax) : undefined,
     districtPortWhichProcessesEntries: districtPort,
   };
 

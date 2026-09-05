@@ -1,5 +1,5 @@
 import { Decimal } from "@/lib/tariff/decimal";
-import { AbiFilingValidationError, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+import { AbiFilingValidationError, assertValid, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
 export { AbiFilingValidationError };
 import type {
   HeaderInput,
@@ -133,9 +133,7 @@ export function fromBond(
   reinsurers: ReinsurerInput[];
 } {
   const validation = validateBond(bond, options);
-  if (!validation.valid) {
-    throw new AbiFilingValidationError(bond.id, validation.missingFields);
-  }
+  assertValid(bond.id, validation);
 
   const isStb = bond.bondType.toLowerCase().includes("single");
   const header: HeaderInput = {
@@ -177,14 +175,14 @@ export function fromBond(
     suretyCode: bond.suretyCode!.slice(0, 3),
     agentIdNumber: (p.agentIdNumber || p.idNumber)!.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     suretyName: (p.name || bond.suretyName).toUpperCase(),
-    suretyLiabilityAmount: p.liabilityAmount ? new Decimal(p.liabilityAmount) : new Decimal(bond.bondAmount),
+    suretyLiabilityAmount: p.liabilityAmount != null ? new Decimal(p.liabilityAmount) : new Decimal(bond.bondAmount),
   }));
 
   const coSureties: CoSuretyInput[] = coSuretyRows.map((p) => ({
     coSuretyCode: bond.suretyCode!.slice(0, 3),
     agentIdNumber: (p.agentIdNumber || p.idNumber)!.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
     coSuretyName: p.name?.toUpperCase() ?? undefined,
-    coSuretyLiabilityAmount: p.liabilityAmount ? new Decimal(p.liabilityAmount) : new Decimal(bond.bondAmount),
+    coSuretyLiabilityAmount: p.liabilityAmount != null ? new Decimal(p.liabilityAmount) : new Decimal(bond.bondAmount),
   }));
 
   const reinsurers: ReinsurerInput[] = reinsurerRows.map((p) => ({

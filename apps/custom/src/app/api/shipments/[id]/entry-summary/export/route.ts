@@ -17,6 +17,7 @@ import {
   type ExportDbClient,
   type FilerTransport,
 } from "@/modules/entrySummary/export.service";
+import { createSequence } from "@/modules/entrySummary/serializers/catair";
 import type { ValidationResult } from "@/modules/entrySummary/validation/engine";
 import { recordExportDispatched, recordExportFailed } from "@/modules/entrySummary/lifecycle";
 
@@ -90,6 +91,7 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
         requestedBy: ctx.userId,
         clock: () => new Date(),
         shipmentNumber: shipmentId,
+        sequence: createSequence(),
       });
     } catch (err) {
       if (err instanceof DraftNotExportable) {

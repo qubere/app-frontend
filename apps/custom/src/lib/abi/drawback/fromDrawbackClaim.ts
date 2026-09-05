@@ -1,5 +1,6 @@
 import { Decimal } from "@/lib/tariff/decimal";
-import { AbiFilingValidationError, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+import { AbiFilingValidationError, assertValid, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+import { chunkBySequence } from "@/lib/abi/shared";
 export { AbiFilingValidationError };
 import type {
   DrawbackHeaderInput,
@@ -85,11 +86,11 @@ export type DrawbackClaimWithRelations = {
 /**
  * Per-row data for a core (non-TFTEA) export/destroy event that has no home on
  * `DrawbackExportDestroy` today (that model has no htsNumber/quantity/
- * unitOfMeasureCode/exporter-name columns, and no export/destroy date distinct
- * from the exam date). Until the schema grows those columns (or a join key to
- * `ExportLineItem`/`ExportShipment` is added), the caller must supply them —
- * this function will not invent placeholder CATAIR data. Keyed by
- * `DrawbackExportDestroy.id`.
+ * unitOfMeasureCode/exporter-name/export-or-destroy-indicator columns, and no
+ * export/destroy date distinct from the exam date). Until the schema grows
+ * those columns (or a join key to `ExportLineItem`/`ExportShipment` is
+ * added), the caller must supply them — this function will not invent
+ * placeholder CATAIR data. Keyed by `DrawbackExportDestroy.id`.
  */
 export interface ExportDestroyLineDetails {
   htsNumber: string;
@@ -97,6 +98,8 @@ export interface ExportDestroyLineDetails {
   unitOfMeasureCode: string;
   nameOfExporterOrDestroyer: string;
   exportOrDestroyDate: Date;
+  /** "E" (exported) or "D" (destroyed) — no column on DrawbackExportDestroy distinguishes these, so the caller must state it explicitly rather than have it inferred from billOfLadingIndicator. */
+  exportOrDestroyIndicator: "E" | "D";
 }
 
 /**
@@ -218,9 +221,7 @@ export function fromDrawbackClaim(
   naftaUsmcaLines: NaftaUsmcaInput[];
 } {
   const validation = validateDrawbackClaim(claim, options);
-  if (!validation.valid) {
-    throw new AbiFilingValidationError(claim.id, validation.missingFields);
-  }
+  assertValid(claim.id, validation);
 
   const entryFilerCode = options!.processingFilerCode!.slice(0, 3).toUpperCase();
   const claimNum = claim.cbpClaimNumber!.replace(/[^A-Za-z0-9]/g, "").slice(0, 8).padStart(8, "0");
@@ -262,28 +263,23 @@ export function fromDrawbackClaim(
   }
 
   // Map import links (chunked by 15 ITINs — Record 52's own repeating group size)
-  const importLinks: LinkImportMfgInput[] = [];
-  const sortedLinks = [...(claim.importLinks || [])].sort((a, b) => a.sequence - b.sequence);
-  for (let i = 0; i < sortedLinks.length; i += 15) {
-    const chunk = sortedLinks.slice(i, i + 15);
-    importLinks.push({
-      importTrackingIdNumber1: chunk[0].importTrackingIdNumber,
-      importTrackingIdNumber2: chunk[1]?.importTrackingIdNumber,
-      importTrackingIdNumber3: chunk[2]?.importTrackingIdNumber,
-      importTrackingIdNumber4: chunk[3]?.importTrackingIdNumber,
-      importTrackingIdNumber5: chunk[4]?.importTrackingIdNumber,
-      importTrackingIdNumber6: chunk[5]?.importTrackingIdNumber,
-      importTrackingIdNumber7: chunk[6]?.importTrackingIdNumber,
-      importTrackingIdNumber8: chunk[7]?.importTrackingIdNumber,
-      importTrackingIdNumber9: chunk[8]?.importTrackingIdNumber,
-      importTrackingIdNumber10: chunk[9]?.importTrackingIdNumber,
-      importTrackingIdNumber11: chunk[10]?.importTrackingIdNumber,
-      importTrackingIdNumber12: chunk[11]?.importTrackingIdNumber,
-      importTrackingIdNumber13: chunk[12]?.importTrackingIdNumber,
-      importTrackingIdNumber14: chunk[13]?.importTrackingIdNumber,
-      importTrackingIdNumber15: chunk[14]?.importTrackingIdNumber,
-    });
-  }
+  const importLinks: LinkImportMfgInput[] = chunkBySequence(claim.importLinks || [], 15).map((chunk) => ({
+    importTrackingIdNumber1: chunk[0].importTrackingIdNumber,
+    importTrackingIdNumber2: chunk[1]?.importTrackingIdNumber,
+    importTrackingIdNumber3: chunk[2]?.importTrackingIdNumber,
+    importTrackingIdNumber4: chunk[3]?.importTrackingIdNumber,
+    importTrackingIdNumber5: chunk[4]?.importTrackingIdNumber,
+    importTrackingIdNumber6: chunk[5]?.importTrackingIdNumber,
+    importTrackingIdNumber7: chunk[6]?.importTrackingIdNumber,
+    importTrackingIdNumber8: chunk[7]?.importTrackingIdNumber,
+    importTrackingIdNumber9: chunk[8]?.importTrackingIdNumber,
+    importTrackingIdNumber10: chunk[9]?.importTrackingIdNumber,
+    importTrackingIdNumber11: chunk[10]?.importTrackingIdNumber,
+    importTrackingIdNumber12: chunk[11]?.importTrackingIdNumber,
+    importTrackingIdNumber13: chunk[12]?.importTrackingIdNumber,
+    importTrackingIdNumber14: chunk[13]?.importTrackingIdNumber,
+    importTrackingIdNumber15: chunk[14]?.importTrackingIdNumber,
+  }));
 
   // Map core export/destroy lines (Record 60) — htsNumber/quantity/UOM/exporter
   // name come from the caller-supplied details map (validated above), never fabricated.
@@ -291,7 +287,7 @@ export function fromDrawbackClaim(
   const exportDestroys: ExportDestroyInput[] = (claim.exportDestroys || []).map((row) => {
     const details = exportDetails[row.id];
     return {
-      exportOrDestroyIndicator: row.billOfLadingIndicator ? "E" : "D",
+      exportOrDestroyIndicator: details.exportOrDestroyIndicator,
       htsNumber: details.htsNumber,
       exportOrDestroyQuantity: new Decimal(details.exportOrDestroyQuantity),
       unitOfMeasureCode: details.unitOfMeasureCode,

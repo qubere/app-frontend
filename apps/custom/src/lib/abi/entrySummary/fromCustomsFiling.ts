@@ -37,6 +37,13 @@ export class AbiFilingValidationError extends Error {
   }
 }
 
+/** Shared by every ABI `fromX` mapper's `validate*` → `build*` handoff: throws AbiFilingValidationError if the validation failed, otherwise no-ops. */
+export function assertValid(id: string, validation: { valid: boolean; missingFields: string[] }): void {
+  if (!validation.valid) {
+    throw new AbiFilingValidationError(id, validation.missingFields);
+  }
+}
+
 /**
  * Header options for batch/block envelopes and fallback control defaults.
  * Supplied by the caller when schema fields have no home in CustomsFiling.
@@ -431,9 +438,7 @@ export function fromCustomsFiling(
   options?: Partial<EnvelopeHeaderOptions>
 ): EntrySummaryTransactionInput {
   const validation = validateCustomsFilingForTransmission(filing, options);
-  if (!validation.valid) {
-    throw new AbiFilingValidationError(filing.id, validation.missingFields);
-  }
+  assertValid(filing.id, validation);
 
   const { entryFilerCode, entryNumber } = parseFilerAndEntryNumber(
     filing.entryNumber,

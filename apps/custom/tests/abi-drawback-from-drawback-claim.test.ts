@@ -84,6 +84,7 @@ describe("fromDrawbackClaim DB integration", () => {
       unitOfMeasureCode: "PCS",
       nameOfExporterOrDestroyer: "GLOBAL TRADING CORP",
       exportOrDestroyDate: new Date("2026-06-18T00:00:00Z"),
+      exportOrDestroyIndicator: "E",
     },
   };
 

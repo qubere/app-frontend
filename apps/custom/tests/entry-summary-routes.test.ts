@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { buildDraft, buildLine, buildFilerProfile, money } from "./helpers/entrySummaryFixtures";
 
 // Covers the new /api/shipments/[id]/entry-summary* and /api/filer-profiles
 // routes added in issue #219 Phase C (U12): permission wiring, the happy
@@ -57,7 +58,10 @@ vi.mock("@/lib/api/auth-guards", () => ({
   },
 }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: (dbMock as any).auditLog.create }));
-vi.mock("@/lib/storage", () => ({ readStoredObject: vi.fn().mockResolvedValue({ body: Buffer.from("x"), contentType: "text/csv" }) }));
+vi.mock("@/lib/storage", () => ({
+  readStoredObject: vi.fn().mockResolvedValue({ body: Buffer.from("x"), contentType: "text/csv" }),
+  storeGeneratedFile: vi.fn().mockResolvedValue({ url: "https://storage.test/export.txt" }),
+}));
 
 const genRoute = await import("@/app/api/shipments/[id]/entry-summary/route");
 const approveRoute = await import("@/app/api/shipments/[id]/entry-summary/approve/route");
@@ -171,6 +175,55 @@ describe("POST /api/shipments/[id]/entry-summary/export", () => {
     // POA/onboarding), so either blocker is a correct refusal — the point of
     // this test is that export never proceeds without an approval.
     expect(["DRAFT_NOT_APPROVED", "DRAFT_NOT_EXPORTABLE"]).toContain(body.error.code);
+  });
+
+  it("exports an approved draft as CATAIR without throwing the 'requires a sequence port' error", async () => {
+    const draft = buildDraft(
+      [
+        buildLine(1, {
+          B29A_HTSUS_NUMBER: "8501104000",
+          B10_COUNTRY_OF_ORIGIN: "CN",
+          B28_DESCRIPTION: "Widget",
+          B32A_ENTERED_VALUE: money("10.00"),
+        }),
+      ],
+      {
+        B01_FILER_ENTRY_NUMBER: "12345678901",
+        B02_ENTRY_TYPE: "01",
+        B06_PORT_CODE: "2704",
+        B07_ENTRY_DATE: "2026-03-01",
+        B35_TOTAL_ENTERED_VALUE: money("10.00"),
+      }
+    );
+    dbMock.entrySummaryDraft.findFirst.mockResolvedValue({
+      id: "draft_1",
+      accountId: "acct_1",
+      shipmentId: "shp_1",
+      filingId: null,
+      version: 1,
+      draftData: JSON.parse(JSON.stringify(draft)),
+      validationData: { blockers: [], warnings: [], isExportable: true, blockingCount: 0 },
+      isExportable: true,
+      blockingCount: 0,
+      warningCount: 0,
+      generatedBy: "user_1",
+      supersededAt: null,
+      approvedAt: new Date(),
+      approvedBy: "user_1",
+      inputHash: "hash_1",
+      createdAt: new Date(),
+    });
+    dbMock.filerProfile.findFirst.mockResolvedValue(
+      buildFilerProfile({ format: "CATAIR_AE", fieldMap: { layout: "catair-ae-2024.1" } })
+    );
+    dbMock.filerExport.findFirst.mockResolvedValue(null);
+    dbMock.filerExport.create.mockImplementation(async ({ data }: any) => ({ ...data, id: "exp_1" }));
+
+    const res = await exportRoute.POST(
+      req({ filerProfileId: "fp_1", format: "CATAIR_AE" }),
+      { params: params({ id: "shp_1" }) } as any
+    );
+    expect(res.status).toBe(200);
   });
 });
 
