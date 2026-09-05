@@ -94,6 +94,19 @@ export interface GenerateDraftInput {
   draft: EntrySummaryDraft;
   validation: ValidationResult;
   generatedBy: string;
+  /**
+   * U11 hook: called with the prior version's row id right after a genuine
+   * new version is committed (never on the idempotent no-op return path).
+   * Wired by callers to `export.service.ts`'s `supersedeExportsForDraft` so
+   * regenerating a draft marks that prior version's FilerExport rows
+   * Superseded. Best-effort, called AFTER the transaction commits (not
+   * inside it) — DraftDbClient's minimal surface deliberately does not know
+   * about the FilerExport table, so this can't be folded into the same `tx`
+   * without widening that interface; a failure here does not roll back the
+   * new draft version, same "notification is a nicety" pattern as
+   * notify.ts.
+   */
+  onSuperseded?: (priorDraftId: string) => Promise<void>;
 }
 
 
@@ -118,7 +131,7 @@ export async function generateDraft(db: DraftDbClient, input: GenerateDraftInput
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await db.$transaction(async (tx: DraftDbClient) => {
+      const created = await db.$transaction(async (tx: DraftDbClient) => {
         if (latest) {
           await tx.entrySummaryDraft.update({
             where: { id: latest.id },
@@ -141,6 +154,10 @@ export async function generateDraft(db: DraftDbClient, input: GenerateDraftInput
           },
         })) as EntrySummaryDraftRow;
       });
+      if (latest && input.onSuperseded) {
+        await input.onSuperseded(latest.id);
+      }
+      return created;
     } catch (err) {
       if (isUniqueConstraintViolation(err) && attempt < maxAttempts - 1) {
         nextVersion += 1;
