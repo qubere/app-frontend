@@ -1,6 +1,33 @@
 {
   "version": 1,
-  "sourceCommit": null,
-  "articles": [],
+  "sourceCommit": "643e9cb70f11b1f82784d97bcff5426c07cd2247",
+  "articles": [
+    {
+      "id": "billing-exception",
+      "moduleId": "billing-admin",
+      "question": "Why is a shipment charge missing or in a billing exception?",
+      "answer": "Billing exceptions occur when automated rules detect missing rates, unbilled manual work, zero-rated events, or potential revenue leakage. You can review open exceptions and resolve or waive them individually or in bulk with required justification notes.",
+      "steps": [
+        "Go to Billing and select Exceptions to open the Exceptions & Revenue Leakage Center.",
+        "Review open exceptions, severity indicators, descriptions, and linked shipment or client records.",
+        "To clear a single exception, type a justification reason into its row and select Resolve or Waive.",
+        "To update multiple exceptions at once, select the checkboxes next to the target rows.",
+        "Enter a required reason in the bulk toolbar and click Resolve Selected or Waive Selected."
+      ],
+      "href": "/app/billing/exceptions",
+      "actionLabel": "View billing exceptions",
+      "tags": [
+        "billing",
+        "exception",
+        "missing charge",
+        "zero rate",
+        "revenue leakage",
+        "waive",
+        "resolve",
+        "bulk resolve"
+      ],
+      "popular": true
+    }
+  ],
   "archivedArticleIds": []
 }
