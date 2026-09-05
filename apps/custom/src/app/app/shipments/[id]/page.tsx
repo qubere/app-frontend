@@ -22,6 +22,8 @@ import { LineItemsTable } from "./LineItemsTable";
 import { ContainersTable } from "./ContainersTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
 import { ComplianceChecksPanel } from "./ComplianceChecksPanel";
+import { ReasonableCareChecklistPanel } from "./ReasonableCareChecklistPanel";
+import { evaluateShipmentReasonableCare } from "@/modules/compliance/reasonableCareShipment";
 import { PartyScreeningPanel, type PartyScreeningRow } from "./PartyScreeningPanel";
 import { AutomaticEmbargoScreeningPanel, type AutomaticEmbargoFinding, type AutomaticEmbargoStatus } from "./AutomaticEmbargoScreeningPanel";
 import type { AuditCheckResult } from "@/modules/agents/complianceAuditAgent";
@@ -1277,6 +1279,11 @@ export default async function ShipmentWorkspacePage(props: {
   const freshHealthStatus =
     freshReadinessScore >= 80 ? "Healthy" : freshReadinessScore >= 50 ? "At Risk" : "Critical";
 
+  // 5-item reasonable-care checklist — the same evaluation embedded in the
+  // exported reasonable-care defense package, surfaced here so a broker sees it
+  // in the shipment workspace and not only in a downloaded ZIP.
+  const reasonableCareEvaluation = await evaluateShipmentReasonableCare(context.accountId, shipment.id);
+
   // Pre-built once here (not inline in the ternary they replaced) so
   // `ShipmentTabsPanel` -- a Client Component -- can hold which tab is active
   // in local state and just toggle which of these three already-rendered
@@ -1824,6 +1831,12 @@ export default async function ShipmentWorkspacePage(props: {
           findings={automaticEmbargoFindings}
           lastRunAt={latestComplianceAgentDecision?.createdAt.toISOString() ?? null}
         />
+
+        {/* 5-item reasonable-care checklist (19 U.S.C. 1484) — classification,
+            valuation, origin, PGA, recordkeeping. Recomputed from current
+            shipment data; identical to the evaluation in the exported
+            reasonable-care defense package. */}
+        <ReasonableCareChecklistPanel evaluation={reasonableCareEvaluation} />
 
         {/* Restricted-party screening already runs automatically (Compliance
             Audit Agent, on upload / field edits) -- this surfaces its results

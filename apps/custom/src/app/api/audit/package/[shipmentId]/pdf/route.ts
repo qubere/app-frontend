@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { assembleReasonableCarePackage } from "@/lib/audit/reasonableCarePackage";
 import { generateSimplePdfBuffer } from "@/lib/pdf/pdfGenerator";
+import { createAuditLog } from "@/lib/audit";
 
 export const GET = withAuthenticatedRoute<{ shipmentId: string }>(async ({ ctx, params }) => {
   const { shipmentId } = params;
@@ -10,6 +11,16 @@ export const GET = withAuthenticatedRoute<{ shipmentId: string }>(async ({ ctx, 
   if (!pkg) {
     return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
   }
+
+  await createAuditLog({
+    accountId: ctx.accountId,
+    userId: ctx.userId,
+    action: "audit.package.export",
+    entity: "ReasonableCarePackage",
+    entityId: shipmentId,
+    source: "UI",
+    metadata: { shipmentId, format: "pdf" },
+  });
 
   const p = pkg as any;
 
