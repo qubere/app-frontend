@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, Package, Users, FileText, ArrowRight, X } from "lucide-react";
+import { Search, Loader2, Package, Users, FileText, ArrowRight, X, Ship, Building2, UserRound, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui";
+
+export type OmniboxKind = "party" | "product" | "document" | "shipment" | "client" | "importer" | "person";
 
 export interface SearchResultItem {
   id: string;
-  kind: "party" | "product" | "document";
+  kind: OmniboxKind;
   title: string;
   subtitle: string;
   status: string;
@@ -18,11 +20,41 @@ export interface SearchResultItem {
   href: string;
 }
 
+export interface SearchSuggestionItem {
+  kind: string;
+  entityId: string;
+  title: string;
+  subtitle: string | null;
+  href: string;
+  similarity: number;
+}
+
+const KIND_ICON: Record<string, typeof Users> = {
+  party: Users,
+  product: Package,
+  document: FileText,
+  shipment: Ship,
+  client: Building2,
+  importer: Building2,
+  person: UserRound,
+};
+
+const KIND_STYLE: Record<string, string> = {
+  party: "bg-blue-50 text-blue-600",
+  product: "bg-purple-50 text-purple-600",
+  document: "bg-amber-50 text-amber-700",
+  shipment: "bg-emerald-50 text-emerald-700",
+  client: "bg-sky-50 text-sky-700",
+  importer: "bg-indigo-50 text-indigo-700",
+  person: "bg-rose-50 text-rose-700",
+};
+
 export function OmniboxSearch() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResultItem[]>([]);
+  const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,14 +78,20 @@ export function OmniboxSearch() {
     } else {
       setQuery("");
       setResults([]);
+      setSuggestions([]);
       setSelectedIndex(0);
     }
   }, [isOpen]);
 
-  // Debounced search fetcher
+  // Debounced search fetcher. A minimum length avoids firing a query on
+  // every single keystroke (1-2 char ILIKE/trigram scans are both the
+  // least selective and the most expensive, and the results are noise).
+  const MIN_QUERY_LENGTH = 2;
   useEffect(() => {
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) {
       setResults([]);
+      setSuggestions([]);
       setLoading(false);
       return;
     }
@@ -62,12 +100,13 @@ export function OmniboxSearch() {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}`, {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         });
         if (res.ok) {
           const data = await res.json();
           setResults(data.results || []);
+          setSuggestions(data.suggestions || []);
           setSelectedIndex(0);
         }
       } catch (err) {
@@ -105,7 +144,7 @@ export function OmniboxSearch() {
     }
   };
 
-  const handleSelect = (item: SearchResultItem) => {
+  const handleSelect = (item: SearchResultItem | SearchSuggestionItem) => {
     setIsOpen(false);
     router.push(item.href);
   };
@@ -161,9 +200,9 @@ export function OmniboxSearch() {
               {!query.trim() ? (
                 <div className="p-8 text-center text-xs text-ink-muted space-y-1">
                   <p className="font-semibold text-ink">Universal Search Omnibox</p>
-                  <p>Type a parsed field value, document name, party, product, SKU, or tariff code.</p>
+                  <p>Type a parsed field value, document name, shipment, party, product, client, importer, or team member.</p>
                 </div>
-              ) : results.length === 0 && !loading ? (
+              ) : results.length === 0 && suggestions.length === 0 && !loading ? (
                 <div className="p-8 text-center text-xs text-ink-muted">
                   No records or parsed documents matched &quot;{query}&quot;.
                 </div>
@@ -182,22 +221,11 @@ export function OmniboxSearch() {
                       }`}
                     >
                       <div className="flex items-center space-x-3 min-w-0">
-                        <div
-                          className={`p-2 rounded-lg shrink-0 ${
-                            item.kind === "party"
-                              ? "bg-blue-50 text-blue-600"
-                              : item.kind === "product"
-                                ? "bg-purple-50 text-purple-600"
-                                : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {item.kind === "party" ? (
-                            <Users className="w-4 h-4" />
-                          ) : item.kind === "product" ? (
-                            <Package className="w-4 h-4" />
-                          ) : (
-                            <FileText className="w-4 h-4" />
-                          )}
+                        <div className={`p-2 rounded-lg shrink-0 ${KIND_STYLE[item.kind] ?? "bg-surface-muted text-ink-muted"}`}>
+                          {(() => {
+                            const Icon = KIND_ICON[item.kind] ?? FileText;
+                            return <Icon className="w-4 h-4" />;
+                          })()}
                         </div>
 
                         <div className="min-w-0">
@@ -229,12 +257,43 @@ export function OmniboxSearch() {
                   );
                 })
               )}
+
+              {suggestions.length > 0 && (
+                <div className="pt-2 mt-2 border-t border-border/60">
+                  <p className="px-2 pb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                    <Sparkles className="w-3 h-3 text-brand" />
+                    Suggested (semantic match)
+                  </p>
+                  {suggestions.map((item) => (
+                    <div
+                      key={`suggestion-${item.kind}-${item.entityId}`}
+                      onClick={() => handleSelect(item)}
+                      className="flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all hover:bg-surface-muted border border-transparent"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className={`p-2 rounded-lg shrink-0 ${KIND_STYLE[item.kind] ?? "bg-surface-muted text-ink-muted"}`}>
+                          {(() => {
+                            const Icon = KIND_ICON[item.kind] ?? FileText;
+                            return <Icon className="w-4 h-4" />;
+                          })()}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">{item.kind.replace("_", " ")}</span>
+                          <p className="text-sm font-bold text-ink truncate">{item.title}</p>
+                          {item.subtitle && <p className="text-xs text-ink-muted truncate">{item.subtitle}</p>}
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-brand shrink-0 pl-3" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
             <div className="px-4 py-2 bg-surface-muted/60 border-t border-border flex items-center justify-between text-[11px] text-ink-muted">
               <span>Use ↑ ↓ to navigate, Enter to select, Esc to close</span>
-              <span>{results.length} result(s)</span>
+              <span>{results.length} result(s){suggestions.length > 0 ? `, ${suggestions.length} suggested` : ""}</span>
             </div>
           </div>
         </div>

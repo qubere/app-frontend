@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NormalizationAgent } from "../src/modules/agents/normalizationAgent";
 
 vi.mock("../src/lib/db", () => ({
@@ -14,6 +14,21 @@ vi.mock("../src/lib/audit", () => ({
 }));
 
 describe("Business Intelligence Normalization Agent Test Suite", () => {
+  let origGeminiKey: string | undefined;
+
+  beforeEach(() => {
+    origGeminiKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (origGeminiKey !== undefined) {
+      process.env.GEMINI_API_KEY = origGeminiKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+
   it("should normalize structured JSON from Document Intelligence Agent into Canonical Enterprise Model", async () => {
     const mockDocIntelOutput = {
       packetId: "pkt_test_99",

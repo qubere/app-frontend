@@ -12,7 +12,7 @@ import { tableHref } from "@/modules/tables/tableQuery";
 import { holdsPermission, partyActor } from "@/modules/party/partyActor";
 import { listParties } from "@/modules/party/partyService";
 import { PARTY_SORT_COLUMNS, parsePartyQuery } from "@/modules/party/partyQuery";
-import { partyStatusPresentation, reviewStatusPresentation, roleTypeLabel } from "@/modules/party/partyDisplay";
+import { formatOneLineAddress, partyStatusPresentation, reviewStatusPresentation, roleTypeLabel } from "@/modules/party/partyDisplay";
 import { displayDate, displayText } from "@/lib/honest";
 import { RowCheckbox, SelectAllCheckbox, SelectionProvider } from "@/components/table/BulkSelection";
 import { PartiesBulkBar, type PartyExportRow } from "./PartiesBulkActions";
@@ -241,6 +241,15 @@ export default async function PartiesPage(props: {
                   <th scope="col" className="px-3 xl:px-4 py-3.5">
                     Roles
                   </th>
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Address
+                  </th>
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Documents
+                  </th>
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Shipment
+                  </th>
                   <SortableHeader
                     column="reviewStatus"
                     label="Review"
@@ -255,6 +264,9 @@ export default async function PartiesPage(props: {
                     params={params}
                     basePath={BASE_PATH}
                   />
+                  <th scope="col" className="px-3 xl:px-4 py-3.5">
+                    Last uploaded
+                  </th>
                   <SortableHeader
                     column="updatedAt"
                     label="Updated"
@@ -298,11 +310,31 @@ export default async function PartiesPage(props: {
                           ? "—"
                           : row.activeRoles.map((role) => roleTypeLabel(role)).join(", ")}
                       </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] max-w-[220px] truncate" title={row.primaryAddress ? formatOneLineAddress(row.primaryAddress) : undefined}>
+                        {row.primaryAddress ? formatOneLineAddress(row.primaryAddress) : "—"}
+                      </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
+                        {row.documentCount > 0 ? `${row.documentCount} doc${row.documentCount === 1 ? "" : "s"}` : "—"}
+                      </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
+                        {row.singleShipment ? (
+                          <Link href={`/app/shipments/${row.singleShipment.id}`} className="text-brand hover:underline">
+                            {row.singleShipment.shipmentNumber}
+                          </Link>
+                        ) : row.shipmentCount > 0 ? (
+                          `${row.shipmentCount} shipments`
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="px-3 xl:px-4 py-3">
                         <Badge variant={review.tone}>{review.label}</Badge>
                       </td>
                       <td className="px-3 xl:px-4 py-3">
                         <Badge variant={status.tone}>{status.label}</Badge>
+                      </td>
+                      <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
+                        {displayDate(row.lastDocumentAt)}
                       </td>
                       <td className="px-3 xl:px-4 py-3 text-[#6E6E73] whitespace-nowrap">
                         {displayDate(row.updatedAt)}
