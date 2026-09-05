@@ -129,7 +129,7 @@ export const QP20_MOVEMENT_SPEC: InBondRecordSpec = {
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
     { name: "importingConveyanceName", start: 3, end: 25, length: 23, type: "23AN", desig: "C" },
-    { name: "flightTripNumber", start: 26, end: 30, length: 5, type: "5AN", desig: "C" },
+    { name: "flightTripNumber", start: 26, end: 30, length: 5, type: "5N", desig: "M" },
     { name: "conveyanceCountryCode", start: 31, end: 32, length: 2, type: "2A", desig: "C" },
     { name: "modeOfTransportation", start: 33, end: 34, length: 2, type: "2N", desig: "C" },
     { name: "usPortOfArrival", start: 35, end: 38, length: 4, type: "4N", desig: "C" },
@@ -196,15 +196,14 @@ export const QP40_LINE_ITEM_SPEC: InBondRecordSpec = {
   pageCitation: "pp. 32-33",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "lineNumber", start: 3, end: 8, length: 6, type: "6N", desig: "M" },
-    { name: "tariffNumber", start: 9, end: 11, length: 3, type: "3AN", desig: "C" },
-    { name: "pieceCount", start: 12, end: 21, length: 10, type: "10N", desig: "M" },
-    { name: "description", start: 22, end: 31, length: 10, type: "10X", desig: "M" },
-    { name: "weight", start: 32, end: 41, length: 10, type: "10N", desig: "C" },
-    { name: "weightUnit", start: 42, end: 43, length: 2, type: "2A", desig: "C" },
-    { name: "volume", start: 44, end: 53, length: 10, type: "10N", desig: "C" },
-    { name: "volumeUnit", start: 54, end: 55, length: 2, type: "2A", desig: "C" },
-    { name: "value", start: 56, end: 63, length: 8, type: "8N", desig: "C" },
+    { name: "foreignPortOfLading", start: 3, end: 7, length: 5, type: "5N", desig: "M" },
+    { name: "manifestQuantity", start: 8, end: 17, length: 10, type: "10N", desig: "M" },
+    { name: "manifestUnits", start: 18, end: 22, length: 5, type: "5X", desig: "M" },
+    { name: "weight", start: 23, end: 32, length: 10, type: "10N", desig: "M" },
+    { name: "weightUnit", start: 33, end: 34, length: 2, type: "2A", desig: "M" },
+    { name: "volume", start: 35, end: 44, length: 10, type: "10N", desig: "O" },
+    { name: "volumeUnit", start: 45, end: 46, length: 2, type: "2A", desig: "C" },
+    { name: "placeOfPreReceipt", start: 47, end: 63, length: 17, type: "17X", desig: "O" },
     { name: "filler", start: 64, end: 80, length: 17, type: "17AN", desig: "M" }
   ]
 };
@@ -227,8 +226,8 @@ export const QP51_SHIPPER_ADDRESS_SPEC: InBondRecordSpec = {
   pageCitation: "p. 36",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "shipperAddressLine2", start: 3, end: 37, length: 35, type: "35X", desig: "C" },
-    { name: "shipperAddressLine3", start: 38, end: 72, length: 35, type: "35X", desig: "C" },
+    { name: "shipperAddressLine2", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
+    { name: "shipperAddressLine3", start: 38, end: 72, length: 35, type: "35X", desig: "O" },
     { name: "filler", start: 73, end: 80, length: 8, type: "8AN", desig: "M" }
   ]
 };
@@ -239,8 +238,8 @@ export const QP52_SHIPPER_PHONE_SPEC: InBondRecordSpec = {
   pageCitation: "p. 37",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "telephoneNumber", start: 3, end: 17, length: 15, type: "15X", desig: "C" },
-    { name: "filler", start: 18, end: 80, length: 63, type: "63AN", desig: "M" }
+    { name: "telephoneNumber", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
+    { name: "filler", start: 38, end: 80, length: 43, type: "43AN", desig: "M" }
   ]
 };
 
@@ -262,8 +261,8 @@ export const QP56_CONSIGNEE_ADDRESS_SPEC: InBondRecordSpec = {
   pageCitation: "p. 39",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "consigneeAddressLine2", start: 3, end: 37, length: 35, type: "35X", desig: "C" },
-    { name: "consigneeAddressLine3", start: 38, end: 72, length: 35, type: "35X", desig: "C" },
+    { name: "consigneeAddressLine2", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
+    { name: "consigneeAddressLine3", start: 38, end: 72, length: 35, type: "35X", desig: "O" },
     { name: "filler", start: 73, end: 80, length: 8, type: "8AN", desig: "M" }
   ]
 };
@@ -274,8 +273,8 @@ export const QP57_CONSIGNEE_PHONE_SPEC: InBondRecordSpec = {
   pageCitation: "p. 40",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "telephoneNumber", start: 3, end: 17, length: 15, type: "15X", desig: "C" },
-    { name: "filler", start: 18, end: 80, length: 63, type: "63AN", desig: "M" }
+    { name: "telephoneNumber", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
+    { name: "filler", start: 38, end: 80, length: 43, type: "43AN", desig: "M" }
   ]
 };
 
@@ -297,8 +296,8 @@ export const QP61_NOTIFY_ADDRESS_SPEC: InBondRecordSpec = {
   pageCitation: "p. 42",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "notifyPartyAddressLine2", start: 3, end: 37, length: 35, type: "35X", desig: "C" },
-    { name: "notifyPartyAddressLine3", start: 38, end: 72, length: 35, type: "35X", desig: "C" },
+    { name: "notifyPartyAddressLine2", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
+    { name: "notifyPartyAddressLine3", start: 38, end: 72, length: 35, type: "35X", desig: "O" },
     { name: "filler", start: 73, end: 80, length: 8, type: "8AN", desig: "M" }
   ]
 };
@@ -309,92 +308,90 @@ export const QP62_NOTIFY_PHONE_SPEC: InBondRecordSpec = {
   pageCitation: "p. 43",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "telephoneNumber", start: 3, end: 17, length: 15, type: "15X", desig: "C" },
-    { name: "filler", start: 18, end: 80, length: 63, type: "63AN", desig: "M" }
+    { name: "telephoneNumber", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
+    { name: "filler", start: 38, end: 80, length: 43, type: "43AN", desig: "M" }
   ]
 };
 
 export const QP65_TRANSPORT_PARTY_SPEC: InBondRecordSpec = {
   id: "QP65",
-  name: "Transport Party / Carrier Details Record",
+  name: "Equipment Record",
   pageCitation: "p. 44",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "carrierName", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
-    { name: "cityName", start: 38, end: 56, length: 19, type: "19X", desig: "C" },
-    { name: "stateCode", start: 57, end: 58, length: 2, type: "2A", desig: "C" },
-    { name: "zipCode", start: 59, end: 67, length: 9, type: "9X", desig: "C" },
-    { name: "filler", start: 68, end: 80, length: 13, type: "13AN", desig: "M" }
+    { name: "containerNumber", start: 3, end: 16, length: 14, type: "14AN", desig: "M" },
+    { name: "sealNumber1", start: 17, end: 31, length: 15, type: "15AN", desig: "C" },
+    { name: "sealNumber2", start: 32, end: 46, length: 15, type: "15AN", desig: "C" },
+    { name: "containerEquipmentType", start: 47, end: 48, length: 2, type: "2AN", desig: "C" },
+    { name: "filler", start: 49, end: 80, length: 32, type: "32AN", desig: "M" }
   ]
 };
 
 export const QP70_BONDED_CARRIER_SPEC: InBondRecordSpec = {
   id: "QP70",
-  name: "Bonded Carrier / Importer Party Record",
+  name: "Harmonized Tariff / Commodity Record",
   pageCitation: "pp. 45-46",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "partyType", start: 3, end: 4, length: 2, type: "2N", desig: "M" },
-    { name: "partyIdNumber", start: 5, end: 13, length: 9, type: "9X", desig: "C" },
-    { name: "commodityValue", start: 14, end: 21, length: 8, type: "8N", desig: "C" },
-    { name: "commodityWeight", start: 22, end: 31, length: 10, type: "10N", desig: "C" },
-    { name: "partyName", start: 32, end: 66, length: 35, type: "35X", desig: "C" },
-    { name: "filler", start: 67, end: 80, length: 14, type: "14AN", desig: "M" }
+    { name: "harmonizedTariffNumber", start: 3, end: 12, length: 10, type: "10N", desig: "M" },
+    { name: "filler1", start: 13, end: 13, length: 1, type: "1AN", desig: "M" },
+    { name: "commodityValue", start: 14, end: 21, length: 8, type: "8N", desig: "M" },
+    { name: "commodityWeight", start: 22, end: 31, length: 10, type: "10N", desig: "M" },
+    { name: "weightUnit", start: 32, end: 33, length: 2, type: "2A", desig: "M" },
+    { name: "filler2", start: 34, end: 80, length: 47, type: "47AN", desig: "M" }
   ]
 };
 
 export const QP71_PARTY_ADDRESS_SPEC: InBondRecordSpec = {
   id: "QP71",
-  name: "Party Address Line 1, City, State, Zip Record",
+  name: "Piece Count and Commodity Description Record",
   pageCitation: "p. 47",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "addressLine1", start: 3, end: 37, length: 35, type: "35X", desig: "M" },
-    { name: "cityName", start: 38, end: 56, length: 19, type: "19X", desig: "C" },
-    { name: "stateCode", start: 57, end: 58, length: 2, type: "2A", desig: "C" },
-    { name: "zipCode", start: 59, end: 67, length: 9, type: "9X", desig: "C" },
-    { name: "filler", start: 68, end: 80, length: 13, type: "13AN", desig: "M" }
+    { name: "pieceCount", start: 3, end: 12, length: 10, type: "10N", desig: "C" },
+    { name: "description", start: 13, end: 57, length: 45, type: "45X", desig: "M" },
+    { name: "manifestUnitCode", start: 58, end: 60, length: 3, type: "3AN", desig: "O" },
+    { name: "filler", start: 61, end: 80, length: 20, type: "20AN", desig: "M" }
   ]
 };
 
 export const QP72_PARTY_PHONE_SPEC: InBondRecordSpec = {
   id: "QP72",
-  name: "Party Contact Phone Record",
+  name: "Marks and Numbers Record",
   pageCitation: "p. 49",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "telephoneNumber", start: 3, end: 17, length: 15, type: "15X", desig: "C" },
-    { name: "filler", start: 18, end: 80, length: 63, type: "63AN", desig: "M" }
+    { name: "marksAndNumbers", start: 3, end: 47, length: 45, type: "45X", desig: "M" },
+    { name: "filler", start: 48, end: 80, length: 33, type: "33AN", desig: "M" }
   ]
 };
 
 export const QP75_REMARKS_HAZMAT_SPEC: InBondRecordSpec = {
   id: "QP75",
-  name: "In-Bond Remarks & Hazmat Record",
+  name: "Hazardous Material Record",
   pageCitation: "p. 50",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "remarksCode", start: 3, end: 7, length: 5, type: "5AN", desig: "C" },
-    { name: "harmonizedCode", start: 8, end: 12, length: 5, type: "5AN", desig: "C" },
-    { name: "hazmatClass", start: 13, end: 16, length: 4, type: "4X", desig: "C" },
-    { name: "hazmatDescription", start: 17, end: 51, length: 35, type: "35X", desig: "C" },
-    { name: "hazmatCode", start: 52, end: 66, length: 15, type: "15X", desig: "C" },
-    { name: "hazmatPageNumber", start: 67, end: 71, length: 5, type: "5X", desig: "C" },
+    { name: "hazmatCode", start: 3, end: 12, length: 10, type: "10X", desig: "M" },
+    { name: "hazmatClass", start: 13, end: 16, length: 4, type: "4X", desig: "O" },
+    { name: "filler1", start: 17, end: 17, length: 1, type: "1AN", desig: "M" },
+    { name: "hazmatName", start: 18, end: 47, length: 30, type: "30AN", desig: "O" },
+    { name: "hazmatContact", start: 48, end: 71, length: 24, type: "24AN", desig: "O" },
     { name: "flashpointTemperature", start: 72, end: 74, length: 3, type: "3N", desig: "O" },
-    { name: "temperatureUnit", start: 75, end: 76, length: 2, type: "2A", desig: "O" },
-    { name: "negativeIndicator", start: 77, end: 77, length: 1, type: "1A", desig: "O" },
-    { name: "filler", start: 78, end: 80, length: 3, type: "3AN", desig: "M" }
+    { name: "temperatureUnit", start: 75, end: 76, length: 2, type: "2X", desig: "O" },
+    { name: "filler2", start: 77, end: 77, length: 1, type: "1AN", desig: "M" },
+    { name: "filler3", start: 78, end: 80, length: 3, type: "3AN", desig: "M" }
   ]
 };
 
 export const QP76_REFERENCE_SPEC: InBondRecordSpec = {
   id: "QP76",
-  name: "Additional Reference Identifier Record",
+  name: "Hazardous Material Continuation Record",
   pageCitation: "p. 52",
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2N", desig: "M" },
-    { name: "referenceQualifierCode", start: 3, end: 4, length: 2, type: "2AN", desig: "M" },
-    { name: "referenceIdentifier", start: 5, end: 61, length: 57, type: "57X", desig: "M" },
+    { name: "hazmatDescription1", start: 3, end: 31, length: 29, type: "29X", desig: "C" },
+    { name: "hazmatDescription2", start: 32, end: 61, length: 30, type: "30X", desig: "C" },
     { name: "filler", start: 62, end: 80, length: 19, type: "19AN", desig: "M" }
   ]
 };
@@ -471,7 +468,7 @@ export const NS05_CONVEYANCE_SPEC: InBondRecordSpec = {
   fields: [
     { name: "recordType", start: 1, end: 2, length: 2, type: "2AN", desig: "M" },
     { name: "conveyanceName", start: 3, end: 25, length: 23, type: "23AN", desig: "M" },
-    { name: "flightTripNumber", start: 26, end: 30, length: 5, type: "5AN", desig: "C" },
+    { name: "flightTripNumber", start: 26, end: 30, length: 5, type: "5N", desig: "M" },
     { name: "usPortOfArrival", start: 31, end: 34, length: 4, type: "4N", desig: "M" },
     { name: "arrivalDate", start: 35, end: 40, length: 6, type: "6N", desig: "M" },
     { name: "arrivalTime", start: 41, end: 46, length: 6, type: "6N", desig: "C" },
