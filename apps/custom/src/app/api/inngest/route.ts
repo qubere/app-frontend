@@ -8,6 +8,7 @@ import { accountMemoryExtractionJob } from "@/lib/inngest/functions/accountMemor
 import { reportRunExecuteJob } from "@/lib/inngest/functions/reportRun";
 import { slaSweepJob } from "@/lib/inngest/functions/slaSweep";
 import { rpsSearchTokenBackfillJob } from "@/lib/inngest/functions/restrictedPartySearchTokenBackfill";
+import { searchIndexRefreshJob } from "@/lib/inngest/functions/searchIndexRefresh";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -20,5 +21,6 @@ export const { GET, POST, PUT } = serve({
     reportRunExecuteJob,
     slaSweepJob,
     rpsSearchTokenBackfillJob,
+    searchIndexRefreshJob,
   ],
 });

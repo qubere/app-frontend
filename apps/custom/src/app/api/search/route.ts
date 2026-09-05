@@ -9,12 +9,14 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
   const limitRaw = url.searchParams.get("limit");
 
   const limit = limitRaw ? parseInt(limitRaw, 10) : 20;
+  const includeSuggestions = url.searchParams.get("suggestions") !== "false";
 
   const result = await unifiedSearch({
     accountId: ctx.accountId,
     clientId: clientId ?? undefined,
     query: q,
     limit,
+    includeSuggestions,
   });
 
   return NextResponse.json(result);
