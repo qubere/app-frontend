@@ -41,6 +41,7 @@ const canonicalInclude = {
   // so an invoice's lines came back scrambled. Line numbering is the operator's
   // reference back to the paper document and has to match it.
   lineItems: { orderBy: { lineNumber: "asc" as const } },
+  containers: { orderBy: { containerNumber: "asc" as const } },
   // Explicit omit: triageState/blockedReason/autoApprovalPolicy are in the Prisma
   // schema but not yet applied to the live DB (migration pending).
   agentDecisions: { omit: { triageState: true, blockedReason: true, autoApprovalPolicy: true } },

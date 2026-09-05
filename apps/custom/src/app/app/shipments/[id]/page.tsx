@@ -19,6 +19,7 @@ import { ShipmentClientEditor } from "./ShipmentClientEditor";
 import { DestinationCountryEditor } from "./DestinationCountryEditor";
 import { ExceptionsDrawer } from "./ExceptionsDrawer";
 import { LineItemsTable } from "./LineItemsTable";
+import { ContainersTable } from "./ContainersTable";
 import { CanonicalFactsSection } from "./CanonicalFactsSection";
 import { ComplianceChecksPanel } from "./ComplianceChecksPanel";
 import { PartyScreeningPanel, type PartyScreeningRow } from "./PartyScreeningPanel";
@@ -298,6 +299,20 @@ export default async function ShipmentWorkspacePage(props: {
       (item) => [item.lineNumber, { description: item.description, htsConfidence: item.htsConfidence }] as const
     )
   );
+
+  // Load display containers
+  const displayContainers = (fullShipment.containers || []).map((container) => ({
+    id: container.id,
+    containerNumber: container.containerNumber,
+    sealNumbers: container.sealNumbers,
+    containerType: container.containerType,
+    containerSize: container.containerSize,
+    packageCount: container.packageCount,
+    descriptionOfGoods: container.descriptionOfGoods,
+    grossWeight: container.grossWeight != null ? Number(container.grossWeight) : null,
+    weightUom: container.weightUom,
+    status: container.status,
+  }));
 
   const totalInvoiceAmount = displayLineItems.reduce(
     (acc: number, item) => acc + Number(item.quantity) * Number(item.unitPrice),
@@ -1425,6 +1440,7 @@ export default async function ShipmentWorkspacePage(props: {
           isEnterpriseAdmin={isEnterpriseAdmin}
           currency={lineItemCurrency}
         />
+        <ContainersTable containers={displayContainers} />
       </div>
     </>
   );

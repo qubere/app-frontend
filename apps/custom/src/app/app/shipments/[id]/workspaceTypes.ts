@@ -36,6 +36,20 @@ export interface ShipmentLineItemRow {
   updatedAt?: Date | string;
 }
 
+/** A container as the workspace panels receive it. */
+export interface ShipmentContainerRow {
+  id: string;
+  containerNumber: string;
+  sealNumbers: string[];
+  containerType?: string | null;
+  containerSize?: string | null;
+  packageCount?: number | null;
+  descriptionOfGoods?: string | null;
+  grossWeight?: number | null;
+  weightUom?: string | null;
+  status: string;
+}
+
 /**
  * A line item as persisted inside a document's `extractedJson`.
  *

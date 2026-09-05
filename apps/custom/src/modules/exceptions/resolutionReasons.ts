@@ -17,7 +17,9 @@ export type ExceptionCategory =
   | "DOCUMENT"
   | "CLASSIFICATION"
   | "VALUATION"
-  | "FILING";
+  | "FILING"
+  | "PLAN_CHANGE"
+  | "SYSTEM";
 
 export interface ResolutionReason {
   /** Stable code stored to ExceptionItem.resolutionReasonCode. Never rename. */
