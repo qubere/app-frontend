@@ -37,6 +37,30 @@ export class AbiFilingValidationError extends Error {
   }
 }
 
+export function assertValidAbiFiling(
+  entityId: string,
+  validation: { valid: boolean; missingFields: string[] }
+): void {
+  if (!validation.valid) {
+    throw new AbiFilingValidationError(entityId, validation.missingFields);
+  }
+}
+
+export function chunkToNumberedFields<T, R>(
+  items: T[],
+  size: number,
+  sortKey: (item: T) => number,
+  mapper: (chunk: T[], index: number) => R
+): R[] {
+  const sorted = [...items].sort((a, b) => sortKey(a) - sortKey(b));
+  const result: R[] = [];
+  for (let i = 0; i < sorted.length; i += size) {
+    result.push(mapper(sorted.slice(i, i + size), Math.floor(i / size)));
+  }
+  return result;
+}
+
+
 /**
  * Header options for batch/block envelopes and fallback control defaults.
  * Supplied by the caller when schema fields have no home in CustomsFiling.

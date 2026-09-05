@@ -88,7 +88,7 @@ Full Content Snippet: "${fullNoticeText.slice(0, 4000)}"
 Extract matching type, affected HTS codes, effective date, short summary, and if action is required.`;
 
       const aiResponse = await aiClient.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.6-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
           responseMimeType: "application/json",

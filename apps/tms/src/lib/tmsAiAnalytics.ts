@@ -113,14 +113,14 @@ export interface TmsAiAnalyticsData {
 
 // STRICT TMS FREIGHT EXECUTION AGENT SURFACES
 const TMS_AI_SURFACES = [
-  { surface: "freight-intake", label: "Inbound Freight Intake Agent", model: "gemini-2.5-flash", policy: "Verified" },
-  { surface: "movement-planner", label: "Movement & Stop Planning Agent", model: "gemini-2.5-flash", policy: "Route Optimized" },
-  { surface: "carrier-rating", label: "Carrier Rating & Quote Agent", model: "gemini-2.5-flash", policy: "Contract Tariff" },
-  { surface: "tender-dispatch", label: "Autonomous Tender Dispatch Agent", model: "gemini-2.5-flash", policy: "60-Min SLA" },
-  { surface: "tracking-eta", label: "Tracking & ETA Cascade Agent", model: "gemini-2.5-flash", policy: "EDI 214 Live" },
-  { surface: "demurrage-risk", label: "Demurrage & LFD Defense Agent", model: "gemini-2.5-flash", policy: "Shield Enabled" },
-  { surface: "freight-audit", label: "3-Way Linehaul & FSC Audit Agent", model: "gemini-2.5-flash", policy: "POD Mandatory" },
-  { surface: "exception-resolution", label: "Exception Resolution Agent", model: "gemini-2.5-flash", policy: "Orchestrator Enforced" },
+  { surface: "freight-intake", label: "Inbound Freight Intake Agent", model: "gemini-3.6-flash", policy: "Verified" },
+  { surface: "movement-planner", label: "Movement & Stop Planning Agent", model: "gemini-3.6-flash", policy: "Route Optimized" },
+  { surface: "carrier-rating", label: "Carrier Rating & Quote Agent", model: "gemini-3.6-flash", policy: "Contract Tariff" },
+  { surface: "tender-dispatch", label: "Autonomous Tender Dispatch Agent", model: "gemini-3.6-flash", policy: "60-Min SLA" },
+  { surface: "tracking-eta", label: "Tracking & ETA Cascade Agent", model: "gemini-3.6-flash", policy: "EDI 214 Live" },
+  { surface: "demurrage-risk", label: "Demurrage & LFD Defense Agent", model: "gemini-3.6-flash", policy: "Shield Enabled" },
+  { surface: "freight-audit", label: "3-Way Linehaul & FSC Audit Agent", model: "gemini-3.6-flash", policy: "POD Mandatory" },
+  { surface: "exception-resolution", label: "Exception Resolution Agent", model: "gemini-3.6-flash", policy: "Orchestrator Enforced" },
   { surface: "copilot", label: "Qubere Freight Supervisor Assistant", model: "gemini-2.5-pro", policy: "Tool Execution" },
 ];
 
@@ -158,28 +158,28 @@ function getTmsCanonicalAgentInfo(rawKey: string): { canonicalName: string; surf
   }
 
   if (cleaned.includes("intake") || cleaned.includes("freightintake")) {
-    return { canonicalName: "Inbound Freight Intake Agent", surfaceKey: "freight-intake", model: "gemini-2.5-flash", policy: "Verified" };
+    return { canonicalName: "Inbound Freight Intake Agent", surfaceKey: "freight-intake", model: "gemini-3.6-flash", policy: "Verified" };
   }
   if (cleaned.includes("movement") || cleaned.includes("planner")) {
-    return { canonicalName: "Movement & Stop Planning Agent", surfaceKey: "movement-planner", model: "gemini-2.5-flash", policy: "Route Optimized" };
+    return { canonicalName: "Movement & Stop Planning Agent", surfaceKey: "movement-planner", model: "gemini-3.6-flash", policy: "Route Optimized" };
   }
   if (cleaned.includes("rating") || cleaned.includes("carrierquote")) {
-    return { canonicalName: "Carrier Rating & Quote Agent", surfaceKey: "carrier-rating", model: "gemini-2.5-flash", policy: "Contract Tariff" };
+    return { canonicalName: "Carrier Rating & Quote Agent", surfaceKey: "carrier-rating", model: "gemini-3.6-flash", policy: "Contract Tariff" };
   }
   if (cleaned.includes("tender") || cleaned.includes("dispatch")) {
-    return { canonicalName: "Autonomous Tender Dispatch Agent", surfaceKey: "tender-dispatch", model: "gemini-2.5-flash", policy: "60-Min SLA" };
+    return { canonicalName: "Autonomous Tender Dispatch Agent", surfaceKey: "tender-dispatch", model: "gemini-3.6-flash", policy: "60-Min SLA" };
   }
   if (cleaned.includes("tracking") || cleaned.includes("eta")) {
-    return { canonicalName: "Tracking & ETA Cascade Agent", surfaceKey: "tracking-eta", model: "gemini-2.5-flash", policy: "EDI 214 Live" };
+    return { canonicalName: "Tracking & ETA Cascade Agent", surfaceKey: "tracking-eta", model: "gemini-3.6-flash", policy: "EDI 214 Live" };
   }
   if (cleaned.includes("demurrage") || cleaned.includes("lfd")) {
-    return { canonicalName: "Demurrage & LFD Defense Agent", surfaceKey: "demurrage-risk", model: "gemini-2.5-flash", policy: "Shield Enabled" };
+    return { canonicalName: "Demurrage & LFD Defense Agent", surfaceKey: "demurrage-risk", model: "gemini-3.6-flash", policy: "Shield Enabled" };
   }
   if (cleaned.includes("audit") || cleaned.includes("linehaul")) {
-    return { canonicalName: "3-Way Linehaul & FSC Audit Agent", surfaceKey: "freight-audit", model: "gemini-2.5-flash", policy: "POD Mandatory" };
+    return { canonicalName: "3-Way Linehaul & FSC Audit Agent", surfaceKey: "freight-audit", model: "gemini-3.6-flash", policy: "POD Mandatory" };
   }
   if (cleaned.includes("exception")) {
-    return { canonicalName: "Exception Resolution Agent", surfaceKey: "exception-resolution", model: "gemini-2.5-flash", policy: "Orchestrator Enforced" };
+    return { canonicalName: "Exception Resolution Agent", surfaceKey: "exception-resolution", model: "gemini-3.6-flash", policy: "Orchestrator Enforced" };
   }
   if (cleaned.includes("copilot") || cleaned.includes("assistant") || cleaned.includes("supervisor")) {
     return { canonicalName: "Qubere Freight Supervisor Assistant", surfaceKey: "copilot", model: "gemini-2.5-pro", policy: "Tool Execution" };

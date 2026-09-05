@@ -13,7 +13,7 @@ vi.mock("@google/genai", () => {
         mockConstructor(config);
       }
       getGenerativeModel() {
-        return { model: "gemini-2.5-flash" };
+        return { model: "gemini-3.6-flash" };
       }
     },
   };

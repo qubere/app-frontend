@@ -77,6 +77,20 @@ export type FilingSnapshotData = {
     version: number;
     timestamp: string;
   };
+  /**
+   * Additive, optional (issue #219 Phase C, U14): the approved 7501 entry
+   * summary draft + its validation result, frozen at the moment a broker
+   * approves it. Absent on snapshots written before this field existed, and
+   * absent on any snapshot for a shipment that never went through the U1-U11
+   * entry-summary pipeline — never backfilled or fabricated.
+   */
+  entrySummaryDraft?: {
+    version: number;
+    draftData: unknown;
+    validationData: unknown;
+    approvedAt: string;
+    approvedBy: string;
+  };
 };
 
 function withActionExtensions(declaration: DeclarationData, extensions: Record<string, unknown>): DeclarationData {
@@ -423,38 +437,51 @@ export class FilingService {
         })
       : undefined;
 
-    const updatedFiling = await db.$transaction(async tx => {
-      await assertAssistPublicationContext(tx, accountId, filingId, preparedAssists);
-      const claimed = await tx.customsFiling.updateMany({
-        where: { id: filingId, accountId, version: filing.version, filingStatus: filing.filingStatus },
-        data: {
-        filingStatus: nextStatus,
-        submittedAt: new Date(),
-        version: { increment: 1 },
-        ...(computedTariff
-          ? {
-              totalValue: computedTariff.totalCustomsValue,
-              totalDuties: computedTariff.totalDuty,
-              totalTaxes: computedTariff.totalTaxes,
-              totalAmount: computedTariff.totalAmount,
-              dutyBreakdown: financialUpdate,
-            }
-          : {}),
-        ...(userId && action === "SUBMIT" ? { transmittedByUserId: userId } : {}),
-      },
-      });
-      if (claimed.count !== 1) throw new DomainError("This filing changed. Review it before submitting again.", "FILING_CONFLICT", 409);
-      await commitAssistDeclarations(tx, accountId, filingId, preparedAssists, userId);
-      if (snapshotData && snapshotMeta) {
-        await tx.filingSnapshot.upsert({
-          where: { filingId },
-          create: { filingId, snapshotData: asInputJson(snapshotData), ...snapshotMeta },
-          update: { snapshotData: asInputJson(snapshotData), ...snapshotMeta },
-        });
+    let updatedFiling;
+    let attempts = 0;
+    while (true) {
+      try {
+        attempts++;
+        updatedFiling = await db.$transaction(async tx => {
+          await assertAssistPublicationContext(tx, accountId, filingId, preparedAssists);
+          const claimed = await tx.customsFiling.updateMany({
+            where: { id: filingId, accountId, version: filing.version, filingStatus: filing.filingStatus },
+            data: {
+              filingStatus: nextStatus,
+              submittedAt: new Date(),
+              version: { increment: 1 },
+              ...(computedTariff
+                ? {
+                    totalValue: computedTariff.totalCustomsValue,
+                    totalDuties: computedTariff.totalDuty,
+                    totalTaxes: computedTariff.totalTaxes,
+                    totalAmount: computedTariff.totalAmount,
+                    dutyBreakdown: financialUpdate,
+                  }
+                : {}),
+              ...(userId && action === "SUBMIT" ? { transmittedByUserId: userId } : {}),
+            },
+          });
+          if (claimed.count !== 1) throw new DomainError("This filing changed. Review it before submitting again.", "FILING_CONFLICT", 409);
+          await commitAssistDeclarations(tx, accountId, filingId, preparedAssists, userId);
+          if (snapshotData && snapshotMeta) {
+            await tx.filingSnapshot.upsert({
+              where: { filingId },
+              create: { filingId, snapshotData: asInputJson(snapshotData), ...snapshotMeta },
+              update: { snapshotData: asInputJson(snapshotData), ...snapshotMeta },
+            });
+          }
+          await new PgCanonicalMessagePublisher(tx).publish("filing-outbound-queue", message);
+          return tx.customsFiling.findFirstOrThrow({ where: { id: filingId, accountId } });
+        }, { isolationLevel: "Serializable", timeout: 20000 });
+        break;
+      } catch (err: any) {
+        if (attempts < 3 && err && typeof err === "object" && "code" in err && String(err.code) === "P2034") {
+          continue;
+        }
+        rethrowWorkflowConflict(err);
       }
-      await new PgCanonicalMessagePublisher(tx).publish("filing-outbound-queue", message);
-      return tx.customsFiling.findFirstOrThrow({ where: { id: filingId, accountId } });
-    }, { isolationLevel: "Serializable", timeout: 20000 }).catch(rethrowWorkflowConflict);
+    }
 
     return { filing: updatedFiling, messageId: message.header.messageId };
   }

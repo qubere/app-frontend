@@ -231,6 +231,12 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "filing.cancel", description: "Request filing cancellation.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
   { name: "filing.view_responses", description: "View raw ACE/CBP electronic responses.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER"] },
 
+  // Entry Summary (CBP Form 7501) draft + ABI filer export — issue #219 Phase C (U12)
+  { name: "filing.entry_summary.generate", description: "Generate/regenerate the validated 7501 entry summary draft.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },
+  { name: "filing.entry_summary.approve", description: "Approve a 7501 entry summary draft for export.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "filing.entry_summary.export", description: "Export an approved 7501 entry summary draft to a filer.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "OWNER", "ADMIN"] },
+  { name: "filing.filer_profile.manage", description: "Create and manage ABI filer profiles.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "OWNER", "ADMIN"] },
+
   // Post-entry recovery
   { name: "psc.read", description: "View post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "BROKER_VIEWER", "SUPER_ADMIN_READ", "OWNER", "ADMIN", "BROKER", "SPECIALIST", "MEMBER", "VIEWER"] },
   { name: "psc.create", description: "Create and update draft post-summary corrections.", category: "Filing", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "BROKER_SPECIALIST", "OWNER", "ADMIN", "BROKER", "SPECIALIST"] },

@@ -104,6 +104,14 @@ export type CustomsFilingWithCargoReleaseRelations = {
       } | null;
     }[];
   } | null;
+  cargoReleaseBills?: {
+    id: string;
+    billTypeIndicator?: string | null;
+    issuerCode?: string | null;
+    billOfLadingNumber: string;
+    quantity?: Decimal | number | null;
+    nonAmsIndicator?: boolean | null;
+  }[];
 };
 
 /**
@@ -314,26 +322,24 @@ export function fromCustomsFiling(
   };
 
   // Bills of Lading and Conveyance mapping
+  // Note (§2.4 Decision b): CargoReleaseBillOfLading is the persisted model for multi-BOL,
+  // split shipments, and non-AMS indicators. When present on CustomsFiling, we read it
+  // directly; otherwise, we fall back to Shipment trackingIdentifier derivation.
   const trackingList = filing.shipment?.trackingIdentifiers ?? [];
   const bolTracking = trackingList.find(t => ["MBL", "HBL", "BOOKING"].includes(t.type.toUpperCase()));
   const containerTracking = trackingList.filter(t => t.type.toUpperCase() === "CONTAINER");
 
   let bills: BillOfLadingGroupInput[] | undefined;
-  // No fallback beyond trackingIdentifiers: Shipment has no direct trackingNumber
-  // field in the current schema (verified by grep).
-  const billNumber = bolTracking?.value;
-  if (billNumber) {
-    const billTypeIndicator = bolTracking?.type.toUpperCase() === "HBL" ? "H" : "R";
-    const issuerCodeOfBillOfLadingNumber = bolTracking?.issuer || primaryLeg?.carrierCode || filing.shipment?.carrierName?.slice(0, 4) || undefined;
-    const totalQty = rawLineItems.reduce((acc, item) => acc + item.quantity, 0);
+  const totalQty = rawLineItems.reduce((acc, item) => acc + item.quantity, 0);
 
-    const billInput: BillOfLadingInput = {
-      billTypeIndicator,
-      issuerCodeOfBillOfLadingNumber,
-      billOfLadingNumber: billNumber.toUpperCase(),
-      quantity: totalQty > 0 ? totalQty : 1,
-      nonAmsIndicator: "N",
-    };
+  if (filing.cargoReleaseBills && filing.cargoReleaseBills.length > 0) {
+    const billInputs: BillOfLadingInput[] = filing.cargoReleaseBills.map((bol) => ({
+      billTypeIndicator: (bol.billTypeIndicator || "R").toUpperCase(),
+      issuerCodeOfBillOfLadingNumber: bol.issuerCode || primaryLeg?.carrierCode || filing.shipment?.carrierName?.slice(0, 4) || undefined,
+      billOfLadingNumber: bol.billOfLadingNumber.toUpperCase(),
+      quantity: bol.quantity != null ? Number(bol.quantity) : totalQty > 0 ? totalQty : 1,
+      nonAmsIndicator: bol.nonAmsIndicator === true ? "Y" : "N",
+    }));
 
     let conveyances: ConveyanceInput[] | undefined;
     if (primaryLeg || filing.shipment?.carrierName) {
@@ -355,11 +361,51 @@ export function fromCustomsFiling(
 
     bills = [
       {
-        billsOfLading: [billInput],
+        billsOfLading: billInputs,
         conveyances,
         equipment,
       },
     ];
+  } else {
+    const billNumber = bolTracking?.value;
+    if (billNumber) {
+      const billTypeIndicator = bolTracking?.type.toUpperCase() === "HBL" ? "H" : "R";
+      const issuerCodeOfBillOfLadingNumber = bolTracking?.issuer || primaryLeg?.carrierCode || filing.shipment?.carrierName?.slice(0, 4) || undefined;
+
+      const billInput: BillOfLadingInput = {
+        billTypeIndicator,
+        issuerCodeOfBillOfLadingNumber,
+        billOfLadingNumber: billNumber.toUpperCase(),
+        quantity: totalQty > 0 ? totalQty : 1,
+        nonAmsIndicator: "N",
+      };
+
+      let conveyances: ConveyanceInput[] | undefined;
+      if (primaryLeg || filing.shipment?.carrierName) {
+        conveyances = [
+          {
+            carrierCode: primaryLeg?.carrierCode ?? filing.shipment?.carrierName?.slice(0, 4).toUpperCase() ?? "UNKNOWN",
+            voyageFlightTripManifestNumber: primaryLeg?.voyageNumber ?? primaryLeg?.flightNumber ?? "0001",
+            dateOfArrival: primaryLeg?.actualArrival ?? primaryLeg?.estimatedArrival ?? filing.shipment?.arrivalDate ?? filing.shipment?.estimatedArrival ?? new Date(),
+            quantity: totalQty > 0 ? totalQty : 1,
+            conveyanceName: primaryLeg?.vesselName ?? undefined,
+          },
+        ];
+      }
+
+      let equipment: EquipmentInput[] | undefined;
+      if (containerTracking.length > 0) {
+        equipment = containerTracking.map(c => ({ equipmentNumber: c.value.toUpperCase() }));
+      }
+
+      bills = [
+        {
+          billsOfLading: [billInput],
+          conveyances,
+          equipment,
+        },
+      ];
+    }
   }
 
   // Header Entities mapping

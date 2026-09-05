@@ -287,7 +287,7 @@ ${diff}`;
 
   const client = new GoogleGenAI({ apiKey });
   const response = await client.models.generateContent({
-    model: process.env.PRODUCT_HELP_GENERATION_MODEL || "gemini-2.5-flash",
+    model: process.env.PRODUCT_HELP_GENERATION_MODEL || "gemini-3.6-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
