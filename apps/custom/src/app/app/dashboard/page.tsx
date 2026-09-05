@@ -8,7 +8,7 @@ import { computeAgentOperationsFromGroups, type AgentOverrideGroup } from "@/lib
 import { CommandCenterClient } from "./CommandCenterClient";
 import type { TeamMember } from "@/lib/team";
 
-const SHIPMENT_ROW_CAP = 2000;
+const SHIPMENT_ROW_CAP = 25;
 
 const AUTO_CERTIFIED_STATUSES = new Set(["AUTO_VERIFIED", "Auto-Approved", "Verified"]);
 const HUMAN_REVIEWED_STATUSES = new Set(["Approved", "APPROVED", "Rejected", "REJECTED"]);
