@@ -8,7 +8,7 @@ export const GET = withAuthenticatedRoute(async ({ ctx }) => {
     db.customsFiling.count({ where: { accountId: ctx.accountId } }),
     db.complianceFinding.findMany({
       where: { accountId: ctx.accountId },
-      select: { id: true, status: true, severity: true, title: true, createdAt: true },
+      select: { id: true, status: true, severity: true, rule: true, createdAt: true },
       take: 100,
     }),
     db.supplierRiskScore.findMany({
