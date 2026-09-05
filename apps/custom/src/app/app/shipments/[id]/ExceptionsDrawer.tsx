@@ -94,6 +94,7 @@ export function ExceptionsDrawer({
         .catch(() => {})
         .finally(() => setLoadingCustomerUsers(false));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed the default once per doc-type open, not on every keystroke in requestEmail
   }, [requestingDocType]);
 
   const postFieldReview = async (

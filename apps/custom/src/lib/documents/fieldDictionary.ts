@@ -194,3 +194,33 @@ export function reconciliationFieldValues(
   }
   return out;
 }
+
+/**
+ * All (extractionSchemas.ts fieldName → value) pairs derivable from a parsed
+ * `extractedJson`, for backfilling `ExtractionField` rows the Field Review
+ * panel can see. Gemini's `tradeMetadata` is schema-validated per field, but
+ * its separate freeform `entities` array (the panel's only other row source)
+ * is not required to mention every tradeMetadata field it populated -- so a
+ * value can be genuinely present on the document and still have no row here.
+ * This covers the same value space as `reconciliationFieldValues` but keyed
+ * by every field's `extractionSchemaKeys[0]` (the vocabulary
+ * `buildReviewFields`/`getRequiredFields` actually check against), not just
+ * the small reconciliation-key subset.
+ */
+export function schemaFieldValues(
+  tradeMetadata: Record<string, unknown> | null | undefined,
+  lineItems: ExtractedLine[] | null | undefined
+): Array<{ fieldName: string; value: string }> {
+  const out: Array<{ fieldName: string; value: string }> = [];
+  const seen = new Set<string>();
+  for (const field of DICTIONARY_FIELDS) {
+    const fieldName = field.extractionSchemaKeys[0];
+    if (!fieldName || seen.has(fieldName)) continue;
+    const value = extractedValueFor(field.canonicalKey, tradeMetadata, lineItems);
+    if (value !== null) {
+      out.push({ fieldName, value });
+      seen.add(fieldName);
+    }
+  }
+  return out;
+}

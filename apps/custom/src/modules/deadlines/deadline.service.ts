@@ -51,6 +51,18 @@ function ruleForType(type: DeadlineType) {
   return DEADLINE_RULES.find((r) => r.type === type);
 }
 
+/**
+ * Concurrent recomputeShipmentDeadlines calls (attach, reprocess, field-review,
+ * reconciliation, tracking webhook can all fire close together for the same
+ * shipment) race past a plain findFirst-then-create check. The DB enforces a
+ * partial unique index on (shipmentId, code) for open DEADLINE_* exceptions
+ * (migration 20260905130000) -- this recognizes the resulting violation so
+ * callers can treat "someone else just created it" as a no-op instead of a 500.
+ */
+function isUniqueConstraintError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
 // ── Core recompute ─────────────────────────────────────────────────────────
 
 /**
@@ -349,18 +361,23 @@ async function _upsertMissingAnchorExceptions(
     });
 
     if (!existing) {
-      await createExceptionItem({
-        accountId,
-        shipmentId,
-        code,
-        category: "FILING",
-        type: "compliance_flag",
-        severity: "High",
-        description,
-        blocking: false,
-        sourceAgent: "DeadlineMonitor",
-        status: "Open",
-      });
+      try {
+        await createExceptionItem({
+          accountId,
+          shipmentId,
+          code,
+          category: "FILING",
+          type: "compliance_flag",
+          severity: "High",
+          description,
+          blocking: false,
+          sourceAgent: "DeadlineMonitor",
+          status: "Open",
+        });
+      } catch (err) {
+        if (!isUniqueConstraintError(err)) throw err;
+        // Another concurrent recompute already created this exception.
+      }
     }
   }
 
@@ -408,18 +425,23 @@ async function _escalateToException(
   });
 
   if (!existing) {
-    await createExceptionItem({
-      accountId,
-      shipmentId: d.shipmentId,
-      code,
-      category: "FILING",
-      type: "compliance_flag",
-      severity: breached ? "Critical" : "High",
-      description,
-      blocking: deadlineIsBlocking(d.type),
-      sourceAgent: "DeadlineMonitor",
-      status: "Open",
-    });
+    try {
+      await createExceptionItem({
+        accountId,
+        shipmentId: d.shipmentId,
+        code,
+        category: "FILING",
+        type: "compliance_flag",
+        severity: breached ? "Critical" : "High",
+        description,
+        blocking: deadlineIsBlocking(d.type),
+        sourceAgent: "DeadlineMonitor",
+        status: "Open",
+      });
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+      // Another concurrent call already created this exception.
+    }
   } else if (breached && existing.severity !== "Critical") {
     // Escalate from High to Critical on breach.
     await db.exceptionItem.update({

@@ -70,7 +70,7 @@ export function PoaClient({
     if (!hasInitial) {
       fetchImporters();
     }
-  }, []);
+  }, [hasInitial]);
 
   const handlePoaUpload = async (importerId: string, file: File) => {
     setUploadingId(importerId);

@@ -15,6 +15,16 @@ import { deploymentTier } from "@/lib/environment";
 export const PARSER_PROVIDER_IDS = ["ibm-docling", "mock", "none"] as const;
 export type ParserProviderId = (typeof PARSER_PROVIDER_IDS)[number];
 
+export type FallbackProviderId = "mock" | "gemini-vision" | "none";
+
+export function selectedFallbackProviderId(): FallbackProviderId {
+  const raw = (process.env.DOCUMENT_PARSER_FALLBACK ?? "").trim().toLowerCase();
+  if (raw === "mock" || raw === "gemini-vision") {
+    return raw;
+  }
+  return "none";
+}
+
 function intFromEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;

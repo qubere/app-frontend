@@ -26,7 +26,10 @@ export function EntryProofPanel({ filingId }: {
             throw new Error('Could not load proof');
         setProof(await r.json());
     }
-    useEffect(() => { load().catch(e => setError(e.message)); }, [filingId]);
+    useEffect(() => {
+        load().catch(e => setError(e.message));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- load is recreated every render; only re-run when filingId changes
+    }, [filingId]);
     async function act(action: 'generate' | 'publish') {
         setBusy(true);
         setError('');

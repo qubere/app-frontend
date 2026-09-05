@@ -221,6 +221,19 @@ describe("document-type fixture extraction", () => {
     expect(blob.containers[0].containerNumber).toBe("MSCU1234567");
     expect(blob.containers[0].sealNumbers).toEqual(["SEAL998877"]);
     expect(blob.containers[0].grossWeight).toBe(2450.5);
+
+    // Gemini's freeform `entities` array is absent from this mocked response
+    // (as it can genuinely be even when tradeMetadata is fully populated) --
+    // the Field Review panel must still see these schema-required fields as
+    // present, backfilled from tradeMetadata, not reported "Missing".
+    const structuredCall = dbMock.extractionField.createMany.mock.calls.find((call) =>
+      call[0].data.some((row: { fieldName: string }) => row.fieldName === "vessel_name")
+    );
+    expect(structuredCall).toBeDefined();
+    const structuredFieldNames = structuredCall![0].data.map((row: { fieldName: string }) => row.fieldName);
+    expect(structuredFieldNames).toEqual(
+      expect.arrayContaining(["vessel_name", "port_of_loading", "port_of_discharge", "on_board_date"])
+    );
   });
 
   it("§73 -- Forwarding Instruction: routing/vessel fields and multiple containers with seal numbers and net/gross weights reach persisted extractedJson", async () => {

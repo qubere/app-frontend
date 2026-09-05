@@ -84,7 +84,7 @@ export function ImportersClient({
     if (!hasInitial) {
       fetchImporters();
     }
-  }, []);
+  }, [hasInitial]);
 
   const handleCreateImporter = async (e: React.FormEvent) => {
     e.preventDefault();

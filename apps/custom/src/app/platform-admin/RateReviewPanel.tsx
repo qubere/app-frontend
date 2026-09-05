@@ -68,7 +68,7 @@ export function RateReviewPanel({ initialItems }: RateReviewPanelProps = {}) {
     if (!hasInitial) {
       fetchItems();
     }
-  }, []);
+  }, [hasInitial]);
 
   const handleReview = async (item: RateReviewItem, action: "APPROVE" | "REJECT") => {
     const key = rowKey(item);

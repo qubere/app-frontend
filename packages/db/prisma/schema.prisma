@@ -3406,6 +3406,10 @@ model ExceptionItem {
   // and the "assigned to me" filter. See migration 20260827120000.
   @@index([accountId, createdAt])
   @@index([accountId, assignedToUserId, createdAt])
+  // Partial unique on (shipmentId, code) among non-resolved DEADLINE_* codes --
+  // a Postgres partial index isn't expressible as @@unique here, enforced by
+  // migration 20260905130000 instead. Prevents concurrent
+  // recomputeShipmentDeadlines calls from creating duplicate exception rows.
 }
 
 // Provenance record for "who confirmed this field's value, and when" --
