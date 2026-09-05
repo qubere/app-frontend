@@ -149,12 +149,34 @@ describe("clamdHttpScan", () => {
     }
   });
 
-  it("returns INFECTED on the clamav-rest plaintext 'Everything ok : false'", async () => {
+  it("returns INFECTED on the clamav-rest plaintext 'Everything ok : false' with signature", async () => {
     vi.stubGlobal("fetch", async () => fakeResponse("Everything ok : false : Eicar-Test-Signature FOUND\n"));
     try {
       const r = await clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 });
       expect(r.status).toBe("INFECTED");
       expect(r.detail).toBe("Eicar-Test-Signature");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("throws when clamav-rest returns 'Everything ok : false' without a signature (daemon error)", async () => {
+    vi.stubGlobal("fetch", async () => fakeResponse("Everything ok : false\n"));
+    try {
+      await expect(
+        clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 })
+      ).rejects.toThrow("clamd scanner error");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("throws when clamav-rest returns 'Clamd responding: false'", async () => {
+    vi.stubGlobal("fetch", async () => fakeResponse("Clamd responding: false\n"));
+    try {
+      await expect(
+        clamdHttpScan(Buffer.from("x"), { baseUrl: "https://clamav.example.com", timeoutMs: 5000 })
+      ).rejects.toThrow("clamd daemon not responding");
     } finally {
       vi.unstubAllGlobals();
     }

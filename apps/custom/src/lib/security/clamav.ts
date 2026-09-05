@@ -177,20 +177,35 @@ export async function clamdHttpScan(
 
   const text = await res.text();
   const lower = text.toLowerCase();
+
+  if (lower.includes("clamd responding: false") || lower.includes("clamd not responding")) {
+    throw new Error("clamd daemon not responding");
+  }
+
   // clamav-rest plaintext mode (ajilaag/lokori): "Everything ok : true" == no virus.
   if (lower.includes("everything ok : true") || lower.includes("everything ok: true")) {
     return { status: "CLEAN", scanner: "clamav" };
   }
   if (lower.includes("everything ok : false") || lower.includes("everything ok: false")) {
-    const sig = text.match(/([A-Za-z0-9_.\-]+)\s+FOUND/i)?.[1];
-    return { status: "INFECTED", detail: sig ?? "ClamAV virus detected", scanner: "clamav" };
+    const sig =
+      text.match(/([A-Za-z0-9_.\-]+)\s+FOUND/i)?.[1] ??
+      text.match(/found:\s*([A-Za-z0-9_.\-]+)/i)?.[1];
+    if (sig) {
+      return { status: "INFECTED", detail: sig, scanner: "clamav" };
+    }
+    // "Everything ok : false" without a virus signature indicates a clamd daemon/socket error.
+    throw new Error(`clamd scanner error: ${text.trim() || "Everything ok : false"}`);
   }
 
-  let body: { status?: string; virus?: string } = {};
+  let body: { status?: string; virus?: string; error?: string } = {};
   try {
-    body = JSON.parse(text) as { status?: string; virus?: string };
+    body = JSON.parse(text) as { status?: string; virus?: string; error?: string };
   } catch {
     throw new Error(`clamd HTTP scanner returned unparseable body: ${text.slice(0, 100)}`);
+  }
+
+  if (body.error) {
+    throw new Error(`clamd HTTP scanner error: ${body.error}`);
   }
 
   const status = (body.status ?? "").toUpperCase();
@@ -198,7 +213,7 @@ export async function clamdHttpScan(
     return { status: "CLEAN", scanner: "clamav" };
   }
   if (status === "FOUND" || status === "INFECTED") {
-    return { status: "INFECTED", detail: body.virus ?? "unknown", scanner: "clamav" };
+    return { status: "INFECTED", detail: body.virus ?? "ClamAV virus detected", scanner: "clamav" };
   }
   throw new Error(`clamd HTTP scanner unexpected status: ${body.status ?? "<missing>"}`);
 }
