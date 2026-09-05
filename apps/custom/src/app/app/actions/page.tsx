@@ -69,12 +69,14 @@ export default async function ActionsPage(props: {
   } else if (scope === "unassigned") {
     scopeWhere = { assignedToUserId: null };
   } else if (scope === "team") {
-    const myTeams = await db.accountTeamMembership.findMany({
-      where: { userId: context.userId },
-      select: { teamId: true },
-    });
     const teammates = await db.accountTeamMembership.findMany({
-      where: { teamId: { in: myTeams.map((t) => t.teamId) } },
+      where: {
+        team: {
+          members: {
+            some: { userId: context.userId },
+          },
+        },
+      },
       select: { userId: true },
     });
     scopeWhere = { assignedToUserId: { in: Array.from(new Set(teammates.map((m) => m.userId))) } };

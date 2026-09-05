@@ -272,4 +272,22 @@ export const CRON_JOB_DEFINITIONS: CronJobDefinition[] = [
     scheduleLabel: "Hourly",
     trigger: { kind: "http", path: "/api/cron/report-schedules", method: "GET" },
   },
+  {
+    id: "adcvd-monitor",
+    schedulerName: "qubere-adcvd-monitor",
+    name: "AD/CVD Case Status Monitoring",
+    description: "Continuous AD/CVD order monitoring sweep: checks case status changes and stages All-Others company rate determinations for review.",
+    cronExpression: "0 7 * * *",
+    scheduleLabel: "Daily at 07:00 UTC",
+    trigger: { kind: "http", path: "/api/cron/adcvd-monitor", method: "GET" },
+  },
+  {
+    id: "bond-monitor",
+    schedulerName: "qubere-bond-monitor",
+    name: "Customs Bond Sufficiency & Expiration Monitoring",
+    description: "Sweeps continuous customs bonds for upcoming expiration and insufficient bond amounts relative to projected duties, taxes, and fees.",
+    cronExpression: "30 7 * * *",
+    scheduleLabel: "Daily at 07:30 UTC",
+    trigger: { kind: "http", path: "/api/cron/bond-monitor", method: "GET" },
+  },
 ];

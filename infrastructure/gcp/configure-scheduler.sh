@@ -103,6 +103,8 @@ upsert_job qubere-license-alerts "0 8 * * *" /api/cron/license-alerts
 upsert_job qubere-inbound-email-processing "*/5 * * * *" /api/cron/inbound-email-processing
 upsert_job qubere-report-cleanup "30 4 * * *" /api/cron/report-cleanup
 upsert_job qubere-report-schedules "0 * * * *" /api/cron/report-schedules
+upsert_job qubere-adcvd-monitor "0 7 * * *" /api/cron/adcvd-monitor
+upsert_job qubere-bond-monitor "30 7 * * *" /api/cron/bond-monitor
 # END GENERATED JOBS
 
 BACKUP_JOB="${BACKUP_JOB:-qubere-db-backup-demo}"
