@@ -36,9 +36,14 @@ export class BisCslIngestionService {
       url.searchParams.set("offset", String(offset));
       if (apiKey) url.searchParams.set("api_key", apiKey);
 
-      const res = await fetch(url.toString(), {
-        headers: { Accept: "application/json" },
-      });
+      let res: Response;
+      try {
+        res = await fetch(url.toString(), {
+          headers: { Accept: "application/json" },
+        });
+      } catch (fetchErr: any) {
+        throw new Error(`Failed to fetch Trade.gov CSL API (${url.hostname}): ${fetchErr.message || fetchErr}`);
+      }
 
       if (!res.ok) {
         throw new Error(`Trade.gov API returned HTTP ${res.status}: ${res.statusText}. Ingestion aborted.`);

@@ -661,6 +661,7 @@ export class ReconciliationEngine {
     // Log reconciliation event
     await ShipmentEventBus.logEvent({
       shipmentId,
+      accountId,
       eventType: "RECONCILIATION_REQUESTED",
       payload: {
         triggerSource,

@@ -42,7 +42,16 @@ export class ShipmentEventBus {
         },
       });
 
-      const accountId = params.accountId || (params.payload?.accountId as string);
+      let accountId = params.accountId || (params.payload?.accountId as string);
+      if (!accountId && params.shipmentId) {
+        const shipment = await client.shipment.findUnique({
+          where: { id: params.shipmentId },
+          select: { accountId: true },
+        });
+        if (shipment) {
+          accountId = shipment.accountId;
+        }
+      }
       if (!accountId) {
         throw new Error(`accountId is required for durable shipment event '${params.eventType}'.`);
       }
