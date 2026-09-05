@@ -4,7 +4,7 @@ import { hasPermission } from "@/lib/auth";
 import { db as prisma } from "@qubere/db";
 import { runStatementReconciliation } from "@/modules/billing/funds/reconciliationService";
 
-export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
+export const GET = withAuthenticatedRoute(async ({ ctx }) => {
   if (!(await hasPermission("billing.funds.view"))) {
     return NextResponse.json({ error: "Forbidden: billing.funds.view required" }, { status: 403 });
   }
@@ -41,4 +41,4 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Reconciliation failed" }, { status: 400 });
   }
-});
+}, { write: true });

@@ -22,4 +22,4 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, pa
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to authorize disbursement" }, { status: 422 });
   }
-});
+}, { write: true });

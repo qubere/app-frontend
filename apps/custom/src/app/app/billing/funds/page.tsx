@@ -1,9 +1,8 @@
 import React from "react";
-import Link from "next/link";
 import { getAccountContext, hasPermission } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { listDisbursementAccounts, calculateDaysOfCoverAndExposure } from "@/modules/billing/funds/accountService";
-import { Wallet, ShieldAlert, ArrowUpRight, Plus, RefreshCw, AlertTriangle } from "lucide-react";
+import { Wallet, ShieldAlert, ArrowUpRight, AlertTriangle } from "lucide-react";
 import { ClientFundsTable } from "./ClientFundsTable";
 
 export default async function ClientFundsPage() {

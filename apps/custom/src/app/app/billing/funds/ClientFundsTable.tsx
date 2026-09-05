@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Search, Filter, RefreshCw, Plus, Wallet, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Search, RefreshCw, Plus, CheckCircle2 } from "lucide-react";
 import { createDisbursementAccountAction } from "./actions";
 
 interface AccountWithMetrics {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { withAuthenticatedRoute } from "@/lib/api/auth-guards";
 import { hasPermission } from "@/lib/auth";
 import { db as prisma } from "@qubere/db";
@@ -37,15 +38,25 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
     return NextResponse.json({ createdCount: created.length, replenishments: created });
   }
 
-  if (!body.disbursementAccountId || !body.amount) {
-    return NextResponse.json({ error: "disbursementAccountId and positive amount are required" }, { status: 400 });
+  if (!body.disbursementAccountId || !body.amount || !(Number(body.amount) > 0)) {
+    return NextResponse.json({ error: "disbursementAccountId and a positive amount are required" }, { status: 400 });
+  }
+
+  // Never trust a caller-supplied disbursementAccountId — confirm it belongs to
+  // this tenant before writing a row that references it.
+  const disbursementAccount = await prisma.dutyDisbursementAccount.findFirst({
+    where: { id: body.disbursementAccountId, accountId: ctx.accountId },
+    select: { id: true },
+  });
+  if (!disbursementAccount) {
+    return NextResponse.json({ error: "Disbursement account not found" }, { status: 404 });
   }
 
   const reqObj = await prisma.replenishmentRequest.create({
     data: {
       accountId: ctx.accountId,
-      disbursementAccountId: body.disbursementAccountId,
-      amount: new (require("@prisma/client").Prisma.Decimal)(body.amount),
+      disbursementAccountId: disbursementAccount.id,
+      amount: new Prisma.Decimal(body.amount),
       dueDate: body.dueDate ? new Date(body.dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       note: body.note || undefined,
       createdById: ctx.userId,
@@ -53,4 +64,4 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   });
 
   return NextResponse.json({ replenishment: reqObj }, { status: 201 });
-});
+}, { write: true });

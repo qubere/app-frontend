@@ -39,4 +39,4 @@ export const PATCH = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, p
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to update account" }, { status: 400 });
   }
-});
+}, { write: true });

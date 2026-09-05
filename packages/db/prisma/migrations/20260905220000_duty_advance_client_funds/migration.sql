@@ -243,3 +243,164 @@ CREATE UNIQUE INDEX IF NOT EXISTS "DutyPaymentSetup_accountId_clientId_importerI
 CREATE INDEX IF NOT EXISTS "DutyPaymentSetup_accountId_idx" ON "DutyPaymentSetup"("accountId");
 
 CREATE INDEX IF NOT EXISTS "ShipmentCharge_disbursementId_idx" ON "ShipmentCharge"("disbursementId");
+
+
+-- Foreign keys (mirror the @relation onDelete rules in schema.prisma).
+-- Each is individually guarded so the migration stays replay-safe against a
+-- database where an earlier partial apply already created some of them.
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursementAccount" ADD CONSTRAINT "DutyDisbursementAccount_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursementAccount" ADD CONSTRAINT "DutyDisbursementAccount_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursementAccount" ADD CONSTRAINT "DutyDisbursementAccount_importerId_fkey" FOREIGN KEY ("importerId") REFERENCES "ImporterOfRecord"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "FundsLedgerEntry" ADD CONSTRAINT "FundsLedgerEntry_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "FundsLedgerEntry" ADD CONSTRAINT "FundsLedgerEntry_disbursementAccountId_fkey" FOREIGN KEY ("disbursementAccountId") REFERENCES "DutyDisbursementAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "FundsLedgerEntry" ADD CONSTRAINT "FundsLedgerEntry_disbursementId_fkey" FOREIGN KEY ("disbursementId") REFERENCES "DutyDisbursement"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "FundsLedgerEntry" ADD CONSTRAINT "FundsLedgerEntry_replenishmentRequestId_fkey" FOREIGN KEY ("replenishmentRequestId") REFERENCES "ReplenishmentRequest"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "FundsLedgerEntry" ADD CONSTRAINT "FundsLedgerEntry_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "FundsLedgerEntry" ADD CONSTRAINT "FundsLedgerEntry_reversesEntryId_fkey" FOREIGN KEY ("reversesEntryId") REFERENCES "FundsLedgerEntry"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_disbursementAccountId_fkey" FOREIGN KEY ("disbursementAccountId") REFERENCES "DutyDisbursementAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_importerId_fkey" FOREIGN KEY ("importerId") REFERENCES "ImporterOfRecord"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_filingId_fkey" FOREIGN KEY ("filingId") REFERENCES "CustomsFiling"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_statementRecordId_fkey" FOREIGN KEY ("statementRecordId") REFERENCES "StatementRecord"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursement" ADD CONSTRAINT "DutyDisbursement_recoveryChargeId_fkey" FOREIGN KEY ("recoveryChargeId") REFERENCES "ShipmentCharge"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyDisbursementFeeLine" ADD CONSTRAINT "DutyDisbursementFeeLine_disbursementId_fkey" FOREIGN KEY ("disbursementId") REFERENCES "DutyDisbursement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "ReplenishmentRequest" ADD CONSTRAINT "ReplenishmentRequest_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "ReplenishmentRequest" ADD CONSTRAINT "ReplenishmentRequest_disbursementAccountId_fkey" FOREIGN KEY ("disbursementAccountId") REFERENCES "DutyDisbursementAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "StatementReconciliation" ADD CONSTRAINT "StatementReconciliation_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "StatementReconciliation" ADD CONSTRAINT "StatementReconciliation_statementRecordId_fkey" FOREIGN KEY ("statementRecordId") REFERENCES "StatementRecord"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "StatementReconciliationLine" ADD CONSTRAINT "StatementReconciliationLine_reconciliationId_fkey" FOREIGN KEY ("reconciliationId") REFERENCES "StatementReconciliation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyPaymentSetup" ADD CONSTRAINT "DutyPaymentSetup_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyPaymentSetup" ADD CONSTRAINT "DutyPaymentSetup_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "DutyPaymentSetup" ADD CONSTRAINT "DutyPaymentSetup_importerId_fkey" FOREIGN KEY ("importerId") REFERENCES "ImporterOfRecord"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;

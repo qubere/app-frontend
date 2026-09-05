@@ -7,11 +7,11 @@ export const GET = withPortalAccount(async (_ctx, req: Request) => {
   if (s.error) return s.error;
 
   return portalData(s.ctx, async () => {
-    const clientId = s.clientIds?.[0];
-    if (!clientId) return NextResponse.json({ replenishments: [] }, noStore);
+    const clientIds = s.clientIds ?? [];
+    if (clientIds.length === 0) return NextResponse.json({ replenishments: [] }, noStore);
 
     const account = await prisma.dutyDisbursementAccount.findFirst({
-      where: { accountId: s.ctx.accountId, clientId },
+      where: { accountId: s.ctx.accountId, clientId: { in: clientIds } },
     });
 
     if (!account) return NextResponse.json({ replenishments: [] }, noStore);
@@ -30,7 +30,7 @@ export const GET = withPortalAccount(async (_ctx, req: Request) => {
       routingNumber: "021000021",
       accountNumberEnding: "9876",
       swiftCode: "FNCBUS33XXX",
-      referencePattern: `ADVANCE-${clientId.slice(-6).toUpperCase()}`,
+      referencePattern: `ADVANCE-${account.clientId.slice(-6).toUpperCase()}`,
     };
 
     return NextResponse.json({ replenishments, wireInstructions }, noStore);

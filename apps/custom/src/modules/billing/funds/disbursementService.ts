@@ -1,6 +1,7 @@
 import { db as prisma } from "@qubere/db";
 import { Prisma } from "@prisma/client";
 import { postLedgerEntry, reverseLedgerEntry } from "./ledgerService";
+import { getOrCreateDisbursementAccount } from "./accountService";
 
 export interface CreateEstimatedDisbursementInput {
   accountId: string;
@@ -33,25 +34,14 @@ export async function createOrUpdateEstimatedDisbursement(input: CreateEstimated
 
   const estimatedTotal = dutyAmount + taxAmount + feeAmount;
 
-  // Find or create DutyDisbursementAccount
-  let account = await prisma.dutyDisbursementAccount.findFirst({
-    where: { accountId, clientId, importerId: importerId || null },
+  // Find or create the DutyDisbursementAccount (also validates client/importer
+  // tenancy).
+  const account = await getOrCreateDisbursementAccount({
+    accountId,
+    clientId,
+    importerId: importerId || null,
+    currency,
   });
-
-  if (!account) {
-    account = await prisma.dutyDisbursementAccount.create({
-      data: {
-        accountId,
-        clientId,
-        importerId: importerId || null,
-        currency,
-        currentBalance: new Prisma.Decimal(0),
-        minimumBalance: new Prisma.Decimal(0),
-        targetBalance: new Prisma.Decimal(0),
-        status: "ACTIVE",
-      },
-    });
-  }
 
   // If filingId exists, search existing
   if (filingId) {
@@ -243,7 +233,7 @@ export async function markDisbursementPaid(input: {
   }
 
   // Post negative ledger entry inside transaction
-  const ledgerEntry = await postLedgerEntry({
+  await postLedgerEntry({
     accountId,
     disbursementAccountId: disbursement.disbursementAccountId,
     type: "DUTY_DISBURSEMENT",

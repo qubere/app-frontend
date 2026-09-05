@@ -63,4 +63,4 @@ export const POST = withAuthenticatedRoute(async ({ req, ctx }) => {
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to create disbursement" }, { status: 400 });
   }
-});
+}, { write: true });

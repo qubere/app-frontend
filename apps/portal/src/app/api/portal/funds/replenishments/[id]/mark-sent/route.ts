@@ -10,9 +10,12 @@ export const POST = withPortalAccount(async (_ctx, req: Request, { params }: { p
   const body = await req.json().catch(() => ({}));
 
   return portalData(s.ctx, async () => {
-    const clientId = s.clientIds?.[0];
+    const clientIds = s.clientIds ?? [];
+    if (clientIds.length === 0) {
+      return NextResponse.json({ error: "No client scoped" }, { status: 400, ...noStore });
+    }
     const account = await prisma.dutyDisbursementAccount.findFirst({
-      where: { accountId: s.ctx.accountId, clientId },
+      where: { accountId: s.ctx.accountId, clientId: { in: clientIds } },
     });
 
     if (!account) {
@@ -27,6 +30,13 @@ export const POST = withPortalAccount(async (_ctx, req: Request, { params }: { p
       return NextResponse.json({ error: "Request not found" }, { status: 404, ...noStore });
     }
 
+    if (!["REQUESTED", "NOTIFIED", "OVERDUE"].includes(requestObj.state)) {
+      return NextResponse.json(
+        { error: `Replenishment request is already ${requestObj.state.toLowerCase()}` },
+        { status: 409, ...noStore }
+      );
+    }
+
     // Create a pending notification exception for staff confirmation
     await prisma.billingException.create({
       data: {
@@ -35,7 +45,7 @@ export const POST = withPortalAccount(async (_ctx, req: Request, { params }: { p
         severity: "INFO",
         status: "OPEN",
         description: `Importer marked payment sent for replenishment ${id}: Ref ${body.referenceNo || "N/A"}, Amount $${Number(body.amount || requestObj.amount).toFixed(2)}.`,
-        clientId,
+        clientId: account.clientId,
       },
     });
 

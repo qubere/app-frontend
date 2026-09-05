@@ -29,4 +29,4 @@ export const POST = withAuthenticatedRoute<{ id: string; lineId: string }>(async
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Line resolution failed" }, { status: 400 });
   }
-});
+}, { write: true });

@@ -31,4 +31,4 @@ export const POST = withAuthenticatedRoute<{ entryId: string }>(async ({ req, ct
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to process reversal" }, { status: 400 });
   }
-});
+}, { write: true });

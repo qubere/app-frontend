@@ -6,7 +6,7 @@ import { getDisbursementAccount, calculateDaysOfCoverAndExposure } from "@/modul
 import { getAccountLedger } from "@/modules/billing/funds/ledgerService";
 import { db as prisma } from "@qubere/db";
 import { AccountDetailTabs } from "./AccountDetailTabs";
-import { ArrowLeft, Wallet, ShieldAlert, AlertTriangle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export default async function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAccountContext();

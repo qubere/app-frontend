@@ -34,4 +34,4 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, pa
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to process refund" }, { status: 400 });
   }
-});
+}, { write: true });

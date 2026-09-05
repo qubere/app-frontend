@@ -54,7 +54,14 @@ export async function runStatementReconciliation(input: RunReconciliationInput) 
   let unmatchedCount = 0;
   let totalVarianceAmount = 0;
 
+  // Disbursements that were matched to at least one statement line (used below to
+  // flag locally-paid disbursements that never appeared on the statement).
   const matchedDisbursementIds = new Set<string>();
+  // A single disbursement carries one fee line per accounting class code, so the
+  // dedup key has to be (disbursement, classCode) — keying on disbursement id
+  // alone would let the first statement line consume the whole disbursement and
+  // spuriously flag every other class code on it as MISSING_IN_QUBERE.
+  const consumedFeeLineKeys = new Set<string>();
 
   // Compare StatementFeeLines against DutyDisbursements
   for (const sLine of statement.statementFeeLines) {
@@ -64,7 +71,7 @@ export async function runStatementReconciliation(input: RunReconciliationInput) 
     // Find candidate disbursement fee line
     const match = disbursements.find((d) => {
       const flMatch = d.feeLines.find((fl) => fl.accountingClassCode === classCode);
-      return flMatch && !matchedDisbursementIds.has(d.id);
+      return flMatch && !consumedFeeLineKeys.has(`${d.id}::${classCode}`);
     });
 
     if (!match) {
@@ -94,6 +101,7 @@ export async function runStatementReconciliation(input: RunReconciliationInput) 
       totalVarianceAmount += sAmt;
     } else {
       matchedDisbursementIds.add(match.id);
+      consumedFeeLineKeys.add(`${match.id}::${classCode}`);
       const flMatch = match.feeLines.find((fl) => fl.accountingClassCode === classCode);
       const qAmt = flMatch
         ? Number(flMatch.actualAmount || flMatch.estimatedAmount || 0)

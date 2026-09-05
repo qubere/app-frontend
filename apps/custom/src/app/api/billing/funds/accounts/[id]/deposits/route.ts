@@ -32,18 +32,27 @@ export const POST = withAuthenticatedRoute<{ id: string }>(async ({ req, ctx, pa
       idempotencyKey,
     });
 
+    // The deposit itself is already committed above and is the source of truth
+    // for the balance — a failure to close out the replenishment request (e.g.
+    // the amount is under the satisfy threshold) must not turn the recorded
+    // deposit into a 400. Surface it as a non-fatal warning instead.
+    let replenishmentWarning: string | undefined;
     if (body.replenishmentRequestId) {
-      await satisfyReplenishmentRequest({
-        accountId: ctx.accountId,
-        requestId: body.replenishmentRequestId,
-        depositId: entry.id,
-        depositAmount: Number(body.amount),
-        createdById: ctx.userId,
-      });
+      try {
+        await satisfyReplenishmentRequest({
+          accountId: ctx.accountId,
+          requestId: body.replenishmentRequestId,
+          depositId: entry.id,
+          depositAmount: Number(body.amount),
+          createdById: ctx.userId,
+        });
+      } catch (satisfyErr: any) {
+        replenishmentWarning = satisfyErr?.message || "Replenishment request could not be marked satisfied";
+      }
     }
 
-    return NextResponse.json({ entry }, { status: 201 });
+    return NextResponse.json({ entry, replenishmentWarning }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to record deposit" }, { status: 400 });
   }
-});
+}, { write: true });

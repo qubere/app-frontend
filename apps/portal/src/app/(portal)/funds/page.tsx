@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Wallet, Download, CheckCircle2, AlertTriangle, Send, ShieldCheck } from "lucide-react";
+import { Download, CheckCircle2, AlertTriangle, Send, ShieldCheck } from "lucide-react";
 
 interface SummaryData {
   account: {
@@ -100,7 +100,7 @@ export default function PortalDutyFundsPage() {
           setReplenishments(d.replenishments || []);
         }
       }
-    } catch (err) {
+    } catch {
       alert("Failed to submit payment notice");
     }
   };

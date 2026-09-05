@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Prisma } from "@prisma/client";
 import { getOrCreateDisbursementAccount } from "../src/modules/billing/funds/accountService";
 import { postLedgerEntry } from "../src/modules/billing/funds/ledgerService";
 import { createOrUpdateEstimatedDisbursement, authorizeDisbursement, markDisbursementPaid } from "../src/modules/billing/funds/disbursementService";
@@ -63,11 +64,11 @@ describe("CBP Statement Reconciliation Flow", () => {
         accountId,
         statementType: "daily",
         statementNumber: `STMT-${Date.now()}`,
-        totalDuty: new (require("@prisma/client").Prisma.Decimal)(500),
-        totalFee: new (require("@prisma/client").Prisma.Decimal)(50),
-        totalAmount: new (require("@prisma/client").Prisma.Decimal)(550),
+        totalDuty: new Prisma.Decimal(500),
+        totalFee: new Prisma.Decimal(50),
+        totalAmount: new Prisma.Decimal(550),
         statementFeeLines: {
-          create: [{ accountingClassCode: "501", amount: new (require("@prisma/client").Prisma.Decimal)(50), sequence: 1 }],
+          create: [{ accountingClassCode: "501", amount: new Prisma.Decimal(50), sequence: 1 }],
         },
       },
     });
@@ -81,5 +82,70 @@ describe("CBP Statement Reconciliation Flow", () => {
     expect(recon.status).toBe("CLOSED");
     expect(recon.matchedCount).toBe(1);
     expect(recon.varianceCount).toBe(0);
+  });
+
+  it("matches every fee line on a multi-class disbursement (not just the first)", async () => {
+    const accountId = `acc_recon_multi_${Date.now()}`;
+    const clientId = `cli_recon_multi_${Date.now()}`;
+    await setupAccountAndClient(accountId, clientId);
+
+    const acc = await getOrCreateDisbursementAccount({ accountId, clientId });
+    await postLedgerEntry({
+      accountId,
+      disbursementAccountId: acc.id,
+      type: "ADVANCE_DEPOSIT",
+      amount: 5000,
+      description: "Deposit",
+      idempotencyKey: `dep-recon-multi-${Date.now()}`,
+    });
+
+    const disb = await createOrUpdateEstimatedDisbursement({
+      accountId,
+      clientId,
+      entryNumber: "444-2222222-2",
+      dutyAmount: 1000,
+      taxAmount: 0,
+      feeAmount: 60,
+      feeLines: [
+        { accountingClassCode: "501", estimatedAmount: 25 },
+        { accountingClassCode: "499", estimatedAmount: 35 },
+      ],
+    });
+    await authorizeDisbursement({ accountId, disbursementId: disb.id });
+    await markDisbursementPaid({
+      accountId,
+      disbursementId: disb.id,
+      paidAt: new Date(),
+      actualAmount: 1060,
+      feeBreakdown: [
+        { accountingClassCode: "501", actualAmount: 25 },
+        { accountingClassCode: "499", actualAmount: 35 },
+      ],
+      idempotencyKey: `recon-multi-paid-${disb.id}`,
+    });
+
+    const statement = await prisma.statementRecord.create({
+      data: {
+        accountId,
+        statementType: "daily",
+        statementNumber: `STMT-MULTI-${Date.now()}`,
+        totalFee: new Prisma.Decimal(60),
+        totalAmount: new Prisma.Decimal(60),
+        statementFeeLines: {
+          create: [
+            { accountingClassCode: "501", amount: new Prisma.Decimal(25), sequence: 1 },
+            { accountingClassCode: "499", amount: new Prisma.Decimal(35), sequence: 2 },
+          ],
+        },
+      },
+    });
+
+    const recon = await runStatementReconciliation({ accountId, statementRecordId: statement.id });
+
+    // Before the fix the second class code fell through to MISSING_IN_QUBERE.
+    expect(recon.matchedCount).toBe(2);
+    expect(recon.varianceCount).toBe(0);
+    expect(recon.unmatchedCount).toBe(0);
+    expect(recon.status).toBe("CLOSED");
   });
 });

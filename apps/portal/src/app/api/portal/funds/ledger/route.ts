@@ -7,11 +7,11 @@ export const GET = withPortalAccount(async (_ctx, req: Request) => {
   if (s.error) return s.error;
 
   return portalData(s.ctx, async () => {
-    const clientId = s.clientIds?.[0];
-    if (!clientId) return NextResponse.json({ entries: [] }, noStore);
+    const clientIds = s.clientIds ?? [];
+    if (clientIds.length === 0) return NextResponse.json({ entries: [] }, noStore);
 
     const account = await prisma.dutyDisbursementAccount.findFirst({
-      where: { accountId: s.ctx.accountId, clientId },
+      where: { accountId: s.ctx.accountId, clientId: { in: clientIds } },
     });
 
     if (!account) return NextResponse.json({ entries: [] }, noStore);

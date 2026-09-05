@@ -21,6 +21,15 @@ export async function getOrCreateDisbursementAccount(input: CreateAccountInput) 
     throw new Error("autoAuthorizeUnder must be >= 0");
   }
 
+  // The clientId (and importerId) arrive from request bodies — confirm they
+  // belong to this tenant before creating an account that references them.
+  const client = await prisma.client.findFirst({ where: { id: clientId, accountId }, select: { id: true } });
+  if (!client) throw new Error(`Client ${clientId} not found`);
+  if (importerId) {
+    const importer = await prisma.importerOfRecord.findFirst({ where: { id: importerId, accountId }, select: { id: true } });
+    if (!importer) throw new Error(`ImporterOfRecord ${importerId} not found`);
+  }
+
   const existing = await prisma.dutyDisbursementAccount.findFirst({
     where: {
       accountId,
