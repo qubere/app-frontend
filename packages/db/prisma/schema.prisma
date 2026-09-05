@@ -2761,7 +2761,7 @@ model DrawbackClaim {
   claimType                           String    @default("unused_merchandise") // manufacturing | unused_merchandise | rejected_merchandise
   status                              String    @default("Draft") // Draft | Filed | Accepted | Paid
   totalRefundClaimed                  Decimal
-  cbpClaimNumber                      String?   @default("DBK-2026-9901")
+  cbpClaimNumber                      String?
   version                             Int       @default(1)
   filedAt                             DateTime?
   paidAt                              DateTime?
@@ -2998,10 +2998,10 @@ model Bond {
   accountId                   String
   account                     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   bondType                    String    @default("continuous") // continuous | single_transaction
-  suretyName                  String    @default("Roanoke Insurance Group")
+  suretyName                  String
   suretyCode                  String?
   bondNumber                  String    @unique
-  bondAmount                  Decimal   @default(50000.0)
+  bondAmount                  Decimal
   activityCode                String? // CBPF 301 activity code A–T
   effectiveDate               DateTime  @default(now())
   expirationDate              DateTime?
