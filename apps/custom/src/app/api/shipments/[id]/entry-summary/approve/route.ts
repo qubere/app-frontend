@@ -20,7 +20,8 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     const shipmentId = parsedParams.data.id;
 
     const bodyResult = await parseAndValidateBody(req, bodySchema, requestId);
-    const body = "data" in bodyResult ? bodyResult.data : { version: undefined };
+    if ("response" in bodyResult) return bodyResult.response;
+    const body = bodyResult.data;
 
     let version = body.version;
     if (!version) {
@@ -45,6 +46,9 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
       }
       if (err instanceof DraftLocked) {
         return buildErrorResponse(409, "DRAFT_LOCKED", err.message, undefined, requestId);
+      }
+      if (err instanceof Error && err.message.includes("not found")) {
+        return buildErrorResponse(404, "DRAFT_NOT_FOUND", err.message, undefined, requestId);
       }
       throw err;
     }

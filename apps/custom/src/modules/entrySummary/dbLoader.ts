@@ -44,8 +44,8 @@ import type {
   ShipmentLineItemLike,
   ShipmentPartyLike,
 } from "./assembler";
-import type { Rules7501Context } from "./validation/rules7501";
-import { BOND_USABLE_STATUSES } from "./validation/rules7501";
+import { BOND_USABLE_STATUSES, type Rules7501Context } from "./validation/rules7501";
+import { normalizeEntryType } from "@/modules/filing/entryType";
 
 export interface LoadedShipmentForEntrySummary {
   assemblerInput: Omit<AssemblerInput, "filerProfile" | "clock">;
@@ -204,12 +204,14 @@ export async function loadShipmentForEntrySummary(
 
   const powerOfAttorney = shipment.importerOfRecord?.powersOfAttorney[0] ?? null;
 
+  const entryTypeCode = normalizeEntryType(shipment.entryType);
+
   const rulesContext: Rules7501Context = {
-    entryDate: null,
+    entryDate: shipment.arrivalDate ?? shipment.estimatedArrival ?? new Date(),
     bond: bondRecord
       ? { status: bondRecord.status, expirationDate: bondRecord.expirationDate }
       : null,
-    bondRequired: shipment.entryType != null,
+    bondRequired: entryTypeCode != null ? !["11", "12"].includes(entryTypeCode) : false,
     powerOfAttorney: powerOfAttorney
       ? { status: powerOfAttorney.status, expirationDate: powerOfAttorney.expirationDate, revokedAt: powerOfAttorney.revokedAt }
       : null,

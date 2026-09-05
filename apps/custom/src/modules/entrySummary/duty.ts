@@ -95,7 +95,9 @@ export function bindDutyFields(input: DutyBindingInput): EntrySummaryDraft {
 
   const newLines: EntrySummaryLine[] = draft.lines.map((line) => {
     const enteredValue = line.fields.B32A_ENTERED_VALUE.value ?? new Decimal(0);
-    totalEnteredValue = totalEnteredValue.plus(enteredValue);
+    if (line.parentLineNumber == null) {
+      totalEnteredValue = totalEnteredValue.plus(enteredValue);
+    }
 
     const rateInput: DutyRateInput | undefined = lineDutyInputs[line.lineNumber];
     const stack = calculateDutyStack(lineToTariffInput(line), rateInput ?? null);
