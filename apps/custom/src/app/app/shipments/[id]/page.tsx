@@ -601,6 +601,20 @@ export default async function ShipmentWorkspacePage(props: {
   let extractedNotifyParty = "";
   let extractedMethodOfDespatch = "";
 
+  // Gemini's freeform `keyValuePairs` labels vary by document (casing,
+  // spacing, punctuation, and even which synonym the document itself uses),
+  // so each field is matched against a list of label spellings with
+  // whitespace/punctuation/case ignored, instead of one brittle exact string.
+  const normalizeLabel = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const kvLookup = (kv: Record<string, unknown>, ...labels: string[]): string => {
+    const byNormalizedLabel = new Map(Object.entries(kv).map(([k, v]) => [normalizeLabel(k), v]));
+    for (const label of labels) {
+      const v = byNormalizedLabel.get(normalizeLabel(label));
+      if (v) return String(v);
+    }
+    return "";
+  };
+
   for (const doc of documents) {
     if (!doc.extractedJson) continue;
     try {
@@ -612,17 +626,26 @@ export default async function ShipmentWorkspacePage(props: {
       // false-flagged fields as "not extracted" that were sitting in
       // tradeMetadata all along (findings #3, #5).
       const tm = parsed.tradeMetadata || {};
-      extractedVessel = extractedVessel || tm.vesselName || kv["Vessel"] || "";
-      extractedVoyage = extractedVoyage || tm.voyageNumber || kv["Voyage Number"] || "";
-      extractedBookingRef = extractedBookingRef || tm.transportDocumentNumber || kv["Booking Reference"] || "";
-      extractedPortOfLoading = extractedPortOfLoading || tm.portOfLoading || kv["Port of Loading"] || "";
-      extractedPortOfDischarge = extractedPortOfDischarge || tm.portOfDischarge || kv["Port of Discharge"] || "";
-      extractedContainerNo = extractedContainerNo || tm.containerNumber || kv["Container No"] || "";
-      extractedGrossWeight = extractedGrossWeight || tm.totalWeight || kv["Gross Weight"] || "";
-      extractedShipper = extractedShipper || tm.exporterName || tm.shipper || kv["Shipper"] || "";
-      extractedConsignee = extractedConsignee || tm.importerName || tm.consignee || kv["Consignee"] || "";
-      extractedNotifyParty = extractedNotifyParty || tm.notifyParty || kv["Notify Party"] || "";
-      if (kv["Method of Despatch"]) extractedMethodOfDespatch = kv["Method of Despatch"];
+      extractedVessel = extractedVessel || tm.vesselName || kvLookup(kv, "Vessel", "Vessel/Aircraft") || "";
+      extractedVoyage = extractedVoyage || tm.voyageNumber || kvLookup(kv, "Voyage Number") || "";
+      extractedBookingRef =
+        extractedBookingRef ||
+        tm.transportDocumentNumber ||
+        tm.bookingNumber ||
+        kvLookup(kv, "Booking Reference", "Booking Number", "BOL / AWB Number", "BOL Number", "AWB Number") ||
+        "";
+      extractedPortOfLoading = extractedPortOfLoading || tm.portOfLoading || kvLookup(kv, "Port of Loading") || "";
+      extractedPortOfDischarge = extractedPortOfDischarge || tm.portOfDischarge || kvLookup(kv, "Port of Discharge") || "";
+      extractedContainerNo = extractedContainerNo || tm.containerNumber || kvLookup(kv, "Container No", "Container Number") || "";
+      extractedGrossWeight = extractedGrossWeight || tm.totalWeight || kvLookup(kv, "Gross Weight") || "";
+      extractedShipper = extractedShipper || tm.exporterName || tm.shipper || kvLookup(kv, "Shipper") || "";
+      extractedConsignee = extractedConsignee || tm.importerName || tm.consignee || kvLookup(kv, "Consignee") || "";
+      extractedNotifyParty = extractedNotifyParty || tm.notifyParty || kvLookup(kv, "Notify Party") || "";
+      extractedMethodOfDespatch =
+        extractedMethodOfDespatch ||
+        tm.modeOfTransport ||
+        kvLookup(kv, "Method of Despatch", "Mode of Transport", "Mode of Transportation") ||
+        "";
     } catch { }
   }
 

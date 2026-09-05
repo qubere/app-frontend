@@ -114,7 +114,7 @@ export const CANONICAL_FIELD_REGISTRY_V1: Record<string, CanonicalFieldDefinitio
     description: "Commercial or seller invoice identifier.",
     dataType: "STRING",
     cardinality: "ONE",
-    aliases: ["invoiceNumber", "invNo", "invoiceNo", "commercialInvoiceNo"],
+    aliases: ["invoiceNumber", "invNo", "invoiceNo", "commercialInvoiceNo", "exportInvoiceNumber"],
     sourceDocumentTypes: ["COMMERCIAL_INVOICE", "PACKING_LIST", "ENTRY_SUMMARY"],
     products: ["CUSTOMS", "TMS"],
     jurisdictions: ["*"],

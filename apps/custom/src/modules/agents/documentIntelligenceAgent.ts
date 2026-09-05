@@ -339,6 +339,8 @@ export interface TradeMetadata {
   containerNumber?: string | null;
   carrier?: string | null;
   transportDocumentNumber?: string | null;
+  /** e.g. "Ocean/FCL", "Air", "Truck" — however the document states the shipping method. */
+  modeOfTransport?: string | null;
   totalWeight?: string | null;
   netWeight?: string | null;
   totalQuantity?: string | null;
@@ -548,6 +550,7 @@ const intelligenceSchema: Schema = {
         containerNumber: { type: Type.STRING, nullable: true },
         carrier: { type: Type.STRING, nullable: true },
         transportDocumentNumber: { type: Type.STRING, nullable: true },
+        modeOfTransport: { type: Type.STRING, nullable: true },
         totalWeight: { type: Type.STRING, nullable: true },
         netWeight: { type: Type.STRING, nullable: true },
         totalQuantity: { type: Type.STRING, nullable: true },
@@ -836,6 +839,7 @@ INSTRUCTIONS:
 2. Populate 'tradeMetadata' with explicit fields visible on the document. Map shipper to exporterName, consignee/importerOfRecord to importerName, countryOfOrigin to originCountry, totalValue to invoiceSubtotal, etc.
    - Keep the three country fields distinct: 'countryOfOrigin' = where the goods were made; 'countryOfExport' = the country the shipment departs from; 'countryOfDestination' = the country the goods are shipped TO (the import/customs destination). Never copy one into another — leave a field null if the document does not state it.
    - On a Bill of Lading / transport document also capture 'vesselName', 'voyageNumber', 'containerNumber', 'portOfLoading', 'portOfDischarge', 'onBoardDate', 'transportDocumentNumber' (the B/L number), and 'cartonCount' (total package/carton count) if the document states one. On a Packing List also capture 'totalWeight' (gross), 'netWeight', 'cartonCount', 'totalQuantity'.
+   - Capture 'modeOfTransport' (e.g. "Ocean/FCL", "Air", "Truck") from whatever field states the shipping method, on any document type -- it may be labeled "Method of Despatch", "Mode of Transport", "Mode of Transportation", or similar.
    - If the document states the intended/final end-use of the goods (an End-Use Statement/Certificate, or an end-use/intended-use clause in invoice or PO remarks), copy that declaration verbatim into 'endUseStatement'. Copy any other free-text remarks/narrative not covered by another field into 'documentNarrativeText'. Leave both null if no such text is present.
 3. Extract all itemized tabular line items into 'lineItems'.
 4. Determine primaryAgency and secondaryAgencies in 'filingDetermination' based on actual content (e.g. CBP default, FDA for food/medical, EPA for chemicals).
@@ -1161,6 +1165,7 @@ ${scopedInstructions}`;
             containerNumber: tradeMetadata?.containerNumber || null,
             carrier: tradeMetadata?.carrier || null,
             transportDocumentNumber: tradeMetadata?.transportDocumentNumber || null,
+            modeOfTransport: tradeMetadata?.modeOfTransport || null,
             totalWeight: tradeMetadata?.totalWeight || null,
             netWeight: tradeMetadata?.netWeight || null,
             totalQuantity: tradeMetadata?.totalQuantity || null,
