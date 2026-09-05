@@ -31,6 +31,70 @@ export function isGrossWeightBelowNetWeight(grossRaw: string, netRaw: string): b
   return Number(grossKg) < Number(netKg);
 }
 
+export interface SealNumberFact {
+  documentId: string | null;
+  /** Fact.id, used only to key claims that carry no documentId. */
+  id: string;
+  /** Comma-joined seal numbers, as recorded by ContainerReconciler.recordFacts. */
+  value: string;
+}
+
+export interface ContainerSealMismatch {
+  normalizedContainerNumber: string;
+  /** One entry per distinct document, latest claim only. */
+  claims: SealNumberFact[];
+}
+
+/**
+ * Finds containers whose seal numbers disagree across documents. Fact rows
+ * are the source: ContainerReconciler only ever fills a currently-empty
+ * ShipmentContainer field (see containerPackageReconciler.ts), so a second
+ * document's conflicting seal numbers for the same container never reach the
+ * curated record and would otherwise go unnoticed.
+ *
+ * `facts` should already be every `container.<num>.sealNumbers` Fact for the
+ * shipment, newest first (so the first claim seen per document is its latest).
+ */
+export function findContainerSealMismatches(
+  facts: readonly { field: string; value: string; documentId: string | null; id: string }[]
+): ContainerSealMismatch[] {
+  const byContainer = new Map<string, typeof facts[number][]>();
+  for (const fact of facts) {
+    const match = fact.field.match(/^container\.(.+)\.sealNumbers$/);
+    if (!match) continue;
+    const normalizedContainer = applyNorm(match[1], "container_id");
+    if (!normalizedContainer) continue;
+    const list = byContainer.get(normalizedContainer) ?? [];
+    list.push(fact);
+    byContainer.set(normalizedContainer, list);
+  }
+
+  const normalizeSealSet = (raw: string): string =>
+    raw
+      .split(",")
+      .map((s) => applyNorm(s, "container_id"))
+      .filter((s): s is string => !!s)
+      .sort()
+      .join("|");
+
+  const mismatches: ContainerSealMismatch[] = [];
+  for (const [normalizedContainerNumber, containerFacts] of byContainer) {
+    const latestByDoc = new Map<string, typeof facts[number]>();
+    for (const fact of containerFacts) {
+      const key = fact.documentId ?? `no-document:${fact.id}`;
+      if (!latestByDoc.has(key)) latestByDoc.set(key, fact);
+    }
+    const claims = [...latestByDoc.values()];
+    if (claims.length < 2) continue;
+
+    const sealKeys = new Set(claims.map((fact) => normalizeSealSet(fact.value)));
+    if (sealKeys.size <= 1) continue;
+
+    mismatches.push({ normalizedContainerNumber, claims });
+  }
+  return mismatches;
+}
+
 interface ComplianceAuditFinding {
   ruleId: string;
   category:
@@ -350,6 +414,68 @@ export class ReconciliationEngine {
 
     for (const existing of activeGrossLtNetExceptions) {
       if (existing.code && !currentGrossLtNetCodes.has(existing.code)) {
+        await db.exceptionItem.update({
+          where: { id: existing.id },
+          data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },
+        });
+        exceptionsResolved++;
+      }
+    }
+
+    // 0b. Cross-document container seal-number mismatch. ContainerReconciler
+    // (containerPackageReconciler.ts) only ever fills a currently-empty
+    // ShipmentContainer field, so a second document's conflicting seal
+    // numbers for the same container are silently discarded from the
+    // curated record. Fact rows retain every document's claim regardless, so
+    // compare those directly instead of trusting the merged record.
+    const CONTAINER_SEAL_CODE_PREFIX = "CONTAINER_SEAL_MISMATCH:";
+    const activeContainerSealExceptions = activeExceptions.filter((e) => e.code?.startsWith(CONTAINER_SEAL_CODE_PREFIX));
+    const currentContainerSealCodes = new Set<string>();
+
+    const sealFacts = await db.fact.findMany({
+      where: {
+        shipmentId: shipment.id,
+        AND: [{ field: { startsWith: "container." } }, { field: { endsWith: ".sealNumbers" } }],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const sealMismatches = findContainerSealMismatches(sealFacts);
+
+    for (const { normalizedContainerNumber, claims } of sealMismatches) {
+      const code = `${CONTAINER_SEAL_CODE_PREFIX}${normalizedContainerNumber}`;
+      currentContainerSealCodes.add(code);
+      const existingEx = await db.exceptionItem.findFirst({
+        where: { shipmentId: shipment.id, accountId: shipment.accountId, code, status: { not: "Resolved" } },
+        select: { id: true },
+      });
+      if (!existingEx) {
+        const claimSummary = claims
+          .map((fact) => {
+            const doc = fact.documentId ? shipment.documents.find((d) => d.id === fact.documentId) : null;
+            return `${doc?.docType ?? "Unknown document"}: "${fact.value}"`;
+          })
+          .join("; ");
+        await createExceptionItem({
+          shipmentId: shipment.id,
+          accountId: shipment.accountId,
+          code,
+          fieldKey: "sealNumbers",
+          category: "CONFLICT",
+          type: "data_mismatch",
+          severity: "Medium",
+          blocking: false,
+          description: `Container ${normalizedContainerNumber}: seal numbers disagree across documents (${claimSummary}).`,
+          requiredAction: "Review the source documents and confirm the correct seal number(s) for this container.",
+          sourceAgent: "Reconciliation Engine",
+        });
+        exceptionsGenerated++;
+        affectedAgentsSet.add("RECONCILIATION_ENGINE");
+      }
+    }
+
+    for (const existing of activeContainerSealExceptions) {
+      if (existing.code && !currentContainerSealCodes.has(existing.code)) {
         await db.exceptionItem.update({
           where: { id: existing.id },
           data: { status: "Resolved", resolvedAt: new Date(), resolvedBy: triggerSource },

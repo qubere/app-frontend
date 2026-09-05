@@ -484,6 +484,7 @@ export const FIELD_INVENTORY: FieldInventoryItem[] = [
     isDriftKey: false,
     scope: "document",
     extractionSchemaKeys: ["booking_number"],
+    reconciliationKey: "bookingNumber",
     docTypes: [SHIP_INSTR, FWD_INSTR, BOOKING_REQ],
   },
   {
