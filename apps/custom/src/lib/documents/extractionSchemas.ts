@@ -281,6 +281,27 @@ const SCHEMAS: Partial<Record<DocumentType, ExtractionSchema>> = {
 };
 
 /**
+ * One version number per document type's field list, bumped whenever that
+ * type's `_SCHEMA` array above gains, loses, or renames a field. A type
+ * absent here has never changed since it was added -- version 1.
+ *
+ * This is a traceability signal only: it does not gate anything today. It
+ * lets a future consumer (e.g. a re-review sweep after a schema change) ask
+ * "which extractions were reviewed against an older field list" without
+ * guessing from a git log.
+ */
+const SCHEMA_VERSIONS: Partial<Record<DocumentType, number>> = {};
+
+/**
+ * The field-list version currently in force for a document type. Types with
+ * no entry in `SCHEMA_VERSIONS` are version 1 (their original definition).
+ */
+export function getSchemaVersion(docType: DocumentType | null | undefined): number {
+  if (!docType) return 1;
+  return SCHEMA_VERSIONS[docType] ?? 1;
+}
+
+/**
  * Returns the extraction schema for a given document type.
  * Returns an empty array for OTHER or unknown types.
  */

@@ -11,7 +11,7 @@ import {
   checkReviewPermission,
   permissionDeniedMessage,
 } from "@/modules/decisions/reviewAuthority";
-import { buildReviewFields } from "@/modules/documents/extractionReview";
+import { buildReviewFields, isDocumentFullyReviewed } from "@/modules/documents/extractionReview";
 import { RECONCILIATION_RULES } from "@/lib/reconciliation/reconciliationRules";
 import { z } from "zod";
 
@@ -146,6 +146,12 @@ function serialize(
   requestId: string,
   reconciliationIssues: Awaited<ReturnType<typeof getReconciliationIssuesForDocument>> = []
 ) {
+  const reviewFields = buildReviewFields(
+    doc.extractionFields,
+    doc.documentType,
+    conflictedFieldNamesFor(reconciliationIssues)
+  );
+
   return {
     documentId: doc.id,
     shipmentId: doc.shipmentId,
@@ -161,13 +167,13 @@ function serialize(
     // C-3: Grouped, bbox-parsed, history-tracked fields for the document viewer.
     // Each entry is the current authoritative reading for one field name, with
     // BoundingBox parsed from the stored JSON and full correction history attached.
-    reviewFields: buildReviewFields(
-      doc.extractionFields,
-      doc.documentType,
-      conflictedFieldNamesFor(reconciliationIssues)
-    ),
+    reviewFields,
     // Cross-document conflicts open against this document (see plan gap #1).
     reconciliationIssues,
+    // §48: this document needs no further reviewer action -- no missing/
+    // conflicting/low-confidence field and no open cross-document conflict.
+    // Distinct from ShipmentDocument.status, which tracks receipt, not review.
+    reviewComplete: isDocumentFullyReviewed(reviewFields, reconciliationIssues.length > 0),
     requestId,
   };
 }

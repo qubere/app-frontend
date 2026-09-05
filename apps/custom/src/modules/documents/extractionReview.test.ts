@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildReviewFields,
   evaluateFieldVerification,
+  isDocumentFullyReviewed,
   sortByReviewPriority,
   summarizeVerification,
   type RawExtractionField,
@@ -304,5 +305,27 @@ describe("summarizeVerification", () => {
       HUMAN_CORRECTED: 0,
       REJECTED: 0,
     });
+  });
+});
+
+describe("isDocumentFullyReviewed", () => {
+  it("is true when every field is settled and no reconciliation issue is open", () => {
+    const fields = [reviewField({ verification: "AUTO_VERIFIED" }), reviewField({ verification: "NOT_APPLICABLE" })];
+    expect(isDocumentFullyReviewed(fields, false)).toBe(true);
+  });
+
+  it("is false when a field is missing, conflicting, or needs review", () => {
+    expect(isDocumentFullyReviewed([reviewField({ verification: "MISSING_REQUIRED" })], false)).toBe(false);
+    expect(isDocumentFullyReviewed([reviewField({ verification: "CONFLICT" })], false)).toBe(false);
+    expect(isDocumentFullyReviewed([reviewField({ verification: "NEEDS_REVIEW" })], false)).toBe(false);
+  });
+
+  it("is false when a cross-document reconciliation issue is still open, even with every field settled", () => {
+    const fields = [reviewField({ verification: "AUTO_VERIFIED" })];
+    expect(isDocumentFullyReviewed(fields, true)).toBe(false);
+  });
+
+  it("is true for a document with no fields at all and no open issues", () => {
+    expect(isDocumentFullyReviewed([], false)).toBe(true);
   });
 });

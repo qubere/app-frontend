@@ -304,6 +304,18 @@ export function summarizeVerification(fields: ReviewField[]): Record<FieldVerifi
   return counts;
 }
 
+/**
+ * Whether this document is done: no field still needs a reviewer's attention
+ * (missing, conflicting, or low-confidence) and no cross-document conflict
+ * referencing it is still open. Reconciliation state is passed in rather than
+ * queried here, keeping this module database-free.
+ */
+export function isDocumentFullyReviewed(fields: ReviewField[], hasOpenReconciliationIssues: boolean): boolean {
+  if (hasOpenReconciliationIssues) return false;
+  const counts = summarizeVerification(fields);
+  return counts.MISSING_REQUIRED === 0 && counts.CONFLICT === 0 && counts.NEEDS_REVIEW === 0;
+}
+
 /** Pages that actually carry a located field, so navigation cannot offer empty pages. */
 export function pagesWithFields(fields: ReviewField[]): number[] {
   const pages = new Set<number>();

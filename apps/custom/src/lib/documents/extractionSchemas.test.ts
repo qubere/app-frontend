@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getFieldExpectation, buildSchemaScopedInstructions } from "./extractionSchemas";
+import { getFieldExpectation, buildSchemaScopedInstructions, getSchemaVersion } from "./extractionSchemas";
 
 describe("getFieldExpectation", () => {
   it("returns EXPECTED for a required field on its document type", () => {
@@ -25,6 +25,17 @@ describe("getFieldExpectation", () => {
   it("returns NOT_EXPECTED for a null/undefined document type", () => {
     expect(getFieldExpectation(null, "invoice_number")).toBe("NOT_EXPECTED");
     expect(getFieldExpectation(undefined, "invoice_number")).toBe("NOT_EXPECTED");
+  });
+});
+
+describe("getSchemaVersion", () => {
+  it("returns 1 for a document type whose field list has never changed", () => {
+    expect(getSchemaVersion("COMMERCIAL_INVOICE")).toBe(1);
+  });
+
+  it("returns 1 for a null/undefined document type", () => {
+    expect(getSchemaVersion(null)).toBe(1);
+    expect(getSchemaVersion(undefined)).toBe(1);
   });
 });
 

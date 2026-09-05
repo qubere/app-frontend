@@ -40,6 +40,7 @@ export const NOTIFICATION_TYPE_META: Record<string, NotificationTypeMeta> = {
   WORK_ASSIGNED: { category: "OPERATIONS", label: "Assigned to you" },
   WORK_ESCALATED: { category: "OPERATIONS", label: "Escalated" },
   EXCEPTION_ASSIGNED: { category: "OPERATIONS", label: "Assigned to you" },
+  EXCEPTION_CREATED: { category: "OPERATIONS", label: "New exception" },
   // Producers wired in a later phase -- listed now so routing is ready:
   LICENSE_EXPIRING: { category: "LICENSING", label: "License" },
   LICENSE_UTILIZATION: { category: "LICENSING", label: "License" },

@@ -44,6 +44,30 @@ export async function createExceptionItem(data: ExceptionItemInput) {
     console.error("[createExceptionItem] work-item init failed:", err);
   }
 
+  // Notify whoever the exception landed on (auto-routed above, or already set
+  // by the caller) as soon as it exists -- previously the owner only heard
+  // about it later, on manual reassignment or SLA breach.
+  try {
+    const routed = await db.exceptionItem.findUnique({
+      where: { id: item.id },
+      select: { assignedToUserId: true },
+    });
+    if (routed?.assignedToUserId) {
+      const { notify } = await import("@/modules/notifications/notify");
+      await notify({
+        accountId: item.accountId,
+        userId: routed.assignedToUserId,
+        type: "EXCEPTION_CREATED",
+        message: `New exception: "${item.description}"`,
+        entityType: "ExceptionItem",
+        entityId: item.id,
+        dedupe: true,
+      });
+    }
+  } catch (err) {
+    console.error("[createExceptionItem] notification failed:", err);
+  }
+
   deliverWebhookEvent(item.accountId, "exception.created", {
     exceptionId: item.id,
     shipmentId: item.shipmentId ?? null,
