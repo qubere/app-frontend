@@ -1,6 +1,31 @@
 {
   "version": 1,
-  "sourceCommit": null,
-  "articles": [],
+  "sourceCommit": "e6f9160cd560f36a08c1c73e91ed7ce255719a27",
+  "articles": [
+    {
+      "id": "embargo-screening",
+      "moduleId": "compliance",
+      "question": "How do I run and interpret an embargo screening?",
+      "answer": "Perform an on-demand Quick embargo check from the shipment workspace or review automatic findings in the Full compliance audit panel. Shipments with non-US destinations automatically skip US-only partner government agency screening and regulatory deadline rules.",
+      "steps": [
+        "Go to Shipments and open the relevant shipment workspace.",
+        "Locate the Compliance Checks panel on the shipment page.",
+        "Click Quick embargo check to execute an on-demand screening of shipment origin, destination, and private rules.",
+        "Check the Full compliance audit panel to review line-item findings generated automatically on document upload or edit."
+      ],
+      "href": "/app/shipments",
+      "actionLabel": "View Shipments",
+      "tags": [
+        "embargo",
+        "country",
+        "clear",
+        "hit",
+        "skipped",
+        "error",
+        "screening",
+        "compliance audit"
+      ]
+    }
+  ],
   "archivedArticleIds": []
 }
