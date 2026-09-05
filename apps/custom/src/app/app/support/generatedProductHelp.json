@@ -1,6 +1,123 @@
 {
   "version": 1,
-  "sourceCommit": null,
-  "articles": [],
+  "sourceCommit": "b5ba537763ee0b61d61a5e543b783cdb51fa481e",
+  "articles": [
+    {
+      "id": "cbp-reconciliation-program",
+      "moduleId": "post-entry",
+      "question": "How do I flag entries and submit a CBP reconciliation entry?",
+      "answer": "To participate in the 21-month CBP Reconciliation Program, navigate to CBP Reconciliation under Post-Entry, flag eligible entry summaries for reconcilable issues, and bundle flagged entries into a reconciliation entry for transmission.",
+      "steps": [
+        "Navigate to Post-Entry and select CBP Reconciliation Program (/app/post-entry/cbp-reconciliation).",
+        "Fill out the Flag an entry form with the entry number, entry date, estimated duty difference, and reconcilable issues (Value, Classification, FTA Eligibility, or Section 9802).",
+        "Click Flag entry to place the entry in the tracked reconciliation queue.",
+        "Enter a reconciliation entry number and click Prepare to bundle all open flagged entries.",
+        "Click Transmit on the prepared entry card to transmit the reconciliation header to CBP."
+      ],
+      "href": "/app/post-entry/cbp-reconciliation",
+      "actionLabel": "Open CBP Reconciliation",
+      "tags": [
+        "reconciliation",
+        "cbp reconciliation",
+        "flag entry",
+        "fta",
+        "9802",
+        "value true up"
+      ]
+    },
+    {
+      "id": "duty-statement-payments",
+      "moduleId": "post-entry",
+      "question": "How do I track and manage ACH duty statement payments?",
+      "answer": "To manage ACH payment instructions for CBP statements, navigate to Duty Statement Payments under Post-Entry, create payment instructions for daily or Periodic Monthly Statements, monitor payment deadlines, and update status lifecycle states.",
+      "steps": [
+        "Navigate to Post-Entry and select Duty Statement Payments (/app/post-entry/duty-payments).",
+        "Click New instruction and enter the statement number, statement type (Daily or Periodic Monthly), statement date, filer code, and duty and fee amounts.",
+        "Optionally provide the payer account number to retain the last four digits for reference.",
+        "Click Create to record the ACH payment instruction and calculate payment deadlines.",
+        "Use action buttons on each statement card to advance status through scheduled, submitted, settled, or failed states."
+      ],
+      "href": "/app/post-entry/duty-payments",
+      "actionLabel": "Manage Duty Payments",
+      "tags": [
+        "duty payments",
+        "ach",
+        "periodic monthly statement",
+        "pms",
+        "daily statement",
+        "cbp payment"
+      ]
+    },
+    {
+      "id": "filer-admin-health",
+      "moduleId": "post-entry",
+      "question": "How do I monitor ABI fatal error rates and filer compliance health?",
+      "answer": "To monitor your account's 19 CFR 143 Subpart A broker compliance, navigate to Filer Admin Health under Post-Entry to inspect your ABI fatal error rate percentage, connection status, credential state, and export history.",
+      "steps": [
+        "Navigate to Post-Entry and select Filer Admin Health (/app/post-entry/filer-health).",
+        "Review the configured filer code, filer name, and overall health compliance indicator.",
+        "Check the fatal error rate metric calculated against the 19 CFR 143.5 5% maximum threshold over the active monitoring window.",
+        "Verify connection status, ABI environment details, credential status, and transport protocols.",
+        "Inspect recent export errors to identify and troubleshoot fatal ABI transmission issues."
+      ],
+      "href": "/app/post-entry/filer-health",
+      "actionLabel": "Check Filer Health",
+      "tags": [
+        "filer health",
+        "abi",
+        "19 cfr 143",
+        "fatal error rate",
+        "filer code",
+        "broker compliance"
+      ]
+    },
+    {
+      "id": "importer-security-filing",
+      "moduleId": "post-entry",
+      "question": "How do I prepare and submit an Importer Security Filing (ISF 10+2)?",
+      "answer": "To prepare and submit an ISF 10+2 filing, navigate to ISF 10+2 Filings under Post-Entry, create a draft with shipment and bill of lading details, complete missing 10+2 elements, and submit the filing before the 24-hour pre-lading deadline.",
+      "steps": [
+        "Navigate to Post-Entry and select ISF 10+2 Filings (/app/post-entry/isf).",
+        "Click New ISF draft and enter the shipment ID, bill of lading number, and lading date and time.",
+        "Complete the 10+2 element fields including seller, buyer, importer of record, consignee, manufacturer, ship-to party, country of origin, and HTS code.",
+        "Review filing deadlines, missing element warnings, bond coverage, and estimated penalty exposure on the draft card.",
+        "Click Submit ISF to transmit the declaration to CBP."
+      ],
+      "href": "/app/post-entry/isf",
+      "actionLabel": "Manage ISF Filings",
+      "tags": [
+        "isf",
+        "10+2",
+        "ocean freight",
+        "lading date",
+        "importer security filing",
+        "post-entry"
+      ],
+      "popular": true
+    },
+    {
+      "id": "prior-disclosure",
+      "moduleId": "post-entry",
+      "question": "How do I calculate penalty exposure and submit a prior disclosure?",
+      "answer": "To model Section 1592 penalty exposure and record a prior disclosure, navigate to Prior Disclosure under Post-Entry, enter violation details, calculate statutory exposure based on culpability level, and log the tender record.",
+      "steps": [
+        "Navigate to Post-Entry and select Prior Disclosure (§1592) (/app/post-entry/prior-disclosure).",
+        "Enter the entry number or filing ID, violation description, actual duty loss, and entered value.",
+        "Select the culpability level (Negligence, Gross Negligence, or Fraud) and set the interest rate and years elapsed.",
+        "Preview the calculated statutory penalty exposure capped under 19 U.S.C. § 1592.",
+        "Click Save disclosure record to log the prior disclosure tender and track status through acknowledgment and closure."
+      ],
+      "href": "/app/post-entry/prior-disclosure",
+      "actionLabel": "View Prior Disclosures",
+      "tags": [
+        "prior disclosure",
+        "1592",
+        "penalty",
+        "culpability",
+        "duty loss",
+        "tender"
+      ]
+    }
+  ],
   "archivedArticleIds": []
 }
