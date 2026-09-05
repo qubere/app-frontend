@@ -45,7 +45,7 @@ export function calculatePmsPaymentDeadline(statementMonthYear: string): Date {
   const targetYear = month === 11 ? year + 1 : year;
 
   let workingDays = 0;
-  let currentDay = new Date(targetYear, targetMonth, 1);
+  const currentDay = new Date(targetYear, targetMonth, 1);
 
   while (workingDays < 15) {
     const dayOfWeek = currentDay.getDay();

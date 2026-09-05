@@ -54,7 +54,7 @@ export function ShipmentWorkspaceClient({
   crossDomainRisks: _crossDomainRisks,
   healthSnapshot,
   financials,
-  lifecycleStatus: _lifecycleStatus,
+  lifecycleStatus,
 }: {
   shipment: any;
   journey: any[];
@@ -322,7 +322,7 @@ export function ShipmentWorkspaceClient({
           />
 
           <ShipmentLifecycleRibbon
-            status={lifecycleStatus ?? _lifecycleStatus}
+            status={lifecycleStatus}
             shipmentId={shipment.id}
           />
 

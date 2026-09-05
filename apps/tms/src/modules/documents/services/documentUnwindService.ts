@@ -28,7 +28,7 @@ export async function unwindDocumentContributions(input: {
 
   if (orders.length > 0) {
     await db.transportationOrder.deleteMany({
-      where: { id: { in: orders.map((o) => o.id) } },
+      where: { accountId: input.accountId, id: { in: orders.map((o) => o.id) } },
     });
   }
 
