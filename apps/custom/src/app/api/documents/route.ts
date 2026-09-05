@@ -4,7 +4,9 @@ import { db, withAccountIdContext } from "@/lib/db";
 import {
   buildDocumentOrderBy,
   buildDocumentWhere,
+  buildDocumentWhereWithOptions,
   documentSkip,
+  isParsedSearchCompatibilityError,
   parseDocumentQuery,
 } from "@/modules/documents/documentQuery";
 
@@ -19,10 +21,10 @@ export async function GET(req: Request) {
       const query = parseDocumentQuery(new URL(req.url).searchParams);
       const where = buildDocumentWhere(ctx.accountId, query);
 
-      const [total, documents] = await Promise.all([
-        db.shipmentDocument.count({ where }),
+      const loadPage = (whereFilter: typeof where) => Promise.all([
+        db.shipmentDocument.count({ where: whereFilter }),
         db.shipmentDocument.findMany({
-          where,
+          where: whereFilter,
           select: {
             id: true,
             fileName: true,
@@ -37,14 +39,25 @@ export async function GET(req: Request) {
             source: true,
             uploadedByName: true,
             uploadedByEmail: true,
+            uploadedByUserId: true,
             uploadedByType: true,
+            uploadedAt: true,
             channel: true,
             channelMeta: true,
+            assignedToUserId: true,
+            assignedToUser: {
+              select: { firstName: true, lastName: true, email: true },
+            },
+            clientId: true,
+            client: { select: { name: true } },
             shipment: {
               select: {
                 shipmentNumber: true,
                 clientId: true,
                 assignedBrokerId: true,
+                assignedBroker: {
+                  select: { firstName: true, lastName: true, email: true },
+                },
                 status: true,
                 deletedAt: true,
                 client: { select: { name: true } },
@@ -57,6 +70,25 @@ export async function GET(req: Request) {
           take: query.pageSize,
         }),
       ]);
+
+      let pageResult: Awaited<ReturnType<typeof loadPage>>;
+      try {
+        pageResult = await loadPage(where);
+      } catch (error) {
+        // Keep search available during a rolling/local migration. The fallback
+        // still searches persisted extraction fields, raw content, and all
+        // repository metadata; the complete normalized projection joins it as
+        // soon as the schema migration and generated client are current.
+        if (!query.search || !isParsedSearchCompatibilityError(error)) throw error;
+        console.warn(
+          "GET /api/documents: parsedSearchText is unavailable; using legacy parsed-field search until migration 20260904220000_document_parsed_search is applied."
+        );
+        pageResult = await loadPage(
+          buildDocumentWhereWithOptions(ctx.accountId, query, { includeParsedSearchText: false })
+        );
+      }
+
+      const [total, documents] = pageResult;
 
       const documentIds = documents.map((doc) => doc.id);
       const associationCounts =
@@ -82,10 +114,18 @@ export async function GET(req: Request) {
           createdAt: doc.createdAt,
           shipmentId: doc.shipmentId,
           source: doc.source,
+          channel: doc.channel,
+          uploadedByUserId: doc.uploadedByUserId,
+          uploadedByType: doc.uploadedByType,
+          uploadedByName: doc.uploadedByName,
+          uploadedByEmail: doc.uploadedByEmail,
+          uploadedAt: doc.uploadedAt,
+          channelMeta: doc.channelMeta,
           shipmentNumber: doc.shipment?.shipmentNumber ?? null,
-          clientId: doc.shipment?.clientId ?? null,
-          clientName: doc.shipment?.client?.name ?? null,
-          assignedBrokerId: doc.shipment?.assignedBrokerId ?? null,
+          clientId: doc.clientId ?? doc.shipment?.clientId ?? null,
+          clientName: doc.client?.name ?? doc.shipment?.client?.name ?? null,
+          assignedBrokerId: doc.assignedToUserId ?? doc.shipment?.assignedBrokerId ?? null,
+          assignedBroker: doc.assignedToUser ?? doc.shipment?.assignedBroker ?? null,
           shipmentStatus: doc.shipment?.status ?? null,
           shipmentDeleted: Boolean(doc.shipment?.deletedAt),
           extractedFieldCount: doc._count.extractionFields,

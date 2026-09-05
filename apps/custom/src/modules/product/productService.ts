@@ -177,7 +177,20 @@ const DETAIL_INCLUDE = {
   parties: { orderBy: { role: "asc" }, include: { legalEntity: true } },
   countryFacts: { orderBy: [{ factType: "asc" }, { effectiveFrom: "desc" }] },
   classifications: { orderBy: [{ jurisdiction: "asc" }, { effectiveFrom: "desc" }] },
-  evidence: { orderBy: { createdAt: "desc" } },
+  evidence: {
+    orderBy: { createdAt: "desc" },
+    include: {
+      sourceDocument: {
+        select: {
+          id: true,
+          fileName: true,
+          docType: true,
+          shipmentId: true,
+          shipment: { select: { id: true, shipmentNumber: true } },
+        },
+      },
+    },
+  },
   revalidationFlags: { orderBy: { createdAt: "desc" } },
 } satisfies Prisma.ProductInclude;
 

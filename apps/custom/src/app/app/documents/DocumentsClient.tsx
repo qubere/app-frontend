@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -57,6 +57,7 @@ interface ShipmentDocumentItem {
   uploadedByName?: string | null;
   uploadedByEmail?: string | null;
   sourceLabel?: string | null;
+  linkedEntityCount?: number;
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
@@ -96,6 +97,25 @@ interface ApiDocument {
   uploadedByName?: string | null;
   uploadedByEmail?: string | null;
   channelMeta?: any;
+  clientId?: string | null;
+  client?: { id: string; name: string } | null;
+  shipmentId?: string | null;
+  shipmentNumber?: string | null;
+  clientName?: string | null;
+  assignedBrokerId?: string | null;
+  assignedBroker?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email: string;
+  } | null;
+  assignedToUserId?: string | null;
+  assignedToUser?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email: string;
+  } | null;
+  linkedEntityCount?: number;
+  _count?: { associations?: number };
   shipmentCandidates?: Array<{
     id: string;
     confidenceScore: number;
@@ -179,12 +199,13 @@ function buildDocumentItems(
           assignedBrokerName: shp.assignedBroker
             ? `${shp.assignedBroker.firstName ?? ""} ${shp.assignedBroker.lastName ?? ""}`.trim() || shp.assignedBroker.email
             : "Unassigned",
-          clientId: shp.clientId ?? null,
-          clientName: shp.client?.name || "No Client",
+          clientId: d.clientId ?? shp.clientId ?? null,
+          clientName: d.client?.name ?? shp.client?.name ?? "No Client",
           source: d.source ?? "UPLOAD",
           uploadedByName: d.uploadedByName ?? null,
           uploadedByEmail: d.uploadedByEmail ?? null,
           sourceLabel: resolveSourceLabel(d),
+          linkedEntityCount: d._count?.associations ?? d.linkedEntityCount ?? 0,
         });
       });
     }
@@ -207,18 +228,52 @@ function buildDocumentItems(
       confidenceScore: d.confidence ?? null,
       assignedBrokerId: null,
       assignedBrokerName: "Unassigned",
-      clientId: null,
-      clientName: "No Client",
+      clientId: d.clientId ?? null,
+      clientName: d.client?.name ?? d.clientName ?? "No Client",
       unattached: true,
       source: d.source ?? "UPLOAD",
       uploadedByName: d.uploadedByName ?? null,
       uploadedByEmail: d.uploadedByEmail ?? null,
       sourceLabel: resolveSourceLabel(d),
+      linkedEntityCount: d._count?.associations ?? d.linkedEntityCount ?? 0,
       shipmentCandidates: d.shipmentCandidates,
     });
   });
 
   return docs;
+}
+
+function buildRepositoryDocumentItems(apiDocuments: ApiDocument[]): ShipmentDocumentItem[] {
+  return apiDocuments.map((d) => {
+    const assignee = d.assignedToUser ?? d.assignedBroker;
+    return ({
+    id: d.id,
+    name: d.fileName || d.name || "Trade_Document.pdf",
+    type: d.docType || d.type || "Document",
+    docType: d.docType || d.type || "OTHER",
+    documentType: d.documentType ?? null,
+    documentTypeConfidence: d.documentTypeConfidence ?? null,
+    status: d.status || "Received",
+    uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : "Just now",
+    uploadedAtRaw: d.createdAt || "",
+    url: d.fileUrl || d.url || "#",
+    shipmentId: d.shipmentId ?? "",
+    shipmentRef: d.shipmentNumber ?? (d.shipmentId ? d.shipmentId : "Unattached"),
+    confidenceScore: d.confidence ?? null,
+    assignedBrokerId: d.assignedBrokerId ?? null,
+    assignedBrokerName: assignee
+      ? `${assignee.firstName ?? ""} ${assignee.lastName ?? ""}`.trim() || assignee.email
+      : "Unassigned",
+    clientId: d.clientId ?? null,
+    clientName: d.clientName ?? d.client?.name ?? "No Client",
+    unattached: !d.shipmentId,
+    source: d.source ?? "UPLOAD",
+    uploadedByName: d.uploadedByName ?? null,
+    uploadedByEmail: d.uploadedByEmail ?? null,
+    sourceLabel: resolveSourceLabel(d),
+    linkedEntityCount: d.linkedEntityCount ?? 0,
+    });
+  });
 }
 
 const MATCH_METHOD_LABEL: Record<string, string> = {
@@ -387,9 +442,9 @@ export function DocumentsClient({
   const [queueView, setQueueView] = useState<"NEEDS_ACTION" | "ALL" | "QUARANTINE">("NEEDS_ACTION");
   const [quarantineCount, setQuarantineCount] = useState<number>(() => initialQuarantineCount ?? 0);
 
-  // Paginated over the filtered list, matching the shipments workbench: the six
-  // filters and the search all read every document, so limiting the rows on screen
-  // must not limit what they search.
+  // The action queue is filtered locally because its rows arrive with the page.
+  // The full repository is filtered and paginated by /api/documents so search
+  // always evaluates the complete account-scoped document set.
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
   const [page, setPage] = useState(1);
 
@@ -407,6 +462,12 @@ export function DocumentsClient({
   };
 
   const [searchQuery, setSearchQueryValue] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [repositoryDocuments, setRepositoryDocuments] = useState<ShipmentDocumentItem[]>([]);
+  const [repositoryTotal, setRepositoryTotal] = useState(0);
+  const [repositoryError, setRepositoryError] = useState<string | null>(null);
+  const [repositoryRefreshNonce, setRepositoryRefreshNonce] = useState(0);
+  const [linkedEntityType, setLinkedEntityTypeValue] = useState("");
   const [selectedType, setSelectedTypeValue] = useState("ALL");
   const [selectedClientId, setSelectedClientIdValue] = useState("ALL");
   const [selectedShipmentId, setSelectedShipmentIdValue] = useState("ALL");
@@ -499,6 +560,10 @@ export function DocumentsClient({
     setPage(1);
     setSelectedStatusValue(value);
   };
+  const setLinkedEntityType: typeof setLinkedEntityTypeValue = (value) => {
+    setPage(1);
+    setLinkedEntityTypeValue(value);
+  };
   const setSelectedUserIds: typeof setSelectedUserIdsValue = (value) => {
     setPage(1);
     setSelectedUserIdsValue(value);
@@ -540,9 +605,13 @@ export function DocumentsClient({
                   assignedBrokerName: shp.assignedBroker
                     ? `${shp.assignedBroker.firstName ?? ""} ${shp.assignedBroker.lastName ?? ""}`.trim() || shp.assignedBroker.email
                     : "Unassigned",
-                  clientId: shp.clientId ?? null,
-                  clientName: shp.client?.name || "No Client",
+                  clientId: d.clientId ?? shp.clientId ?? null,
+                  clientName: d.client?.name ?? shp.client?.name ?? "No Client",
                   source: d.source ?? "UPLOAD",
+                  uploadedByName: d.uploadedByName ?? null,
+                  uploadedByEmail: d.uploadedByEmail ?? null,
+                  sourceLabel: resolveSourceLabel(d),
+                  linkedEntityCount: d._count?.associations ?? d.linkedEntityCount ?? 0,
                 });
               });
             }
@@ -573,10 +642,14 @@ export function DocumentsClient({
               confidenceScore: d.confidence ?? null,
               assignedBrokerId: null,
               assignedBrokerName: "Unassigned",
-              clientId: null,
-              clientName: "No Client",
+              clientId: d.clientId ?? null,
+              clientName: d.client?.name ?? d.clientName ?? "No Client",
               unattached: true,
               source: d.source ?? "UPLOAD",
+              uploadedByName: d.uploadedByName ?? null,
+              uploadedByEmail: d.uploadedByEmail ?? null,
+              sourceLabel: resolveSourceLabel(d),
+              linkedEntityCount: d._count?.associations ?? d.linkedEntityCount ?? 0,
               shipmentCandidates: d.shipmentCandidates,
             });
           });
@@ -584,10 +657,74 @@ export function DocumentsClient({
       }
 
       setDocuments(docs);
+      setRepositoryRefreshNonce((nonce) => nonce + 1);
     } catch (err) {
       console.error("Failed to fetch documents:", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadRepositoryDocuments = useCallback(async () => {
+    if (queueView !== "ALL") return;
+
+    setIsLoading(true);
+    setRepositoryError(null);
+    try {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      if (repositoryRefreshNonce > 0) params.set("refresh", String(repositoryRefreshNonce));
+      if (appliedSearch) params.set("search", appliedSearch);
+      if (selectedType !== "ALL") params.set("docType", selectedType);
+      if (selectedClientId !== "ALL") params.set("clientId", selectedClientId);
+      if (selectedShipmentId !== "ALL") params.set("shipmentId", selectedShipmentId);
+      if (selectedStatus !== "ALL") params.set("status", selectedStatus);
+      if (selectedUserIds.length > 0) params.set("assignedBrokerIds", selectedUserIds.join(","));
+      if (linkedEntityType) params.set("linkedEntityType", linkedEntityType);
+      if (sortField === "name") params.set("sort", "fileName");
+      if (sortField === "shipment") params.set("sort", "shipmentNumber");
+      if (sortField === "date") params.set("sort", "createdAt");
+      if (sortField === "name" || sortField === "shipment" || sortField === "date") {
+        params.set("dir", sortDir);
+      }
+
+      const response = await fetch(`/api/documents?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Search failed (${response.status})`);
+      const body = await response.json();
+      setRepositoryDocuments(buildRepositoryDocumentItems(Array.isArray(body.documents) ? body.documents : []));
+      setRepositoryTotal(typeof body.total === "number" ? body.total : 0);
+    } catch (error) {
+      setRepositoryError(error instanceof Error ? error.message : "Unable to search documents.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    appliedSearch,
+    linkedEntityType,
+    page,
+    pageSize,
+    queueView,
+    repositoryRefreshNonce,
+    selectedClientId,
+    selectedShipmentId,
+    selectedStatus,
+    selectedType,
+    selectedUserIds,
+    sortDir,
+    sortField,
+  ]);
+
+  useEffect(() => {
+    void loadRepositoryDocuments();
+  }, [loadRepositoryDocuments]);
+
+  const runRepositorySearch = () => {
+    const nextSearch = searchQuery.trim();
+    setPage(1);
+    setQueueView("ALL");
+    if (nextSearch === appliedSearch) {
+      setRepositoryRefreshNonce((nonce) => nonce + 1);
+    } else {
+      setAppliedSearch(nextSearch);
     }
   };
 
@@ -655,8 +792,11 @@ export function DocumentsClient({
     shipments.forEach((shp) => {
       if (shp.client) map.set(shp.client.id, shp.client.name);
     });
+    documents.forEach((document) => {
+      if (document.clientId) map.set(document.clientId, document.clientName);
+    });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [shipments]);
+  }, [documents, shipments]);
 
   const availableShipments = useMemo(() => {
     return shipments
@@ -668,7 +808,11 @@ export function DocumentsClient({
     return Array.from(new Set(documents.map((d) => d.status).filter(Boolean))).sort();
   }, [documents]);
 
-  const filteredDocs = documents.filter((doc) => {
+  const filteredDocs = (queueView === "ALL" ? repositoryDocuments : documents).filter((doc) => {
+    // The repository API applies every filter before pagination. Re-filtering a
+    // single returned page here would make totals and page counts lie.
+    if (queueView === "ALL") return true;
+
     if (
       queueView === "NEEDS_ACTION" &&
       !doc.unattached &&
@@ -687,32 +831,26 @@ export function DocumentsClient({
       }
     }
 
-    // 2. Search query filter
-    const matchesSearch =
-      doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (doc.shipmentRef && doc.shipmentRef.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    // 3. Document type dropdown filter
+    // 2. Document type dropdown filter
     const matchesType = selectedType === "ALL" || doc.docType === selectedType;
 
-    // 4. Client dropdown filter
+    // 3. Client dropdown filter
     const matchesClient =
       selectedClientId === "ALL" ||
       (selectedClientId === "UNASSIGNED" ? !doc.clientId : doc.clientId === selectedClientId);
 
-    // 5. Shipment dropdown filter
+    // 4. Shipment dropdown filter
     const matchesShipment =
       selectedShipmentId === "ALL" ||
       (selectedShipmentId === "UNATTACHED" ? doc.unattached : doc.shipmentId === selectedShipmentId);
 
-    // 6. Status dropdown filter
+    // 5. Status dropdown filter
     const matchesStatus = selectedStatus === "ALL" || doc.status === selectedStatus;
 
-    return matchesSearch && matchesType && matchesClient && matchesShipment && matchesStatus;
+    return matchesType && matchesClient && matchesShipment && matchesStatus;
   });
 
-  const totalDocs = filteredDocs.length;
+  const totalDocs = queueView === "ALL" ? repositoryTotal : filteredDocs.length;
   const unattachedCount = documents.filter((doc) => doc.unattached).length;
   const classificationCount = documents.filter((doc) => doc.status === "NEEDS_CLASSIFICATION").length;
   const reviewCount = documents.filter((doc) => doc.status === "Review Required").length;
@@ -738,7 +876,9 @@ export function DocumentsClient({
         return doc.uploadedAtRaw ? new Date(doc.uploadedAtRaw).getTime() : 0;
     }
   };
-  const sortedDocs = sortField
+  const sortedDocs = queueView === "ALL"
+    ? filteredDocs
+    : sortField
     ? [...filteredDocs].sort((a, b) => {
         const dir = sortDir === "asc" ? 1 : -1;
         const av = sortValueFor(a, sortField);
@@ -754,7 +894,7 @@ export function DocumentsClient({
     pageSize,
     page
   );
-  const pagedDocs = sortedDocs.slice(start, end);
+  const pagedDocs = queueView === "ALL" ? sortedDocs : sortedDocs.slice(start, end);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
@@ -779,8 +919,8 @@ export function DocumentsClient({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand">Document operations</p>
-            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-ink">Action inbox</h1>
-            <p className="mt-1 text-xs text-ink-muted">Clear quarantined, unattached, and low-confidence documents before browsing the full repository.</p>
+            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-ink">Documents</h1>
+            <p className="mt-1 text-xs text-ink-muted">One workspace for document intake, review, parsed-content search, and linked trade records.</p>
           </div>
           <button onClick={() => setIsUploadModalOpen(true)} className="inline-flex items-center justify-center space-x-2 rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-brand-hover hover:shadow-sm">
             <Plus className="h-3.5 w-3.5" /><span>{t.documents.uploadButton}</span>
@@ -802,7 +942,7 @@ export function DocumentsClient({
             {context.isPlatformAdmin && (
               <QueueTab active={queueView === "QUARANTINE"} label="Quarantine" count={quarantineCount} onClick={() => setQueueView("QUARANTINE")} />
             )}
-            <QueueTab active={queueView === "ALL"} label="All documents" count={documents.length} onClick={() => { setQueueView("ALL"); setPage(1); }} />
+            <QueueTab active={queueView === "ALL"} label="All documents" count={repositoryTotal || documents.length} onClick={() => { setQueueView("ALL"); setPage(1); }} />
           </div>
 
           {/* Assignee filter, merged in next to the tabs rather than living in its own bar. */}
@@ -922,19 +1062,37 @@ export function DocumentsClient({
       {/* Controls Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Search */}
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" />
-          <input
-            type="text"
-            placeholder={t.documents.searchPlaceholder}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-white text-xs text-ink focus:outline-none focus:border-brand transition-colors"
-          />
-        </div>
+        <form
+          className="flex w-full min-w-0 items-center gap-2 sm:max-w-xl"
+          onSubmit={(event) => {
+            event.preventDefault();
+            runRepositorySearch();
+          }}
+          role="search"
+        >
+          <div className="relative min-w-0 flex-1">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" />
+            <input
+              type="search"
+              aria-label="Search all parsed document content"
+              placeholder="Search every parsed field, file, client, or shipment"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-white text-xs text-ink focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 transition-colors"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-xs transition-colors hover:bg-brand-hover disabled:opacity-50"
+          >
+            <Search className="h-3.5 w-3.5" />
+            Search documents
+          </button>
+        </form>
 
         {/* Filter & Refresh */}
-        <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-start sm:justify-end">
           <select
             value={selectedType}
             onChange={(e) => setSelectedType(e.target.value)}
@@ -946,6 +1104,24 @@ export function DocumentsClient({
             <option value="GENERAL_CERTIFICATE_OF_ORIGIN">Certificate of Origin</option>
             <option value="CBP_FORM_7501_ENTRY_SUMMARY">CBP Form 7501</option>
             <option value="PACKING_LIST">Packing List</option>
+          </select>
+
+          <select
+            value={linkedEntityType}
+            onChange={(e) => {
+              setLinkedEntityType(e.target.value);
+              setQueueView("ALL");
+              setPage(1);
+            }}
+            className="px-3 py-2 rounded-xl border border-border bg-white text-xs text-ink focus:outline-none focus:border-brand cursor-pointer font-medium"
+            aria-label="Filter by linked record type"
+          >
+            <option value="">Linked to any record</option>
+            <option value="SHIPMENT">Linked to shipment</option>
+            <option value="PARTY">Linked to party</option>
+            <option value="PRODUCT">Linked to product</option>
+            <option value="LICENSE">Linked to license</option>
+            <option value="FILING">Linked to filing</option>
           </select>
 
           <select
@@ -1000,6 +1176,13 @@ export function DocumentsClient({
         </div>
       </div>
 
+      {appliedSearch && (
+        <p className="-mt-3 text-[11px] text-ink-muted" role="status">
+          Searching the full parsed contents of this account for <span className="font-semibold text-ink">“{appliedSearch}”</span>.
+        </p>
+      )}
+      {repositoryError && <p className="text-xs text-red-700" role="alert">{repositoryError}</p>}
+
       {/* Document Roster Table */}
       <div className="bg-white rounded-3xl border border-border shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -1008,7 +1191,6 @@ export function DocumentsClient({
               <tr>
                 <SortHeader label={t.documents.colName} field="name" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader label={t.documents.colShipment} field="shipment" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
-                <th className="py-3 px-5">Next action</th>
                 <SortHeader label="Client" field="client" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 {isEnterpriseAdmin && <SortHeader label="Owner" field="owner" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />}
                 <SortHeader label={t.documents.colDate} field="date" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
@@ -1018,7 +1200,7 @@ export function DocumentsClient({
             <tbody className="divide-y divide-border">
               {filteredDocs.length === 0 ? (
                 <tr>
-                  <td colSpan={isEnterpriseAdmin ? 7 : 6} className="py-12 text-center text-ink-muted">
+                  <td colSpan={isEnterpriseAdmin ? 6 : 5} className="py-12 text-center text-ink-muted">
                     <FileText className="w-8 h-8 mx-auto text-ink-muted/40 mb-2" />
                     <p className="font-semibold text-xs text-ink">{queueView === "NEEDS_ACTION" ? "Action queue clear" : "No trade documents uploaded yet"}</p>
                     <p className="text-[11px] text-ink-muted mt-1">
@@ -1058,6 +1240,21 @@ export function DocumentsClient({
                             {doc.documentTypeConfidence != null && (
                               <span className="text-[9px] font-mono text-ink-muted">
                                 {Math.round(doc.documentTypeConfidence * 100)}%
+                              </span>
+                            )}
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${
+                              needsClassification || doc.status === "Review Required"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}>
+                              {needsClassification || doc.status === "Review Required"
+                                ? <AlertTriangle className="w-2.5 h-2.5" />
+                                : <CheckCircle2 className="w-2.5 h-2.5" />}
+                              {needsClassification ? "Needs classification" : doc.status || "Received"}
+                            </span>
+                            {(doc.linkedEntityCount ?? 0) > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                                {doc.linkedEntityCount} linked {doc.linkedEntityCount === 1 ? "record" : "records"}
                               </span>
                             )}
                             {doc.sourceLabel && (
@@ -1134,60 +1331,6 @@ export function DocumentsClient({
                       )}
                     </td>
 
-                    {/* Next action drives the row: classify, review, or attach --
-                        clicking it takes the operator straight to that control
-                        instead of just labeling a state they then have to hunt for. */}
-                    <td className="py-3.5 px-5">
-                      {needsClassification ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setClassifyingDocId(classifyingDocId === doc.id ? null : doc.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
-                          >
-                            <AlertTriangle className="w-3 h-3" />
-                            <span>Classify document</span>
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                          {classifyingDocId === doc.id && (
-                            <>
-                              <div className="fixed inset-0 z-10" onClick={() => setClassifyingDocId(null)} />
-                              <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-border rounded-xl shadow-lg z-20 overflow-hidden">
-                                <p className="px-3 py-2 text-[10px] font-bold text-ink-muted uppercase tracking-wide border-b border-border">
-                                  Set document type
-                                </p>
-                                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                                  <button
-                                    key={value}
-                                    type="button"
-                                    onClick={() => classifyDocument(doc.id, value)}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-surface-muted transition-colors cursor-pointer"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ) : doc.status === "Review Required" ? (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDoc(doc)}
-                          className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors cursor-pointer"
-                          title="Open the document to review its extracted data"
-                        >
-                          <AlertTriangle className="w-3 h-3" />
-                          <span>Review document</span>
-                        </button>
-                      ) : (
-                        <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{doc.status || "Received"}{doc.confidenceScore != null ? ` (${doc.confidenceScore}% Conf)` : ""}</span>
-                        </span>
-                      )}
-                    </td>
-
                     <td className="py-3.5 px-5">
                       {doc.clientId ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-brand/10 text-brand">
@@ -1208,6 +1351,47 @@ export function DocumentsClient({
 
                     <td className="py-3.5 px-5 text-right">
                       <div className="inline-flex items-center gap-2">
+                        {needsClassification && (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setClassifyingDocId(classifyingDocId === doc.id ? null : doc.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                            >
+                              Classify
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                            {classifyingDocId === doc.id && (
+                              <>
+                                <div className="fixed inset-0 z-10" onClick={() => setClassifyingDocId(null)} />
+                                <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-border rounded-xl shadow-lg z-20 overflow-hidden text-left">
+                                  <p className="px-3 py-2 text-[10px] font-bold text-ink-muted uppercase tracking-wide border-b border-border">
+                                    Set document type
+                                  </p>
+                                  {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onClick={() => classifyDocument(doc.id, value)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-surface-muted transition-colors cursor-pointer"
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {doc.status === "Review Required" && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc(doc)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                          >
+                            Review
+                          </button>
+                        )}
                         <DocumentProcessingBadge documentId={doc.id} nonce={processingNonce[doc.id] ?? 0} />
                         <button
                           type="button"

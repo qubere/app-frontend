@@ -32,6 +32,11 @@ export const GET = withAuthenticatedRoute(async ({ req, ctx }) => {
       uploadedByType: true,
       channel: true,
       channelMeta: true,
+      clientId: true,
+      client: { select: { id: true, name: true } },
+      assignedToUserId: true,
+      assignedToUser: { select: { firstName: true, lastName: true, email: true } },
+      _count: { select: { associations: { where: { active: true } } } },
       shipmentCandidates: {
         select: {
           id: true,

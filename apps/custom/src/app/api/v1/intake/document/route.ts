@@ -68,6 +68,7 @@ async function ingestOne(accountId: string, item: Item, index: number, apiKeyId:
 
   // Exact caller-supplied reference wins outright.
   let shipmentId: string | null = null;
+  let clientId: string | null = null;
   if (item.shipmentReference) {
     const matched = await db.shipment.findFirst({
       where: {
@@ -75,15 +76,17 @@ async function ingestOne(accountId: string, item: Item, index: number, apiKeyId:
         deletedAt: null,
         OR: [{ shipmentNumber: item.shipmentReference }, { poReference: item.shipmentReference }],
       },
-      select: { id: true },
+      select: { id: true, clientId: true },
     });
     shipmentId = matched?.id ?? null;
+    clientId = matched?.clientId ?? null;
   }
 
   const doc = await db.shipmentDocument.create({
     data: {
       accountId,
       shipmentId,
+      clientId,
       docType: item.documentType ?? "Unknown",
       fileName,
       fileUrl: item.url,
@@ -111,9 +114,13 @@ async function ingestOne(accountId: string, item: Item, index: number, apiKeyId:
         parsedText: null,
       });
       if (result.matchedShipmentId) {
+        const matchedShipment = await db.shipment.findFirst({
+          where: { id: result.matchedShipmentId, accountId, deletedAt: null },
+          select: { clientId: true },
+        });
         await db.shipmentDocument.update({
           where: { id: doc.id },
-          data: { shipmentId: result.matchedShipmentId },
+          data: { shipmentId: result.matchedShipmentId, clientId: matchedShipment?.clientId ?? null },
         });
         shipmentId = result.matchedShipmentId;
       }

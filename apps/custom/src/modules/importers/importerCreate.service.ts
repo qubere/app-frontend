@@ -1,7 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logging/logger";
-import { ensurePartyRole, resolvePartyForCompany } from "@/modules/party/partyResolutionService";
+import {
+  ensurePartyRole,
+  resolvePartyForCompany,
+} from "@/modules/party/partyResolutionService";
+import { recordPendingMatchProposal } from "@/modules/matching/ambiguousMatchService";
 
 export class ImporterCreateError extends Error {
   constructor(
@@ -58,10 +62,15 @@ function normalizedIdentifier(value: string | null | undefined, type: ImporterLe
  * itself enforces -- so this importer's legal entity stays unbridged until a
  * person confirms the match (Phase 2).
  */
+interface ResolvedLegalEntityParty {
+  partyId: string | null;
+  pendingCandidates: { matchStatus: string; candidatesJson: unknown[]; inputPayload: Record<string, unknown> } | null;
+}
+
 async function resolveNewLegalEntityParty(
   input: Pick<CreateImporterInput, "accountId" | "userId" | "requestId">,
   legal: ImporterLegalEntityInput
-): Promise<string | null> {
+): Promise<ResolvedLegalEntityParty> {
   try {
     const taxId = legal.importerNumberType === "CBP_ASSIGNED" ? null : normalizedIdentifier(legal.importerNumber, legal.importerNumberType) || null;
     const resolved = await resolvePartyForCompany(
@@ -80,13 +89,23 @@ async function resolveNewLegalEntityParty(
         },
       }
     );
-    return resolved.outcome === "CANDIDATES" ? null : resolved.partyId;
+    if (resolved.outcome === "CANDIDATES") {
+      return {
+        partyId: null,
+        pendingCandidates: {
+          matchStatus: resolved.status,
+          candidatesJson: resolved.candidates as any,
+          inputPayload: { legalName: legal.legalName.trim(), country: legal.country, taxId },
+        },
+      };
+    }
+    return { partyId: resolved.partyId, pendingCandidates: null };
   } catch (error) {
     logger.warn("importerCreate: resolvePartyForCompany failed, creating the importer without a party link", {
       accountId: input.accountId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    return { partyId: null, pendingCandidates: null };
   }
 }
 
@@ -112,9 +131,12 @@ export async function createImporter(input: CreateImporterInput) {
   // reasoning as resolveNewLegalEntityParty.
   const actor = { accountId: input.accountId, userId: input.userId, requestId: input.requestId ?? null };
   let resolvedPartyId: string | null = null;
+  let pendingCandidates: ResolvedLegalEntityParty["pendingCandidates"] = null;
   if (clientExists) {
     if (input.legalEntity) {
-      resolvedPartyId = await resolveNewLegalEntityParty(input, input.legalEntity);
+      const resolved = await resolveNewLegalEntityParty(input, input.legalEntity);
+      resolvedPartyId = resolved.partyId;
+      pendingCandidates = resolved.pendingCandidates;
     } else if (input.legalEntityId) {
       const existing = await db.legalEntity.findFirst({
         where: { id: input.legalEntityId, accountId: input.accountId },
@@ -130,7 +152,7 @@ export async function createImporter(input: CreateImporterInput) {
   // exclusive with the legalEntityId branch, which never reads it.
   const newEntityPartyId = resolvedPartyId;
 
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const client = await tx.client.findFirst({
       where: { id: input.clientId, accountId: input.accountId },
       select: { id: true, name: true },
@@ -276,4 +298,25 @@ export async function createImporter(input: CreateImporterInput) {
 
     return { importer, client, legalEntity, onboardingCase };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 10_000 });
+
+  if (pendingCandidates) {
+    try {
+      await recordPendingMatchProposal({
+        accountId: input.accountId,
+        domain: "PARTY",
+        matchStatus: pendingCandidates.matchStatus,
+        targetEntityType: "IMPORTER",
+        targetEntityId: result.legalEntity.id,
+        inputPayload: pendingCandidates.inputPayload,
+        candidatesJson: pendingCandidates.candidatesJson,
+      });
+    } catch (error) {
+      logger.warn("importerCreate: recordPendingMatchProposal failed, legal entity stays unbridged", {
+        accountId: input.accountId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return result;
 }

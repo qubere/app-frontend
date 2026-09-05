@@ -43,7 +43,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ token:
       caseId: ctx.id,
       type: "PORTAL_OFFICERS_SUBMITTED",
       actorType: "PORTAL",
-      detail: { entityId: entity.id, count: officers.length },
+      detail: { entityId: entity.id, count: officers.length, officers },
+    },
+  });
+
+  await db.onboardingEvent.create({
+    data: {
+      accountId: ctx.accountId,
+      caseId: ctx.id,
+      type: "PORTAL_OFFICERS_PROPOSAL",
+      actorType: "PORTAL",
+      detail: { entityId: entity.id, proposals: officers },
     },
   });
 

@@ -71,6 +71,12 @@ export default async function DocumentsPage() {
               fileUrl: true,
               confidence: true,
               source: true,
+              uploadedByName: true,
+              uploadedByEmail: true,
+              channelMeta: true,
+              clientId: true,
+              client: { select: { id: true, name: true } },
+              _count: { select: { associations: { where: { active: true } } } },
             },
             orderBy: { createdAt: "desc" },
           },
@@ -93,6 +99,12 @@ export default async function DocumentsPage() {
           fileUrl: true,
           confidence: true,
           source: true,
+          uploadedByName: true,
+          uploadedByEmail: true,
+          channelMeta: true,
+          clientId: true,
+          client: { select: { id: true, name: true } },
+          _count: { select: { associations: { where: { active: true } } } },
           shipmentCandidates: {
             select: {
               id: true,
@@ -139,4 +151,3 @@ export default async function DocumentsPage() {
     );
   });
 }
-

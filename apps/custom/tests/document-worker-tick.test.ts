@@ -186,6 +186,7 @@ const dbMock = {
 
   shipmentDocument: {
     findFirst: vi.fn(async () => documentRow),
+    updateMany: vi.fn(async () => ({ count: 1 })),
     update: vi.fn(async ({ data }: { data: { activeParseVersionId: string } }) => {
       timeline.push("promoted");
       documentRow.activeParseVersionId = data.activeParseVersionId;
