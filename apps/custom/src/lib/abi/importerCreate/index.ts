@@ -26,3 +26,5 @@ export type { ImporterCreateResponse } from "./parse";
 export { validateImporterCreateInput } from "./validate";
 export type { ValidationError } from "./validate";
 export { fromOnboardingEntity } from "./fromOnboardingEntity";
+export { resolveOnboardingContact } from "./resolveContact";
+export type { OnboardingContactSources, ResolvedOnboardingContact } from "./resolveContact";

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   buildImporterCreateTransaction,
   fromOnboardingEntity,
+  resolveOnboardingContact,
   validateImporterCreateInput,
   parseImporterCreateResponse,
 } from "@/lib/abi/importerCreate";
@@ -26,6 +27,9 @@ export const POST = withAuthenticatedRoute<{ caseId: string; recordId: string }>
         entities: {
           take: 1,
           include: { importerOfRecord: true },
+        },
+        client: {
+          select: { contactPhone: true, contactEmail: true, billingContactEmail: true },
         },
       },
     });
@@ -73,15 +77,33 @@ export const POST = withAuthenticatedRoute<{ caseId: string; recordId: string }>
         typeof o === "object" && o !== null
     );
 
-    const contactPhone = "0000000000";
-    const contactEmail = `ops@${(account?.name ?? "broker").toLowerCase().replace(/\s+/g, "")}.com`;
+    // Contact phone + email must come from real onboarding data — never
+    // synthesised — because they land in the CATAIR 5106 sent to CBP.
+    const contact = resolveOnboardingContact({
+      fiveOhSixPayload: record.payload,
+      residentAgent: entity.residentAgent,
+      officers: officersTyped,
+      iorAddress: ior.address,
+      client: onboardingCase.client,
+    });
+    if (!contact.ok) {
+      return buildErrorResponse(
+        400,
+        "MISSING_DATA",
+        `Cannot transmit 5106 — no verified contact ${contact.missing.join(
+          " or "
+        )} on file for this importer. Add it to the 5106 contact block, an officer, or the client record before transmitting.`,
+        { missing: contact.missing },
+        requestId
+      );
+    }
 
     const input = fromOnboardingEntity(
       { importerOfRecord: ior, officers: officersTyped },
       {
         actionCode,
-        phone: contactPhone,
-        email: contactEmail,
+        phone: contact.phone,
+        email: contact.email,
         entriesPerYear: "2",
         brokerCredential: account?.name ? { brokerName: account.name } : undefined,
       }
@@ -107,7 +129,13 @@ export const POST = withAuthenticatedRoute<{ caseId: string; recordId: string }>
         type: "5106_TRANSMITTED",
         actorType: "BROKER",
         actorUserId: ctx.userId,
-        detail: { recordId, transmissionRef, actionCode, lineCount: transactionBody.split("\r\n").length - 1 },
+        detail: {
+          recordId,
+          transmissionRef,
+          actionCode,
+          lineCount: transactionBody.split("\r\n").length - 1,
+          contactSources: contact.sources,
+        },
       },
     });
 
