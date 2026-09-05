@@ -303,6 +303,16 @@ export const PERMISSION_CATALOGUE: readonly PermissionDefinition[] = [
   { name: "billing.cost_profile.create", description: "Create an effective-dated internal cost profile.", category: "Billing", defaultRoles: BILLING_MANAGERS },
   { name: "billing.permissions.manage", description: "Manage billing roles and permission grants.", category: "Billing", defaultRoles: BILLING_ADMINS },
   { name: "billing.audit.view", description: "View complete billing audit history.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.funds.view", description: "View client trust balances and duty advance accounts.", category: "Billing", defaultRoles: BILLING_VIEWERS },
+  { name: "billing.funds.manage", description: "Manage duty advance accounts and payment configurations.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.funds.authorize", description: "Authorize duty disbursements.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.funds.disburse", description: "Record duty disbursement payments to CBP.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.funds.deposit", description: "Record client advance deposits and replenishment receipts.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.funds.refund", description: "Refund advance balances to clients.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.funds.adjust", description: "Record manual balance adjustments and ledger reversals.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+  { name: "billing.funds.reconcile", description: "Reconcile disbursements against CBP statement records.", category: "Billing", defaultRoles: BILLING_USERS },
+  { name: "billing.funds.override", description: "Override reconciliation variances and negative balance controls.", category: "Billing", defaultRoles: BILLING_MANAGERS },
+
 
   // Settings
   { name: "settings.read", description: "View organization configuration.", category: "Settings", defaultRoles: ["BROKER_ADMIN", "BROKER_MANAGER", "TMS_ADMIN", "TMS_MANAGER", "SUPER_ADMIN_READ", "OWNER", "ADMIN"] },

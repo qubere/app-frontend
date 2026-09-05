@@ -245,6 +245,12 @@ model Account {
   cbpReconciliationFlags  CbpReconciliationFlag[]
   cbpReconciliationEntries CbpReconciliationEntry[]
   dutyPaymentInstructions DutyPaymentInstruction[]
+  dutyDisbursementAccounts DutyDisbursementAccount[]
+  fundsLedgerEntries     FundsLedgerEntry[]
+  dutyDisbursements      DutyDisbursement[]
+  replenishmentRequests  ReplenishmentRequest[]
+  statementReconciliations StatementReconciliation[]
+  dutyPaymentSetups      DutyPaymentSetup[]
   entryProofs            EntryProof[]
   entryProofEvents       EntryProofEvent[]
   clientStakeholders     ClientStakeholder[]
@@ -723,6 +729,7 @@ model IdempotencyRecord {
 model Shipment {
   entryProofs EntryProof[]
   pgaHolds    PgaHold[]
+  dutyDisbursements DutyDisbursement[]
 
   id                 String                 @id @default(cuid())
   accountId          String
@@ -1976,6 +1983,7 @@ model CustomsFiling {
   entryProofs        EntryProof[]
   assistDecisions    AssistDecision[]
   assistDeclarations AssistDeclaration[]
+  dutyDisbursements  DutyDisbursement[]
 
   id                 String            @id @default(cuid())
   shipmentId         String?
@@ -2833,6 +2841,9 @@ model ComplianceAuditRecord {
 
 model ImporterOfRecord {
   assists Assist[]
+  dutyDisbursementAccounts DutyDisbursementAccount[]
+  dutyDisbursements DutyDisbursement[]
+  dutyPaymentSetups DutyPaymentSetup[]
 
   id                 String       @id @default(cuid())
   accountId          String
@@ -2880,6 +2891,9 @@ model Client {
   entryProofs            EntryProof[]
   clientStakeholders     ClientStakeholder[]
   clientDocuments        ClientDocument[]
+  dutyDisbursementAccounts DutyDisbursementAccount[]
+  dutyDisbursements      DutyDisbursement[]
+  dutyPaymentSetups      DutyPaymentSetup[]
   id                     String                  @id @default(cuid())
   accountId              String
   account                Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -9370,6 +9384,8 @@ model ShipmentCharge {
   status            ChargeStatus     @default(RATED)
   invoiceLineId     String?
   invoiceLine       InvoiceLine?     @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
+  disbursementId    String?
+  disbursements     DutyDisbursement[]
   calculationTrace  Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -9379,6 +9395,7 @@ model ShipmentCharge {
   @@index([accountId])
   @@index([shipmentId])
   @@index([status])
+  @@index([disbursementId])
 }
 
 model ShipmentCost {
@@ -9424,6 +9441,7 @@ model ChargeAdjustment {
 }
 
 model Invoice {
+  fundsLedgerEntries FundsLedgerEntry[]
   id             String             @id @default(cuid())
   accountId      String
   account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -10195,6 +10213,8 @@ model StatementRecord {
   updatedAt       DateTime  @updatedAt
 
   statementFeeLines StatementFeeLine[]
+  dutyDisbursements DutyDisbursement[]
+  statementReconciliations StatementReconciliation[]
 
   @@index([accountId])
   @@index([statementNumber])
@@ -11455,3 +11475,275 @@ model DutyPaymentInstruction {
   @@index([accountId, status])
   @@index([statementRecordId])
 }
+
+model DutyDisbursementAccount {
+  id                       String   @id @default(cuid())
+  accountId                String
+  account                  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId                 String
+  client                   Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  importerId               String?
+  importer                 ImporterOfRecord? @relation(fields: [importerId], references: [id], onDelete: SetNull)
+  currency                 String   @default("USD")
+  currentBalance           Decimal  @default(0.00) @db.Decimal(16, 2)
+  minimumBalance           Decimal  @default(0.00) @db.Decimal(16, 2)
+  targetBalance            Decimal  @default(0.00) @db.Decimal(16, 2)
+  autoRequestReplenishment Boolean  @default(false)
+  autoAuthorizeUnder       Decimal? @db.Decimal(16, 2)
+  status                   DutyDisbursementAccountStatus @default(ACTIVE)
+  lastReconciledAt         DateTime?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  ledgerEntries  FundsLedgerEntry[]
+  disbursements  DutyDisbursement[]
+  replenishments ReplenishmentRequest[]
+
+  @@unique([accountId, clientId, importerId])
+  @@index([accountId])
+  @@index([accountId, status])
+  @@index([clientId])
+}
+
+model FundsLedgerEntry {
+  id                     String  @id @default(cuid())
+  accountId              String
+  account                Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  disbursementAccountId  String
+  disbursementAccount    DutyDisbursementAccount @relation(fields: [disbursementAccountId], references: [id], onDelete: Cascade)
+  type                   FundsLedgerEntryType
+  amount                 Decimal  @db.Decimal(16, 2)   // signed
+  runningBalance         Decimal  @db.Decimal(16, 2)
+  currency               String   @default("USD")
+  description            String
+  effectiveAt            DateTime @default(now())
+  // provenance — at most one set
+  disbursementId         String?
+  disbursement           DutyDisbursement? @relation(fields: [disbursementId], references: [id], onDelete: SetNull)
+  depositId              String?
+  replenishmentRequestId String?
+  replenishmentRequest   ReplenishmentRequest? @relation(fields: [replenishmentRequestId], references: [id], onDelete: SetNull)
+  invoiceId              String?
+  invoice                Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  reversesEntryId        String?  @unique
+  reversesEntry          FundsLedgerEntry? @relation("LedgerReversal", fields: [reversesEntryId], references: [id], onDelete: SetNull)
+  reversedBy             FundsLedgerEntry? @relation("LedgerReversal")
+  createdById            String?
+  idempotencyKey         String   @unique
+  createdAt              DateTime @default(now())
+
+  @@index([accountId])
+  @@index([disbursementAccountId, effectiveAt])
+  @@index([disbursementId])
+  @@index([type])
+}
+
+model DutyDisbursement {
+  id                    String  @id @default(cuid())
+  accountId             String
+  account               Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  disbursementAccountId String
+  disbursementAccount   DutyDisbursementAccount @relation(fields: [disbursementAccountId], references: [id], onDelete: Cascade)
+  clientId              String
+  client                Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  importerId            String?
+  importer              ImporterOfRecord? @relation(fields: [importerId], references: [id], onDelete: SetNull)
+  shipmentId            String?
+  shipment              Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  filingId              String?
+  filing                CustomsFiling? @relation(fields: [filingId], references: [id], onDelete: SetNull)
+  entryNumber           String?
+  status                DutyDisbursementStatus @default(ESTIMATED)
+  estimatedAmount       Decimal  @db.Decimal(16, 2)
+  actualAmount          Decimal? @db.Decimal(16, 2)
+  dutyAmount            Decimal? @db.Decimal(16, 2)
+  taxAmount             Decimal? @db.Decimal(16, 2)
+  feeAmount             Decimal? @db.Decimal(16, 2)
+  currency              String   @default("USD")
+  paymentMethod         String?  // ACH_STATEMENT | PMS | CHECK | OTHER
+  statementDate         DateTime?
+  paidAt                DateTime?
+  cbpPaymentRef         String?
+  statementRecordId     String?
+  statementRecord       StatementRecord? @relation(fields: [statementRecordId], references: [id], onDelete: SetNull)
+  reconciledAt          DateTime?
+  varianceAmount        Decimal? @db.Decimal(16, 2)
+  recoveryChargeId      String?  // ShipmentCharge.id
+  recoveryCharge        ShipmentCharge? @relation(fields: [recoveryChargeId], references: [id], onDelete: SetNull)
+  recoveryInvoiceLineId String?
+  billedAt              DateTime?
+  settledAt             DateTime?
+  failureReason         String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  feeLines      DutyDisbursementFeeLine[]
+  ledgerEntries FundsLedgerEntry[]
+
+  @@unique([filingId])
+  @@index([accountId])
+  @@index([disbursementAccountId, status])
+  @@index([clientId])
+  @@index([shipmentId])
+  @@index([entryNumber])
+  @@index([statementRecordId])
+}
+
+model DutyDisbursementFeeLine {
+  id                  String @id @default(cuid())
+  disbursementId      String
+  disbursement        DutyDisbursement @relation(fields: [disbursementId], references: [id], onDelete: Cascade)
+  accountingClassCode String   // reuse FilingFeeLine vocabulary: 499, 501, 311, …
+  estimatedAmount     Decimal  @db.Decimal(16, 2)
+  actualAmount        Decimal? @db.Decimal(16, 2)
+  statementFeeLineId  String?
+  createdAt           DateTime @default(now())
+
+  @@index([disbursementId])
+}
+
+model ReplenishmentRequest {
+  id                   String @id @default(cuid())
+  accountId            String
+  account              Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  disbursementAccountId String
+  disbursementAccount  DutyDisbursementAccount @relation(fields: [disbursementAccountId], references: [id], onDelete: Cascade)
+  amount               Decimal  @db.Decimal(16, 2)
+  currency             String   @default("USD")
+  state                ReplenishmentState @default(REQUESTED)
+  requestedAt          DateTime @default(now())
+  dueDate              DateTime?
+  satisfiedByDepositId String?
+  satisfiedAt          DateTime?
+  note                 String?
+  createdById          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  ledgerEntries FundsLedgerEntry[]
+
+  @@index([accountId])
+  @@index([disbursementAccountId, state])
+}
+
+model StatementReconciliation {
+  id                  String @id @default(cuid())
+  accountId           String
+  account             Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  statementRecordId   String
+  statementRecord     StatementRecord @relation(fields: [statementRecordId], references: [id], onDelete: Cascade)
+  status              ReconciliationStatus @default(IN_PROGRESS)
+  matchedCount        Int      @default(0)
+  varianceCount       Int      @default(0)
+  unmatchedCount      Int      @default(0)
+  totalVarianceAmount Decimal  @default(0.00) @db.Decimal(16, 2)
+  startedAt           DateTime @default(now())
+  closedAt            DateTime?
+
+  lines StatementReconciliationLine[]
+
+  @@unique([statementRecordId])
+  @@index([accountId, status])
+}
+
+model StatementReconciliationLine {
+  id                  String @id @default(cuid())
+  reconciliationId    String
+  reconciliation      StatementReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  statementFeeLineId  String?
+  disbursementId      String?
+  entryNumber         String?
+  accountingClassCode String?
+  statementAmount     Decimal? @db.Decimal(16, 2)
+  qubereAmount        Decimal? @db.Decimal(16, 2)
+  varianceAmount      Decimal? @db.Decimal(16, 2)
+  matchStatus         ReconLineStatus @default(UNMATCHED)
+  resolution          String?  // ACCEPT | ADJUST | EXCEPTION | RELINK
+  resolvedById        String?
+  resolvedAt          DateTime?
+  billingExceptionId  String?
+
+  @@index([reconciliationId, matchStatus])
+}
+
+model DutyPaymentSetup {
+  id                 String @id @default(cuid())
+  accountId          String
+  account            Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  importerId         String?
+  importer           ImporterOfRecord? @relation(fields: [importerId], references: [id], onDelete: SetNull)
+  mode               DutyPaymentMode @default(BROKER_DISBURSES)
+  statementSchedule  String @default("DAILY") // DAILY | PERIODIC_MONTHLY
+  achAccountRef      String?   // last4 / token only — never full account numbers
+  pmsPayerUnitNumber String?
+  recoveryMode       String @default("INVOICE") // INVOICE | APPLY_PAYMENT_AS_REPLENISHMENT
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([accountId, clientId, importerId])
+  @@index([accountId])
+}
+
+enum DutyDisbursementAccountStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum FundsLedgerEntryType {
+  ADVANCE_DEPOSIT
+  DUTY_DISBURSEMENT
+  FEE_DISBURSEMENT
+  TAX_DISBURSEMENT
+  REPLENISHMENT_RECEIPT
+  REFUND_TO_CLIENT
+  WRITE_OFF
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT
+  REVERSAL
+  INTEREST_OR_PENALTY
+}
+
+enum DutyDisbursementStatus {
+  ESTIMATED
+  AUTHORIZED
+  SCHEDULED
+  PAID_TO_CBP
+  BILLED_TO_CLIENT
+  SETTLED
+  CANCELLED
+  FAILED
+}
+
+enum ReplenishmentState {
+  REQUESTED
+  NOTIFIED
+  SATISFIED
+  CANCELLED
+  OVERDUE
+}
+
+enum ReconciliationStatus {
+  IN_PROGRESS
+  NEEDS_REVIEW
+  CLOSED
+}
+
+enum ReconLineStatus {
+  MATCHED
+  VARIANCE
+  MISSING_IN_QUBERE
+  MISSING_ON_STATEMENT
+  UNMATCHED
+}
+
+enum DutyPaymentMode {
+  BROKER_DISBURSES
+  DUTY_DIRECT_PAY
+  PMS_BROKER
+  PMS_IMPORTER
+}
+
