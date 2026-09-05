@@ -13,6 +13,7 @@ import { Card, Button } from "@/components/ui";
 import { DocumentWorkspacePanel } from "@/components/DocumentWorkspacePanel";
 import { DocumentUploadModal } from "@/components/DocumentUploadModal";
 import { TmsPipelineProgressRibbon } from "@/components/TmsPipelineProgressRibbon";
+import { ShipmentLifecycleRibbon } from "@/components/ShipmentLifecycleRibbon";
 import { CustomsHandoffCard } from "@/components/CustomsHandoffCard";
 import { AgentExecutionsAuditLog } from "@/components/AgentExecutionsAuditLog";
 import { ShipmentTrackingExperience } from "./ShipmentTrackingExperience";
@@ -318,6 +319,11 @@ export function ShipmentWorkspaceClient({
           <TmsPipelineProgressRibbon
             shipmentId={shipment.id}
             onNavigateToActivity={() => setActiveTab("ACTIVITY")}
+          />
+
+          <ShipmentLifecycleRibbon
+            status={lifecycleStatus ?? _lifecycleStatus}
+            shipmentId={shipment.id}
           />
 
           {/* Navigation Tabs */}
