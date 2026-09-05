@@ -157,6 +157,10 @@ export class MaterializerRegistry {
               "incoterm",
               "invoiceCurrency",
               "portOfEntry",
+              "countryOfExport",
+              "ladingDate",
+              "estimatedArrival",
+              "lastFreeDay",
             ]);
 
             if (ALLOWLISTED_COLUMNS.has(column)) {

@@ -140,4 +140,58 @@ describe("MaterializerRegistry.materializeDecision", () => {
       expect(shipmentUpdateCalls[0].data.portOfEntry).toBe("3901");
     });
   });
+
+  describe("shipment scalar promotion: countryOfExport / onBoardDate / estimatedArrivalDate / lastFreeDate", () => {
+    it("materializes shipment.countryOfExport onto Shipment.countryOfExport", async () => {
+      const decision = decisionFor("shipment.countryOfExport", "CN");
+      const result = await MaterializerRegistry.materializeDecision("acct_1", "shp_1", decision, {
+        expectedVersion: 1,
+      });
+
+      expect(result.materializer).toBe("ShipmentScalarMaterializer");
+      expect(result.materialized).toBe(true);
+      expect(result.materializedColumn).toBe("countryOfExport");
+      expect(shipmentUpdateCalls).toHaveLength(1);
+      expect(shipmentUpdateCalls[0].data.countryOfExport).toBe("CN");
+    });
+
+    it("materializes shipment.onBoardDate onto Shipment.ladingDate", async () => {
+      const decision = decisionFor("shipment.onBoardDate", "2026-01-10");
+      const result = await MaterializerRegistry.materializeDecision("acct_1", "shp_1", decision, {
+        expectedVersion: 1,
+      });
+
+      expect(result.materializer).toBe("ShipmentScalarMaterializer");
+      expect(result.materialized).toBe(true);
+      expect(result.materializedColumn).toBe("ladingDate");
+      expect(shipmentUpdateCalls).toHaveLength(1);
+      expect(shipmentUpdateCalls[0].data.ladingDate).toBe("2026-01-10");
+    });
+
+    it("materializes shipment.estimatedArrivalDate onto Shipment.estimatedArrival", async () => {
+      const decision = decisionFor("shipment.estimatedArrivalDate", "2026-01-20");
+      const result = await MaterializerRegistry.materializeDecision("acct_1", "shp_1", decision, {
+        expectedVersion: 1,
+      });
+
+      expect(result.materializer).toBe("ShipmentScalarMaterializer");
+      expect(result.materialized).toBe(true);
+      expect(result.materializedColumn).toBe("estimatedArrival");
+      expect(shipmentUpdateCalls).toHaveLength(1);
+      expect(shipmentUpdateCalls[0].data.estimatedArrival).toBe("2026-01-20");
+    });
+
+    it("materializes shipment.lastFreeDate onto Shipment.lastFreeDay", async () => {
+      const decision = decisionFor("shipment.lastFreeDate", "2026-01-25");
+      const result = await MaterializerRegistry.materializeDecision("acct_1", "shp_1", decision, {
+        expectedVersion: 1,
+      });
+
+      expect(result.materializer).toBe("ShipmentScalarMaterializer");
+      expect(result.materialized).toBe(true);
+      expect(result.materializedColumn).toBe("lastFreeDay");
+      expect(shipmentUpdateCalls).toHaveLength(1);
+      expect(shipmentUpdateCalls[0].data.lastFreeDay).toBe("2026-01-25");
+    });
+  });
 });
