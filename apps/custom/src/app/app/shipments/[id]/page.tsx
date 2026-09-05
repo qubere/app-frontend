@@ -551,6 +551,8 @@ export default async function ShipmentWorkspacePage(props: {
   let importerDetails = "Active customs bond and registered importer credentials are valid on file.";
   let importerActionRequired = "";
   let importerActionOwner = "Broker";
+  let importerWhyItMatters =
+    "CBP regulations mandate a valid power of attorney to establish filing authority. Transmitting without a valid POA is a severe regulatory violation.";
 
   if (!shipment.importerName || shipment.importerName === "To Order" || !importerOfRecord) {
     importerStatus = "Needs Information";
@@ -558,12 +560,16 @@ export default async function ShipmentWorkspacePage(props: {
     importerDetails = "The shipment is consigned 'To Order'. A registered Importer of Record with active bond must be nominated before filing.";
     importerActionRequired = "Provide importer entity details and CBP Importer Number.";
     importerActionOwner = "Importer";
+    importerWhyItMatters =
+      "CBP requires every entry to name a registered Importer of Record with an active bond. A shipment consigned 'To Order' has no declarant of record and cannot be filed until one is nominated.";
   } else if (!importerOfRecord.irsEin || !importerOfRecord.cbpImporterNumber) {
     importerStatus = "Needs Information";
     importerResult = "Importer registered credentials missing";
     importerDetails = `IRS EIN or CBP Importer Number for importer ${shipment.importerName} is not set.`;
     importerActionRequired = "Provide CBP Importer Number and IRS EIN verification.";
     importerActionOwner = "Importer";
+    importerWhyItMatters =
+      "CBP identifies the importer of record by IRS EIN and CBP Importer Number on every entry filing; without both on file, the entry cannot be transmitted.";
   } else if (
     !importerOfRecord.bond ||
     importerOfRecord.bond.status !== "Active" ||
@@ -574,18 +580,24 @@ export default async function ShipmentWorkspacePage(props: {
     importerDetails = `Importer ${shipment.importerName} does not have an active Customs Bond on file with CBP. Continuous bond is required for consumption entry.`;
     importerActionRequired = "Procure continuous customs bond (Form 301) and update surety record.";
     importerActionOwner = "Importer";
+    importerWhyItMatters =
+      "A continuous customs bond guarantees payment of duties, taxes, and penalties to CBP. Entry cannot be filed without an active bond on record.";
   } else if (poaRecords.length === 0) {
     importerStatus = "Blocked";
     importerResult = "Broker Power of Attorney Missing";
     importerDetails = `No Broker Power of Attorney (POA) exists for importer ${shipment.importerName}. A signed POA must be established before transmission.`;
     importerActionRequired = "Execute a new Customs Power of Attorney (Form 5291) with signed corporate officer verification.";
     importerActionOwner = "Importer";
+    importerWhyItMatters =
+      "CBP regulations mandate a valid power of attorney to establish filing authority. Transmitting without a valid POA is a severe regulatory violation.";
   } else if (expiredPoa && !activePoa) {
     importerStatus = "Blocked";
     importerResult = "POA Expired";
     importerDetails = `Customs power of attorney for importer ${shipment.importerName} expired on ${new Date(expiredPoa.expirationDate!).toLocaleDateString()}.`;
     importerActionRequired = "Execute a new Customs Power of Attorney (Form 5291) with signed corporate officer verification.";
     importerActionOwner = "Importer";
+    importerWhyItMatters =
+      "CBP regulations mandate a valid power of attorney to establish filing authority. Transmitting without a valid POA is a severe regulatory violation.";
   }
 
   // Extract key-value pairs from documents dynamically
@@ -998,7 +1010,7 @@ export default async function ShipmentWorkspacePage(props: {
       status: importerStatus,
       result: importerResult,
       details: importerDetails,
-      whyItMatters: "CBP regulations mandate a valid power of attorney to establish filing authority. Transmitting without a valid POA is a severe regulatory violation.",
+      whyItMatters: importerWhyItMatters,
       actionOwner: importerActionOwner,
       actionRequired: importerActionRequired,
       source: "Importer of record master data",
