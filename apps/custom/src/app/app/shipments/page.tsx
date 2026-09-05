@@ -102,6 +102,21 @@ export default async function ShipmentsConsolePage() {
     if (d.type === "ENTRY_FILING" && !deadlinesByShipment[num].entryFiling) deadlinesByShipment[num].entryFiling = info;
   }
 
+  // Shipment has no createdBy column -- the creator is only recorded on the
+  // "shipment.create" AuditLog row written at creation (see
+  // src/app/api/shipments/route.ts).
+  const creationLogs = await db.auditLog.findMany({
+    where: { accountId: ctx.accountId, entity: "Shipment", action: "shipment.create", entityId: { in: shipments.map((s) => s.id) } },
+    select: { entityId: true, userId: true, user: { select: { firstName: true, lastName: true, email: true } } },
+  });
+  const createdByByShipmentId: Record<string, string> = {};
+  for (const log of creationLogs) {
+    if (createdByByShipmentId[log.entityId]) continue;
+    if (!log.user) continue;
+    createdByByShipmentId[log.entityId] =
+      log.user.firstName || log.user.lastName ? `${log.user.firstName ?? ""} ${log.user.lastName ?? ""}`.trim() : log.user.email;
+  }
+
   // Formatted shipments to fit client component props (ensures Next.js serialization compatibility)
   const formattedShipments = shipments.map((s) => ({
     id: s.id,
@@ -117,6 +132,7 @@ export default async function ShipmentsConsolePage() {
     healthStatus: s.healthStatus,
     status: s.status,
     createdAt: s.createdAt.toISOString(),
+    createdByName: createdByByShipmentId[s.id] ?? null,
     clientId: s.clientId,
     client: s.client ? { id: s.client.id, name: s.client.name } : null,
     assignedBrokerId: s.assignedBrokerId,

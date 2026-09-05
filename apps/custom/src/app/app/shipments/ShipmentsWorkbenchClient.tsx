@@ -31,6 +31,7 @@ interface ShipmentItem {
   healthStatus?: string | null;
   status: string;
   createdAt: string;
+  createdByName?: string | null;
   customsRequired?: boolean;
   isCustomsActive?: boolean;
   productWorkspaces?: Array<{ product: string; status: string }> | null;
@@ -583,6 +584,8 @@ export function ShipmentsWorkbenchClient({
                 </th>
                 <th className="px-5 py-3.5">Status</th>
                 <th className="px-5 py-3.5">Client</th>
+                <th className="px-5 py-3.5">Created</th>
+                <th className="px-5 py-3.5">Created By</th>
                 {isEnterpriseAdmin && <th className="px-5 py-3.5">Owner</th>}
               </tr>
             </thead>
@@ -627,6 +630,8 @@ export function ShipmentsWorkbenchClient({
                     ))}
                   </select>
                 </td>
+                <td className="px-4 py-2" />
+                <td className="px-4 py-2" />
                 {isEnterpriseAdmin && (
                   <td className="px-4 py-2">
                     <select
@@ -651,7 +656,7 @@ export function ShipmentsWorkbenchClient({
               {shipmentsList.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={isEnterpriseAdmin ? 6 : 5}
+                    colSpan={isEnterpriseAdmin ? 8 : 7}
                     className="px-5 py-14 text-center text-ink-muted"
                   >
                     <div className="max-w-md mx-auto space-y-3">
@@ -684,7 +689,7 @@ export function ShipmentsWorkbenchClient({
               ) : filteredShipments.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={isEnterpriseAdmin ? 6 : 5}
+                    colSpan={isEnterpriseAdmin ? 8 : 7}
                     className="px-5 py-12 text-center text-ink-muted"
                   >
                     <Search className="w-8 h-8 mx-auto text-ink-muted mb-2 stroke-1" />
@@ -754,6 +759,14 @@ export function ShipmentsWorkbenchClient({
                         ) : (
                           <span className="text-[11px] text-ink-muted">—</span>
                         )}
+                      </td>
+
+                      <td className="px-5 py-4 text-[11px] text-ink-muted tabular-nums">
+                        {new Date(shp.createdAt).toLocaleDateString()}
+                      </td>
+
+                      <td className="px-5 py-4 text-[11px] text-ink-muted">
+                        {shp.createdByName || "—"}
                       </td>
 
                       {isEnterpriseAdmin && (
