@@ -556,3 +556,44 @@ async function rejectAttachment(
     data: { processingStatus: "REJECTED", rejectionReason: reason },
   });
 }
+
+/**
+ * Backfills `InboundEmail.bodyText` for emails that have `bodyText === null`.
+ * Uses `getReceivedEmail` to fetch the raw email body text/html excerpt from Resend.
+ */
+export async function backfillInboundEmailBodyText(
+  options: { limit?: number; provider?: InboundEmailProvider } = {}
+): Promise<{ processedCount: number; updatedCount: number }> {
+  return withDataModeContext(null, async () => {
+    const limit = options.limit ?? 50;
+    const provider = options.provider ?? resendProvider;
+    const pendingEmails = await db.inboundEmail.findMany({
+      where: { bodyText: null },
+      take: limit,
+      select: { id: true, providerEmailId: true },
+    });
+
+    let updatedCount = 0;
+    for (const email of pendingEmails) {
+      if (!email.providerEmailId) continue;
+      try {
+        const remote = await provider.getReceivedEmail(email.providerEmailId);
+        const excerpt = bodyExcerpt(remote.text, remote.html);
+        if (excerpt !== null) {
+          await db.inboundEmail.update({
+            where: { id: email.id },
+            data: { bodyText: excerpt },
+          });
+          updatedCount += 1;
+        }
+      } catch (err) {
+        log("email.body_text_backfill_failed", {
+          inboundEmailId: email.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return { processedCount: pendingEmails.length, updatedCount };
+  });
+}

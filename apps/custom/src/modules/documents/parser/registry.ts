@@ -16,9 +16,10 @@
  */
 
 import { DocumentParserError, type DocumentParserProvider } from "./contracts";
-import { selectedProviderId } from "./config";
+import { selectedProviderId, selectedFallbackProviderId } from "./config";
 import { IbmHostedDoclingProvider } from "./ibm/ibmHostedDoclingProvider";
 import { MockDoclingProvider } from "./mock/mockDoclingProvider";
+import { FallbackDoclingProvider } from "./fallbackProvider";
 import { deploymentTier } from "@/lib/environment";
 
 /**
@@ -40,6 +41,7 @@ export function getDocumentParserProvider(): DocumentParserProvider {
     );
   }
 
+  let primary: DocumentParserProvider;
   if (id === "mock") {
     if (!isMockParserAllowed()) {
       throw new DocumentParserError(
@@ -47,13 +49,27 @@ export function getDocumentParserProvider(): DocumentParserProvider {
         `DOCUMENT_PARSER_PROVIDER=mock is only permitted on a local development machine (detected tier: ${deploymentTier()}). Set DOCUMENT_PARSER_PROVIDER=ibm-docling and configure DOCLING_API_BASE_URL / DOCLING_API_KEY.`
       );
     }
-    return new MockDoclingProvider();
+    primary = new MockDoclingProvider();
+  } else {
+    primary = new IbmHostedDoclingProvider();
   }
 
-  // ibm-docling. The constructor reads and validates the config eagerly, so a
-  // misconfiguration throws here (PARSER_NOT_CONFIGURED) rather than halfway
-  // through a run — and is never swallowed by a fallback to a stand-in.
-  return new IbmHostedDoclingProvider();
+  const fallbackId = selectedFallbackProviderId();
+  if (fallbackId === "none") {
+    return primary;
+  }
+
+  if (fallbackId === "mock") {
+    if (deploymentTier() !== "local") {
+      throw new DocumentParserError(
+        "PARSER_NOT_CONFIGURED",
+        `DOCUMENT_PARSER_FALLBACK=mock is only permitted on a local development machine (detected tier: ${deploymentTier()}).`
+      );
+    }
+    return new FallbackDoclingProvider(primary, new MockDoclingProvider());
+  }
+
+  return primary;
 }
 
 /** True when a provider can be resolved. Used by health reporting, not control flow. */
