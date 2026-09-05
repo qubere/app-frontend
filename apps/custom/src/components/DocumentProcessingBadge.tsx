@@ -132,6 +132,8 @@ export function DocumentProcessingBadge({
                     </span>
                   </span>
                 ))}
+              </span>
+            )}
             {data?.agentTimeline && data.agentTimeline.length > 0 && (
               <>
                 <span className="mt-2 block border-t border-border pt-2 font-semibold text-ink-muted">
