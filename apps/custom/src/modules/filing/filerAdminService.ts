@@ -56,18 +56,18 @@ export function evaluateFilerAdminHealth(credential: FilerCodeCredential): Filer
  * Returns active filer code credentials for an account.
  */
 export async function getAccountFilerCredentials(accountId: string): Promise<FilerCodeCredential[]> {
-  const [account, brokerProfile] = await Promise.all([
+  const [account, filerProfile] = await Promise.all([
     db.account.findUnique({
       where: { id: accountId },
       select: { name: true },
     }),
-    db.customsProfile.findUnique({
+    db.filerProfile.findFirst({
       where: { accountId },
-      select: { filerCode: true },
+      select: { filerCode: true, defaultPortCode: true },
     }),
   ]);
 
-  const filerCode = brokerProfile?.filerCode;
+  const filerCode = filerProfile?.filerCode;
   if (!account || !filerCode) {
     return [];
   }
@@ -76,7 +76,7 @@ export async function getAccountFilerCredentials(accountId: string): Promise<Fil
     {
       filerCode,
       filerName: account.name,
-      portCode: "2704", // Default LAX/Long Beach
+      portCode: filerProfile.defaultPortCode || "2704", // Default LAX/Long Beach
       clientRepName: "CBP Client Representative",
       transportProtocol: "AS2",
       connectionStatus: "HEALTHY",
