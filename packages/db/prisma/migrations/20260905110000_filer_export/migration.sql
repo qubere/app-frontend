@@ -6,7 +6,7 @@
 -- before merging.
 
 -- CreateTable
-CREATE TABLE "FilerExport" (
+CREATE TABLE IF NOT EXISTS "FilerExport" (
     "id" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "draftId" TEXT NOT NULL,
@@ -28,19 +28,23 @@ CREATE TABLE "FilerExport" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FilerExport_accountId_idempotencyKey_key" ON "FilerExport"("accountId", "idempotencyKey");
+CREATE UNIQUE INDEX IF NOT EXISTS "FilerExport_accountId_idempotencyKey_key" ON "FilerExport"("accountId", "idempotencyKey");
 
 -- CreateIndex
-CREATE INDEX "FilerExport_draftId_idx" ON "FilerExport"("draftId");
+CREATE INDEX IF NOT EXISTS "FilerExport_draftId_idx" ON "FilerExport"("draftId");
 
 -- CreateIndex
-CREATE INDEX "FilerExport_accountId_status_idx" ON "FilerExport"("accountId", "status");
+CREATE INDEX IF NOT EXISTS "FilerExport_accountId_status_idx" ON "FilerExport"("accountId", "status");
 
 -- AddForeignKey
-ALTER TABLE "FilerExport" ADD CONSTRAINT "FilerExport_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "FilerExport" ADD CONSTRAINT "FilerExport_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AddForeignKey
-ALTER TABLE "FilerExport" ADD CONSTRAINT "FilerExport_draftId_fkey" FOREIGN KEY ("draftId") REFERENCES "EntrySummaryDraft"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "FilerExport" ADD CONSTRAINT "FilerExport_draftId_fkey" FOREIGN KEY ("draftId") REFERENCES "EntrySummaryDraft"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AddForeignKey
-ALTER TABLE "FilerExport" ADD CONSTRAINT "FilerExport_filerProfileId_fkey" FOREIGN KEY ("filerProfileId") REFERENCES "FilerProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "FilerExport" ADD CONSTRAINT "FilerExport_filerProfileId_fkey" FOREIGN KEY ("filerProfileId") REFERENCES "FilerProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

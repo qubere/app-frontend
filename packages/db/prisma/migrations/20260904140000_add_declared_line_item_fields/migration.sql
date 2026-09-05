@@ -5,6 +5,6 @@
 -- source document said, so it is never lost or conflated with an approved
 -- classification/origin/export-control decision reached elsewhere.
 
-ALTER TABLE "ShipmentLineItem" ADD COLUMN "declaredHsCode" TEXT;
-ALTER TABLE "ShipmentLineItem" ADD COLUMN "declaredCountryOfOrigin" TEXT;
-ALTER TABLE "ShipmentLineItem" ADD COLUMN "declaredExportControlCode" TEXT;
+ALTER TABLE "ShipmentLineItem" ADD COLUMN IF NOT EXISTS "declaredHsCode" TEXT;
+ALTER TABLE "ShipmentLineItem" ADD COLUMN IF NOT EXISTS "declaredCountryOfOrigin" TEXT;
+ALTER TABLE "ShipmentLineItem" ADD COLUMN IF NOT EXISTS "declaredExportControlCode" TEXT;

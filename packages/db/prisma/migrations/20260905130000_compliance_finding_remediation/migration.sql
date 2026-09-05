@@ -9,6 +9,6 @@
 -- verified against a real `prisma migrate dev --create-only` diff before merge.
 
 -- AlterTable
-ALTER TABLE "ComplianceFinding" ADD COLUMN "dueAt" TIMESTAMP(3);
-ALTER TABLE "ComplianceFinding" ADD COLUMN "remediationNotes" TEXT;
-ALTER TABLE "ComplianceFinding" ADD COLUMN "remediationRef" TEXT;
+ALTER TABLE "ComplianceFinding" ADD COLUMN IF NOT EXISTS "dueAt" TIMESTAMP(3);
+ALTER TABLE "ComplianceFinding" ADD COLUMN IF NOT EXISTS "remediationNotes" TEXT;
+ALTER TABLE "ComplianceFinding" ADD COLUMN IF NOT EXISTS "remediationRef" TEXT;

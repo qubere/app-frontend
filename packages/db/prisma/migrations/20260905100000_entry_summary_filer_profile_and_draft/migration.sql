@@ -6,7 +6,7 @@
 -- against a real `prisma migrate dev --create-only` diff before merging.
 
 -- CreateTable
-CREATE TABLE "FilerProfile" (
+CREATE TABLE IF NOT EXISTS "FilerProfile" (
     "id" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE "FilerProfile" (
 );
 
 -- CreateTable
-CREATE TABLE "EntrySummaryDraft" (
+CREATE TABLE IF NOT EXISTS "EntrySummaryDraft" (
     "id" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "shipmentId" TEXT NOT NULL,
@@ -47,22 +47,25 @@ CREATE TABLE "EntrySummaryDraft" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FilerProfile_accountId_name_key" ON "FilerProfile"("accountId", "name");
+CREATE UNIQUE INDEX IF NOT EXISTS "FilerProfile_accountId_name_key" ON "FilerProfile"("accountId", "name");
 
 -- CreateIndex
-CREATE INDEX "FilerProfile_accountId_active_idx" ON "FilerProfile"("accountId", "active");
+CREATE INDEX IF NOT EXISTS "FilerProfile_accountId_active_idx" ON "FilerProfile"("accountId", "active");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EntrySummaryDraft_shipmentId_version_key" ON "EntrySummaryDraft"("shipmentId", "version");
+CREATE UNIQUE INDEX IF NOT EXISTS "EntrySummaryDraft_shipmentId_version_key" ON "EntrySummaryDraft"("shipmentId", "version");
 
 -- CreateIndex
-CREATE INDEX "EntrySummaryDraft_accountId_shipmentId_idx" ON "EntrySummaryDraft"("accountId", "shipmentId");
+CREATE INDEX IF NOT EXISTS "EntrySummaryDraft_accountId_shipmentId_idx" ON "EntrySummaryDraft"("accountId", "shipmentId");
 
 -- CreateIndex
-CREATE INDEX "EntrySummaryDraft_filingId_idx" ON "EntrySummaryDraft"("filingId");
+CREATE INDEX IF NOT EXISTS "EntrySummaryDraft_filingId_idx" ON "EntrySummaryDraft"("filingId");
 
 -- AddForeignKey
-ALTER TABLE "FilerProfile" ADD CONSTRAINT "FilerProfile_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "FilerProfile" ADD CONSTRAINT "FilerProfile_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AddForeignKey
-ALTER TABLE "EntrySummaryDraft" ADD CONSTRAINT "EntrySummaryDraft_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "EntrySummaryDraft" ADD CONSTRAINT "EntrySummaryDraft_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

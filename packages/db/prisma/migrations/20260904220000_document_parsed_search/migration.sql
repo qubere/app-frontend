@@ -1,5 +1,5 @@
 ALTER TABLE "ShipmentDocument"
-ADD COLUMN "parsedSearchText" TEXT;
+ADD COLUMN IF NOT EXISTS "parsedSearchText" TEXT;
 
 -- pg_trgm is already installed by 20260904210000_pg_trgm_unified_search.
 -- Keep this migration independently safe for partially-applied environments.

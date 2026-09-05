@@ -7,7 +7,7 @@
 -- not-controlled outcome, never any other LicenseDeterminationStatus value.
 
 -- CreateTable
-CREATE TABLE "LicenseControlRule" (
+CREATE TABLE IF NOT EXISTS "LicenseControlRule" (
     "id" TEXT NOT NULL,
     "operationType" "LicenseOperationType" NOT NULL,
     "classificationType" TEXT NOT NULL,
@@ -26,4 +26,4 @@ CREATE TABLE "LicenseControlRule" (
     CONSTRAINT "LicenseControlRule_decision_check" CHECK ("decision" IN ('LICENSE_REQUIRED', 'NO_LICENSE_REQUIRED'))
 );
 
-CREATE INDEX "LicenseControlRule_operationType_classificationType_countr_idx" ON "LicenseControlRule"("operationType", "classificationType", "country");
+CREATE INDEX IF NOT EXISTS "LicenseControlRule_operationType_classificationType_countr_idx" ON "LicenseControlRule"("operationType", "classificationType", "country");
