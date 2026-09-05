@@ -1,5 +1,10 @@
 import { Decimal } from "@/lib/tariff/decimal";
-import { AbiFilingValidationError, type EnvelopeHeaderOptions } from "@/lib/abi/entrySummary/fromCustomsFiling";
+import {
+  AbiFilingValidationError,
+  assertValidAbiFiling,
+  chunkToNumberedFields,
+  type EnvelopeHeaderOptions,
+} from "@/lib/abi/entrySummary/fromCustomsFiling";
 export { AbiFilingValidationError };
 import type {
   DrawbackHeaderInput,
@@ -92,6 +97,7 @@ export type DrawbackClaimWithRelations = {
  * `DrawbackExportDestroy.id`.
  */
 export interface ExportDestroyLineDetails {
+  exportOrDestroyIndicator?: string;
   htsNumber: string;
   exportOrDestroyQuantity: Decimal | number;
   unitOfMeasureCode: string;
@@ -217,10 +223,7 @@ export function fromDrawbackClaim(
   tfteaExportDestroys: TfteaExportDestroyInput[];
   naftaUsmcaLines: NaftaUsmcaInput[];
 } {
-  const validation = validateDrawbackClaim(claim, options);
-  if (!validation.valid) {
-    throw new AbiFilingValidationError(claim.id, validation.missingFields);
-  }
+  assertValidAbiFiling(claim.id, validateDrawbackClaim(claim, options));
 
   const entryFilerCode = options!.processingFilerCode!.slice(0, 3).toUpperCase();
   const claimNum = claim.cbpClaimNumber!.replace(/[^A-Za-z0-9]/g, "").slice(0, 8).padStart(8, "0");
@@ -262,11 +265,11 @@ export function fromDrawbackClaim(
   }
 
   // Map import links (chunked by 15 ITINs — Record 52's own repeating group size)
-  const importLinks: LinkImportMfgInput[] = [];
-  const sortedLinks = [...(claim.importLinks || [])].sort((a, b) => a.sequence - b.sequence);
-  for (let i = 0; i < sortedLinks.length; i += 15) {
-    const chunk = sortedLinks.slice(i, i + 15);
-    importLinks.push({
+  const importLinks = chunkToNumberedFields(
+    claim.importLinks || [],
+    15,
+    (link) => link.sequence,
+    (chunk) => ({
       importTrackingIdNumber1: chunk[0].importTrackingIdNumber,
       importTrackingIdNumber2: chunk[1]?.importTrackingIdNumber,
       importTrackingIdNumber3: chunk[2]?.importTrackingIdNumber,
@@ -282,8 +285,8 @@ export function fromDrawbackClaim(
       importTrackingIdNumber13: chunk[12]?.importTrackingIdNumber,
       importTrackingIdNumber14: chunk[13]?.importTrackingIdNumber,
       importTrackingIdNumber15: chunk[14]?.importTrackingIdNumber,
-    });
-  }
+    })
+  );
 
   // Map core export/destroy lines (Record 60) — htsNumber/quantity/UOM/exporter
   // name come from the caller-supplied details map (validated above), never fabricated.
@@ -291,7 +294,7 @@ export function fromDrawbackClaim(
   const exportDestroys: ExportDestroyInput[] = (claim.exportDestroys || []).map((row) => {
     const details = exportDetails[row.id];
     return {
-      exportOrDestroyIndicator: row.billOfLadingIndicator ? "E" : "D",
+      exportOrDestroyIndicator: details.exportOrDestroyIndicator ?? "E",
       htsNumber: details.htsNumber,
       exportOrDestroyQuantity: new Decimal(details.exportOrDestroyQuantity),
       unitOfMeasureCode: details.unitOfMeasureCode,
