@@ -62,7 +62,7 @@ ON "AdcvdOrder" USING gin ("title" gin_trgm_ops);
 -- 20260901090000_product_help_search).
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TABLE "SearchIndexEntry" (
+CREATE TABLE IF NOT EXISTS "SearchIndexEntry" (
   "id" TEXT NOT NULL,
   "accountId" TEXT,
   "kind" TEXT NOT NULL,
@@ -82,9 +82,9 @@ CREATE TABLE "SearchIndexEntry" (
   CONSTRAINT "SearchIndexEntry_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "SearchIndexEntry_kind_entityId_key" ON "SearchIndexEntry"("kind", "entityId");
-CREATE INDEX "SearchIndexEntry_accountId_idx" ON "SearchIndexEntry"("accountId");
-CREATE INDEX "SearchIndexEntry_kind_idx" ON "SearchIndexEntry"("kind");
-CREATE INDEX "SearchIndexEntry_contentTsv_gin_idx" ON "SearchIndexEntry" USING gin ("contentTsv");
-CREATE INDEX "SearchIndexEntry_embeddingVector_hnsw_idx"
+CREATE UNIQUE INDEX IF NOT EXISTS "SearchIndexEntry_kind_entityId_key" ON "SearchIndexEntry"("kind", "entityId");
+CREATE INDEX IF NOT EXISTS "SearchIndexEntry_accountId_idx" ON "SearchIndexEntry"("accountId");
+CREATE INDEX IF NOT EXISTS "SearchIndexEntry_kind_idx" ON "SearchIndexEntry"("kind");
+CREATE INDEX IF NOT EXISTS "SearchIndexEntry_contentTsv_gin_idx" ON "SearchIndexEntry" USING gin ("contentTsv");
+CREATE INDEX IF NOT EXISTS "SearchIndexEntry_embeddingVector_hnsw_idx"
 ON "SearchIndexEntry" USING hnsw ("embeddingVector" vector_cosine_ops);

@@ -4,4 +4,4 @@
 -- overwrites the field's stored value in place, so `value` alone can't tell
 -- the two apart once persisted.
 
-ALTER TABLE "FieldApproval" ADD COLUMN "action" TEXT;
+ALTER TABLE "FieldApproval" ADD COLUMN IF NOT EXISTS "action" TEXT;

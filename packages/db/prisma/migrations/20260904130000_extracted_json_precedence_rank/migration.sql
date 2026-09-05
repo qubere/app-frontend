@@ -4,4 +4,4 @@
 -- racing (e.g. concurrent reprocess attempts) are ordered by their actual
 -- DocumentParseVersion.version instead of by arrival order.
 
-ALTER TABLE "ShipmentDocument" ADD COLUMN "extractedJsonPrecedenceRank" INTEGER;
+ALTER TABLE "ShipmentDocument" ADD COLUMN IF NOT EXISTS "extractedJsonPrecedenceRank" INTEGER;

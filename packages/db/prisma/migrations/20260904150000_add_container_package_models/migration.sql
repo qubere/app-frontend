@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "ShipmentContainer" (
+CREATE TABLE IF NOT EXISTS "ShipmentContainer" (
     "id" TEXT NOT NULL,
     "shipmentId" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE "ShipmentContainer" (
 );
 
 -- CreateTable
-CREATE TABLE "ShipmentPackage" (
+CREATE TABLE IF NOT EXISTS "ShipmentPackage" (
     "id" TEXT NOT NULL,
     "shipmentId" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
@@ -52,25 +52,30 @@ CREATE TABLE "ShipmentPackage" (
 );
 
 -- CreateIndex
-CREATE INDEX "ShipmentContainer_shipmentId_idx" ON "ShipmentContainer"("shipmentId");
+CREATE INDEX IF NOT EXISTS "ShipmentContainer_shipmentId_idx" ON "ShipmentContainer"("shipmentId");
 
 -- CreateIndex
-CREATE INDEX "ShipmentContainer_accountId_idx" ON "ShipmentContainer"("accountId");
+CREATE INDEX IF NOT EXISTS "ShipmentContainer_accountId_idx" ON "ShipmentContainer"("accountId");
 
 -- CreateIndex
-CREATE INDEX "ShipmentPackage_shipmentId_idx" ON "ShipmentPackage"("shipmentId");
+CREATE INDEX IF NOT EXISTS "ShipmentPackage_shipmentId_idx" ON "ShipmentPackage"("shipmentId");
 
 -- CreateIndex
-CREATE INDEX "ShipmentPackage_accountId_idx" ON "ShipmentPackage"("accountId");
+CREATE INDEX IF NOT EXISTS "ShipmentPackage_accountId_idx" ON "ShipmentPackage"("accountId");
 
 -- AddForeignKey
-ALTER TABLE "ShipmentContainer" ADD CONSTRAINT "ShipmentContainer_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "ShipmentContainer" ADD CONSTRAINT "ShipmentContainer_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AddForeignKey
-ALTER TABLE "ShipmentContainer" ADD CONSTRAINT "ShipmentContainer_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "ShipmentContainer" ADD CONSTRAINT "ShipmentContainer_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AddForeignKey
-ALTER TABLE "ShipmentPackage" ADD CONSTRAINT "ShipmentPackage_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "ShipmentPackage" ADD CONSTRAINT "ShipmentPackage_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- AddForeignKey
-ALTER TABLE "ShipmentPackage" ADD CONSTRAINT "ShipmentPackage_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "ShipmentPackage" ADD CONSTRAINT "ShipmentPackage_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
