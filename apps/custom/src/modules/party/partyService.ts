@@ -52,7 +52,8 @@ import {
   canTransitionReview,
   canVerifyRegistration,
 } from "./partyDecisionLifecycle";
-import { matchParty, type MatchCandidateInput, type PartyMatchResult, UNIQUE_IDENTIFIER_TYPES } from "./partyMatching";
+import { UNIQUE_IDENTIFIER_TYPES, type MatchCandidateInput, type PartyMatchResult } from "./partyMatching";
+import { findPartyMatches as findPartyMatchesShared } from "@qubere/party";
 import { normalizeCountry, normalizeIdentifier, normalizeLegalName, parseIsoDate } from "./partyNormalization";
 import type { CreatePartyInput, UpdatePartyInput } from "./partySchemas";
 import {
@@ -1586,91 +1587,9 @@ export async function reviewParty(
 
 /**
  * Finds the party a counterparty description refers to, within the caller's
- * tenant.
- *
- * The candidate set is narrowed in the database by the identifiers,
- * registration, or name actually supplied, then the decision is made by the
- * pure matcher. A tenant with 200,000 parties therefore does not load 200,000
- * rows, and the rule that decides the outcome is still the one the tests
- * exercise directly.
+ * tenant. The db-backed query + pure matcher now live in @qubere/party so
+ * apps/tms can reuse the same lookup instead of creating Party rows blind.
  */
 export async function findPartyMatches(actor: PartyActor, input: MatchCandidateInput): Promise<PartyMatchResult> {
-  const normalizedValues = (input.identifiers ?? [])
-    .map((identifier) => normalizeIdentifier(identifier.value))
-    .filter((value) => value !== "");
-
-  const orClauses: Prisma.PartyWhereInput[] = [];
-  if (normalizedValues.length > 0) {
-    orClauses.push({ identifiers: { some: { normalizedValue: { in: normalizedValues }, status: "ACTIVE" } } });
-  }
-  if (input.registrationNumber != null && input.registrationCountry != null) {
-    orClauses.push({
-      registrations: {
-        some: {
-          registrationNumber: { equals: input.registrationNumber, mode: "insensitive" },
-          status: { notIn: ["SUPERSEDED", "REJECTED"] },
-        },
-      },
-    });
-  }
-  if (input.legalName != null && input.country != null) {
-    orClauses.push({
-      names: { some: { normalizedName: normalizeLegalName(input.legalName), status: "ACTIVE" } },
-    });
-  }
-
-  if (orClauses.length === 0) {
-    return { status: "NO_MATCH", candidates: [], rule: null };
-  }
-
-  const andClauses: Prisma.PartyWhereInput[] = [];
-  if (input.clientId !== undefined) {
-    if (input.clientId === null || input.clientId === "unassigned") {
-      andClauses.push({ clientId: null });
-    } else if (input.clientScope === "EXACT") {
-      andClauses.push({ clientId: input.clientId });
-    } else {
-      andClauses.push({ OR: [{ clientId: input.clientId }, { clientId: null }] });
-    }
-  }
-
-  const parties = await db.party.findMany({
-    where: {
-      accountId: actor.accountId,
-      deletedAt: null,
-      status: { notIn: ["ARCHIVED"] },
-      AND: andClauses.length > 0 ? andClauses : undefined,
-      OR: orClauses,
-    },
-    select: {
-      id: true,
-      clientId: true,
-      identifiers: {
-        where: { status: "ACTIVE" },
-        select: { identifierType: true, normalizedValue: true, issuingCountry: true },
-      },
-      registrations: {
-        where: { status: { notIn: ["SUPERSEDED", "REJECTED"] } },
-        select: { registrationNumber: true, country: true },
-      },
-      names: { where: { status: "ACTIVE" }, select: { normalizedName: true } },
-      addresses: { where: { status: "ACTIVE" }, select: { country: true } },
-    },
-    take: 200,
-  });
-
-  return matchParty(
-    input,
-    parties.map((party) => ({
-      id: party.id,
-      clientId: party.clientId,
-      identifiers: party.identifiers,
-      registrations: party.registrations.map((registration) => ({
-        normalizedRegistrationNumber: normalizeIdentifier(registration.registrationNumber),
-        country: registration.country,
-      })),
-      normalizedNames: party.names.map((name) => name.normalizedName),
-      countries: [...new Set([...party.registrations.map((r) => r.country), ...party.addresses.map((a) => a.country)])],
-    }))
-  );
+  return findPartyMatchesShared(actor, input);
 }

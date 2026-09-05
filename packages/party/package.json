@@ -1,0 +1,24 @@
+{
+  "name": "@qubere/party",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./partyMatching": "./src/partyMatching.ts",
+    "./partyNormalization": "./src/partyNormalization.ts",
+    "./partyVocabulary": "./src/partyVocabulary.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@qubere/db": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

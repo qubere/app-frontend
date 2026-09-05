@@ -40,6 +40,7 @@
     "@qubere/db": "*",
     "@qubere/decisions": "*",
     "@qubere/entry-proof": "*",
+    "@qubere/party": "*",
     "@qubere/shipment-legs": "*",
     "@qubere/storage": "*",
     "@qubere/tracking": "*",

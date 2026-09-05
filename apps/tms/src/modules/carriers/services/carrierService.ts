@@ -1,9 +1,12 @@
 import { db } from "@qubere/db";
 import type { AccountContext } from "@qubere/auth";
+import { findPartyMatches } from "@qubere/party";
 
 export interface CreateCarrierProfileInput {
   partyId?: string;
   legalName?: string;
+  /** Paired with legalName for the shared Party name+country matching rule. */
+  country?: string | null;
   scac?: string | null;
   dot?: string | null;
   mc?: string | null;
@@ -25,6 +28,24 @@ export async function createCarrierProfile(
     throw new Error("Carrier legal name is required when no existing party is supplied.");
   }
   let partyId = input.partyId;
+
+  if (!partyId && input.legalName?.trim()) {
+    // Same dedup rule apps/custom's party-resolution callers use: only an
+    // EXACT_MATCH (an identifier or registration number, never name alone)
+    // is safe to auto-reuse. A POSSIBLE_MATCH/AMBIGUOUS result falls through
+    // to creating a new party below, same as before this check existed.
+    try {
+      const match = await findPartyMatches(
+        { accountId: ctx.accountId },
+        { legalName: input.legalName, country: input.country ?? null }
+      );
+      if (match.status === "EXACT_MATCH") {
+        partyId = match.candidates[0]!.partyId;
+      }
+    } catch {
+      // fail-open: a matching error should not block carrier onboarding
+    }
+  }
 
   if (!partyId && (db as any).party) {
     const party = await (db as any).party.create({
