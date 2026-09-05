@@ -264,6 +264,8 @@ model Account {
   customsResponses            CustomsResponse[]
   importersOfRecord           ImporterOfRecord[]
   bonds                       Bond[]
+  filerProfiles               FilerProfile[]
+  entrySummaryDrafts          EntrySummaryDraft[]
   powersOfAttorney            PowerOfAttorney[]
   exceptionItems              ExceptionItem[]
   fieldApprovals              FieldApproval[]
@@ -2885,6 +2887,59 @@ model Bond {
   onboardingEntities OnboardingEntity[]
 
   @@index([accountId])
+}
+
+// -----------------------------------------------------------------------------
+// ENTRY SUMMARY (CBP FORM 7501) — issue #219 Phase A (U2, U7)
+// -----------------------------------------------------------------------------
+
+/// A customer's existing ABI filer, described declaratively (C7 — filer-agnostic
+/// via profiles: format details live here, not in code). `exports FilerExport[]`
+/// is intentionally NOT added yet — FilerExport ships in a later unit/migration.
+model FilerProfile {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name            String
+  filerCode       String
+  defaultPortCode String?
+  format          String // CSV | CATAIR_AE | JSON_API (validated at the service boundary)
+  formatVersion   String
+  fieldMap        Json
+  transport       String
+  transportConfig Json?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId, active])
+}
+
+/// One generated (and possibly regenerated, possibly approved) version of the
+/// 7501 draft for a shipment. Immutable once approved (see draft.service.ts).
+model EntrySummaryDraft {
+  id             String    @id @default(cuid())
+  accountId      String
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  shipmentId     String
+  filingId       String?
+  version        Int
+  draftData      Json
+  validationData Json
+  isExportable   Boolean
+  blockingCount  Int
+  warningCount   Int
+  generatedBy    String
+  supersededAt   DateTime?
+  approvedAt     DateTime?
+  approvedBy     String?
+  inputHash      String
+  createdAt      DateTime  @default(now())
+
+  @@unique([shipmentId, version])
+  @@index([accountId, shipmentId])
+  @@index([filingId])
 }
 
 model PowerOfAttorney {
