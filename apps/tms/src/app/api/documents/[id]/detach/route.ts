@@ -3,6 +3,7 @@ import { withAuthenticatedRoute } from "@qubere/auth";
 import { db } from "@qubere/db";
 import { createAuditLog } from "@qubere/decisions";
 import { NextResponse } from "next/server";
+import { unwindDocumentContributions } from "@/modules/documents/services/documentUnwindService";
 
 export const maxDuration = 60;
 
@@ -29,6 +30,14 @@ export const POST = withAuthenticatedRoute<{ id: string }>(
     });
 
     const correlationId = randomUUID();
+    await unwindDocumentContributions({
+      documentId: doc.id,
+      shipmentId: previousShipmentId,
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      requestId,
+    });
+
     await createAuditLog({
       accountId: ctx.accountId,
       userId: ctx.userId,
