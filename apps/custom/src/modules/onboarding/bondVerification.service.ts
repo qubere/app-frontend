@@ -83,6 +83,8 @@ async function attemptCbpQuery(
   throw new Error("ABI transport not yet configured — falling back to surety code lookup");
 }
 
+// Unused until ABI transport (ABI cert Phase 1) is wired into attemptCbpQuery above.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function interpretKiKrResponse(
   responseLines: string[],
   bond: BondShape
