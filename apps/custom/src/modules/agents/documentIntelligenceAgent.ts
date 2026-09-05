@@ -22,6 +22,8 @@ import {
   expectedFieldsForDocType,
   extractedValueFor,
   reconciliationFieldValues,
+  resolveField,
+  schemaFieldValues,
   tradeMetadataKeyFor,
 } from "@/lib/documents/fieldDictionary";
 import { syncTrackingIdentifiersFromExtraction } from "@/modules/shipments/trackingIdentifierSync";
@@ -1483,12 +1485,32 @@ ${scopedInstructions}`;
             // why an invoice-vs-packing quantity mismatch never became a
             // blocking ReconciliationIssue (finding #3).
             const reconRows = reconciliationFieldValues(blobTradeMetadata, lineItems);
+
+            // Gemini's tradeMetadata is schema-validated per field, but its
+            // separate freeform `entities` array above is not required to
+            // mention every field it populated -- a value can be genuinely on
+            // the document with tradeMetadata to prove it, yet have no
+            // entities row and no reconciliationKey, so it would otherwise
+            // never get an ExtractionField row and the Field Review panel
+            // would report it "Missing" even though extraction succeeded.
+            // Backfill the rest of the schema-required fields the same way,
+            // skipping any canonical field already covered above so a field
+            // with both a reconciliationKey and an extractionSchemaKey isn't
+            // written twice under the same source.
+            const reconCanonicalKeys = new Set(
+              reconRows.map((r) => resolveField(r.fieldName)?.canonicalKey ?? r.fieldName)
+            );
+            const schemaRows = schemaFieldValues(blobTradeMetadata, lineItems).filter(
+              (r) => !reconCanonicalKeys.has(resolveField(r.fieldName)?.canonicalKey ?? r.fieldName)
+            );
+            const structuredRows = [...reconRows, ...schemaRows];
+
             await db.extractionField.deleteMany({
               where: { documentId: docToUpdate.id, source: "DOC_INTEL_STRUCTURED" },
             });
-            if (reconRows.length > 0) {
+            if (structuredRows.length > 0) {
               await db.extractionField.createMany({
-                data: reconRows.map((r) => ({
+                data: structuredRows.map((r) => ({
                   documentId: docToUpdate.id,
                   fieldName: r.fieldName,
                   value: r.value,
